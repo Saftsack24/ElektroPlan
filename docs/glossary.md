@@ -18,7 +18,19 @@ Dokumentation und Oberfläche auf Deutsch, Code und API auf Englisch.
 | Gebäude | `building` | |
 | Geschoss | `floor` | |
 | Datei | `file` | |
-| Beleg-/Nummernkreis | `number_sequence` | |
+| Beleg-/Nummernkreis | `number_sequence` | Format siehe `docs/database.md`, Abschnitt 3 |
+| Kundennummer | `customer_number` | `KD-#####`, durchlaufend je Betrieb |
+| Projektnummer | `project_number` | `PR-JJJJ-####`, je Kalenderjahr neu |
+| Privatkunde / Firmenkunde | `kind`: `private` / `company` | |
+| Ansprechpartner | `contact_person` | |
+| Rechnungsanschrift | `billing_*` | Anschrift des Kunden |
+| Baustellenanschrift | `site_*` | Anschrift des Projekts |
+| Projektstatus | `status`: `draft`, `active`, `completed`, `archived` | Entwurf, In Bearbeitung, Abgeschlossen, Archiviert |
+| Ausblenden (Soft Delete) | `deleted_at` | fachliches Ausblenden, kein Löschen |
+| Anonymisieren | `anonymize` / `anonymized_at` | Umsetzung eines Löschbegehrens nach Art. 17 DSGVO |
+| Geschossebene | `level` | `0` Erdgeschoss, `-1` Untergeschoss, `1` erstes Obergeschoss |
+| Höhenlage des Fertigfußbodens | `elevation_mm` | ganzzahlige Millimeter |
+| Standard-Geschosshöhe | `default_ceiling_height_mm` | lichte Höhe in Millimetern |
 | Protokolleintrag | `audit_entry` | |
 
 ## Elektroplanung

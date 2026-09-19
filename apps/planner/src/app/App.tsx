@@ -4,6 +4,7 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 
 import { AuthProvider, useAuth } from "../core/auth/AuthProvider";
 import { LoginPage } from "../core/auth/LoginPage";
+import { ProjectTabsProvider } from "../core/modules/ProjectTabs";
 import { moduleRegistry } from "../modules";
 import { DashboardPage } from "./DashboardPage";
 import { Layout } from "./Layout";
@@ -14,18 +15,27 @@ function AuthenticatedApp() {
     () => moduleRegistry.routes({ activeModuleIds, permissions }),
     [activeModuleIds, permissions],
   );
+  // Die Projekt-Tabs der Fachmodule werden hier aus der Registry gelesen und
+  // ueber den Core-Context verteilt. Ein Modul darf die Composition Root nicht
+  // selbst importieren (docs/modules.md, Abschnitt 8).
+  const projectTabs = useMemo(
+    () => moduleRegistry.projectTabs({ activeModuleIds, permissions }),
+    [activeModuleIds, permissions],
+  );
 
   return (
-    <Routes>
-      <Route element={<Layout />}>
-        <Route index element={<DashboardPage />} />
-        {routes.map((route) => {
-          const Element = route.element;
-          return <Route key={route.path} path={route.path} element={<Element />} />;
-        })}
-        <Route path="*" element={<p className="muted">Diese Seite gibt es nicht.</p>} />
-      </Route>
-    </Routes>
+    <ProjectTabsProvider tabs={projectTabs}>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route index element={<DashboardPage />} />
+          {routes.map((route) => {
+            const Element = route.element;
+            return <Route key={route.path} path={route.path} element={<Element />} />;
+          })}
+          <Route path="*" element={<p className="muted">Diese Seite gibt es nicht.</p>} />
+        </Route>
+      </Routes>
+    </ProjectTabsProvider>
   );
 }
 

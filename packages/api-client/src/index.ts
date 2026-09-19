@@ -20,6 +20,16 @@ export type ActiveModuleInfo = Schemas["ActiveModuleInfo"];
 export type ModuleInfo = Schemas["ModuleInfo"];
 export type AuditEntryOut = Schemas["AuditEntryOut"];
 export type FileOut = Schemas["FileOut"];
+export type FileDownloadUrl = Schemas["FileDownloadUrl"];
+export type CustomerOut = Schemas["CustomerOut"];
+export type CustomerCreate = Schemas["CustomerCreate"];
+export type CustomerUpdate = Schemas["CustomerUpdate"];
+export type ProjectOut = Schemas["ProjectOut"];
+export type ProjectSummary = Schemas["ProjectSummary"];
+export type ProjectCreate = Schemas["ProjectCreate"];
+export type ProjectUpdate = Schemas["ProjectUpdate"];
+export type BuildingOut = Schemas["BuildingOut"];
+export type FloorOut = Schemas["FloorOut"];
 export type ProblemDetail = Schemas["ProblemDetail"];
 
 /** Fehlerantwort des Servers im Format RFC 9457. */
@@ -88,6 +98,12 @@ type RequiredKeys<T> = T extends undefined
 /** Optionen einer Anfrage - vollstaendig aus der Operation abgeleitet. */
 export type RequestOptions<O> = {
   signal?: AbortSignal;
+  /**
+   * Version der zuvor gelesenen Entitaet. Wird als `If-Match` gesendet
+   * (docs/api.md, Abschnitt 5). Aendernde Endpunkte auf versionierten
+   * Entitaeten verlangen den Header; ohne ihn antwortet der Server mit 428.
+   */
+  ifMatch?: number | string;
 } & (PathParamsOf<O> extends undefined ? { path?: never } : { path: PathParamsOf<O> }) &
   (QueryOf<O> extends undefined
     ? { query?: never }
@@ -161,12 +177,24 @@ export interface ApiClient {
     path: P,
     options: RequestOptions<Operation<P, "delete">>,
   ): Promise<SuccessResponse<Operation<P, "delete">>>;
+
+  /**
+   * Multipart-Upload. Der Browser setzt `Content-Type` samt Boundary selbst -
+   * deshalb ein eigener Weg statt `post` mit JSON-Koerper.
+   */
+  upload<P extends PathsWithMethod<"post">>(
+    path: P,
+    form: FormData,
+    options?: { signal?: AbortSignal },
+  ): Promise<SuccessResponse<Operation<P, "post">>>;
 }
 
 interface RawOptions {
   path?: Record<string, unknown>;
   query?: Record<string, QueryValue>;
   body?: unknown;
+  form?: FormData;
+  ifMatch?: number | string;
   signal?: AbortSignal;
 }
 
@@ -185,6 +213,9 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
     if (raw?.body !== undefined) {
       headers["Content-Type"] = "application/json";
     }
+    if (raw?.ifMatch !== undefined) {
+      headers["If-Match"] = String(raw.ifMatch);
+    }
 
     const init: RequestInit = {
       method: method.toUpperCase(),
@@ -192,7 +223,10 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
       // Refresh-Cookie mitschicken (HttpOnly, SameSite=Strict).
       credentials: "include",
     };
-    if (raw?.body !== undefined) {
+    if (raw?.form !== undefined) {
+      // Kein Content-Type setzen: Der Browser ergaenzt die Boundary.
+      init.body = raw.form;
+    } else if (raw?.body !== undefined) {
       init.body = JSON.stringify(raw.body);
     }
     if (raw?.signal) {
@@ -231,10 +265,23 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
     (path: string, raw?: RawOptions): Promise<never> =>
       send(method, path, raw, true) as Promise<never>;
 
+  const upload = (
+    path: string,
+    form: FormData,
+    uploadOptions?: { signal?: AbortSignal },
+  ): Promise<never> =>
+    send(
+      "post",
+      path,
+      uploadOptions?.signal ? { form, signal: uploadOptions.signal } : { form },
+      true,
+    ) as Promise<never>;
+
   return {
     get: call("get"),
     post: call("post"),
     patch: call("patch"),
     delete: call("delete"),
+    upload,
   } as ApiClient;
 }

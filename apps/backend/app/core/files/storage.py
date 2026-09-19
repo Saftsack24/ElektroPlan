@@ -59,18 +59,30 @@ class StoredObject:
     content_type: str
 
 
-def build_storage_key(organization_id: uuid.UUID, file_id: uuid.UUID, filename: str) -> str:
+def build_storage_key(
+    organization_id: uuid.UUID,
+    file_id: uuid.UUID,
+    filename: str,
+    *,
+    project_id: uuid.UUID | None = None,
+) -> str:
     """Serverseitig erzeugter Schluessel.
 
-    Schema ``org/<org-id>/<file-id><ext>``. Die Endung stammt aus dem
-    Originalnamen, der Rest wird verworfen.
+    Schema ``org/<org-id>/project/<project-id>/<file-id><ext>`` bei
+    Projektbezug, sonst ``org/<org-id>/<file-id><ext>``
+    (docs/architecture.md, Abschnitt 15). Die Endung stammt aus dem
+    Originalnamen, der Rest wird verworfen - der Dateiname wird nie Teil
+    des Pfads.
     """
     suffix = ""
     if "." in filename:
         candidate = filename.rsplit(".", 1)[-1]
         if candidate.isalnum() and len(candidate) <= 8:
             suffix = f".{candidate.lower()}"
-    return f"org/{organization_id}/{file_id}{suffix}"
+    scope = f"org/{organization_id}"
+    if project_id is not None:
+        scope = f"{scope}/project/{project_id}"
+    return f"{scope}/{file_id}{suffix}"
 
 
 def matches_magic_bytes(content_type: str, head: bytes) -> bool:

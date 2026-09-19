@@ -1,6 +1,6 @@
 # Datenbank und ER-Modell
 
-Version: 1.0 (Phase 0 — Entwurf, noch keine Migration erzeugt)
+Version: 1.1 (Core und Core-Geschäftsdaten umgesetzt; Migrationen 0001–0003)
 Datenbank: PostgreSQL 17
 ORM: SQLAlchemy 2.0 · Migrationen: Alembic (ein einziger Strang)
 
@@ -137,11 +137,15 @@ erDiagram
         text customer_number
         text kind
         text name
+        text contact_person
         text email
         text phone
         text billing_street
         text billing_postal_code
         text billing_city
+        text billing_country_code
+        int version
+        timestamptz anonymized_at
         timestamptz deleted_at
     }
     PROJECTS {
@@ -154,6 +158,7 @@ erDiagram
         text site_street
         text site_postal_code
         text site_city
+        text site_country_code
         int version
         timestamptz deleted_at
     }
@@ -163,6 +168,7 @@ erDiagram
         uuid project_id FK
         text name
         int sort_order
+        int version
     }
     FLOORS {
         uuid id PK
@@ -172,11 +178,12 @@ erDiagram
         int level
         int elevation_mm
         int default_ceiling_height_mm
+        int version
     }
     FILES {
         uuid id PK
         uuid organization_id FK
-        uuid project_id FK
+        uuid project_id FK "NULL erlaubt"
         text storage_key
         text filename
         text content_type
@@ -228,7 +235,86 @@ erDiagram
 - `projects` UNIQUE `(organization_id, project_number)`
 - `number_sequences` PK `(organization_id, scope, period)` — Vergabe per
   `SELECT ... FOR UPDATE`
+- `customers.kind` CHECK in (`private`, `company`)
+- `projects.status` CHECK in (`draft`, `active`, `completed`, `archived`)
+- `floors` UNIQUE `(building_id, level)` — zwei Geschosse auf derselben Ebene wären
+  ein Erfassungsfehler
+- `buildings → projects` und `floors → buildings` mit `ON DELETE CASCADE`: Struktur ohne
+  ihr Projekt ergibt keinen Sinn. Kunden und Projekte selbst werden nur ausgeblendet
+  (`deleted_at`); ein Hard Delete kommt ausschließlich über den DSGVO-Pfad vor.
+- `files.project_id` ist **optional**; der zusammengesetzte Fremdschlüssel greift bei
+  `NULL` nicht (MATCH SIMPLE) und lässt Dateien ohne Projektbezug zu.
 - `domain_events` ist **append-only** (kein UPDATE außer `handler_status`)
+
+### Nummernkreise (ab Phase 2 in Benutzung)
+
+Die Vergabe läuft ausschließlich über `app/core/numbering/service.py`. Die Zeile des
+Kreises wird gesperrt (`SELECT … FOR UPDATE`) und hochgezählt — nie `MAX(nummer)+1`.
+Damit zwei gleichzeitige Erstzugriffe nicht am Primärschlüssel scheitern, wird die Zeile
+zuvor per `INSERT … ON CONFLICT DO NOTHING` angelegt. Ein Test mit zwei echten Threads
+weist nach, dass keine Nummer doppelt vergeben wird.
+
+| Bereich (`scope`) | Format | Beispiel | Periode |
+|---|---|---|---|
+| `customer` | `KD-#####` | `KD-00001` | durchlaufend |
+| `project` | `PR-JJJJ-####` | `PR-2026-0001` | je Kalenderjahr neu |
+
+Die Formate für Angebot und Auftrag sind noch offen (offene Entscheidung **F5**) und
+werden mit Phase 10 ergänzt — nicht vorweggenommen.
+
+### Sperrreihenfolge und Nebenläufigkeit
+
+Zwei Invarianten lassen sich nicht allein mit einer Vorabprüfung halten — zwei
+gleichzeitige Transaktionen können beide bestehen. Beide werden über **Zeilensperren
+in derselben Transaktion** abgesichert.
+
+**Invariante 1: Ein sichtbares Projekt zeigt nie auf einen ausgeblendeten oder
+anonymisierten Kunden.**
+
+| Vorgang | Ablauf innerhalb einer Transaktion |
+|---|---|
+| Projekt anlegen / umhängen | `SELECT … FROM customers … FOR UPDATE` (nur aktiv, nicht ausgeblendet, nicht anonymisiert) → Projekt schreiben |
+| Kunde ausblenden | `SELECT … FROM customers … FOR UPDATE` → Projekte zählen → `deleted_at` setzen |
+| Kunde anonymisieren | `SELECT … FROM customers … FOR UPDATE` → Felder überschreiben |
+
+**Immer zuerst die Kundenzeile, dann die Projekte.** Diese Reihenfolge gilt auf allen
+Seiten; damit ist ein Deadlock ausgeschlossen. Ein Vorab-Count ohne Sperre genügt
+ausdrücklich nicht: Zwischen Zählen und Schreiben könnte ein Projekt entstehen.
+
+Ergebnis unter Parallelität — nur zwei Ausgänge sind möglich:
+
+* Die Projektanlage ist zuerst fertig → das Ausblenden scheitert mit `409`.
+* Das Ausblenden ist zuerst fertig → die Projektanlage scheitert mit `404`.
+
+**Invariante 2: Pro Gebäude existiert eine Geschossebene genau einmal.**
+`UNIQUE (building_id, level)` entscheidet. Die Vorabprüfung liefert im sequenziellen
+Fall die verständliche Meldung; bestehen zwei gleichzeitige Anfragen sie beide, erhält
+der Verlierer über den Index dieselbe Meldung (`422`). Übersetzt wird ausschließlich
+diese **namentlich erwartete** Constraint (`uq_floors_building_id_level`) — jeder andere
+Integritätsfehler bleibt ein unerwarteter Fehler und wird nicht als Fachmeldung getarnt.
+
+**Verlorene Aktualisierung.** `version_id_col` erkennt beim Schreiben, dass die Zeile
+mit der erwarteten Version nicht mehr existiert. Der resultierende `StaleDataError`
+wird zentral in denselben `409`-Versionskonflikt übersetzt wie ein veraltetes
+`If-Match`. Die Session wird dabei zurückgerollt; eine Session im Fehlerzustand wird
+nicht weiterverwendet.
+
+Es gibt **keine Datenbanktrigger** für diese Invarianten: Klare Transaktionsgrenzen und
+Zeilensperren sind nachvollziehbarer und bleiben im Anwendungscode sichtbar.
+
+### Anonymisierung von Kunden
+
+`customers.anonymized_at` markiert einen umgesetzten Löschanspruch (Art. 17 DSGVO).
+Dabei werden `name`, `contact_person`, `email`, `phone` und die Rechnungsanschrift
+überschrieben; `customer_number`, `created_at` und die Belegzuordnung bleiben, damit
+aufbewahrungspflichtige Dokumente nach HGB/AO zuordenbar bleiben. Der Vorgang ist
+**nicht umkehrbar** und wird protokolliert — ohne die gelöschten Werte.
+
+`deleted_at` und `anonymized_at` sind **unabhängig**: das eine steuert die Sichtbarkeit,
+das andere den Personenbezug. Ein anonymisierter Kunde bleibt in Listen sichtbar (mit
+Platzhalternamen) und ist serverseitig gegen Änderungen gesperrt. Für **neue**
+Projektzuordnungen ist er ebenfalls gesperrt (`404`); **bestehende** Projekte behalten
+ihre Referenz und zeigen den Platzhalternamen.
 
 ---
 
@@ -721,7 +807,11 @@ erDiagram
 | Tabelle | Index |
 |---|---|
 | alle mandantenbezogenen | `(organization_id, id)` UNIQUE |
+| `customers` | `(organization_id, customer_number)` UNIQUE |
 | `projects` | `(organization_id, customer_id)`, `(organization_id, status)` |
+| `buildings` | `(organization_id, project_id)` |
+| `floors` | `(organization_id, building_id)`, `(building_id, level)` UNIQUE |
+| `files` | `(organization_id, project_id)` |
 | `electrical_devices` | `(organization_id, project_id)`, `(room_id)`, `(circuit_id)` |
 | `electrical_cable_routes` | `(organization_id, project_id)`, `(circuit_id)` |
 | `electrical_cable_route_points` | PK `(route_id, seq)` |

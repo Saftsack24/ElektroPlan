@@ -1,6 +1,6 @@
 import { ModuleRegistry } from "../core/modules/registry";
 import type { PlannerModule } from "../core/modules/types";
-import { auditModule } from "./audit";
+import { platformModule } from "./platform";
 
 /**
  * Die einzige zentrale Stelle, an der Module registriert werden.
@@ -10,7 +10,7 @@ import { auditModule } from "./audit";
  * (docs/modules.md, Abschnitt 6).
  */
 export const MODULES: readonly PlannerModule[] = [
-  auditModule,
+  platformModule,
   // ab Phase 3:  electricalModule,
   // ab Phase 7:  materialsModule,
   // ab Phase 9:  calculationModule,

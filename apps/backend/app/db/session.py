@@ -53,9 +53,18 @@ def session_scope() -> Iterator[Session]:
 
 
 def get_session() -> Generator[Session, None, None]:
-    """FastAPI-Dependency. Die Transaktion steuert die Unit of Work."""
+    """FastAPI-Dependency. Die Transaktion steuert die Unit of Work.
+
+    Bei einer Ausnahme wird **ausdruecklich** zurueckgerollt, bevor die
+    Session geschlossen wird. Eine Session mit fehlgeschlagener Transaktion
+    darf nicht weiterverwendet werden; der zentrale Exception-Handler in
+    :mod:`app.errors` laeuft erst danach und fasst sie deshalb nicht mehr an.
+    """
     session = get_session_factory()()
     try:
         yield session
+    except Exception:
+        session.rollback()
+        raise
     finally:
         session.close()

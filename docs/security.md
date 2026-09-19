@@ -164,6 +164,8 @@ Vorbereitet, aber im MVP nicht aktiviert: PostgreSQL Row Level Security
 | Integrität | SHA-256 bei Upload gespeichert |
 | Virenscan | im MVP nicht enthalten, vor kommerziellem Einsatz nachrüsten |
 | Streaming | Der Upload wird stückweise gelesen (64 KiB); das Größenlimit greift **während** des Lesens. Gepuffert wird in einer `SpooledTemporaryFile`, die oberhalb 1 MiB auf die Festplatte auslagert — keine unbegrenzte Datei im Arbeitsspeicher. |
+| Projektzuordnung | Ein Upload mit `project_id` wird gegen den mandantengefilterten Projektdienst geprüft; ein fremdes Projekt liefert `404`. Der Speicherschlüssel lautet dann `org/<org-id>/project/<project-id>/<file-id><ext>`. |
+| Download im Browser | `GET /files/{id}/download-url` liefert die signierte Adresse als JSON, der Browser navigiert anschließend dorthin. Ein Link direkt auf den API-Endpunkt käme ohne `Authorization`-Header nicht durch; ein Token in der URL ist ausgeschlossen. |
 | Dateiname im Header | `Content-Disposition` wird injektionssicher gebaut: Steuerzeichen, Zeilenumbrüche, Anführungszeichen und Backslashes werden ersetzt, der Originalname folgt prozentkodiert als `filename*` (RFC 6266). |
 | Verwaiste Objekte | Reihenfolge: Datenbankzeile → Storage-Upload → Commit. Scheitert der Upload, wird die Transaktion zurückgerollt (kein Datensatz ohne Objekt). Scheitert der Commit, wird das Objekt gelöscht (kein Objekt ohne Datensatz). Gelingt auch das Löschen nicht, wird der Schlüssel unter `orphan_object_cleanup_failed` protokolliert und über einen manuellen Cleanup-Lauf entfernt. |
 
@@ -188,6 +190,8 @@ Explizit protokolliert werden mindestens:
 - Anmeldung, fehlgeschlagene Anmeldung, Logout
 - Änderung von Rollen und Berechtigungen
 - Anlegen/Ändern/Löschen von Kunden und Projekten
+  (`customer.created`, `customer.updated`, `customer.deleted`, `customer.anonymized`,
+  `project.created`, `project.updated`, `project.deleted`, `project.status_changed`)
 - Materialpreisänderungen
 - Finalisierung einer Kalkulation
 - Freigabe, Versand und Statuswechsel einer Angebotsversion
@@ -326,6 +330,64 @@ Beim Abmelden wird das Cookie mit **denselben** Attributen (`Path`, `Secure`,
 | 11 | Verzeichnis von Verarbeitungstätigkeiten | Erstellt und gepflegt (Art. 30) |
 | 12 | Technische und organisatorische Maßnahmen | Dokumentiert (Art. 32): Zugriffskontrolle, Verschlüsselung im Transport, Protokollierung, Backup, Wiederherstellbarkeit |
 
+### Feldliste und Zweck (Datenminimierung, Punkt 2)
+
+Verarbeitet werden ausschließlich die folgenden personenbezogenen Felder. Jedes hat
+einen Zweck; Felder „für später" gibt es nicht.
+
+| Tabelle | Feld | Zweck | Rechtsgrundlage |
+|---|---|---|---|
+| `customers` | `name` | Vertragspartner benennen, Angebot und Rechnung adressieren | Art. 6 Abs. 1 lit. b |
+| `customers` | `contact_person` | Ansprechpartner bei Firmenkunden erreichen | Art. 6 Abs. 1 lit. b |
+| `customers` | `email`, `phone` | Terminabstimmung, Rückfragen, Versand von Angeboten | Art. 6 Abs. 1 lit. b |
+| `customers` | `billing_street`, `billing_postal_code`, `billing_city`, `billing_country_code` | Rechnungsanschrift | Art. 6 Abs. 1 lit. b, §14 UStG |
+| `projects` | `site_street`, `site_postal_code`, `site_city` | Baustelle auffinden, Anfahrt und Aufmaß | Art. 6 Abs. 1 lit. b |
+| `users` | `email`, `full_name` | Anmeldung und Zuordnung von Handlungen | Art. 6 Abs. 1 lit. b/f |
+| `audit_entries` | `actor_user_id` | Nachvollziehbarkeit kritischer Aktionen | Art. 6 Abs. 1 lit. f |
+
+Bewusst **nicht** erhoben: Geburtsdatum, Bankverbindung, Steuernummer, Freitextnotizen
+zu Personen. Sie werden erst aufgenommen, wenn eine konkrete Funktion sie braucht.
+
+### Löschung und Anonymisierung (Punkt 5) — umgesetzt in Phase 2
+
+`POST /api/v1/customers/{id}/anonymize` setzt ein Löschbegehren nach Art. 17 DSGVO um:
+
+1. `name`, `contact_person`, `email`, `phone` und die Rechnungsanschrift werden
+   überschrieben, nicht nur ausgeblendet.
+2. `customer_number`, `created_at` und die Verknüpfung zu Projekten und Belegen bleiben
+   erhalten — sonst wären aufbewahrungspflichtige Dokumente nach HGB/AO nicht mehr
+   zuordenbar (Punkte 6 und 7).
+3. `anonymized_at` hält fest, wann das geschah. Der Datensatz ist danach **serverseitig
+   gesperrt**: Ein `PATCH` oder ein zweiter Anonymisierungsversuch wird mit `409`
+   abgelehnt. Andernfalls ließen sich die gelöschten Angaben einfach wieder eintragen —
+   die Löschung wäre wirkungslos.
+   *Ausblenden und Anonymisieren sind getrennt:* `deleted_at` steuert die Sichtbarkeit,
+   `anonymized_at` den Personenbezug. Ein anonymisierter Kunde bleibt sichtbar (mit
+   Platzhalternamen), damit Projekte und Belege zuordenbar bleiben; wer ihn auch aus den
+   Listen nehmen will, blendet ihn zusätzlich aus.
+6. **Keine Reaktivierung.** Für **neue** Projektzuordnungen ist ein anonymisierter Kunde
+   gesperrt (`404`) — sonst ließe sich der gelöschte Datensatz über einen neuen
+   Geschäftsvorgang wieder in Gebrauch nehmen. Die Kundenzeile wird dabei gesperrt
+   (`SELECT … FOR UPDATE`), damit Anonymisierung und Zuordnung nicht gegeneinander
+   laufen: Entweder die Zuordnung ist zuerst fertig und die Anonymisierung behält die
+   bestehende Referenz, oder die Anonymisierung gewinnt und die Zuordnung wird
+   abgelehnt. **Bestehende** Projekte bleiben in jedem Fall lesbar.
+7. **Keine Kopien der gelöschten Werte.** Weder Audit-Eintrag noch Fehlermeldung noch
+   Log enthalten die überschriebenen Angaben. Tests prüfen das für das Protokoll und
+   für die Projektliste.
+4. Der Vorgang wird protokolliert — **ohne** die gelöschten Werte. Ein Audit-Eintrag,
+   der die anonymisierten Daten konserviert, wäre das Gegenteil einer Löschung. Ein Test
+   prüft das.
+5. Die Berechtigung `customer.record.anonymize` liegt ausschließlich beim
+   Administrator, nicht bei einer Fachrolle. Auch das ist getestet.
+
+Der Vorgang ist **nicht umkehrbar**.
+
+Was damit **weiterhin fehlt**: die Auskunft nach Art. 15 (Punkt 3) als Export, das
+Verarbeitungsverzeichnis (Punkt 11), die TOM-Dokumentation (Punkt 12), die AV-Verträge
+(Punkt 10) und die Regel zur Wirkung eines Restores auf eine Löschung (Punkt 8).
+**Bis diese Punkte vorliegen, gilt weiterhin: ausschließlich synthetische Testdaten.**
+
 ### Was Phase 1 dazu beiträgt — und was nicht
 
 Vorhanden: Mandantentrennung, rollenbasierte Zugriffskontrolle, Audit-Protokoll,
@@ -338,9 +400,9 @@ kein Versäumnis von Phase 1 — Phase 1 verarbeitet keine personenbezogenen
 Daten außer den Konten der Entwickler. Es ist aber eine **harte Voraussetzung
 für Phase 2**.
 
-**Soft Delete allein erfüllt kein Löschbegehren.** Der Anonymisierungspfad ist im
-Datenmodell vorgesehen (siehe `docs/database.md`) und wird mit Phase 2
-implementiert, bevor echte Kundendaten erfasst werden.
+**Soft Delete allein erfüllt kein Löschbegehren.** Der Anonymisierungspfad ist mit
+Phase 2 implementiert und getestet (siehe oben) — `deleted_at` blendet lediglich aus,
+`anonymized_at` entfernt den Personenbezug.
 
 ---
 

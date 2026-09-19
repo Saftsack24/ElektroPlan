@@ -130,6 +130,7 @@ class FileService:
         content_type: str,
         stream: IO[bytes],
         uploaded_by: uuid.UUID,
+        project_id: uuid.UUID | None = None,
         entity_type: str | None = None,
         entity_id: uuid.UUID | None = None,
     ) -> FileRecord:
@@ -142,11 +143,12 @@ class FileService:
         buffered = self.read_checked(stream, content_type)
         try:
             file_id = uuid.uuid4()
-            key = build_storage_key(self.organization_id, file_id, filename)
+            key = build_storage_key(self.organization_id, file_id, filename, project_id=project_id)
 
             record = FileRecord(
                 id=file_id,
                 organization_id=self.organization_id,
+                project_id=project_id,
                 storage_key=key,
                 filename=filename[:255],
                 content_type=content_type,
@@ -199,3 +201,17 @@ class FileService:
         """Zeitlich begrenzte URL - nur fuer Dateien der eigenen Organisation."""
         record = self.repository.get_or_404(file_id)
         return self.storage.presigned_download_url(record.storage_key, filename=record.filename)
+
+    def list_for_project(self, project_id: uuid.UUID) -> list[FileRecord]:
+        """Dateien eines Projekts, neueste zuerst.
+
+        Ohne Paginierung: Ein Projekt hat Plaene und Fotos in zweistelliger
+        Zahl. Sollte sich das aendern, kommt derselbe Keyset-Cursor zum
+        Einsatz wie bei Kunden und Projekten.
+        """
+        stmt = (
+            self.repository.query()
+            .where(FileRecord.project_id == project_id)
+            .order_by(FileRecord.created_at.desc(), FileRecord.id.desc())
+        )
+        return list(self.session.execute(stmt).scalars().all())

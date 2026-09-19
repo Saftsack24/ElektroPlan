@@ -11,7 +11,7 @@ wie sie sich registrieren.
 
 | Modul | Art | Status | Präfix | Abhängig von |
 |---|---|---|---|---|
-| `core` | Core | Phase 1 | — | — |
+| `core` | Core | Phase 1–2 | — | — |
 | `materials` | Shared | Phase 7/8 | `material_`, `service_` | core |
 | `inventory` | Shared | Phase 12 | `inventory_` | core, materials |
 | `calculation` | Shared | Phase 9 | `calculation_` | core, materials |
@@ -90,6 +90,11 @@ sondern ein Port (Abschnitt 4).
 Organisationen, Benutzer, Mitgliedschaften, Rollen/Permissions, Kunden, Projekte, Gebäude,
 Geschosse, Dateien, Audit, Nummernkreise, Event-Bus, Module Registry.
 Der Core ist der einzige Ort mit Wissen über Mandanten und Identität.
+
+Der Core ist selbst geschichtet: `app/core/projects` kennt `app/core/customers`
+(ein Projekt braucht einen Auftraggeber), **nicht umgekehrt**. Die Prüfung, ob an einem
+Kunden noch Projekte hängen, liegt deshalb in `projects/service.py` und wird vom
+Kunden-Endpunkt aufgerufen — eine Rückwärtsabhängigkeit wäre der Anfang eines Zyklus.
 
 ### materials (Katalog + Material Engine)
 Materialstamm, Preise und Preishistorie, Kategorien, ServiceTemplates, globale
@@ -282,6 +287,23 @@ export const MODULES: PlannerModule[] = [
   electricalModule,
 ];
 ```
+
+### Projekt-Tabs und die Grenze zur Composition Root
+
+Die Projektansicht liegt im Plattform-Modul (`src/modules/platform`), die Beiträge der
+Fachmodule stehen aber in der Composition Root `src/modules/index.ts`. Ein Modul darf
+diese Datei **nicht** importieren — das wäre ein Zyklus und ein Grenzverstoß.
+
+Gelöst über einen Kanal im Core:
+
+```
+src/core/modules/ProjectTabs.tsx     definiert Context + useProjectTabs()
+src/app/App.tsx                      liest moduleRegistry.projectTabs(...) und fuellt ihn
+src/modules/<id>/…                   liest ihn ueber useProjectTabs()
+```
+
+Damit bleibt die Richtung `Modul → Core` erhalten, und `app/**` bleibt der einzige
+Bereich, der die zentrale Fassade kennt.
 
 ### Sichtbarkeitsregel
 

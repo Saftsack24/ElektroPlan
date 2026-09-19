@@ -21,13 +21,31 @@ USER_ACCOUNT_READ = "user.account.read"
 USER_ACCOUNT_WRITE = "user.account.write"
 ROLE_ASSIGNMENT_READ = "role.assignment.read"
 ROLE_ASSIGNMENT_WRITE = "role.assignment.write"
+CUSTOMER_RECORD_READ = "customer.record.read"
+CUSTOMER_RECORD_WRITE = "customer.record.write"
+CUSTOMER_RECORD_DELETE = "customer.record.delete"
+#: Getrennt von ``delete``: Die Anonymisierung ist nicht umkehrbar und setzt
+#: ein Loeschbegehren nach Art. 17 DSGVO um (docs/security.md, Abschnitt 13).
+CUSTOMER_RECORD_ANONYMIZE = "customer.record.anonymize"
+PROJECT_RECORD_READ = "project.record.read"
+PROJECT_RECORD_WRITE = "project.record.write"
+PROJECT_RECORD_DELETE = "project.record.delete"
 AUDIT_ENTRY_READ = "audit.entry.read"
 FILE_OBJECT_READ = "file.object.read"
 FILE_OBJECT_WRITE = "file.object.write"
 MODULE_REGISTRY_READ = "module.registry.read"
 
 #: Namensraeume, die der Core beansprucht.
-CORE_PERMISSION_NAMESPACES = ("organization", "user", "role", "audit", "file", "module")
+CORE_PERMISSION_NAMESPACES = (
+    "organization",
+    "user",
+    "role",
+    "customer",
+    "project",
+    "audit",
+    "file",
+    "module",
+)
 
 CORE_PERMISSIONS: tuple[PermissionDef, ...] = (
     PermissionDef(ORGANIZATION_PROFILE_READ, "Betriebsdaten ansehen"),
@@ -38,6 +56,13 @@ CORE_PERMISSIONS: tuple[PermissionDef, ...] = (
     PermissionDef(USER_ACCOUNT_WRITE, "Benutzerkonten verwalten"),
     PermissionDef(ROLE_ASSIGNMENT_READ, "Rollen und Rechte ansehen"),
     PermissionDef(ROLE_ASSIGNMENT_WRITE, "Rollen und Rechte vergeben"),
+    PermissionDef(CUSTOMER_RECORD_READ, "Kunden ansehen"),
+    PermissionDef(CUSTOMER_RECORD_WRITE, "Kunden anlegen und bearbeiten"),
+    PermissionDef(CUSTOMER_RECORD_DELETE, "Kunden ausblenden"),
+    PermissionDef(CUSTOMER_RECORD_ANONYMIZE, "Kundendaten unwiderruflich anonymisieren"),
+    PermissionDef(PROJECT_RECORD_READ, "Projekte ansehen"),
+    PermissionDef(PROJECT_RECORD_WRITE, "Projekte anlegen und bearbeiten"),
+    PermissionDef(PROJECT_RECORD_DELETE, "Projekte ausblenden"),
     PermissionDef(AUDIT_ENTRY_READ, "Protokoll ansehen"),
     PermissionDef(FILE_OBJECT_READ, "Dateien herunterladen"),
     PermissionDef(FILE_OBJECT_WRITE, "Dateien hochladen"),
@@ -64,6 +89,12 @@ _BASE_READ = (
     FILE_OBJECT_READ,
 )
 
+#: Wer plant oder kalkuliert, braucht Projekt- und Kundendaten lesend.
+_BUSINESS_READ = (
+    CUSTOMER_RECORD_READ,
+    PROJECT_RECORD_READ,
+)
+
 SYSTEM_ROLES: tuple[SystemRole, ...] = (
     SystemRole(
         key="admin",
@@ -75,19 +106,30 @@ SYSTEM_ROLES: tuple[SystemRole, ...] = (
         key="planer",
         name="Planer",
         description="Technische Planung",
-        permissions=(*_BASE_READ, ORGANIZATION_MEMBER_READ, FILE_OBJECT_WRITE),
+        permissions=(
+            *_BASE_READ,
+            *_BUSINESS_READ,
+            ORGANIZATION_MEMBER_READ,
+            FILE_OBJECT_WRITE,
+            PROJECT_RECORD_WRITE,
+        ),
     ),
     SystemRole(
         key="kalkulator",
         name="Kalkulator",
         description="Kalkulation und Angebote",
-        permissions=(*_BASE_READ, ORGANIZATION_MEMBER_READ),
+        permissions=(
+            *_BASE_READ,
+            *_BUSINESS_READ,
+            ORGANIZATION_MEMBER_READ,
+            CUSTOMER_RECORD_WRITE,
+        ),
     ),
     SystemRole(
         key="monteur",
         name="Monteur",
         description="Ausfuehrung auf der Baustelle",
-        permissions=_BASE_READ,
+        permissions=(*_BASE_READ, PROJECT_RECORD_READ),
     ),
     SystemRole(
         key="lager",

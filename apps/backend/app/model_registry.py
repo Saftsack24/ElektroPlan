@@ -13,24 +13,30 @@ from __future__ import annotations
 from app.core.audit.models import AuditEntry
 from app.core.auth.models import RefreshToken
 from app.core.authorization.models import MemberRole, Permission, Role, RolePermission
+from app.core.customers.models import Customer
 from app.core.events.models import DomainEventRecord
 from app.core.files.models import FileRecord
 from app.core.numbering.models import NumberSequence
 from app.core.organizations.models import Organization, OrganizationMember, OrganizationModule
+from app.core.projects.models import Building, Floor, Project
 from app.core.users.models import User
 from app.db.base import Base, metadata
 
 __all__ = [
     "AuditEntry",
     "Base",
+    "Building",
+    "Customer",
     "DomainEventRecord",
     "FileRecord",
+    "Floor",
     "MemberRole",
     "NumberSequence",
     "Organization",
     "OrganizationMember",
     "OrganizationModule",
     "Permission",
+    "Project",
     "RefreshToken",
     "Role",
     "RolePermission",

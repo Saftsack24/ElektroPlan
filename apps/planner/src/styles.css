@@ -127,3 +127,60 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
   .list--compact { columns: 1; }
   .shell__header { gap: 12px; }
 }
+
+/* --- Formularraster und Karten-Kopf --- */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.form-grid__actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  margin-top: 12px;
+}
+.field--narrow { max-width: 150px; }
+
+.filter-row { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; }
+.filter-row .field { min-width: 220px; }
+
+.button-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+
+.card__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.card__header h3 { margin: 0; }
+
+/* --- Projekt-Tabs --- */
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.tabs__tab {
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+  padding: 8px 14px;
+  font: inherit;
+  color: var(--muted);
+  cursor: pointer;
+}
+.tabs__tab:hover { color: var(--text); }
+.tabs__tab--active {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+  font-weight: 600;
+}

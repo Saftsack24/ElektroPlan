@@ -135,7 +135,7 @@ def test_tabellenpraefixe_entsprechen_den_modulen(registry: ModuleRegistry) -> N
 
 def test_core_tabellen_sind_vollstaendig_erfasst() -> None:
     """Warnt, wenn eine neue Tabelle hinzukommt, ohne die Liste zu pflegen."""
-    assert len(metadata.sorted_tables) == 13, (
+    assert len(metadata.sorted_tables) == 17, (
         "Anzahl der Tabellen hat sich geaendert - test_architecture.py und "
         "docs/database.md pruefen."
     )

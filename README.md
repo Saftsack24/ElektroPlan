@@ -4,8 +4,8 @@ Modulare Softwareplattform für Elektrofachbetriebe — von der Kundenanfrage ü
 technische Planung, den Materialbedarf und die Kalkulation bis zum Angebot, Auftrag und
 zur Nachkalkulation.
 
-**Status: Phase 1 (Platform Foundation) implementiert — Abnahme mit laufender
-Datenbank steht aus.** Details in [`docs/current-status.md`](docs/current-status.md).
+**Status: Phase 2 (Core Business Data) abgeschlossen und abgenommen.**
+Details in [`docs/current-status.md`](docs/current-status.md).
 
 ---
 
@@ -84,14 +84,24 @@ Ausführlich: [`docs/architecture.md`](docs/architecture.md)
 Modulregistrierung, Sicherheitskonzept und Dokumentationsstruktur stehen.
 Elf Architekturentscheidungen sind als ADR festgehalten.
 
-**Phase 1 — Platform Foundation — implementiert, Abnahme offen.**
+**Phase 1 — Platform Foundation — abgeschlossen und abgenommen.**
 Backend mit Core-Datenmodell, Authentifizierung, Autorisierung, Mandantentrennung,
 Module Registry, Event Bus, Audit und Object Storage; React-Shell mit
 Modulregistrierung und generiertem API-Client.
 
-Geprüft: Ruff, mypy `--strict`, `import-linter`, ein Alembic-Head, 85 Backend-Tests,
-7 Frontend-Tests, Build. Offen: die 23 Tests, die PostgreSQL benötigen, sowie
-`docker compose up` — beides ist auf dem Entwicklungsrechner nicht verfügbar.
+**Phase 2 — Core Business Data — abgeschlossen und abgenommen.**
+Kunden, Projekte, Gebäude und Geschosse mit Nummernkreisen und optimistischem Sperren;
+Projektdateien gegen MinIO; Anonymisierungspfad nach Art. 17 DSGVO; Oberfläche mit
+Kunden- und Projektverwaltung und einer Projektansicht, in die sich Fachmodule ab
+Phase 3 mit eigenen Tabs einhängen.
+
+Geprüft gegen echtes PostgreSQL 17 und MinIO: Ruff, mypy `--strict`, `import-linter`,
+Modul- und Datenbankgrenzen, ein Alembic-Head, der vollständige Backend-Testlauf ohne
+übersprungene Tests, Frontend-Typecheck, ESLint, Frontend-Tests und Build.
+
+> Es werden ausschließlich **synthetische Testdaten** verwendet. Vor dem ersten echten
+> Kundendatensatz sind die offenen DSGVO-Punkte aus
+> [`docs/security.md`](docs/security.md), Abschnitt 13 zu erfüllen.
 
 ---
 

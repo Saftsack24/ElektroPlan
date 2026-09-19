@@ -1,6 +1,6 @@
 # Roadmap
 
-Stand: 2026-09-19 (nach Task 0004 — Phase 1.2)
+Stand: 2026-09-19 (nach Task 0008 — Phase 2.1)
 Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 
 ---
@@ -12,8 +12,9 @@ Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 | 0 | Architektur, Contracts, Datenmodell, Dokumentation | **DONE** | — |
 | 1 | Platform Foundation | **DONE** | 0 |
 | 1.2 | Härtung der Architekturgrenzen und der Sitzungslogik | **DONE** | 1 |
-| 2 | Core Business Data | NOT STARTED (wartet auf Freigabe) | 1.2 |
-| 3 | Electrical Room Model | NOT STARTED | 2 |
+| 2 | Core Business Data | **DONE** | 1.2 |
+| 2.1 | Nebenläufigkeit und Zustandskonsistenz | **DONE** | 2 |
+| 3 | Electrical Room Model | NOT STARTED (wartet auf Freigabe) | 2 |
 | 4a | 2D-Editor | NOT STARTED | 3 |
 | 4b | 3D-Ansicht | NOT STARTED | 4a |
 | 5 | Electrical Devices | NOT STARTED | 4a |
@@ -83,13 +84,57 @@ Upload und Download wurden stattdessen über die API und die signierte URL nachg
 
 ---
 
-## Phase 2 — Core Business Data · NOT STARTED
+## Phase 2 — Core Business Data · DONE (2026-09-19)
 
 Kunden, Projekte, Gebäude, Geschosse, Dateiupload gegen MinIO, Nummernkreise,
 Projektübersicht im Frontend mit Modul-Tabs.
 
-**Exit:** Ein Projekt kann mit Kunde, Gebäude und Geschossen angelegt werden; ein Plan-PDF
-lässt sich hochladen und herunterladen; Projektliste ist filterbar und paginiert.
+Ergebnis: [`docs/task-history.md`](task-history.md), Task 0007.
+
+**Exit-Kriterien — alle erfüllt und nachgewiesen**
+
+| # | Kriterium | Nachweis |
+|---|---|---|
+| 1 | Ein Projekt kann mit Kunde, Gebäude und Geschossen angelegt werden | `tests/test_projects.py::test_projekt_mit_gebaeude_und_geschossen`; zusätzlich im laufenden System über die Oberfläche |
+| 2 | Ein Plan-PDF lässt sich hochladen und herunterladen | `tests/test_project_files.py::test_plan_pdf_hochladen_und_herunterladen` — Inhalt byteweise verglichen, gegen echtes MinIO |
+| 3 | Projektliste ist filterbar und paginiert | Filter nach Status, Kunde und Freitext; Keyset-Cursor mit Test, der jeden Datensatz genau einmal liefert |
+
+**Zusätzlich umgesetzt, weil die Dokumentation es für Phase 2 verlangt:**
+
+- **Nummernkreise in Benutzung** (`KD-#####`, `PR-JJJJ-####`) mit Zeilensperre und einem
+  Nachweis über zwei echte Threads.
+- **Anonymisierungspfad für Kunden** (`docs/security.md`, Abschnitt 13): Phase 2 führt die
+  ersten personenbezogenen Daten ein, und die Sicherheitsdokumentation sagt zu, dass der
+  Löschpfad mit dieser Phase existiert.
+- **Optimistisches Sperren** über `If-Match` auf allen versionierten Entitäten
+  (`architecture.md`, Abschnitt 16 und `api.md`, Abschnitt 5).
+
+**Testbilanz nach Phase 2.1:** 336 Backend-Tests, 0 übersprungen; 54 Frontend-Tests.
+
+---
+
+## Phase 2.1 — Nebenläufigkeit und Zustandskonsistenz · DONE (2026-09-19)
+
+Nachgezogene Härtung von Phase 2. Vier Lücken, die erst unter echter Parallelität
+sichtbar werden, sind geschlossen und mit Threads, getrennten Sessions und expliziten
+Barrieren gegen PostgreSQL nachgewiesen:
+
+1. Ein echter paralleler Versionskonflikt (`StaleDataError`) ist ein `409`, kein `500`.
+2. Kundenausblendung und Projektanlage sperren dieselbe Kundenzeile — ein sichtbares
+   Projekt an einem ausgeblendeten Kunden kann nicht mehr entstehen.
+3. Anonymisierte Kunden sind für neue Projektzuordnungen gesperrt, für bestehende
+   lesbar.
+4. Eine doppelte Geschossebene unter Parallelität endet in `422`, nicht in `500`.
+
+Dazu: strikte `If-Match`-Syntax und die ausdrückliche Festlegung, dass `archived`
+heute nur ein endgültiger Workflowstatus ist.
+
+Ergebnis: [`docs/task-history.md`](task-history.md), Task 0008. **Keine Migration** —
+das Schema blieb unverändert.
+
+> **Weiterhin offen und Voraussetzung vor Echtdaten:** Auskunft/Export (Art. 15),
+> Verarbeitungsverzeichnis, TOM-Dokumentation, AV-Verträge, Restore-Regel.
+> Bis dahin gilt: **ausschließlich synthetische Testdaten.**
 
 ---
 

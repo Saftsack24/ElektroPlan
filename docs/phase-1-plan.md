@@ -1,7 +1,10 @@
 # Phase 1 — Platform Foundation: Detailplan
 
-Status: NOT STARTED · wartet auf Freigabe
+Status: DONE (2026-09-18) · Ergebnis in `docs/task-history.md`, Task 0002 bis 0006
 Voraussetzung: Phase 0 abgeschlossen
+
+> Dieses Dokument ist der **Detailplan** von Phase 1 und bleibt als Beleg stehen.
+> Der aktuelle Stand steht in `docs/current-status.md`.
 
 Ziel dieser Phase: ein **tragfähiges Fundament**, auf dem alle weiteren Module ohne
 Umbauten aufsetzen können. Keine Fachlichkeit, keine Elektroplanung, kein Material.

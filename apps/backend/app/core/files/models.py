@@ -4,11 +4,18 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import BigInteger, String, UniqueConstraint
+from sqlalchemy import BigInteger, Index, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
-from app.db.mixins import Authored, TenantScoped, Timestamped, UUIDPrimaryKey, tenant_identity
+from app.db.mixins import (
+    Authored,
+    TenantScoped,
+    Timestamped,
+    UUIDPrimaryKey,
+    tenant_fk,
+    tenant_identity,
+)
 
 
 class FileRecord(UUIDPrimaryKey, TenantScoped, Timestamped, Authored, Base):
@@ -22,7 +29,13 @@ class FileRecord(UUIDPrimaryKey, TenantScoped, Timestamped, Authored, Base):
     __table_args__ = (
         tenant_identity(),
         UniqueConstraint("storage_key"),
+        tenant_fk("project_id", "projects"),
+        Index("ix_files_organization_id_project_id", "organization_id", "project_id"),
     )
+
+    #: Projektzuordnung. ``NULL`` fuer Dateien ohne Projektbezug; der
+    #: zusammengesetzte Fremdschluessel greift dann nicht (MATCH SIMPLE).
+    project_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, default=None)
 
     storage_key: Mapped[str] = mapped_column(String(400), nullable=False)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)

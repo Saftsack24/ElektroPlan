@@ -15,6 +15,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.orm.exc import StaleDataError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.logging_config import get_logger, request_id_var
@@ -125,6 +126,20 @@ class VersionConflictError(ConflictError):
     title = "Versionskonflikt"
 
 
+class PreconditionRequiredError(AppError):
+    """Eine bedingte Anfrage war noetig, der ``If-Match``-Header fehlt aber.
+
+    Versionierte Entitaeten werden ausschliesslich bedingt geaendert
+    (docs/api.md, Abschnitt 5). Ein ``PATCH`` ohne ``If-Match`` waere ein
+    stiller "letzter gewinnt"-Schreibvorgang - genau das, was die
+    Versionsspalte verhindern soll.
+    """
+
+    error_type = "precondition-required"
+    title = "Bedingte Anfrage erforderlich"
+    status_code = status.HTTP_428_PRECONDITION_REQUIRED
+
+
 class ValidationFailedError(AppError):
     error_type = "validation-failed"
     title = "Ungueltige Eingabe"
@@ -214,6 +229,23 @@ def register_exception_handlers(app: FastAPI) -> None:
             instance=request.url.path,
             request_id=request_id_var.get(),
         )
+        return _problem_response(problem)
+
+    @app.exception_handler(StaleDataError)
+    async def _stale_data_handler(request: Request, exc: StaleDataError) -> JSONResponse:
+        """Verlorene Aktualisierung unter Parallelitaet - fachlich ein 409.
+
+        Netz fuer Faelle, die erst beim ``commit`` auffallen; innerhalb der
+        Services uebersetzt bereits :mod:`app.core.persistence`. Der Handler
+        fasst die Session **nicht** an: Die Session-Dependency hat zu diesem
+        Zeitpunkt bereits zurueckgerollt und geschlossen, und eine Session im
+        Fehlerzustand darf nicht weiterverwendet werden.
+        """
+        logger.info("version_conflict_on_commit", path=request.url.path)
+        problem = VersionConflictError(
+            "Der Datensatz wurde zeitgleich von einer anderen Anfrage geaendert. "
+            "Bitte neu laden und die Aenderung wiederholen."
+        ).to_problem(instance=request.url.path)
         return _problem_response(problem)
 
     @app.exception_handler(Exception)

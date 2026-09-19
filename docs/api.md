@@ -25,6 +25,90 @@ GET    /api/v1/modules/electrical/projects/{project_id}/rooms
 POST   /api/v1/modules/electrical/cable-routes/{route_id}/points
 ```
 
+### Core-Geschäftsdaten (ab Phase 2)
+
+```
+GET    /api/v1/customers                      ?q= &kind= &sort= &limit= &cursor=
+POST   /api/v1/customers
+GET    /api/v1/customers/{customer_id}
+PATCH  /api/v1/customers/{customer_id}                       If-Match
+DELETE /api/v1/customers/{customer_id}                       If-Match  (Soft Delete)
+POST   /api/v1/customers/{customer_id}/anonymize             If-Match  (DSGVO Art. 17)
+
+GET    /api/v1/projects                       ?q= &status= &customer_id= &sort= &limit= &cursor=
+POST   /api/v1/projects
+GET    /api/v1/projects/{project_id}
+PATCH  /api/v1/projects/{project_id}                         If-Match
+DELETE /api/v1/projects/{project_id}                         If-Match  (Soft Delete)
+POST   /api/v1/projects/{project_id}/activate                If-Match
+POST   /api/v1/projects/{project_id}/complete                If-Match
+POST   /api/v1/projects/{project_id}/archive                 If-Match
+
+GET    /api/v1/projects/{project_id}/buildings
+POST   /api/v1/projects/{project_id}/buildings
+PATCH  /api/v1/buildings/{building_id}                       If-Match
+DELETE /api/v1/buildings/{building_id}                       If-Match  (Hard Delete)
+GET    /api/v1/buildings/{building_id}/floors
+POST   /api/v1/buildings/{building_id}/floors
+PATCH  /api/v1/floors/{floor_id}                             If-Match
+DELETE /api/v1/floors/{floor_id}                             If-Match  (Hard Delete)
+
+POST   /api/v1/files                          multipart, optional project_id
+GET    /api/v1/projects/{project_id}/files
+GET    /api/v1/files/{file_id}
+GET    /api/v1/files/{file_id}/download-url   JSON mit signierter Adresse
+GET    /api/v1/files/{file_id}/download       307 auf die signierte Adresse
+```
+
+### Zustand des Kunden bei der Projektzuordnung
+
+Ein Projekt darf nur einem Kunden zugeordnet werden, der aktiv ist. Geprüft wird bei
+`POST /projects` und bei einem `PATCH`, das `customer_id` ändert:
+
+| Zustand des Kunden | Neue Zuordnung | Bestehende Zuordnung |
+|---|---|---|
+| aktiv | erlaubt | bleibt |
+| ausgeblendet (`deleted_at`) | `404` | bleibt |
+| anonymisiert (`anonymized_at`) | `404` | bleibt, zeigt den Platzhalternamen |
+| fremder Mandant | `404` | — |
+
+Jeder unzulässige Fall liefert `404` — auch der fremde Mandant. Andernfalls wäre
+ableitbar, dass es den Kunden gibt.
+
+Ein anonymisierter Kunde bleibt für **bestehende** Projekte und aufbewahrungspflichtige
+Belege lesbar, darf aber nicht für neue Geschäftsvorgänge reaktiviert werden
+(`docs/security.md`, Abschnitt 13).
+
+### Projektstatus
+
+`draft → active → completed`, `archived` ist von jedem Zustand aus erreichbar und ein
+Endzustand. Ein Wechsel außerhalb dieser Tabelle ist `409`.
+
+> **Bedeutung von `archived` — Stand Phase 2.1.** `archived` ist **ausschließlich ein
+> endgültiger Workflowstatus**: Aus ihm führt kein Statuswechsel zurück. Ein
+> vollständiger Schreibschutz ist damit **nicht** verbunden — Stammdaten, Gebäude,
+> Geschosse und Dateien eines archivierten Projekts bleiben änderbar.
+>
+> Kein Projektdokument legt bisher fest, dass ein archiviertes Projekt unveränderlich
+> sein soll. Diese Frage bleibt eine **offene fachliche Entscheidung vor Phase 3** und
+> wird nicht stillschweigend beantwortet. Der Ist-Zustand ist durch Tests festgehalten;
+> die Oberfläche sagt ausdrücklich dasselbe und verspricht keinen Schreibschutz.
+
+### Doppelte Geschossebene
+
+Je Gebäude ist jede Ebene nur einmal belegbar. Der Konflikt liefert `422`
+(`validation-failed`) mit der Meldung, dass die Ebene bereits belegt ist — **unabhängig
+davon**, ob ihn die Vorabprüfung oder der eindeutige Index in der Datenbank erkennt.
+Zwei gleichzeitige Anfragen bestehen die Vorabprüfung beide; genau eine gewinnt, die
+andere erhält dieselbe `422`-Antwort und keinen `500`. Constraint-, SQL- und
+Treiberdetails erscheinen nie in der Antwort.
+
+**Zwei Download-Wege, bewusst.** `/download` antwortet mit `307` und ist der bequeme Weg
+für API-Clients und `curl`. Die Weboberfläche kann ihn nicht verwenden: Ein einfacher
+Link im Browser kann den `Authorization`-Header nicht setzen, und ein Token gehört nicht
+in eine URL. Sie holt deshalb über `/download-url` die signierte Adresse als JSON und
+navigiert anschließend dorthin. Beide Wege protokollieren den Zugriff.
+
 - `v1` wird geführt, solange es genutzt wird. Brechende Änderungen erzeugen `v2`; beide
   laufen parallel, bis alle Clients migriert sind.
 - Additive Änderungen (neues optionales Feld, neuer Endpunkt) sind innerhalb von `v1`
@@ -85,6 +169,7 @@ Regeln:
 | 404 | Nicht vorhanden **oder fremder Mandant** (bewusst nicht unterscheidbar) |
 | 409 | Fachlicher Konflikt (Versionskonflikt, Bestand, Statuswechsel unzulässig) |
 | 422 | Validierungsfehler im Inhalt |
+| 428 | `If-Match` fehlt bei einer Aenderung an einer versionierten Entität (RFC 6585) |
 | 429 | Rate Limit |
 | 500 | Unerwarteter Fehler (generische Meldung) |
 
@@ -131,7 +216,65 @@ Feld in einem generischen `PATCH` wäre er weder prüfbar noch sauber protokolli
 ### Optimistisches Sperren
 
 Schreibende Anfragen auf versionierte Entitäten senden `If-Match: "<version>"`.
-Abweichung → `409` mit `type: …/version-conflict` und der aktuellen Version im Body.
+Akzeptiert werden die ETag-Schreibweise `"3"` und die nackte Zahl `3`.
+
+| Fall | Antwort |
+|---|---|
+| Header fehlt | `428` mit `type: …/precondition-required` |
+| Header passt nicht zur gespeicherten Version | `409` mit `type: …/version-conflict` |
+| Header passt | Änderung wird ausgeführt |
+
+**Der Header ist Pflicht, nicht optional.** Ein `PATCH` oder `DELETE` ohne `If-Match`
+wäre ein stilles Überschreiben — die Versionsspalte hätte dann keinerlei Wirkung. `428`
+(Precondition Required, RFC 6585) ist genau für diesen Fall vorgesehen: Der Server
+verlangt, dass die Anfrage bedingt gestellt wird.
+
+Versioniert sind in Phase 2: `customers`, `projects`, `buildings`, `floors`.
+
+#### Genaue Syntax
+
+Die API braucht bewusst nur eine **positive Ganzzahl** — keine vollständige
+ETag-Grammatik. Akzeptiert wird ausschließlich:
+
+```
+If-Match: 3
+If-Match: "3"
+```
+
+Umgebende Leerzeichen werden ignoriert. Alles andere ist `428`:
+
+| Wert | Grund |
+|---|---|
+| `W/"3"` | schwacher Vergleich — eine Version ist exakt |
+| `"3` · `3"` · `""3""` | unpaarige oder doppelte Anführungszeichen |
+| `3, 4` · `"3", "4"` | Listen werden nicht unterstützt |
+| `*` | Platzhalter wird nicht unterstützt |
+| `0` · `-1` | Versionen beginnen bei 1 |
+| `3.0` · `abc` · `+3` | keine ganze Zahl |
+| `03` | führende Null |
+
+Die Fehlermeldung spiegelt den gesendeten Wert **nicht** zurück.
+
+#### Echter paralleler Konflikt
+
+Die Vorabprüfung fängt den offensichtlichen Fall ab: Der Client hat einen alten Stand
+gelesen. Sie kann aber nicht verhindern, dass **zwei gleichzeitige** Anfragen dieselbe
+Version lesen und beide die Prüfung bestehen. Der Verlierer trifft dann beim Schreiben
+keine Zeile mehr (`version_id_col`).
+
+Auch dieser Fall ist ein fachlicher Versionskonflikt und **nie** ein `500`:
+
+```json
+{
+  "type": "https://elektroplan.internal/errors/version-conflict",
+  "title": "Versionskonflikt",
+  "status": 409,
+  "detail": "Der Datensatz wurde zeitgleich von einer anderen Anfrage geändert. Bitte neu laden und die Änderung wiederholen."
+}
+```
+
+Clients behandeln beide Varianten gleich: neu laden, Änderung wiederholen. Die Antwort
+enthält keine Datenbank- oder Bibliotheksdetails.
 
 ### Idempotenz
 

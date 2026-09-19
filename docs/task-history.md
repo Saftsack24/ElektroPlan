@@ -780,3 +780,206 @@ Composition-Root-, App-, Cross-Module- und dynamische Faelle ab und
 bestaetigen, dass das Ziel als `module-internal` klassifiziert wird.
 Frontend-Ergebnis: `npm run check:boundaries` OK, 48 Vitest bestanden,
 typecheck / lint / build gruen.
+
+---
+
+## Task 0007 – Phase 2: Core Business Data
+
+**Datum:** 2026-09-19
+
+**Ziel:**
+Phase 2 der Roadmap umsetzen: Kunden, Projekte, Gebäude, Geschosse, Dateiupload gegen
+MinIO, Nummernkreise in Benutzung und eine Projektübersicht im Frontend mit Modul-Tabs.
+Ausschließlich synthetische Testdaten.
+
+**Durchgeführte Änderungen:**
+
+1. **Nummernkreise in Benutzung** (`app/core/numbering/service.py`). Vergabe über
+   Zeilensperre (`SELECT … FOR UPDATE`), Zeile vorher per `INSERT … ON CONFLICT DO
+   NOTHING` sichergestellt. Formate: `KD-#####` (durchlaufend) und `PR-JJJJ-####` (je
+   Kalenderjahr neu). Die Formate für Angebot und Auftrag bleiben offen (F5).
+2. **Kundenstamm** (`app/core/customers/`): Modell, Schemas, Service, API. Freitextsuche
+   über Name, Nummer und Ort, Filter nach Art, Sortierung nach Anlagezeitpunkt oder Name,
+   Keyset-Pagination.
+3. **Projekte, Gebäude, Geschosse** (`app/core/projects/`): Projekt mit Pflichtkunde,
+   Statuslauf `draft → active → completed` mit `archived` als Endzustand. Statuswechsel
+   sind eigene Endpunkte, kein Feld im `PATCH`. Geschosse tragen ganzzahlige Millimeter
+   (ADR 0007) und sind je Gebäude auf ihrer Ebene eindeutig.
+4. **Optimistisches Sperren** (`app/core/preconditions.py`): `If-Match` ist auf allen
+   versionierten Entitäten Pflicht. Fehlt der Header, antwortet der Server mit `428`
+   (Precondition Required, RFC 6585); passt er nicht, mit `409`. Ohne Pflicht hätte die
+   Versionsspalte keinerlei Wirkung.
+5. **Anonymisierung von Kunden** (`POST /customers/{id}/anonymize`): Umsetzung von
+   Art. 17 DSGVO. Die personenbezogenen Felder werden überschrieben, Kundennummer und
+   Belegzuordnung bleiben. Nicht umkehrbar, eigene Berechtigung, nur Administrator. Das
+   Protokoll hält den Vorgang fest — **ohne** die gelöschten Werte. Der Datensatz ist
+   danach serverseitig gegen Änderungen gesperrt; Ausblenden und Anonymisieren sind
+   zwei getrennte, kombinierbare Vorgänge.
+   *Beim Selbstreview korrigiert:* Die Anonymisierung setzte anfangs zusätzlich
+   `deleted_at`. Damit war der Datensatz über die API nicht mehr erreichbar — die
+   Sperre gegen erneutes Bearbeiten wäre toter Code gewesen, und die Dokumentation
+   („bleibt bestehen") hätte nicht zum Verhalten gepasst.
+6. **Projektdateien**: `files.project_id` (zusammengesetzter FK, `NULL` erlaubt),
+   Speicherschlüssel `org/<org>/project/<projekt>/<datei><ext>` wie in
+   `docs/architecture.md`, Abschnitt 15 beschrieben. Neu:
+   `GET /projects/{id}/files` und `GET /files/{id}/download-url`.
+7. **Pagination verallgemeinert** (`app/core/pagination.py`): Keyset-Cursor über
+   Sortierwert plus ID, benutzt von Kunden, Projekten und dem Protokoll.
+8. **Permissions**: sieben neue Core-Permissions (`customer.record.*`,
+   `project.record.*`), Zuordnung zu den Systemrollen erweitert.
+9. **Migration `0003_core_business_data`**, aus den ORM-Metadaten erzeugt und von Hand
+   dokumentiert. Autogenerate meldet danach keinen Unterschied mehr.
+10. **Frontend**: `src/modules/audit` wurde zu `src/modules/platform` — das Modul trägt
+    jetzt Kunden, Projekte und Protokoll. Neue Seiten: Kundenliste und -detail,
+    Projektliste, Projektdetail mit Tabs (Stammdaten, Gebäude & Geschosse, Dateien) samt
+    Upload und Download.
+11. **Projekt-Tabs der Fachmodule** über einen Core-Context
+    (`src/core/modules/ProjectTabs.tsx`), gefüllt von `src/app/App.tsx`. Ein Modul darf
+    die Composition Root nicht importieren; der Kanal hält die Grenze ein. Der
+    Beitragspunkt ist damit live, obwohl ihn in Phase 2 noch niemand nutzt.
+12. **API-Client** um `If-Match` und `upload()` für Multipart erweitert; neue Schematypen
+    exportiert.
+13. **Ein ausdrückliches `null` auf einem Pflichtfeld im `PATCH`** wird als
+    Validierungsfehler (`422`) abgelehnt. *Beim Selbstreview gefunden:* Ohne diese
+    Prüfung hätte `{"name": null}` einen Datenbankfehler und damit `500` erzeugt.
+    Optionale Felder lassen sich weiterhin über `null` leeren.
+
+**Betroffene Module:**
+`core` (numbering, customers, projects, files, authorization, audit), Planner-Modul
+`platform`, `packages/api-client`.
+
+**Betroffene wichtige Dateien:**
+`app/core/numbering/service.py`, `app/core/customers/*`, `app/core/projects/*`,
+`app/core/preconditions.py`, `app/core/pagination.py`, `app/core/files/{models,service,api,storage}.py`,
+`app/core/authorization/permissions.py`, `app/core/module.py`, `app/model_registry.py`,
+`migrations/versions/0003_core_business_data.py`,
+`apps/planner/src/modules/platform/*`, `apps/planner/src/core/modules/ProjectTabs.tsx`,
+`apps/planner/src/app/App.tsx`, `packages/api-client/src/index.ts`.
+
+**Tests:**
+
+- Neu: `tests/test_numbering.py` (9), `tests/test_customers.py` (30),
+  `tests/test_projects.py` (29), `tests/test_project_files.py` (8).
+- Erweitert: `tests/test_tenant_isolation.py` um Kunden, Projekte, Gebäude und Geschosse
+  — inklusive des Nachweises, dass PostgreSQL einen mandantenübergreifenden
+  Projekt-Kunde-Verweis selbst ablehnt (`IntegrityError`). Der Routen-Sweep deckt die
+  vier neuen Pfadparameter ab.
+- Angepasst: `tests/test_architecture.py` (Tabellenzahl 13 → 17).
+- Frontend: `ProjectTabs.test.tsx` (2), `modules/platform/index.test.ts` (4),
+  `client.types.test.ts` um Compile-Zeit-Prüfungen der neuen Endpunkte erweitert.
+- Vollständiger Durchlauf gegen PostgreSQL 17 und MinIO: **273 Backend-Tests bestanden,
+  0 übersprungen** (4:39), **54 Frontend-Tests**. Zusätzlich grün: Ruff, mypy `--strict`
+  (72 Dateien), `import-linter` (4 Contracts), Modul- und Datenbankgrenzen,
+  Frontend-Grenzprüfung, `uv lock --check`, genau ein Alembic-Head, OpenAPI-Drift-Check,
+  Frontend-Typecheck, ESLint und Build.
+
+**Ergebnis:**
+Alle drei Exit-Kriterien von Phase 2 sind erfüllt und im laufenden System nachgewiesen:
+Projekt mit Kunde, Gebäude und drei Geschossen angelegt; Plan-PDF hochgeladen, über die
+signierte Adresse geladen und byteweise verglichen; Projektliste nach Status, Kunde und
+Freitext gefiltert.
+
+**Offene Punkte:**
+
+- Die Listenansichten zeigen bis zu 50 bzw. 200 Einträge und weisen auf weitere hin; eine
+  Blätter-Bedienung in der Oberfläche fehlt noch (die API kann es bereits).
+- Von den zwölf DSGVO-Voraussetzungen ist mit dieser Phase Punkt 5 (Löschung/
+  Anonymisierung) umgesetzt und Punkt 2 (Datenminimierung) dokumentiert. Auskunft/Export,
+  Verarbeitungsverzeichnis, TOM-Dokumentation, AV-Verträge und die Restore-Regel fehlen
+  weiterhin.
+- Ein Cleanup-Werkzeug für verwaiste Storage-Objekte gibt es weiterhin nicht (war nicht
+  Teil des Auftrags).
+- Der vollständige Backend-Testlauf dauert rund vier Minuten, weil
+  `tests/test_ports_typing.py` mypy je Fixture als Subprozess startet. Das ist kein
+  Hänger, fällt aber auf; als technische Schuld notiert.
+
+**Nächster sinnvoller Schritt:**
+Phase 3 — Electrical Room Model. **Nicht ohne ausdrückliche Freigabe beginnen.**
+
+---
+
+## Task 0008 – Phase 2.1: Nebenläufigkeit und Zustandskonsistenz
+
+**Datum:** 2026-09-19
+
+**Ziel:**
+Vier Parallelitäts- und Zustandsprobleme aus Phase 2 schließen, bevor Phase 2 endgültig
+freigegeben wird. Kein Electrical-Modul, keine neue Phase, kein Commit. Weiterhin
+ausschließlich synthetische Testdaten.
+
+**Durchgeführte Änderungen:**
+
+1. **`StaleDataError` → `409`.** Neues Modul `app/core/persistence.py` übersetzt die
+   beiden erwarteten Datenbankkonflikte in fachliche Fehler und rollt dabei die Session
+   zurück. `flush(session)` ersetzt `session.flush()` in allen Schreibpfaden der
+   versionierten Entitäten — damit ist der Konflikt schon im Service ein
+   `VersionConflictError` und nicht erst in der HTTP-Schicht. Zusätzlich ein zentraler
+   FastAPI-Handler als Netz für Konflikte, die erst beim Commit auffallen. Kein
+   `try/except` in den Endpunkten.
+2. **Session-Grenze.** `get_session` rollt bei einer Ausnahme ausdrücklich zurück,
+   bevor es schließt. Der Exception-Handler läuft erst danach (FastAPI schließt den
+   Dependency-Stack innerhalb der `ExceptionMiddleware`) und fasst die Session nicht an
+   — eine Session im Fehlerzustand darf nicht weiterverwendet werden.
+3. **Sperrreihenfolge Kunde → Projekt.** `CustomerService.get_for_update()` lädt die
+   Kundenzeile mit `SELECT … FOR UPDATE`. Ausblenden, Anonymisieren, Projektanlage und
+   Projekt-Neuzuordnung sperren dieselbe Zeile **vor** jedem Projektzugriff. Damit ist
+   die Reihenfolge auf allen Seiten gleich und ein Deadlock ausgeschlossen. Der
+   Löschendpunkt hält Sperre, Projektzählung und Änderung jetzt in einer Transaktion;
+   `soft_delete` nimmt den bereits gesperrten Datensatz entgegen statt einer ID.
+4. **Anonymisierte Kunden gesperrt für neue Zuordnungen.** `_require_customer` wurde zu
+   `_lock_customer`: `organization_id` + ID + `deleted_at IS NULL` +
+   `anonymized_at IS NULL` + `FOR UPDATE`. Bestehende Projekte behalten ihre Referenz.
+5. **Parallele Geschosseindeutigkeit.** `_flush_floor()` übersetzt ausschließlich die
+   namentlich erwartete Constraint `uq_floors_building_id_level` in dieselbe
+   `422`-Meldung wie die Vorabprüfung. Jeder andere `IntegrityError` bleibt unerwartet.
+   Greift bei Anlage **und** beim Verschieben.
+6. **Strikte `If-Match`-Syntax.** Regex statt `strip('"')`: akzeptiert `3` und `"3"`,
+   lehnt `W/"3"`, unpaarige und doppelte Anführungszeichen, Listen, `*`, `0`, negative
+   Werte, Nachkommastellen und führende Nullen ab. Die Meldung spiegelt den Rohwert
+   nicht zurück.
+7. **`archived` geklärt — ohne stille Fachentscheidung.** Masterplanunterlagen,
+   Roadmap, API-Dokumentation und Oberfläche legen **nirgends** fest, dass ein
+   archiviertes Projekt schreibgeschützt ist. Das Verhalten wurde deshalb **nicht**
+   geändert; stattdessen ist der Ist-Zustand dokumentiert, durch zwei Tests
+   festgehalten und in der Oberfläche ausdrücklich benannt. Die Entscheidung über
+   vollständige Unveränderlichkeit bleibt offen und steht vor Phase 3 an.
+
+**Betroffene Module:** ausschließlich `core` (persistence, customers, projects,
+preconditions, errors, db/session). Kein Shared- oder Fachmodul, keine Vorgriffe auf
+Phase 3.
+
+**Betroffene wichtige Dateien:**
+`app/core/persistence.py` (neu), `app/core/preconditions.py`, `app/errors.py`,
+`app/db/session.py`, `app/core/customers/{service,api}.py`,
+`app/core/projects/service.py`, `tests/test_concurrency.py` (neu),
+`tests/test_preconditions.py` (neu), `tests/test_projects.py`,
+`tests/test_api_contract.py`, `apps/planner/src/modules/platform/ProjectDetailPage.tsx`.
+
+**Tests:**
+
+- `tests/test_concurrency.py`: 15 Tests, zwei getrennte Sessions in zwei Threads mit
+  expliziten Barrieren gegen PostgreSQL. Geprüft wird jeweils der **Datenbankzustand**,
+  nicht nur die Rückgabe. Der Versionskonflikttest ist nicht zeitabhängig: Beide Seiten
+  laden den Datensatz vor der Barriere, das erneute Lesen trifft die Identity Map, der
+  Konflikt fällt zwingend erst beim Schreiben auf — belegt durch die Meldung des
+  Verlierers. Für die Geschossebene sichert ein zusätzlicher, threadfreier Test den
+  Index-Pfad deterministisch ab.
+- `tests/test_preconditions.py`: 35 parametrisierte Fälle der `If-Match`-Syntax.
+- Gesamtlauf: **336 Backend-Tests bestanden, 0 übersprungen**; 54 Frontend-Tests.
+  `.\tasks.ps1 check` vollständig grün.
+
+**Ergebnis:**
+Die vier Rennen sind geschlossen und nachgewiesen. Es gibt keine Migration — das Schema
+blieb unverändert, weil die Invarianten mit Transaktionsgrenzen und Zeilensperren
+gehalten werden und nicht mit Triggern.
+
+**Offene Punkte:**
+
+- **Fachliche Entscheidung vor Phase 3:** Soll ein archiviertes Projekt vollständig
+  unveränderlich sein? Heute ist `archived` nur ein endgültiger Workflowstatus.
+- Die Sperre serialisiert Projektanlagen je Kunde. Für den geplanten Einsatz
+  unkritisch; bei sehr vielen gleichzeitigen Anlagen an einem Kunden wäre es messbar.
+- Die offenen DSGVO-Punkte aus Task 0007 bleiben unverändert offen.
+
+**Nächster sinnvoller Schritt:**
+Phase 3 — Electrical Room Model. **Nicht ohne ausdrückliche Freigabe beginnen.**

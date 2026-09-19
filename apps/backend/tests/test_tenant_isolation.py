@@ -20,9 +20,11 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.audit import service as audit
 from app.core.authorization.models import MemberRole, Role
+from app.core.customers.models import Customer
 from app.core.files.models import FileRecord
 from app.core.module_registry.registry import ModuleRegistry
 from app.core.organizations.models import OrganizationMember
+from app.core.projects.models import Building, Floor, Project
 from app.core.seed import seed_initial_data
 from tests.conftest import ADMIN_PASSWORD, auth_headers, login, requires_database
 from tests.routes import all_routes
@@ -36,6 +38,10 @@ class Tenant:
     admin_email: str
     file_id: uuid.UUID
     audit_entry_id: uuid.UUID
+    customer_id: uuid.UUID
+    project_id: uuid.UUID
+    building_id: uuid.UUID
+    floor_id: uuid.UUID
 
 
 @pytest.fixture
@@ -58,8 +64,39 @@ def two_tenants(
                 admin_email=email,
                 admin_password=ADMIN_PASSWORD,
             )
+            kunde = Customer(
+                organization_id=result.organization_id,
+                customer_number="KD-00001",
+                kind="company",
+                name=f"Kunde von {name}",
+            )
+            session.add(kunde)
+            session.flush()
+            projekt = Project(
+                organization_id=result.organization_id,
+                customer_id=kunde.id,
+                project_number="PR-2026-0001",
+                name=f"Projekt von {name}",
+            )
+            session.add(projekt)
+            session.flush()
+            gebaeude = Building(
+                organization_id=result.organization_id,
+                project_id=projekt.id,
+                name="Haupthaus",
+            )
+            session.add(gebaeude)
+            session.flush()
+            geschoss = Floor(
+                organization_id=result.organization_id,
+                building_id=gebaeude.id,
+                name="Erdgeschoss",
+                level=0,
+            )
+            session.add(geschoss)
             datei = FileRecord(
                 organization_id=result.organization_id,
+                project_id=projekt.id,
                 storage_key=f"org/{result.organization_id}/{uuid.uuid4()}.pdf",
                 filename="grundriss.pdf",
                 content_type="application/pdf",
@@ -81,6 +118,10 @@ def two_tenants(
                     admin_email=email,
                     file_id=datei.id,
                     audit_entry_id=eintrag.id,
+                    customer_id=kunde.id,
+                    project_id=projekt.id,
+                    building_id=gebaeude.id,
+                    floor_id=geschoss.id,
                 )
             )
         session.commit()
@@ -175,6 +216,10 @@ def fremde_ids(tenant: Tenant) -> dict[str, str]:
         "file_id": str(tenant.file_id),
         "entry_id": str(tenant.audit_entry_id),
         "organization_id": str(tenant.organization_id),
+        "customer_id": str(tenant.customer_id),
+        "project_id": str(tenant.project_id),
+        "building_id": str(tenant.building_id),
+        "floor_id": str(tenant.floor_id),
     }
 
 
@@ -279,6 +324,100 @@ def test_rollen_lassen_sich_nicht_mandantenuebergreifend_verbinden(
                 organization_id=mueller.organization_id,
                 member_id=eigenes_mitglied.id,
                 role_id=fremde_rolle.id,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            session.commit()
+        session.rollback()
+    finally:
+        session.close()
+
+
+def test_fremder_kunde_liefert_404(api: TestClient, two_tenants: tuple[Tenant, Tenant]) -> None:
+    scholz, mueller = two_tenants
+    token = login(api, mueller.admin_email)
+
+    response = api.get(f"/api/v1/customers/{scholz.customer_id}", headers=auth_headers(token))
+
+    assert response.status_code == 404
+
+
+def test_kundenliste_zeigt_nur_eigene(api: TestClient, two_tenants: tuple[Tenant, Tenant]) -> None:
+    scholz, mueller = two_tenants
+    token = login(api, mueller.admin_email)
+
+    body = api.get("/api/v1/customers", headers=auth_headers(token)).json()
+
+    ids = {item["id"] for item in body["items"]}
+    assert str(mueller.customer_id) in ids
+    assert str(scholz.customer_id) not in ids
+
+
+def test_fremdes_projekt_liefert_404(api: TestClient, two_tenants: tuple[Tenant, Tenant]) -> None:
+    scholz, mueller = two_tenants
+    token = login(api, mueller.admin_email)
+
+    response = api.get(f"/api/v1/projects/{scholz.project_id}", headers=auth_headers(token))
+
+    assert response.status_code == 404
+
+
+def test_projektliste_zeigt_nur_eigene(api: TestClient, two_tenants: tuple[Tenant, Tenant]) -> None:
+    scholz, mueller = two_tenants
+    token = login(api, mueller.admin_email)
+
+    body = api.get("/api/v1/projects", headers=auth_headers(token)).json()
+
+    ids = {item["id"] for item in body["items"]}
+    assert str(mueller.project_id) in ids
+    assert str(scholz.project_id) not in ids
+
+
+def test_projekt_kann_keinen_fremden_kunden_bekommen(
+    api: TestClient, two_tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Ein Kunde aus einem anderen Betrieb existiert fuer diesen Betrieb nicht."""
+    scholz, mueller = two_tenants
+    token = login(api, mueller.admin_email)
+
+    response = api.post(
+        "/api/v1/projects",
+        headers=auth_headers(token),
+        json={"customer_id": str(scholz.customer_id), "name": "Fremdprojekt"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_fremdes_geschoss_ist_nicht_aenderbar(
+    api: TestClient, two_tenants: tuple[Tenant, Tenant]
+) -> None:
+    scholz, mueller = two_tenants
+    token = login(api, mueller.admin_email)
+
+    response = api.patch(
+        f"/api/v1/floors/{scholz.floor_id}",
+        headers={**auth_headers(token), "If-Match": "1"},
+        json={"name": "Uebernommen"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_projekt_kann_nicht_mandantenuebergreifend_verweisen(
+    engine: Engine, two_tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Der zusammengesetzte Fremdschluessel greift in PostgreSQL selbst."""
+    scholz, mueller = two_tenants
+    factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    session = factory()
+    try:
+        session.add(
+            Project(
+                organization_id=mueller.organization_id,
+                customer_id=scholz.customer_id,
+                project_number="PR-2026-9999",
+                name="Verbotener Verweis",
             )
         )
         with pytest.raises(IntegrityError):

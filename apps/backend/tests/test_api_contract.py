@@ -137,3 +137,58 @@ def test_limit_wird_begrenzt() -> None:
     assert clamp_limit(0) == 1
     assert clamp_limit(50) == 50
     assert clamp_limit(10_000) == 200
+
+
+# ------------------------------------------- Parallelitaet an der HTTP-Grenze
+
+
+def test_stale_data_error_wird_zu_409_und_nicht_zu_500() -> None:
+    """Ein erst beim Commit erkannter Versionskonflikt bleibt fachlich.
+
+    Der Handler ist das Netz fuer Faelle, die die Services nicht mehr sehen -
+    etwa ein ``StaleDataError`` aus ``session.commit()`` im Endpunkt. Ohne
+    ihn waere die Antwort ein ``500``.
+    """
+    from fastapi import FastAPI
+    from sqlalchemy.orm.exc import StaleDataError
+
+    from app.errors import register_exception_handlers
+
+    app = FastAPI()
+    register_exception_handlers(app)
+
+    @app.get("/stale")
+    def _stale() -> None:
+        msg = "UPDATE statement on table 'customers' expected to update 1 row(s); 0 were matched."
+        raise StaleDataError(msg)
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.get("/stale")
+
+    assert response.status_code == 409
+    assert response.headers["content-type"].startswith(PROBLEM_CONTENT_TYPE)
+    body = response.json()
+    assert body["type"].endswith("/version-conflict")
+    assert body["title"] == "Versionskonflikt"
+
+
+def test_stale_data_antwort_enthaelt_keine_datenbankinterna() -> None:
+    """Weder SQL noch Bibliotheksnamen duerfen nach aussen gelangen."""
+    from fastapi import FastAPI
+    from sqlalchemy.orm.exc import StaleDataError
+
+    from app.errors import register_exception_handlers
+
+    app = FastAPI()
+    register_exception_handlers(app)
+
+    @app.get("/stale")
+    def _stale() -> None:
+        msg = "UPDATE statement on table 'customers' expected to update 1 row(s); 0 were matched."
+        raise StaleDataError(msg)
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        roh = client.get("/stale").text
+
+    for verboten in ("UPDATE", "customers", "StaleDataError", "sqlalchemy", "row(s)"):
+        assert verboten not in roh, f"{verboten!r} steht in der Antwort: {roh}"

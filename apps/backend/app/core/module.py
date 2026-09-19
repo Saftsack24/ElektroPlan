@@ -11,14 +11,18 @@ from fastapi import APIRouter
 from app.core.audit.api import router as audit_router
 from app.core.auth.api import router as auth_router
 from app.core.authorization.permissions import CORE_PERMISSION_NAMESPACES, CORE_PERMISSIONS
+from app.core.customers.api import router as customers_router
 from app.core.files.api import router as files_router
 from app.core.module_registry.api import router as modules_router
 from app.core.module_registry.descriptor import ModuleDescriptor, ModuleKind
+from app.core.projects.api import router as projects_router
 
 core_router = APIRouter()
 core_router.include_router(auth_router)
 core_router.include_router(modules_router)
 core_router.include_router(audit_router)
+core_router.include_router(customers_router)
+core_router.include_router(projects_router)
 core_router.include_router(files_router)
 
 #: Tabellen des Core. Als Positivliste gefuehrt, weil der Core kein
@@ -37,6 +41,10 @@ CORE_TABLES: tuple[str, ...] = (
     "member_roles",
     "refresh_tokens",
     "number_sequences",
+    "customers",
+    "projects",
+    "buildings",
+    "floors",
     "files",
     "audit_entries",
     "domain_events",

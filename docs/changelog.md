@@ -5,6 +5,157 @@ Einträge entstehen nach relevanten Änderungen, nicht nach jedem Commit.
 
 ---
 
+## 2026-09-19 — Phase 2.1: Nebenläufigkeit und Zustandskonsistenz
+
+Phase 2 war funktional fertig, hatte aber vier Lücken, die erst unter **echter
+Parallelität** sichtbar werden. Alle vier sind jetzt geschlossen und mit Tests belegt,
+die zwei getrennte Sessions in zwei Threads mit expliziten Barrieren gegen PostgreSQL
+laufen lassen.
+
+### Fixed
+
+- **Echter paralleler Versionskonflikt ist `409`, nicht `500`.** Zwei gleichzeitige
+  Anfragen können dieselbe Version lesen und beide die `If-Match`-Vorabprüfung bestehen.
+  Der Verlierer trifft beim Schreiben keine Zeile mehr, SQLAlchemy meldet
+  `StaleDataError`. Dieser Fall wird jetzt zentral in denselben fachlichen
+  Versionskonflikt übersetzt wie ein veraltetes `If-Match`:
+  `409` mit `type: …/version-conflict`. Die Antwort enthält keine Datenbank- oder
+  Bibliotheksdetails.
+- **Rennen zwischen Kundenausblendung und Projektanlage geschlossen.** Beide Seiten
+  sperren jetzt zuerst die Kundenzeile (`SELECT … FOR UPDATE`) und arbeiten bis zum
+  Commit in derselben Transaktion. Ein sichtbares Projekt an einem ausgeblendeten Kunden
+  kann damit nicht mehr entstehen. Ein Vorab-Count ohne Sperre genügte nicht.
+- **Anonymisierte Kunden sind für neue Projektzuordnungen gesperrt** (`404`).
+  Bestehende Projekte behalten ihre Referenz und zeigen den Platzhalternamen — genau
+  dafür bleibt der Datensatz erhalten. Dieselbe Zeilensperre verhindert, dass
+  Anonymisierung und Zuordnung gegeneinander laufen.
+- **Parallele Geschosseindeutigkeit endet nicht mehr in `500`.** Bestehen zwei
+  gleichzeitige Anfragen die Vorabprüfung, entscheidet der eindeutige Index; der
+  Verlierer erhält dieselbe `422`-Meldung wie im sequenziellen Fall. Übersetzt wird
+  ausschließlich die namentlich erwartete Constraint `uq_floors_building_id_level` —
+  jeder andere Integritätsfehler bleibt ein unerwarteter Fehler.
+- **`If-Match` wird strikt geparst.** Akzeptiert sind nur `3` und `"3"`. Abgelehnt
+  werden unter anderem `W/"3"`, `"3`, `3"`, `""3""`, `3, 4`, `*`, `0`, `-1`, `abc`,
+  `3.0` und `03`. Die Fehlermeldung spiegelt den gesendeten Wert nicht zurück.
+
+### Changed
+
+- Die Session-Dependency rollt bei einer Ausnahme **ausdrücklich** zurück, bevor sie
+  schließt. Eine Session mit fehlgeschlagener Transaktion darf nicht weiterverwendet
+  werden; der zentrale Exception-Handler läuft erst danach und fasst sie nicht mehr an.
+- `CustomerService.soft_delete` erwartet einen bereits gesperrten Datensatz statt einer
+  ID. Damit ist im Code sichtbar, dass Sperre, Prüfung und Änderung zusammengehören.
+
+### Documented
+
+- **Bedeutung von `archived` festgelegt und offengelegt:** `archived` ist derzeit
+  **ausschließlich ein endgültiger Workflowstatus** — kein Schreibschutz. Stammdaten,
+  Gebäude, Geschosse und Dateien eines archivierten Projekts bleiben änderbar. Ob
+  vollständige Unveränderlichkeit gewünscht ist, bleibt eine **offene fachliche
+  Entscheidung vor Phase 3**; sie wird nicht stillschweigend getroffen. Der Ist-Zustand
+  ist durch Tests festgehalten, und die Oberfläche sagt ausdrücklich dasselbe.
+
+### Tests
+
+- Neu: `tests/test_concurrency.py` — 15 Tests mit echten Threads und Barrieren gegen
+  PostgreSQL. Jeder prüft am Ende den Datenbankzustand, nicht nur den Rückgabewert.
+  Enthält den Nachweis, dass die Kundenzeile bei Anlage, Neuzuordnung und Ausblenden
+  tatsächlich mit `FOR UPDATE` geladen wird (mitgeschriebenes SQL).
+- Neu: `tests/test_preconditions.py` — 35 parametrisierte Tests der `If-Match`-Syntax.
+- `tests/test_api_contract.py`: `StaleDataError` an der HTTP-Grenze wird zu `409`, ohne
+  Datenbankinterna in der Antwort.
+- `tests/test_projects.py`: die neun Fälle zum Kundenzustand bei Anlage und
+  Neuzuordnung sowie zwei Tests, die den dokumentierten Ist-Zustand von `archived`
+  festhalten.
+
+### Database
+
+- **Keine Migration.** Die Korrekturen betreffen Services, Fehlerbehandlung und
+  Sperrstrategie; das Schema bleibt unverändert. `alembic heads` liefert weiterhin genau
+  einen Head, Autogenerate meldet keinen Unterschied.
+
+---
+
+## 2026-09-19 — Phase 2: Core Business Data
+
+### Added
+
+- **Kundenstamm** (`/api/v1/customers`): Anlegen, Ändern, Ausblenden, Auflisten mit
+  Freitextsuche (Name, Kundennummer, Ort), Filter nach Privat-/Firmenkunde, Sortierung
+  nach Anlagezeitpunkt oder Name, Keyset-Pagination.
+- **Projekte, Gebäude und Geschosse** (`/api/v1/projects`, `/api/v1/buildings`,
+  `/api/v1/floors`). Ein Projekt braucht einen Kunden. Statuslauf
+  `draft → active → completed`, `archived` als Endzustand; Statuswechsel sind eigene
+  Endpunkte (`/activate`, `/complete`, `/archive`) und werden einzeln protokolliert.
+  Geschosse tragen ganzzahlige Millimeter (ADR 0007) und sind je Gebäude auf ihrer Ebene
+  eindeutig.
+- **Nummernkreise in Benutzung**: `KD-#####` für Kunden (durchlaufend), `PR-JJJJ-####`
+  für Projekte (je Kalenderjahr neu). Vergabe über Zeilensperre, nachgewiesen mit zwei
+  echten Threads. Die Formate für Angebot und Auftrag bleiben offen (F5).
+- **Anonymisierung von Kunden** (`POST /api/v1/customers/{id}/anonymize`): Umsetzung von
+  Art. 17 DSGVO. Personenbezogene Felder werden überschrieben, Kundennummer und
+  Belegzuordnung bleiben erhalten. Nicht umkehrbar; eigene Berechtigung
+  (`customer.record.anonymize`), ausschließlich für Administratoren. Der Datensatz ist
+  danach serverseitig gegen Änderungen gesperrt (`409`). Ausblenden (`deleted_at`) und
+  Anonymisieren (`anonymized_at`) sind getrennte, kombinierbare Vorgänge.
+- **Projektdateien**: Upload mit `project_id`, `GET /api/v1/projects/{id}/files` und
+  `GET /api/v1/files/{id}/download-url`. Der Speicherschlüssel lautet nun
+  `org/<org>/project/<projekt>/<datei><ext>` — wie in `docs/architecture.md`,
+  Abschnitt 15 beschrieben.
+- **Sieben neue Core-Permissions**: `customer.record.{read,write,delete,anonymize}`,
+  `project.record.{read,write,delete}`. Zuordnung zu den Systemrollen erweitert.
+- **Frontend**: Kundenliste und -detail, Projektliste mit Filtern, Projektdetail mit den
+  Tabs Stammdaten, Gebäude & Geschosse und Dateien (inklusive Upload und Download).
+- **Projekt-Tabs der Fachmodule** sind live: `src/core/modules/ProjectTabs.tsx` stellt den
+  Kanal bereit, `src/app/App.tsx` füllt ihn aus der Registry. Ein Modul liest ihn über
+  `useProjectTabs()` und muss die Composition Root nicht importieren.
+- **API-Client**: `ifMatch` in den Request-Optionen und `upload()` für Multipart.
+- **Ein ausdrückliches `null`** auf einem Pflichtfeld im `PATCH` wird als
+  Validierungsfehler (`422`) abgelehnt, statt in einem Datenbankfehler zu enden.
+  Optionale Felder lassen sich weiterhin über `null` leeren.
+
+### Changed
+
+- **`If-Match` ist Pflicht** bei jeder Änderung an einer versionierten Entität. Fehlt der
+  Header, antwortet der Server mit **`428` Precondition Required** (RFC 6585, neu im
+  Statuskatalog); passt er nicht, mit `409 version-conflict`. Ein `PATCH` ohne Bedingung
+  wäre ein stilles Überschreiben — die Versionsspalte hätte dann keinerlei Wirkung.
+- **Pagination verallgemeinert**: Der Cursor ist jetzt ein Keyset aus Sortierwert und ID
+  und wird von Kunden, Projekten und dem Protokoll gemeinsam genutzt. Bestehende
+  Cursor-Endpunkte verhalten sich unverändert.
+- **Frontend-Modul `audit` → `platform`**: Das Modul trägt jetzt alle Core-Seiten
+  (Kunden, Projekte, Protokoll), nicht mehr nur das Protokoll. Modul-ID bleibt `core`.
+
+### Database
+
+- Migration `0003_core_business_data`: neue Tabellen `customers`, `projects`,
+  `buildings`, `floors`; neue Spalte `files.project_id` mit zusammengesetztem
+  Fremdschlüssel. Alle vier Tabellen mandantenbezogen mit `UNIQUE (organization_id, id)`.
+- `buildings → projects` und `floors → buildings` löschen mit `CASCADE`; Kunden und
+  Projekte werden nur ausgeblendet (`deleted_at`).
+- `alembic heads` liefert weiterhin genau einen Head; Autogenerate meldet keinen
+  Unterschied mehr zum Modell.
+
+### Tests
+
+- Neu: `test_numbering.py`, `test_customers.py`, `test_projects.py`,
+  `test_project_files.py`.
+- `test_tenant_isolation.py` um Kunden, Projekte, Gebäude und Geschosse erweitert,
+  inklusive des Nachweises, dass PostgreSQL einen mandantenübergreifenden
+  Projekt-Kunde-Verweis selbst ablehnt.
+- Frontend: Tests für den Projekt-Tab-Kanal und die Sichtbarkeitsregel des
+  Plattform-Moduls; die Compile-Zeit-Prüfungen des API-Clients decken die neuen
+  Endpunkte ab.
+
+### Security
+
+- `docs/security.md`, Abschnitt 13: Feldliste mit Zweck und Rechtsgrundlage je Entität
+  (Datenminimierung) sowie die Beschreibung des umgesetzten Anonymisierungspfads.
+  Weiterhin offen und Voraussetzung vor Echtdaten: Auskunft/Export,
+  Verarbeitungsverzeichnis, TOM-Dokumentation, AV-Verträge, Restore-Regel.
+
+---
+
 ## 2026-09-19 — Nachtrag: Klassifizierung verschachtelter `index`-Dateien
 
 ### Fixed
