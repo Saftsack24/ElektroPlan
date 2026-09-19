@@ -1,6 +1,6 @@
 # Roadmap
 
-Stand: 2026-09-19 (nach Task 0008 — Phase 2.1)
+Stand: 2026-09-19 (nach Task 0011 — Phase 2.4)
 Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 
 ---
@@ -14,6 +14,9 @@ Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 | 1.2 | Härtung der Architekturgrenzen und der Sitzungslogik | **DONE** | 1 |
 | 2 | Core Business Data | **DONE** | 1.2 |
 | 2.1 | Nebenläufigkeit und Zustandskonsistenz | **DONE** | 2 |
+| 2.2 | Schreibschutz für archivierte Projekte | **DONE** | 2.1 |
+| 2.3 | Workflow- und UX-Nacharbeit | **DONE** | 2.2 |
+| 2.4 | Nachkorrektur zu 2.2 und 2.3 | **DONE** | 2.3 |
 | 3 | Electrical Room Model | NOT STARTED (wartet auf Freigabe) | 2 |
 | 4a | 2D-Editor | NOT STARTED | 3 |
 | 4b | 3D-Ansicht | NOT STARTED | 4a |
@@ -109,7 +112,7 @@ Ergebnis: [`docs/task-history.md`](task-history.md), Task 0007.
 - **Optimistisches Sperren** über `If-Match` auf allen versionierten Entitäten
   (`architecture.md`, Abschnitt 16 und `api.md`, Abschnitt 5).
 
-**Testbilanz nach Phase 2.1:** 336 Backend-Tests, 0 übersprungen; 54 Frontend-Tests.
+**Testbilanz nach Phase 2.4:** 341 Backend-Tests, 0 übersprungen; 129 Frontend-Tests.
 
 ---
 
@@ -126,11 +129,53 @@ Barrieren gegen PostgreSQL nachgewiesen:
    lesbar.
 4. Eine doppelte Geschossebene unter Parallelität endet in `422`, nicht in `500`.
 
-Dazu: strikte `If-Match`-Syntax und die ausdrückliche Festlegung, dass `archived`
-heute nur ein endgültiger Workflowstatus ist.
+Dazu: strikte `If-Match`-Syntax. Die damalige Feststellung, `archived` sei *nur* ein
+endgültiger Workflowstatus, ist durch **Phase 2.2** überholt — seither ist es zusätzlich
+ein vollständiger Schreibschutz.
 
 Ergebnis: [`docs/task-history.md`](task-history.md), Task 0008. **Keine Migration** —
 das Schema blieb unverändert.
+
+---
+
+## Phase 2.2 — Schreibschutz für archivierte Projekte · DONE (2026-09-19)
+
+Umsetzung der aus Phase 2.1 offenen fachlichen Entscheidung **T0**: `archived` ist
+Endzustand **und** vollständiger Schreibschutz. Lesen und das Herunterladen bestehender
+Dateien bleiben erlaubt; jede Änderung an Projekt, Gebäuden, Geschossen und Dateien
+sowie neue Uploads liefern `409 project-archived`.
+
+Eine bewusste Ausnahme: Das Ausblenden des Projekts bleibt möglich — sonst ließe sich
+ein Kunde mit archiviertem Projekt nie mehr ausblenden. Eine Wiederherstellung aus
+`archived` gibt es nicht und wäre ein eigener administrativer Vorgang.
+
+Ergebnis: [`docs/task-history.md`](task-history.md), Task 0009. **Keine Migration.**
+
+---
+
+## Phase 2.3 — Workflow- und UX-Nacharbeit · DONE (2026-09-19)
+
+Bedienung statt Fachlichkeit: Kunden und Projekte werden über einen Knopf **oberhalb**
+der Liste in einem Dialog angelegt, die Projektanlage bietet auf Wunsch gleich
+`Hauptgebäude` und `Erdgeschoss` an (abwählbar), beide Listen haben „Weitere laden" auf
+Basis des vorhandenen Cursors, und die gemeinsamen UI-Bausteine liegen nicht mehr in
+Seitendateien.
+
+Datenmodell, API-Verträge, Berechtigungen und die Nebenläufigkeitsgarantien aus
+Phase 2.1 bleiben unverändert. **Keine Migration.**
+
+Ergebnis: [`docs/task-history.md`](task-history.md), Task 0010.
+
+---
+
+## Phase 2.4 — Nachkorrektur zu 2.2 und 2.3 · DONE (2026-09-19)
+
+Die Dokumentation zu `archived` ist widerspruchsfrei, die Startstruktur meldet ihre
+beiden Fehlerstufen unterscheidbar, und die Kundenauswahl der Projektanlage hat keine
+stille Obergrenze von 200 Datensätzen mehr — sie sucht serverseitig.
+
+Kein Backend, keine Migration. Ergebnis:
+[`docs/task-history.md`](task-history.md), Task 0011.
 
 > **Weiterhin offen und Voraussetzung vor Echtdaten:** Auskunft/Export (Art. 15),
 > Verarbeitungsverzeichnis, TOM-Dokumentation, AV-Verträge, Restore-Regel.

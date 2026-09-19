@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { useAuth, usePermission } from "../../core/auth/AuthProvider";
-import { Feld } from "./CustomersPage";
+import { Feld } from "../../core/ui/Feld";
 
 type Bearbeitbar = {
   name: string;

@@ -9,7 +9,7 @@ import { useProjectTabs } from "../../core/modules/ProjectTabs";
 import { ProjectFilesTab } from "./ProjectFilesTab";
 import { ProjectMasterDataTab } from "./ProjectMasterDataTab";
 import { ProjectStructureTab } from "./ProjectStructureTab";
-import { STATUS_LABEL } from "./ProjectsPage";
+import { STATUS_LABEL, istSchreibgeschuetzt } from "./status";
 
 /** Zustandswechsel sind eigene Endpunkte (docs/api.md, Abschnitt 5). */
 const UEBERGAENGE = [
@@ -64,6 +64,10 @@ export default function ProjectDetailPage() {
   }
 
   const daten: ProjectOut = projekt.data;
+  // ``archived`` ist ein Endzustand **und** ein Schreibschutz; der Server
+  // lehnt jede Aenderung mit 409 ab (docs/api.md, Abschnitt "Projektstatus").
+  // Die Oberflaeche spiegelt das, verspricht aber nichts darueber hinaus.
+  const schreibgeschuetzt = istSchreibgeschuetzt(daten.status);
 
   return (
     <div className="stack">
@@ -76,11 +80,12 @@ export default function ProjectDetailPage() {
           Projektnummer <code>{daten.project_number}</code> · Status{" "}
           <strong>{STATUS_LABEL[daten.status]}</strong> · Version {daten.version}
         </p>
-        {daten.status === "archived" && (
-          <p className="muted">
-            Das Projekt ist archiviert: Es gibt keinen Statuswechsel mehr zurück. Stammdaten,
-            Gebäude, Geschosse und Dateien bleiben bearbeitbar — ein vollständiger
-            Schreibschutz ist bewusst nicht zugesagt.
+        {schreibgeschuetzt && (
+          <p className="alert">
+            Dieses Projekt ist archiviert und damit <strong>schreibgeschützt</strong>.
+            Stammdaten, Gebäude, Geschosse und Dateien lassen sich nicht mehr ändern, und
+            es sind keine neuen Uploads möglich. Lesen und das Herunterladen bestehender
+            Dateien bleiben erlaubt.
           </p>
         )}
         {fehler && <p className="alert alert--error">{fehler}</p>}
@@ -130,8 +135,12 @@ export default function ProjectDetailPage() {
       </nav>
 
       {aktiv === "stammdaten" && <ProjectMasterDataTab projekt={daten} />}
-      {aktiv === "struktur" && <ProjectStructureTab projectId={daten.id} />}
-      {aktiv === "dateien" && <ProjectFilesTab projectId={daten.id} />}
+      {aktiv === "struktur" && (
+        <ProjectStructureTab projectId={daten.id} schreibgeschuetzt={schreibgeschuetzt} />
+      )}
+      {aktiv === "dateien" && (
+        <ProjectFilesTab projectId={daten.id} schreibgeschuetzt={schreibgeschuetzt} />
+      )}
 
       {modulTabs
         .filter((tab) => tab.id === aktiv)

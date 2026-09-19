@@ -57,6 +57,7 @@ class FileDownloadUrl(BaseModel):
     summary="Datei hochladen",
     responses={
         404: {"model": ProblemDetail, "description": "Projekt nicht gefunden"},
+        409: {"model": ProblemDetail, "description": "Projekt ist archiviert"},
         422: {"model": ProblemDetail, "description": "Dateityp, Inhalt oder Groesse unzulaessig"},
     },
 )
@@ -72,12 +73,13 @@ def upload_file(
     """Nimmt eine Datei entgegen, prueft sie und legt sie im Storage ab.
 
     Mit ``project_id`` wird die Datei einem Projekt zugeordnet; das Projekt
-    muss der eigenen Organisation gehoeren.
+    muss der eigenen Organisation gehoeren und darf nicht archiviert sein.
     """
     if project_id is not None:
-        # Fremde oder unbekannte Projekte liefern 404 - die Pruefung laeuft
-        # ueber den mandantengefilterten Projektdienst.
-        ProjectService(session, current_user.organization_id).get(project_id)
+        # Fremde oder unbekannte Projekte liefern 404, archivierte 409. Die
+        # Vorbedingung liegt im Projektdienst, damit die Regel an einer
+        # Stelle steht (docs/api.md, Abschnitt "Projektstatus").
+        ProjectService(session, current_user.organization_id).get_writable(project_id)
 
     service = FileService(session, storage, current_user.organization_id)
     # Der Strom wird stueckweise gelesen; das Groessenlimit greift waehrend des

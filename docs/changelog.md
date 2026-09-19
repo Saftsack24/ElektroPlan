@@ -5,6 +5,138 @@ Einträge entstehen nach relevanten Änderungen, nicht nach jedem Commit.
 
 ---
 
+## 2026-09-19 — Phase 2.4: Nachkorrektur zu 2.2 und 2.3
+
+Kleine, abgegrenzte Korrektur. Kein Backend, keine Migration, keine
+Architekturänderung.
+
+### Fixed
+
+- **Widersprüchliche Dokumentation zu `archived` bereinigt.** Verbindlich gilt: `archived`
+  ist ein Endzustand, Projekt und untergeordnete Ressourcen sind schreibgeschützt, Lesen
+  und das Herunterladen bestehender Dateien bleiben erlaubt, eine Wiederherstellung gibt
+  es nicht. Die älteren, gegenteiligen Aussagen in `current-status.md`, `roadmap.md`,
+  `task-history.md` und `changelog.md` bleiben als Historie stehen, sind aber ausdrücklich
+  als überholt markiert.
+- **Zwei Fehlerstufen bei der Startstruktur.** Schlägt schon das Gebäude fehl, meldet die
+  Oberfläche, dass beides fehlt. Schlägt nur das Geschoss fehl, sagt sie ausdrücklich,
+  dass das Gebäude **bereits existiert**, nennt seinen Namen aus der Serverantwort und
+  weist darauf hin, kein zweites Gebäude anzulegen. Vorher gab es nur eine unscharfe
+  Sammelmeldung, die zu einer Dublette verleitet hätte.
+- **Die stille Grenze von 200 Kunden in der Projektanlage ist weg.** Statt pauschal die
+  ersten 200 zu laden, sucht die Oberfläche jetzt serverseitig (`q`, kleines `limit`,
+  Auswertung von `has_more`), entprellt die Eingabe um 300 ms und sagt ausdrücklich, wenn
+  es mehr Treffer gibt als angezeigt. Der gewählte Kunde bleibt stehen, auch wenn sich der
+  Suchbegriff ändert.
+- **Veraltete Codekommentare korrigiert**, insbesondere die Behauptung, bei einem
+  Teilfehler werde trotzdem ins Projekt navigiert — die Oberfläche bleibt bewusst auf der
+  Liste, sonst verschwände die Warnung mit dem Seitenwechsel.
+
+### Tests
+
+- Neu: `startstruktur.test.ts` (9) für beide Fehlerstufen, `KundenAuswahl.test.tsx` (10)
+  für Suche, Entprellung, Auswahlbeständigkeit sowie Lade-, Leer- und Fehlerzustand.
+- `ProjectFormDialog.test.tsx` auf die Suchauswahl umgestellt (11 Tests, unverändert grün).
+
+---
+
+## 2026-09-19 — Phase 2.3: Workflow und Bedienung
+
+Kein neues Datenmodell, keine Migration, keine Architekturänderung — die vorhandene
+Kunden- und Projektverwaltung wird alltagstauglich.
+
+### Added
+
+- **Kunden und Projekte werden im Dialog angelegt.** Über den Knöpfen „Neuer Kunde" und
+  „Neues Projekt" **oberhalb** der Liste; das Formular steht nicht mehr dauerhaft unter
+  einer langen Tabelle. Umgesetzt mit dem nativen `<dialog>`-Element: Fokusfalle,
+  Escape und Backdrop kommen vom Browser, auf schmalen Bildschirmen füllt der Dialog
+  per CSS die ganze Fläche. Keine zusätzliche Abhängigkeit.
+- **Startstruktur bei der Projektanlage.** „Gebäude und Geschoss gleich mit anlegen" ist
+  vorausgewählt (`Hauptgebäude`, `Erdgeschoss`, Ebene 0, 2500 mm), die Namen sind
+  änderbar, und für Serviceaufträge lässt sich die Struktur abwählen. Umgesetzt als
+  Folgeablauf aus drei vorhandenen Endpunkten statt als neuer atomarer Endpunkt; ein
+  Teilfehler wird benannt statt verschwiegen (docs/api.md).
+- **„Weitere laden" für Kunden- und Projektliste.** Der gemeinsame Baustein
+  `useCursorListe` nutzt den vorhandenen Keyset-Cursor der API. Bewusst keine
+  Seitenzahlen — die API kennt keine — und kein Infinite Scrolling.
+- **Gemeinsame UI-Bausteine** in `src/core/ui/` und `src/core/api/`.
+
+### Changed
+
+- Die **Projektdetailseite** zeigt Gebäude und Geschosse als ruhige Übersicht; das
+  Anlegen, Umbenennen und Löschen liegt darunter im ausklappbaren Bereich
+  „Gebäudestruktur verwalten".
+- **Fehlermeldungen in Formularen sind deutsch und feldbezogen.** Die englischen
+  Pydantic-Codes werden übersetzt, Eingaben bleiben bei jedem Fehler erhalten, und
+  unbekannte Codes führen zu einer verständlichen Rückfallmeldung statt zu einer
+  Rohmeldung.
+- Doppelte Übermittlung ist ausgeschlossen: Während einer laufenden Anfrage sind Felder
+  und Knöpfe gesperrt.
+
+### Fixed
+
+- **Technische Schuld abgetragen:** `Feld` und `STATUS_LABEL` wurden aus Seitendateien
+  importiert. Beides liegt jetzt in eigenen Bausteinen; zwischen Kunden- und
+  Projektseiten gibt es keine gegenseitigen Importe mehr.
+
+### Fixed (aus dem Browser-Smoke-Test)
+
+- Bei einem **Teilfehler der Startstruktur** wäre die Warnung verlorengegangen, weil die
+  Oberfläche sofort ins Projekt sprang. Jetzt wird nur bei vollständigem Erfolg
+  gesprungen.
+- Der Planner-Container band `packages/api-client` nicht vom Host ein und lief deshalb
+  gegen eine Fassung ohne `ifMatch` — jeder Statuswechsel scheiterte mit `428`. Die
+  Ursache lag in `docker-compose.yml` und stammt aus Phase 1; das Quellverzeichnis ist
+  jetzt eingebunden.
+
+### Tests
+
+- 47 neue Frontend-Tests: Dialogbedienung (öffnen, abbrechen, Escape, Fokus,
+  `aria-labelledby`), Eingabeerhalt bei Feld- und Serverfehlern, Schutz gegen
+  Doppelübermittlung, Startstruktur an/aus, Cursor-Nachladen samt Zurücksetzen bei
+  Such- und Filteränderung, Entdopplung überlappender Seiten, Fehlerübersetzung sowie
+  die ausgeblendeten Aktionen bei archivierten Projekten.
+- Backend ergänzt: Auch der **Kundenwechsel** an einem archivierten Projekt ist `409`.
+
+---
+
+## 2026-09-19 — Phase 2.2: Schreibschutz für archivierte Projekte
+
+### Changed
+
+- **`archived` ist jetzt ein vollständiger Schreibschutz** — fachlich entschieden, nicht
+  stillschweigend eingeführt. Der vormals offene Punkt T0 ist damit erledigt.
+  Projektstammdaten, Gebäude, Geschosse und Dateien eines archivierten Projekts sind
+  unveränderlich, neue Uploads werden abgelehnt. Lesen und das Herunterladen bestehender
+  Dateien bleiben erlaubt. Neuer Fehlertyp `project-archived` (`409`), damit Clients den
+  Fall ohne Auswerten der Meldung erkennen.
+  Durchgesetzt über **eine** Service-Vorbedingung, nicht verstreut je Endpunkt; für
+  Gebäude und Geschosse wird die Eigentümerkette bis zum Projekt aufgelöst.
+- **Eine bewusste Ausnahme:** Das Ausblenden des Projekts (`DELETE /projects/{id}`)
+  bleibt möglich. Ohne sie ließe sich ein Kunde mit archiviertem Projekt nie mehr
+  ausblenden, weil die Kundenlöschung offene Projekte zählt.
+- Eine **Wiederherstellung** aus `archived` gibt es weiterhin nicht. Falls sie gebraucht
+  wird, kommt sie als eigener administrativer Vorgang mit eigener Berechtigung.
+
+### Fixed
+
+- Die **Kundenauswahl beim Anlegen eines Projekts** listet keine anonymisierten Kunden
+  mehr. Der Server lehnt sie mit `404` ab; die Oberfläche bot damit eine Sackgasse an.
+
+### Tests
+
+- Der Test, der den vorherigen Ist-Zustand festhielt
+  (`test_archiviertes_projekt_bleibt_fachlich_bearbeitbar`), ist durch drei Tests
+  ersetzt: vollständiger Schreibschutz über alle sieben schreibenden Unterressourcen,
+  uneingeschränkte Lesbarkeit und die dokumentierte Ausnahme beim Ausblenden. Genau
+  dafür war der alte Test da — er musste bewusst geändert werden.
+- Dateien: Upload auf ein archiviertes Projekt wird abgelehnt; eine vorhandene Datei
+  bleibt auflistbar und über die signierte Adresse herunterladbar (Inhalt verglichen).
+- Frontend: `zuordenbareKunden()` mit drei Fällen.
+
+---
+
 ## 2026-09-19 — Phase 2.1: Nebenläufigkeit und Zustandskonsistenz
 
 Phase 2 war funktional fertig, hatte aber vier Lücken, die erst unter **echter
@@ -48,12 +180,13 @@ laufen lassen.
 
 ### Documented
 
-- **Bedeutung von `archived` festgelegt und offengelegt:** `archived` ist derzeit
-  **ausschließlich ein endgültiger Workflowstatus** — kein Schreibschutz. Stammdaten,
-  Gebäude, Geschosse und Dateien eines archivierten Projekts bleiben änderbar. Ob
-  vollständige Unveränderlichkeit gewünscht ist, bleibt eine **offene fachliche
-  Entscheidung vor Phase 3**; sie wird nicht stillschweigend getroffen. Der Ist-Zustand
-  ist durch Tests festgehalten, und die Oberfläche sagt ausdrücklich dasselbe.
+- **Bedeutung von `archived` offengelegt:** zum Zeitpunkt dieses Eintrags
+  ausschließlich ein endgültiger Workflowstatus, kein Schreibschutz — die fachliche
+  Entscheidung lag noch nicht vor und wurde nicht stillschweigend getroffen.
+
+  > **Überholt durch den Eintrag vom selben Tag zu Phase 2.2.** Seither ist `archived`
+  > zusätzlich ein vollständiger Schreibschutz. Dieser Absatz bleibt als Historie
+  > stehen und beschreibt **nicht** mehr den geltenden Stand.
 
 ### Tests
 

@@ -236,7 +236,11 @@ erDiagram
 - `number_sequences` PK `(organization_id, scope, period)` — Vergabe per
   `SELECT ... FOR UPDATE`
 - `customers.kind` CHECK in (`private`, `company`)
-- `projects.status` CHECK in (`draft`, `active`, `completed`, `archived`)
+- `projects.status` CHECK in (`draft`, `active`, `completed`, `archived`);
+  `archived` ist Endzustand **und** Schreibschutz (docs/api.md, Abschnitt
+  "Projektstatus"). Durchgesetzt wird er im Service, nicht per Trigger — ein Trigger
+  müsste die Eigentümerkette Geschoss → Gebäude → Projekt nachbilden und wäre schlechter
+  nachvollziehbar.
 - `floors` UNIQUE `(building_id, level)` — zwei Geschosse auf derselben Ebene wären
   ein Erfassungsfehler
 - `buildings → projects` und `floors → buildings` mit `ON DELETE CASCADE`: Struktur ohne

@@ -1,86 +1,183 @@
-import { ApiError } from "@elektroplan/api-client";
 import type { ProjectSummary } from "@elektroplan/api-client";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
+import { useCursorListe } from "../../core/api/useCursorListe";
 import { useAuth, usePermission } from "../../core/auth/AuthProvider";
-import { Feld } from "./CustomersPage";
+import { WeitereLaden } from "../../core/ui/WeitereLaden";
+import { zuordenbareKunden } from "./auswahl";
+import { alsFormularfehler } from "./fehler";
+import type { Suchergebnis } from "./KundenAuswahl";
+import { ProjectFormDialog } from "./ProjectFormDialog";
+import type { ProjektWerte } from "./ProjectFormDialog";
+import { START_EBENE, START_HOEHE_MM, startstrukturAnlegen } from "./startstruktur";
+import { STATUS_LABEL } from "./status";
+import type { ProjectStatus } from "./status";
 
-type Status = "draft" | "active" | "completed" | "archived";
+const SEITENGROESSE = 25;
+/** Treffer je Suchanfrage im Anlagedialog - bewusst klein und sichtbar. */
+const TREFFER_PRO_SEITE = 20;
 
-export const STATUS_LABEL: Record<Status, string> = {
-  draft: "Entwurf",
-  active: "In Bearbeitung",
-  completed: "Abgeschlossen",
-  archived: "Archiviert",
-};
-
-const LEERES_FORMULAR = {
-  customer_id: "",
-  name: "",
-  site_street: "",
-  site_postal_code: "",
-  site_city: "",
-};
+const PROJEKTFELDER = [
+  "customer_id",
+  "name",
+  "site_street",
+  "site_postal_code",
+  "site_city",
+] as const;
 
 export default function ProjectsPage() {
   const { api } = useAuth();
   const darfSchreiben = usePermission("project.record.write");
   const darfKundenLesen = usePermission("customer.record.read");
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const [suche, setSuche] = useState("");
-  const [status, setStatus] = useState<Status | "">("");
-  const [formular, setFormular] = useState(LEERES_FORMULAR);
-  const [fehler, setFehler] = useState<string | null>(null);
+  const [status, setStatus] = useState<ProjectStatus | "">("");
+  const [dialogOffen, setDialogOffen] = useState(false);
+  const [hinweis, setHinweis] = useState<string | null>(null);
+  const [hinweisVollstaendig, setHinweisVollstaendig] = useState(true);
 
-  const liste = useQuery({
-    queryKey: ["projects", suche, status],
-    queryFn: () =>
+  // Suchbegriff und Status stehen im Query-Key: Jede Aenderung erzeugt eine
+  // neue Abfrage, der Cursor beginnt damit von vorn.
+  const liste = useCursorListe({
+    schluessel: ["projects", "liste", suche, status],
+    laden: (cursor) =>
       api.get("/api/v1/projects", {
         query: {
-          limit: 50,
+          limit: SEITENGROESSE,
           ...(suche ? { q: suche } : {}),
           ...(status ? { status } : {}),
+          ...(cursor ? { cursor } : {}),
         },
       }),
   });
 
-  const kunden = useQuery({
-    queryKey: ["customers", "auswahl"],
-    queryFn: () => api.get("/api/v1/customers", { query: { sort: "name", limit: 200 } }),
-    enabled: darfSchreiben && darfKundenLesen,
-  });
+  const projekte = liste.eintraege;
 
-  const anlegen = useMutation({
-    mutationFn: (eingabe: typeof LEERES_FORMULAR) => {
-      const { customer_id, name, site_street, site_postal_code, site_city } = eingabe;
-      return api.post("/api/v1/projects", {
+  /**
+   * Serverseitige Kundensuche fuer den Anlagedialog.
+   *
+   * Vorher lud die Seite pauschal die ersten 200 Kunden. Ab dem 201. waere
+   * der gesuchte nicht dabei gewesen, ohne Hinweis. Jetzt sucht der Server,
+   * es werden nur die Treffer geladen, und ``weitere`` sagt der Oberflaeche,
+   * wann sie zum Eingrenzen auffordern muss.
+   *
+   * Anonymisierte Kunden bleiben sichtbar, sind aber fuer neue Zuordnungen
+   * gesperrt (``404``) - sie werden hier herausgefiltert.
+   */
+  const kundenSuchen = async (begriff: string): Promise<Suchergebnis> => {
+    const seite = await api.get("/api/v1/customers", {
+      query: {
+        sort: "name",
+        limit: TREFFER_PRO_SEITE,
+        ...(begriff.trim() ? { q: begriff.trim() } : {}),
+      },
+    });
+    return { treffer: zuordenbareKunden(seite.items), weitere: seite.has_more };
+  };
+
+  /**
+   * Projekt anlegen und - falls gewuenscht - die Startstruktur nachziehen.
+   *
+   * Bewusst als **Folgeablauf** und nicht atomar: Eine atomare Anlage haette
+   * einen neuen, geschachtelten Endpunkt gebraucht. Das waere eine
+   * API-Aenderung fuer eine reine Bedienerleichterung - siehe docs/api.md,
+   * Abschnitt "Startstruktur bei der Projektanlage".
+   *
+   * Ein Teilfehler bleibt nicht unbemerkt: Das Projekt ist dann angelegt, die
+   * Meldung benennt genau, was fehlt, und die Oberflaeche **bleibt auf der
+   * Liste** stehen. Wuerde sie ins Projekt springen, verschwaende die Warnung
+   * mit dem Seitenwechsel.
+   */
+  const anlegen = async (werte: ProjektWerte) => {
+    let projektId: string;
+    let projektnummer: string;
+    try {
+      const projekt = await api.post("/api/v1/projects", {
         body: {
-          customer_id,
-          name: name.trim(),
-          // Standardwert des Servers, im erzeugten Schema aber Pflichtfeld.
+          customer_id: werte.customer_id,
+          name: werte.name.trim(),
           site_country_code: "DE",
-          ...(site_street.trim() ? { site_street: site_street.trim() } : {}),
-          ...(site_postal_code.trim() ? { site_postal_code: site_postal_code.trim() } : {}),
-          ...(site_city.trim() ? { site_city: site_city.trim() } : {}),
+          ...(werte.site_street.trim() ? { site_street: werte.site_street.trim() } : {}),
+          ...(werte.site_postal_code.trim()
+            ? { site_postal_code: werte.site_postal_code.trim() }
+            : {}),
+          ...(werte.site_city.trim() ? { site_city: werte.site_city.trim() } : {}),
         },
       });
-    },
-    onSuccess: async () => {
-      setFormular(LEERES_FORMULAR);
-      setFehler(null);
-      await queryClient.invalidateQueries({ queryKey: ["projects"] });
-    },
-    onError: (error: unknown) =>
-      setFehler(error instanceof ApiError ? error.userMessage : "Anlegen fehlgeschlagen."),
-  });
+      projektId = projekt.id;
+      projektnummer = projekt.project_number;
+    } catch (error) {
+      return alsFormularfehler(error, PROJEKTFELDER);
+    }
+
+    let meldung = `Projekt ${projektnummer} wurde angelegt.`;
+    let vollstaendig = true;
+    if (werte.startstruktur) {
+      const struktur = await startstrukturAnlegen({
+        gebaeudename: werte.gebaeudename.trim(),
+        geschossname: werte.geschossname.trim(),
+        gebaeudeAnlegen: () =>
+          api.post("/api/v1/projects/{project_id}/buildings", {
+            path: { project_id: projektId },
+            body: { name: werte.gebaeudename.trim(), sort_order: 0 },
+          }),
+        geschossAnlegen: (gebaeudeId) =>
+          api.post("/api/v1/buildings/{building_id}/floors", {
+            path: { building_id: gebaeudeId },
+            body: {
+              name: werte.geschossname.trim(),
+              level: START_EBENE,
+              elevation_mm: 0,
+              default_ceiling_height_mm: START_HOEHE_MM,
+            },
+          }),
+      });
+      meldung += ` ${struktur.meldung}`;
+      vollstaendig = struktur.vollstaendig;
+    }
+
+    setDialogOffen(false);
+    setHinweis(meldung);
+    setHinweisVollstaendig(vollstaendig);
+    await queryClient.invalidateQueries({ queryKey: ["projects"] });
+    // Nur bei vollstaendigem Erfolg ins Projekt springen. Blieb etwas offen,
+    // wuerde die Warnung beim Seitenwechsel verschwinden - der Teilfehler
+    // waere damit unbemerkt, genau das soll er nicht sein.
+    if (vollstaendig) {
+      void navigate(`/projects/${projektId}`);
+    }
+    return undefined;
+  };
 
   return (
     <div className="stack">
       <section className="card">
-        <h1>Projekte</h1>
+        <div className="card__header">
+          <h1>Projekte</h1>
+          {darfSchreiben && darfKundenLesen && (
+            <button
+              className="button button--primary"
+              type="button"
+              onClick={() => {
+                setHinweis(null);
+                setDialogOffen(true);
+              }}
+            >
+              Neues Projekt
+            </button>
+          )}
+        </div>
+
+        {hinweis !== null && (
+          <p className={hinweisVollstaendig ? "alert alert--erfolg" : "alert alert--error"} role="status">
+            {hinweis}
+          </p>
+        )}
+
         <div className="filter-row">
           <div className="field">
             <label className="field__label" htmlFor="projektsuche">
@@ -90,8 +187,11 @@ export default function ProjectsPage() {
               id="projektsuche"
               className="field__input"
               value={suche}
-              onChange={(event) => setSuche(event.target.value)}
               placeholder="z. B. Neubau"
+              onChange={(event) => {
+                setSuche(event.target.value);
+                setHinweis(null);
+              }}
             />
           </div>
           <div className="field">
@@ -102,7 +202,10 @@ export default function ProjectsPage() {
               id="projektstatus"
               className="field__input"
               value={status}
-              onChange={(event) => setStatus(event.target.value as Status | "")}
+              onChange={(event) => {
+                setStatus(event.target.value as ProjectStatus | "");
+                setHinweis(null);
+              }}
             >
               <option value="">Alle</option>
               {Object.entries(STATUS_LABEL).map(([wert, label]) => (
@@ -114,98 +217,37 @@ export default function ProjectsPage() {
           </div>
         </div>
 
-        {liste.isPending && <p className="muted">Projekte werden geladen ...</p>}
-        {liste.isError && (
-          <p className="alert alert--error">Die Projektliste konnte nicht geladen werden.</p>
-        )}
-        {liste.data && <Projekttabelle projekte={liste.data.items} />}
-        {liste.data?.has_more && (
-          <p className="muted">
-            Es gibt weitere Projekte. Bitte die Suche eingrenzen — die vollständige
-            Blätterfunktion folgt mit der Listenansicht in einer späteren Phase.
+        {liste.laedt && <p className="muted">Projekte werden geladen ...</p>}
+        {liste.fehlgeschlagen && (
+          <p className="alert alert--error" role="alert">
+            Die Projektliste konnte nicht geladen werden.{" "}
+            <button
+              className="button button--ghost"
+              type="button"
+              onClick={liste.erneutVersuchen}
+            >
+              Erneut versuchen
+            </button>
           </p>
+        )}
+        {liste.geladen && <Projekttabelle projekte={projekte} />}
+        {liste.geladen && (
+          <WeitereLaden
+            sichtbar={liste.hatWeitere}
+            laedt={liste.laedtWeitere}
+            anzahl={projekte.length}
+            onLaden={liste.weitereLaden}
+          />
         )}
       </section>
 
       {darfSchreiben && (
-        <section className="card">
-          <h2>Neues Projekt anlegen</h2>
-          <p className="muted">Die Projektnummer vergibt das System.</p>
-          {kunden.data?.items.length === 0 && (
-            <p className="alert alert--error">
-              Es gibt noch keinen Kunden. Ein Projekt braucht einen Auftraggeber — bitte
-              zuerst unter <Link to="/customers">Kunden</Link> einen anlegen.
-            </p>
-          )}
-          <form
-            className="form-grid"
-            onSubmit={(event) => {
-              event.preventDefault();
-              anlegen.mutate(formular);
-            }}
-          >
-            <div className="field">
-              <label className="field__label" htmlFor="projekt-kunde">
-                Kunde *
-              </label>
-              <select
-                id="projekt-kunde"
-                className="field__input"
-                value={formular.customer_id}
-                required
-                onChange={(event) =>
-                  setFormular({ ...formular, customer_id: event.target.value })
-                }
-              >
-                <option value="">Bitte wählen</option>
-                {(kunden.data?.items ?? []).map((kunde) => (
-                  <option key={kunde.id} value={kunde.id}>
-                    {kunde.customer_number} — {kunde.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <Feld
-              id="projekt-name"
-              label="Bezeichnung"
-              value={formular.name}
-              required
-              onChange={(name) => setFormular({ ...formular, name })}
-            />
-            <Feld
-              id="projekt-street"
-              label="Baustelle: Straße"
-              value={formular.site_street}
-              onChange={(site_street) => setFormular({ ...formular, site_street })}
-            />
-            <Feld
-              id="projekt-plz"
-              label="Baustelle: PLZ"
-              value={formular.site_postal_code}
-              onChange={(site_postal_code) => setFormular({ ...formular, site_postal_code })}
-            />
-            <Feld
-              id="projekt-ort"
-              label="Baustelle: Ort"
-              value={formular.site_city}
-              onChange={(site_city) => setFormular({ ...formular, site_city })}
-            />
-            <div className="form-grid__actions">
-              {fehler && <p className="alert alert--error">{fehler}</p>}
-              <button
-                className="button button--primary"
-                type="submit"
-                disabled={
-                  anlegen.isPending ||
-                  formular.customer_id === "" ||
-                  formular.name.trim().length === 0
-                }
-              >
-                {anlegen.isPending ? "Wird angelegt ..." : "Projekt anlegen"}
-              </button>
-            </div>
-          </form>
-        </section>
+        <ProjectFormDialog
+          offen={dialogOffen}
+          suchen={kundenSuchen}
+          onSubmit={anlegen}
+          onClose={() => setDialogOffen(false)}
+        />
       )}
     </div>
   );

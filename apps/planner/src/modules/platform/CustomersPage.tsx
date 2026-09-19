@@ -1,29 +1,31 @@
-import { ApiError } from "@elektroplan/api-client";
 import type { CustomerOut } from "@elektroplan/api-client";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
+import { useCursorListe } from "../../core/api/useCursorListe";
 import { useAuth, usePermission } from "../../core/auth/AuthProvider";
+import { WeitereLaden } from "../../core/ui/WeitereLaden";
+import { CustomerFormDialog } from "./CustomerFormDialog";
+import type { KundenWerte } from "./CustomerFormDialog";
+import { alsFormularfehler } from "./fehler";
 
-type Kind = "private" | "company";
+const SEITENGROESSE = 25;
 
-const LEERES_FORMULAR = {
-  name: "",
-  kind: "private" as Kind,
-  contact_person: "",
-  email: "",
-  phone: "",
-  billing_street: "",
-  billing_postal_code: "",
-  billing_city: "",
-};
+const KUNDENFELDER = [
+  "kind",
+  "name",
+  "contact_person",
+  "email",
+  "phone",
+  "billing_street",
+  "billing_postal_code",
+  "billing_city",
+] as const;
 
 /** Leere Textfelder werden nicht als "" gesendet, sondern weggelassen. */
 function nurGefuellt(werte: Record<string, string>): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(werte).filter(([, wert]) => wert.trim().length > 0),
-  );
+  return Object.fromEntries(Object.entries(werte).filter(([, wert]) => wert.trim().length > 0));
 }
 
 export default function CustomersPage() {
@@ -32,40 +34,69 @@ export default function CustomersPage() {
   const queryClient = useQueryClient();
 
   const [suche, setSuche] = useState("");
-  const [formular, setFormular] = useState(LEERES_FORMULAR);
-  const [fehler, setFehler] = useState<string | null>(null);
+  const [dialogOffen, setDialogOffen] = useState(false);
+  const [erfolg, setErfolg] = useState<string | null>(null);
+  const [zuletztAngelegt, setZuletztAngelegt] = useState<string | null>(null);
 
-  const liste = useQuery({
-    queryKey: ["customers", suche],
-    queryFn: () =>
+  // Der Suchbegriff steht im Query-Key: Eine Aenderung erzeugt eine neue
+  // Abfrage, und der Cursor beginnt damit zwangslaeufig von vorn.
+  const liste = useCursorListe({
+    schluessel: ["customers", "liste", suche],
+    laden: (cursor) =>
       api.get("/api/v1/customers", {
-        query: { sort: "name", limit: 50, ...(suche ? { q: suche } : {}) },
+        query: {
+          sort: "name",
+          limit: SEITENGROESSE,
+          ...(suche ? { q: suche } : {}),
+          ...(cursor ? { cursor } : {}),
+        },
       }),
   });
 
-  const anlegen = useMutation({
-    mutationFn: (eingabe: typeof LEERES_FORMULAR) => {
-      const { kind, name, ...rest } = eingabe;
-      return api.post("/api/v1/customers", {
-        // ``billing_country_code`` hat serverseitig einen Standardwert, steht im
-        // erzeugten Schema aber als Pflichtfeld - deshalb hier ausgeschrieben.
+  const kunden = liste.eintraege;
+
+  const anlegen = async (werte: KundenWerte) => {
+    const { kind, name, ...rest } = werte;
+    try {
+      const neu = await api.post("/api/v1/customers", {
         body: { kind, name: name.trim(), billing_country_code: "DE", ...nurGefuellt(rest) },
       });
-    },
-    onSuccess: async () => {
-      setFormular(LEERES_FORMULAR);
-      setFehler(null);
+      setDialogOffen(false);
+      setZuletztAngelegt(neu.id);
+      setErfolg(`Kunde ${neu.customer_number} — ${neu.name} wurde angelegt.`);
+      // Auch die Auswahl auf der Projektseite soll den neuen Kunden kennen.
       await queryClient.invalidateQueries({ queryKey: ["customers"] });
-    },
-    onError: (error: unknown) => {
-      setFehler(error instanceof ApiError ? error.userMessage : "Anlegen fehlgeschlagen.");
-    },
-  });
+      return undefined;
+    } catch (error) {
+      return alsFormularfehler(error, KUNDENFELDER);
+    }
+  };
 
   return (
     <div className="stack">
       <section className="card">
-        <h1>Kunden</h1>
+        <div className="card__header">
+          <h1>Kunden</h1>
+          {darfSchreiben && (
+            <button
+              className="button button--primary"
+              type="button"
+              onClick={() => {
+                setErfolg(null);
+                setDialogOffen(true);
+              }}
+            >
+              Neuer Kunde
+            </button>
+          )}
+        </div>
+
+        {erfolg !== null && (
+          <p className="alert alert--erfolg" role="status">
+            {erfolg}
+          </p>
+        )}
+
         <div className="field">
           <label className="field__label" htmlFor="kundensuche">
             Suche (Name, Kundennummer, Ort)
@@ -74,118 +105,58 @@ export default function CustomersPage() {
             id="kundensuche"
             className="field__input"
             value={suche}
-            onChange={(event) => setSuche(event.target.value)}
             placeholder="z. B. Schmidt"
+            onChange={(event) => {
+              setSuche(event.target.value);
+              setErfolg(null);
+            }}
           />
         </div>
 
-        {liste.isPending && <p className="muted">Kunden werden geladen ...</p>}
-        {liste.isError && (
-          <p className="alert alert--error">Die Kundenliste konnte nicht geladen werden.</p>
-        )}
-        {liste.data && <Kundentabelle kunden={liste.data.items} />}
-        {liste.data?.has_more && (
-          <p className="muted">
-            Es gibt weitere Kunden. Bitte die Suche eingrenzen — die vollständige
-            Blätterfunktion folgt mit der Listenansicht in einer späteren Phase.
+        {liste.laedt && <p className="muted">Kunden werden geladen ...</p>}
+        {liste.fehlgeschlagen && (
+          <p className="alert alert--error" role="alert">
+            Die Kundenliste konnte nicht geladen werden.{" "}
+            <button
+              className="button button--ghost"
+              type="button"
+              onClick={liste.erneutVersuchen}
+            >
+              Erneut versuchen
+            </button>
           </p>
+        )}
+        {liste.geladen && <Kundentabelle kunden={kunden} hervorgehoben={zuletztAngelegt} />}
+        {liste.geladen && (
+          <WeitereLaden
+            sichtbar={liste.hatWeitere}
+            laedt={liste.laedtWeitere}
+            anzahl={kunden.length}
+            onLaden={liste.weitereLaden}
+          />
         )}
       </section>
 
       {darfSchreiben && (
-        <section className="card">
-          <h2>Neuen Kunden anlegen</h2>
-          <p className="muted">
-            Die Kundennummer vergibt das System. Nur synthetische Testdaten verwenden —
-            echte Kundendaten erst nach Abschluss der DSGVO-Voraussetzungen.
-          </p>
-          <form
-            className="form-grid"
-            onSubmit={(event) => {
-              event.preventDefault();
-              anlegen.mutate(formular);
-            }}
-          >
-            <Feld
-              id="kunde-name"
-              label="Name"
-              value={formular.name}
-              required
-              onChange={(name) => setFormular({ ...formular, name })}
-            />
-            <div className="field">
-              <label className="field__label" htmlFor="kunde-kind">
-                Art
-              </label>
-              <select
-                id="kunde-kind"
-                className="field__input"
-                value={formular.kind}
-                onChange={(event) =>
-                  setFormular({ ...formular, kind: event.target.value as Kind })
-                }
-              >
-                <option value="private">Privatkunde</option>
-                <option value="company">Firmenkunde</option>
-              </select>
-            </div>
-            <Feld
-              id="kunde-contact"
-              label="Ansprechpartner"
-              value={formular.contact_person}
-              onChange={(contact_person) => setFormular({ ...formular, contact_person })}
-            />
-            <Feld
-              id="kunde-email"
-              label="E-Mail"
-              type="email"
-              value={formular.email}
-              onChange={(email) => setFormular({ ...formular, email })}
-            />
-            <Feld
-              id="kunde-phone"
-              label="Telefon"
-              value={formular.phone}
-              onChange={(phone) => setFormular({ ...formular, phone })}
-            />
-            <Feld
-              id="kunde-street"
-              label="Straße"
-              value={formular.billing_street}
-              onChange={(billing_street) => setFormular({ ...formular, billing_street })}
-            />
-            <Feld
-              id="kunde-plz"
-              label="PLZ"
-              value={formular.billing_postal_code}
-              onChange={(billing_postal_code) =>
-                setFormular({ ...formular, billing_postal_code })
-              }
-            />
-            <Feld
-              id="kunde-ort"
-              label="Ort"
-              value={formular.billing_city}
-              onChange={(billing_city) => setFormular({ ...formular, billing_city })}
-            />
-            <div className="form-grid__actions">
-              {fehler && <p className="alert alert--error">{fehler}</p>}
-              <button
-                className="button button--primary"
-                type="submit"
-                disabled={anlegen.isPending || formular.name.trim().length === 0}
-              >
-                {anlegen.isPending ? "Wird angelegt ..." : "Kunden anlegen"}
-              </button>
-            </div>
-          </form>
-        </section>
+        <CustomerFormDialog
+          offen={dialogOffen}
+          titel="Neuer Kunde"
+          absendenLabel="Kunden anlegen"
+          onSubmit={anlegen}
+          onClose={() => setDialogOffen(false)}
+        />
       )}
     </div>
   );
 }
 
-function Kundentabelle({ kunden }: { kunden: CustomerOut[] }) {
+function Kundentabelle({
+  kunden,
+  hervorgehoben,
+}: {
+  kunden: CustomerOut[];
+  hervorgehoben: string | null;
+}) {
   if (kunden.length === 0) {
     return <p className="muted">Keine Kunden gefunden.</p>;
   }
@@ -201,7 +172,7 @@ function Kundentabelle({ kunden }: { kunden: CustomerOut[] }) {
       </thead>
       <tbody>
         {kunden.map((kunde) => (
-          <tr key={kunde.id}>
+          <tr key={kunde.id} className={kunde.id === hervorgehoben ? "table__zeile--neu" : ""}>
             <td>
               <code>{kunde.customer_number}</code>
             </td>
@@ -214,38 +185,5 @@ function Kundentabelle({ kunden }: { kunden: CustomerOut[] }) {
         ))}
       </tbody>
     </table>
-  );
-}
-
-export function Feld({
-  id,
-  label,
-  value,
-  onChange,
-  type = "text",
-  required = false,
-}: {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  type?: string;
-  required?: boolean;
-}) {
-  return (
-    <div className="field">
-      <label className="field__label" htmlFor={id}>
-        {label}
-        {required ? " *" : ""}
-      </label>
-      <input
-        id={id}
-        className="field__input"
-        type={type}
-        value={value}
-        required={required}
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </div>
   );
 }

@@ -21,9 +21,16 @@ function groesse(bytes: number): string {
  * funktionieren - er kann den Header nicht setzen, und der Token gehoert nicht
  * in eine URL (docs/security.md, Abschnitt 7).
  */
-export function ProjectFilesTab({ projectId }: { projectId: string }) {
+export function ProjectFilesTab({
+  projectId,
+  schreibgeschuetzt,
+}: {
+  projectId: string;
+  schreibgeschuetzt: boolean;
+}) {
   const { api } = useAuth();
-  const darfHochladen = usePermission("file.object.write");
+  // Herunterladen bleibt erlaubt - nur neue Uploads sind gesperrt.
+  const darfHochladen = usePermission("file.object.write") && !schreibgeschuetzt;
   const queryClient = useQueryClient();
   const eingabe = useRef<HTMLInputElement>(null);
   const [fehler, setFehler] = useState<string | null>(null);
@@ -70,6 +77,12 @@ export function ProjectFilesTab({ projectId }: { projectId: string }) {
       </p>
 
       {fehler && <p className="alert alert--error">{fehler}</p>}
+      {schreibgeschuetzt && (
+        <p className="muted">
+          Das Projekt ist archiviert — neue Uploads sind nicht möglich. Bestehende
+          Dateien lassen sich weiterhin herunterladen.
+        </p>
+      )}
 
       {darfHochladen && (
         <div className="inline-form">

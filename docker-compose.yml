@@ -128,6 +128,10 @@ services:
       - "5173:5173"
     volumes:
       - ./apps/planner/src:/workspace/apps/planner/src:ro
+      # Der generierte API-Client gehoert zum Quellstand des Planners. Ohne
+      # diese Einbindung liefe der Dev-Server gegen die Fassung aus dem Image
+      # und wuerde neue Client-Funktionen stillschweigend ignorieren.
+      - ./packages/api-client/src:/workspace/packages/api-client/src:ro
 
 volumes:
   postgres-data:

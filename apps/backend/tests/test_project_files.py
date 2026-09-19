@@ -173,3 +173,46 @@ def test_speicherschluessel_ignoriert_verzeichnisangaben() -> None:
     key = build_storage_key(organization_id, file_id, "../../etc/passwd.pdf", project_id=project_id)
 
     assert key == f"org/{organization_id}/project/{project_id}/{file_id}.pdf"
+
+
+# ------------------------------------------- Schreibschutz bei "archived"
+
+
+def test_upload_auf_archiviertes_projekt_wird_abgelehnt(
+    api: TestClient, token: str, projekt_id: str
+) -> None:
+    """Neue Uploads sind Teil des Schreibschutzes."""
+    api.post(
+        f"/api/v1/projects/{projekt_id}/archive",
+        headers={**auth_headers(token), "If-Match": "1"},
+    )
+
+    response = api.post(
+        "/api/v1/files",
+        headers=auth_headers(token),
+        files={"upload": ("grundriss.pdf", PDF, "application/pdf")},
+        data={"project_id": projekt_id},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["type"].endswith("/project-archived")
+
+
+def test_bestehende_datei_bleibt_nach_dem_archivieren_herunterladbar(
+    api: TestClient, token: str, projekt_id: str
+) -> None:
+    """Lesen und Herunterladen bleiben ausdruecklich erlaubt."""
+    datei = _upload(api, token, projekt_id)
+    api.post(
+        f"/api/v1/projects/{projekt_id}/archive",
+        headers={**auth_headers(token), "If-Match": "1"},
+    )
+
+    liste = api.get(f"/api/v1/projects/{projekt_id}/files", headers=auth_headers(token))
+    adresse = api.get(f"/api/v1/files/{datei['id']}/download-url", headers=auth_headers(token))
+
+    assert liste.status_code == 200
+    assert [item["id"] for item in liste.json()] == [datei["id"]]
+    assert adresse.status_code == 200
+    with urllib.request.urlopen(adresse.json()["url"], timeout=10) as antwort:  # noqa: S310
+        assert antwort.read() == PDF

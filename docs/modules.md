@@ -288,6 +288,20 @@ export const MODULES: PlannerModule[] = [
 ];
 ```
 
+### Gemeinsame UI-Bausteine
+
+Wiederverwendbare Bausteine liegen in `src/core/ui/` (`Feld`, `Auswahl`, `Schalter`,
+`Dialog`, `WeitereLaden`) und `src/core/api/` (`useCursorListe`, `eintraegeAus`).
+Sie sind Core und dürfen von jedem Modul importiert werden.
+
+**Eine Seite exportiert keine Bausteine für andere Seiten.** Vorher holte sich
+`ProjectsPage` das Feld aus `CustomersPage` und `ProjectDetailPage` die Statusnamen aus
+`ProjectsPage`. Das kettet die lazy geladenen Chunks aneinander und verwischt die
+Zuständigkeit. Modulinterne, aber seitenübergreifende Dinge — etwa die Statusnamen eines
+Projekts — liegen in einer eigenen Datei des Moduls (`modules/platform/status.ts`).
+
+Eine Sammelablage `utils` gibt es bewusst nicht: Jede Datei hat eine benennbare Aufgabe.
+
 ### Projekt-Tabs und die Grenze zur Composition Root
 
 Die Projektansicht liegt im Plattform-Modul (`src/modules/platform`), die Beiträge der

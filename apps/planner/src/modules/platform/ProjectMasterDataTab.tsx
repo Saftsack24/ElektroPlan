@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { useAuth, usePermission } from "../../core/auth/AuthProvider";
-import { Feld } from "./CustomersPage";
+import { Feld } from "../../core/ui/Feld";
 
 type Bearbeitbar = {
   name: string;
@@ -29,6 +29,8 @@ export function ProjectMasterDataTab({ projekt }: { projekt: ProjectOut }) {
 
   const [entwurf, setEntwurf] = useState<Bearbeitbar | null>(null);
   const [fehler, setFehler] = useState<string | null>(null);
+  // Ein archiviertes Projekt ist schreibgeschützt; der Server lehnt ab (409).
+  const gesperrt = !darfSchreiben || projekt.status === "archived";
 
   const speichern = useMutation({
     mutationFn: (werte: Bearbeitbar) =>
@@ -94,7 +96,7 @@ export function ProjectMasterDataTab({ projekt }: { projekt: ProjectOut }) {
           <button
             className="button button--primary"
             type="submit"
-            disabled={!darfSchreiben || speichern.isPending || entwurf === null}
+            disabled={gesperrt || speichern.isPending || entwurf === null}
           >
             {speichern.isPending ? "Wird gespeichert ..." : "Speichern"}
           </button>

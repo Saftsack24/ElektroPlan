@@ -48,8 +48,16 @@ router = APIRouter(tags=["projects"])
 
 _WRITE_RESPONSES: dict[int | str, dict[str, object]] = {
     404: {"model": ProblemDetail, "description": "Nicht gefunden"},
-    409: {"model": ProblemDetail, "description": "Versions- oder Statuskonflikt"},
+    409: {
+        "model": ProblemDetail,
+        "description": "Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt",
+    },
     428: {"model": ProblemDetail, "description": "If-Match fehlt"},
+}
+
+_SUBRESOURCE_RESPONSES: dict[int | str, dict[str, object]] = {
+    404: {"model": ProblemDetail, "description": "Nicht gefunden"},
+    409: {"model": ProblemDetail, "description": "Projekt ist archiviert"},
 }
 
 
@@ -164,7 +172,10 @@ def update_project(
     session: Session = Depends(get_session),
     expected_version: int = Depends(require_if_match),
 ) -> ProjectOut:
-    """Aendert Stammdaten. Status und Projektnummer bleiben unberuehrt."""
+    """Aendert Stammdaten. Status und Projektnummer bleiben unberuehrt.
+
+    Ein archiviertes Projekt ist schreibgeschuetzt und liefert ``409``.
+    """
     service = ProjectService(session, current_user.organization_id)
     project = service.update(
         project_id,
@@ -199,7 +210,12 @@ def delete_project(
     session: Session = Depends(get_session),
     expected_version: int = Depends(require_if_match),
 ) -> None:
-    """Blendet das Projekt aus (Soft Delete). Gebaeude und Dateien bleiben."""
+    """Blendet das Projekt aus (Soft Delete). Gebaeude und Dateien bleiben.
+
+    Funktioniert **auch bei archivierten Projekten**: Das Ausblenden ist kein
+    inhaltlicher Eingriff, sondern ein Aufraeumschritt. Ohne diese Ausnahme
+    liessen sich Kunden mit archivierten Projekten nie mehr ausblenden.
+    """
     service = ProjectService(session, current_user.organization_id)
     project = service.soft_delete(
         project_id,
@@ -343,7 +359,7 @@ def list_buildings(
     status_code=status.HTTP_201_CREATED,
     operation_id="createBuilding",
     summary="Gebaeude anlegen",
-    responses={404: {"model": ProblemDetail, "description": "Projekt nicht gefunden"}},
+    responses=_SUBRESOURCE_RESPONSES,
 )
 def create_building(
     project_id: uuid.UUID,
@@ -426,6 +442,7 @@ def list_floors(
     summary="Geschoss anlegen",
     responses={
         404: {"model": ProblemDetail, "description": "Gebaeude nicht gefunden"},
+        409: {"model": ProblemDetail, "description": "Projekt ist archiviert"},
         422: {"model": ProblemDetail, "description": "Ebene bereits belegt"},
     },
 )

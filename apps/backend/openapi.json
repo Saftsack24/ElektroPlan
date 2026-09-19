@@ -1103,7 +1103,7 @@
           "projects"
         ],
         "summary": "Projekt bearbeiten",
-        "description": "Aendert Stammdaten. Status und Projektnummer bleiben unberuehrt.",
+        "description": "Aendert Stammdaten. Status und Projektnummer bleiben unberuehrt.\n\nEin archiviertes Projekt ist schreibgeschuetzt und liefert ``409``.",
         "operationId": "updateProject",
         "parameters": [
           {
@@ -1165,7 +1165,7 @@
             }
           },
           "409": {
-            "description": "Versions- oder Statuskonflikt",
+            "description": "Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt",
             "content": {
               "application/json": {
                 "schema": {
@@ -1201,7 +1201,7 @@
           "projects"
         ],
         "summary": "Projekt ausblenden",
-        "description": "Blendet das Projekt aus (Soft Delete). Gebaeude und Dateien bleiben.",
+        "description": "Blendet das Projekt aus (Soft Delete). Gebaeude und Dateien bleiben.\n\nFunktioniert **auch bei archivierten Projekten**: Das Ausblenden ist kein\ninhaltlicher Eingriff, sondern ein Aufraeumschritt. Ohne diese Ausnahme\nliessen sich Kunden mit archivierten Projekten nie mehr ausblenden.",
         "operationId": "deleteProject",
         "parameters": [
           {
@@ -1246,7 +1246,7 @@
             }
           },
           "409": {
-            "description": "Versions- oder Statuskonflikt",
+            "description": "Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt",
             "content": {
               "application/json": {
                 "schema": {
@@ -1336,7 +1336,7 @@
             }
           },
           "409": {
-            "description": "Versions- oder Statuskonflikt",
+            "description": "Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt",
             "content": {
               "application/json": {
                 "schema": {
@@ -1426,7 +1426,7 @@
             }
           },
           "409": {
-            "description": "Versions- oder Statuskonflikt",
+            "description": "Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt",
             "content": {
               "application/json": {
                 "schema": {
@@ -1516,7 +1516,7 @@
             }
           },
           "409": {
-            "description": "Versions- oder Statuskonflikt",
+            "description": "Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt",
             "content": {
               "application/json": {
                 "schema": {
@@ -1646,7 +1646,17 @@
             }
           },
           "404": {
-            "description": "Projekt nicht gefunden",
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Projekt ist archiviert",
             "content": {
               "application/json": {
                 "schema": {
@@ -1736,7 +1746,7 @@
             }
           },
           "409": {
-            "description": "Versions- oder Statuskonflikt",
+            "description": "Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt",
             "content": {
               "application/json": {
                 "schema": {
@@ -1817,7 +1827,7 @@
             }
           },
           "409": {
-            "description": "Versions- oder Statuskonflikt",
+            "description": "Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt",
             "content": {
               "application/json": {
                 "schema": {
@@ -1956,6 +1966,16 @@
               }
             }
           },
+          "409": {
+            "description": "Projekt ist archiviert",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
           "422": {
             "description": "Ebene bereits belegt",
             "content": {
@@ -2037,7 +2057,7 @@
             }
           },
           "409": {
-            "description": "Versions- oder Statuskonflikt",
+            "description": "Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt",
             "content": {
               "application/json": {
                 "schema": {
@@ -2118,7 +2138,7 @@
             }
           },
           "409": {
-            "description": "Versions- oder Statuskonflikt",
+            "description": "Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt",
             "content": {
               "application/json": {
                 "schema": {
@@ -2156,7 +2176,7 @@
           "files"
         ],
         "summary": "Datei hochladen",
-        "description": "Nimmt eine Datei entgegen, prueft sie und legt sie im Storage ab.\n\nMit ``project_id`` wird die Datei einem Projekt zugeordnet; das Projekt\nmuss der eigenen Organisation gehoeren.",
+        "description": "Nimmt eine Datei entgegen, prueft sie und legt sie im Storage ab.\n\nMit ``project_id`` wird die Datei einem Projekt zugeordnet; das Projekt\nmuss der eigenen Organisation gehoeren und darf nicht archiviert sein.",
         "operationId": "uploadFile",
         "requestBody": {
           "content": {
@@ -2181,6 +2201,16 @@
           },
           "404": {
             "description": "Projekt nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Projekt ist archiviert",
             "content": {
               "application/json": {
                 "schema": {

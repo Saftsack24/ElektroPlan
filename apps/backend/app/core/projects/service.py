@@ -26,6 +26,7 @@ from app.core.pagination import (
 from app.core.persistence import flush, unique_violation_translated
 from app.core.preconditions import check_version
 from app.core.projects.models import (
+    PROJECT_STATUS_ARCHIVED,
     PROJECT_STATUS_TRANSITIONS,
     Building,
     Floor,
@@ -41,7 +42,12 @@ from app.core.projects.schemas import (
 )
 from app.core.tenancy.repository import TenantRepository
 from app.db.mixins import utcnow
-from app.errors import ConflictError, NotFoundError, ValidationFailedError
+from app.errors import (
+    ConflictError,
+    NotFoundError,
+    ProjectArchivedError,
+    ValidationFailedError,
+)
 
 ProjectSort = Literal["created_at", "name"]
 
@@ -53,6 +59,30 @@ FLOOR_LEVEL_CONSTRAINT = "uq_floors_building_id_level"
 
 def _level_taken_detail(level: int) -> str:
     return f"In diesem Gebaeude gibt es bereits ein Geschoss auf Ebene {level}."
+
+
+def _require_writable(project: Project) -> None:
+    """Zentrale Vorbedingung fuer **jeden** schreibenden Zugriff.
+
+    ``archived`` ist ein Endzustand und vollstaendig schreibgeschuetzt:
+    Projektstammdaten, Gebaeude, Geschosse und Dateien sind unveraenderlich,
+    neue Uploads werden abgelehnt. Lesen und das Herunterladen bestehender
+    Dateien bleiben erlaubt (docs/api.md, Abschnitt "Projektstatus").
+
+    **Eine Ausnahme, bewusst:** Das Ausblenden des Projekts (``deleted_at``)
+    bleibt moeglich. Es ist kein inhaltlicher Eingriff, sondern ein
+    Aufraeumschritt - und ohne ihn liessen sich Kunden mit archivierten
+    Projekten nie mehr ausblenden, weil die Kundenloeschung offene Projekte
+    zaehlt.
+
+    Eine Wiederherstellung aus ``archived`` gibt es nicht; sie waere ein
+    eigener administrativer Vorgang und braucht eine eigene Entscheidung.
+    """
+    if project.status == PROJECT_STATUS_ARCHIVED:
+        raise ProjectArchivedError(
+            f"Projekt {project.project_number} ist archiviert und damit schreibgeschuetzt. "
+            "Lesen und das Herunterladen bestehender Dateien bleiben moeglich."
+        )
 
 
 class ProjectRepository(TenantRepository[Project]):
@@ -179,7 +209,7 @@ class ProjectService:
         expected_version: int,
         actor_user_id: uuid.UUID,
     ) -> Project:
-        project = self.projects.get_or_404(project_id)
+        project = self.get_writable(project_id)
         check_version(project, expected_version)
         changes = payload.model_dump(exclude_unset=True)
         new_customer_id = changes.get("customer_id")
@@ -236,7 +266,7 @@ class ProjectService:
         return list(self.session.execute(stmt).scalars().all())
 
     def create_building(self, project_id: uuid.UUID, payload: BuildingCreate) -> Building:
-        self.projects.get_or_404(project_id)
+        self.get_writable(project_id)
         building = Building(
             organization_id=self.organization_id,
             project_id=project_id,
@@ -249,7 +279,7 @@ class ProjectService:
     def update_building(
         self, building_id: uuid.UUID, payload: BuildingUpdate, *, expected_version: int
     ) -> Building:
-        building = self.buildings.get_or_404(building_id)
+        building = self._writable_building(building_id)
         check_version(building, expected_version)
         for field, value in payload.model_dump(exclude_unset=True).items():
             setattr(building, field, value)
@@ -264,7 +294,7 @@ class ProjectService:
         ein Fachmodul auf ein Geschoss verweist, verhindert der Fremdschluessel
         das Loeschen - der Verweis geht nicht verloren.
         """
-        building = self.buildings.get_or_404(building_id)
+        building = self._writable_building(building_id)
         check_version(building, expected_version)
         self.session.delete(building)
         flush(self.session)
@@ -279,7 +309,7 @@ class ProjectService:
         return list(self.session.execute(stmt).scalars().all())
 
     def create_floor(self, building_id: uuid.UUID, payload: FloorCreate) -> Floor:
-        self.buildings.get_or_404(building_id)
+        self._writable_building(building_id)
         self._require_free_level(building_id, payload.level, exclude_floor_id=None)
         floor = Floor(
             organization_id=self.organization_id,
@@ -293,7 +323,7 @@ class ProjectService:
     def update_floor(
         self, floor_id: uuid.UUID, payload: FloorUpdate, *, expected_version: int
     ) -> Floor:
-        floor = self.floors.get_or_404(floor_id)
+        floor = self._writable_floor(floor_id)
         check_version(floor, expected_version)
         changes = payload.model_dump(exclude_unset=True)
         new_level = changes.get("level")
@@ -305,10 +335,35 @@ class ProjectService:
         return floor
 
     def delete_floor(self, floor_id: uuid.UUID, *, expected_version: int) -> None:
-        floor = self.floors.get_or_404(floor_id)
+        floor = self._writable_floor(floor_id)
         check_version(floor, expected_version)
         self.session.delete(floor)
         flush(self.session)
+
+    # -------------------------------------------------- Schreibschutz
+
+    def get_writable(self, project_id: uuid.UUID) -> Project:
+        """Laedt ein Projekt und stellt sicher, dass es beschreibbar ist.
+
+        Oeffentlich, weil auch der Datei-Upload diese Vorbedingung braucht
+        (``app/core/files/api.py``). Damit steht die Regel an genau einer
+        Stelle und nicht verstreut in jedem Endpunkt.
+        """
+        project = self.projects.get_or_404(project_id)
+        _require_writable(project)
+        return project
+
+    def _writable_building(self, building_id: uuid.UUID) -> Building:
+        """Gebaeude laden und das zugehoerige Projekt pruefen."""
+        building = self.buildings.get_or_404(building_id)
+        _require_writable(self.projects.get_or_404(building.project_id))
+        return building
+
+    def _writable_floor(self, floor_id: uuid.UUID) -> Floor:
+        """Geschoss laden und ueber Gebaeude und Projekt pruefen."""
+        floor = self.floors.get_or_404(floor_id)
+        self._writable_building(floor.building_id)
+        return floor
 
     # ---------------------------------------------------------------- Helfer
 

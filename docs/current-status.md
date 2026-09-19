@@ -1,7 +1,7 @@
 # Aktueller Projektstand
 
 **Letzte Aktualisierung:** 2026-09-19
-**Aktualisiert nach:** Task 0008 — Phase 2.1: Nebenläufigkeit und Zustandskonsistenz
+**Aktualisiert nach:** Task 0011 — Phase 2.4: Nachkorrektur zu 2.2 und 2.3
 
 > Dieses Dokument soll einer neuen Session in wenigen Minuten vermitteln, wo das Projekt
 > steht.
@@ -14,14 +14,90 @@
 **Phase 1 — Platform Foundation: ABGESCHLOSSEN** (Abnahme durchgeführt, siehe Abschnitt 4)
 **Phase 1.2 — Härtung der Grenzen und der Sitzungslogik: ABGESCHLOSSEN**
 **Phase 2 — Core Business Data: ABGESCHLOSSEN** (siehe Abschnitt 3)
-**Phase 2.1 — Nebenläufigkeit und Zustandskonsistenz: ABGESCHLOSSEN** (siehe Abschnitt 2)
+**Phase 2.1 — Nebenläufigkeit und Zustandskonsistenz: ABGESCHLOSSEN**
+**Phase 2.2 — Schreibschutz für archivierte Projekte: ABGESCHLOSSEN**
+**Phase 2.3 — Workflow- und UX-Nacharbeit: ABGESCHLOSSEN**
+**Phase 2.4 — Nachkorrektur zu 2.2 und 2.3: ABGESCHLOSSEN** (siehe Abschnitt 2)
 **Phase 3 — Electrical Room Model: NICHT BEGONNEN**, wartet auf Freigabe
 
 ---
 
 ## 2. Zuletzt abgeschlossene Aufgabe
 
-**Task 0008 — Phase 2.1: Nebenläufigkeit und Zustandskonsistenz**
+**Task 0011 — Phase 2.4: Nachkorrektur zu 2.2 und 2.3**
+
+Vier abgegrenzte Korrekturen, ohne Backend, Migration oder Architekturänderung:
+
+1. **Dokumentation zu `archived` widerspruchsfrei.** Verbindlich: Endzustand, Projekt
+   und untergeordnete Ressourcen schreibgeschützt, Lesen und Herunterladen bestehender
+   Dateien erlaubt, keine Wiederherstellung. Ältere gegenteilige Aussagen bleiben als
+   Historie stehen, sind aber als überholt gekennzeichnet.
+2. **Zwei Fehlerstufen der Startstruktur.** Fehlt schon das Gebäude, wird das gesagt;
+   fehlt nur das Geschoss, nennt die Meldung den bereits angelegten Gebäudenamen und
+   warnt davor, ein zweites Gebäude anzulegen.
+3. **Keine stille 200er-Grenze mehr** in der Kundenauswahl der Projektanlage: Sie sucht
+   serverseitig, entprellt die Eingabe und weist auf abgeschnittene Treffer hin.
+4. **Veraltete Kommentare korrigiert** — kein Hinweis behauptet mehr, bei einem
+   Teilfehler werde ins Projekt navigiert.
+
+Details: `docs/task-history.md`, Task 0011.
+
+**Task 0010 — Phase 2.3: Workflow- und UX-Nacharbeit** (Vorgänger)
+
+Bedienung statt Fachlichkeit. Datenmodell, API-Verträge, Berechtigungen und die
+Nebenläufigkeitsgarantien aus Phase 2.1 sind unverändert; es gibt **keine Migration**.
+
+1. **Kunden und Projekte werden im Dialog angelegt**, über einen Knopf **oberhalb** der
+   Liste. Umgesetzt mit dem nativen `<dialog>`: Fokusfalle, Escape und Backdrop kommen
+   vom Browser, auf schmalen Bildschirmen füllt er die Fläche. Keine neue Abhängigkeit.
+2. **Startstruktur bei der Projektanlage**: „Gebäude und Geschoss gleich mit anlegen"
+   ist vorausgewählt (`Hauptgebäude`, `Erdgeschoss`, Ebene 0, 2500 mm), die Namen sind
+   änderbar, und für Serviceaufträge lässt sie sich abwählen. Als **Folgeablauf** aus
+   den drei vorhandenen Endpunkten umgesetzt, nicht atomar — ein neuer geschachtelter
+   Endpunkt wäre eine API-Änderung für eine reine Bedienerleichterung gewesen. Ein
+   Teilfehler wird benannt, nicht verschwiegen.
+3. **Projektdetail**: Gebäude und Geschosse als ruhige Übersicht, das Bearbeiten
+   darunter im Bereich „Gebäudestruktur verwalten".
+4. **„Weitere laden"** für beide Listen auf Basis des vorhandenen Keyset-Cursors —
+   ohne Seitenzahlen (die API kennt keine) und ohne Infinite Scrolling. Such- und
+   Filteränderungen setzen den Cursor zurück, überlappende Seiten werden entdoppelt.
+5. **Gemeinsame UI-Bausteine** liegen in `src/core/ui/` und `src/core/api/`. Damit ist
+   die dokumentierte technische Schuld abgetragen: Keine Seite exportiert mehr
+   Bausteine für eine andere Seite.
+6. **Formularfehler auf Deutsch und feldbezogen**; Eingaben bleiben bei jedem Fehler
+   erhalten, Doppelübermittlung ist ausgeschlossen.
+
+Details: `docs/task-history.md`, Task 0010.
+
+**Task 0009 — Phase 2.2: Schreibschutz für archivierte Projekte** (Vorgänger)
+
+Die offene fachliche Entscheidung **T0 ist getroffen**: Ein archiviertes Projekt ist
+**vollständig schreibgeschützt**.
+
+| Zugriff | Verhalten |
+|---|---|
+| Lesen (Projekt, Gebäude, Geschosse, Dateiliste) | erlaubt |
+| Bestehende Datei herunterladen | erlaubt |
+| Projektstammdaten, Gebäude, Geschosse ändern oder löschen | `409 project-archived` |
+| Neuer Datei-Upload | `409 project-archived` |
+| Statuswechsel aus `archived` | `409` (unverändert) |
+| Projekt ausblenden (`deleted_at`) | **erlaubt** — bewusste Ausnahme |
+
+Die Ausnahme beim Ausblenden ist notwendig: Ohne sie ließe sich ein Kunde mit
+archiviertem Projekt nie mehr ausblenden, weil die Kundenlöschung offene Projekte zählt.
+Eine Wiederherstellung aus `archived` gibt es nicht; sie wäre ein eigener
+administrativer Vorgang mit eigener Berechtigung.
+
+Die Regel steht als **eine** Service-Vorbedingung, nicht verstreut je Endpunkt. Für
+Gebäude und Geschosse wird die Eigentümerkette bis zum Projekt aufgelöst. Die Oberfläche
+spiegelt den Schreibschutz und verspricht nichts darüber hinaus.
+
+Außerdem behoben: Die Kundenauswahl beim Anlegen eines Projekts bot anonymisierte Kunden
+an, die der Server mit `404` ablehnt — eine Sackgasse für den Benutzer.
+
+Details: `docs/task-history.md`, Task 0009.
+
+**Task 0008 — Phase 2.1: Nebenläufigkeit und Zustandskonsistenz** (Vorgänger)
 
 Phase 2 war funktional fertig, hatte aber vier Lücken, die erst unter **echter
 Parallelität** auftreten. Alle vier sind geschlossen und mit zwei getrennten Sessions
@@ -39,10 +115,10 @@ Dazu zwei Klarstellungen:
 
 * **`If-Match` wird strikt geparst.** Akzeptiert sind nur `3` und `"3"`; `W/"3"`,
   `"3`, `3"`, `""3""`, `3, 4`, `*`, `0`, `-1`, `abc`, `3.0` und `03` sind `428`.
-* **`archived` ist heute nur ein endgültiger Workflowstatus, kein Schreibschutz.**
-  Kein Projektdokument legt Unveränderlichkeit fest, deshalb wurde das Verhalten
-  **nicht** geändert — der Ist-Zustand ist dokumentiert, durch Tests festgehalten und
-  in der Oberfläche ausdrücklich benannt. Die Entscheidung steht vor Phase 3 an.
+* ~~`archived` ist nur ein endgültiger Workflowstatus, kein Schreibschutz.~~
+  **Überholt.** Damals lag die fachliche Entscheidung noch nicht vor, deshalb wurde das
+  Verhalten in Phase 2.1 nicht geändert. Mit **Task 0009 (Phase 2.2)** ist entschieden:
+  `archived` ist ein Endzustand **und** ein vollständiger Schreibschutz — siehe oben.
 
 **Keine Migration:** Das Schema blieb unverändert; die Invarianten werden mit
 Transaktionsgrenzen und Zeilensperren gehalten, nicht mit Triggern.
@@ -241,8 +317,8 @@ Stand nach Task 0007, gegen echtes PostgreSQL 17 und MinIO:
 | Frontend-Modulgrenzen | `npm run check:boundaries` OK |
 | Lockfile aktuell | `uv lock --check` grün |
 | Alembic | genau ein Head (`0003_core_business_data`); Autogenerate meldet keinen Unterschied zum Modell |
-| Backend-Tests | **336 bestanden, 0 übersprungen** (4:46) |
-| Frontend | Typecheck, ESLint, **54 Tests**, Build |
+| Backend-Tests | **341 bestanden, 0 übersprungen** (4:22) |
+| Frontend | Typecheck, ESLint, Modulgrenzen, **129 Tests**, Build |
 | API-Client-Drift | `npm run check:api` grün |
 | Compose | Dienste gesund; Migration und Seed im Container ausgeführt |
 
@@ -289,6 +365,13 @@ was offen ist, ist eine Schuld.
 
 | Punkt | Nachweis |
 |---|---|
+| Startstruktur meldet beide Fehlerstufen unterscheidbar | 9 Tests; bei fehlendem Geschoss wird der bereits angelegte Gebäudename genannt |
+| Kundenauswahl ohne stille Obergrenze | 10 Tests für Suche, Entprellung, Auswahlbeständigkeit und den Hinweis auf weitere Treffer |
+| Dialogbedienung (öffnen, abbrechen, Escape, Fokus, Doppelklick) | 24 Komponententests über beide Dialoge |
+| Eingaben bleiben bei Feld- und Serverfehlern erhalten | je Dialog geprüft, inklusive `aria-invalid` |
+| Cursor-Nachladen und Zurücksetzen bei Filterwechsel | 7 Tests gegen den echten Hook mit Seitenattrappe |
+| Ausgeblendete Aktionen bei archivierten Projekten | 6 Komponententests; der verbindliche Schutz bleibt serverseitig |
+| Schreibschutz archivierter Projekte | alle sieben schreibenden Unterressourcen liefern `409 project-archived`; Lesen und Download bleiben geprüft möglich |
 | Paralleler Versionskonflikt ist `409` | zwei Sessions, zwei Threads, Barriere: genau ein Gewinner, Verlierer mit `version-conflict`; Version genau einmal weitergezählt |
 | Kunde ausblenden gegen Projekt anlegen | Paralleltest prüft den Datenbankzustand; die verbotene Kombination kann nicht entstehen |
 | Kundenzeile wird wirklich gesperrt | mitgeschriebenes SQL belegt `SELECT … FOR UPDATE` bei Anlage, Neuzuordnung und Ausblenden |
@@ -331,7 +414,6 @@ was offen ist, ist eine Schuld.
 | Offline-Sync-Umsetzung (Konzept steht) | Phase 13/16 |
 | `packages/ui`, `packages/3d-engine` | erst bei zweitem Consumer |
 | Benutzerverwaltungs-Oberfläche, Rolleneditor | offen, frühestens nach dem Pilot |
-| Blätter-Bedienung in Kunden- und Projektliste | die API kann Cursor-Pagination bereits; die Oberfläche zeigt bis zu 50 Einträge und weist auf weitere hin |
 | Echte transaktionale Outbox | erst wenn ein Handler eine nicht nachholbare Wirkung erzeugt (ADR 0012) |
 
 ### Technische Schulden
@@ -349,7 +431,7 @@ was offen ist, ist eine Schuld.
 
 | # | Frage | Spätestens vor |
 |---|---|---|
-| T0 | Soll ein **archiviertes Projekt** vollständig unveränderlich sein? Heute ist `archived` nur ein endgültiger Workflowstatus; Stammdaten, Gebäude, Geschosse und Dateien bleiben änderbar | **vor Phase 3** |
+| T6 | **Projektarten** (Neubau, Sanierung, Service): Braucht es sie, und was unterscheidet sie? Bis dahin deckt die abwählbare Startstruktur den Serviceauftrag ab | vor Phase 8 |
 | T1 | Symbolbibliothek: eigene SVGs oder DIN EN 60617 | Phase 4a |
 | T2 | PDF-Erzeugung: WeasyPrint (Empfehlung) oder ReportLab | Phase 10 |
 | T3 | Kleinmaterial: eigenes Material oder prozentualer Zuschlag | Phase 8 |

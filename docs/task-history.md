@@ -975,11 +975,203 @@ gehalten werden und nicht mit Triggern.
 
 **Offene Punkte:**
 
-- **Fachliche Entscheidung vor Phase 3:** Soll ein archiviertes Projekt vollständig
-  unveränderlich sein? Heute ist `archived` nur ein endgültiger Workflowstatus.
+- ~~**Fachliche Entscheidung vor Phase 3:** Soll ein archiviertes Projekt vollständig
+  unveränderlich sein?~~ **Erledigt durch Task 0009:** Ja — `archived` ist Endzustand
+  und vollständiger Schreibschutz.
 - Die Sperre serialisiert Projektanlagen je Kunde. Für den geplanten Einsatz
   unkritisch; bei sehr vielen gleichzeitigen Anlagen an einem Kunden wäre es messbar.
 - Die offenen DSGVO-Punkte aus Task 0007 bleiben unverändert offen.
+
+**Nächster sinnvoller Schritt:**
+Phase 3 — Electrical Room Model. **Nicht ohne ausdrückliche Freigabe beginnen.**
+
+---
+
+## Task 0009 – Phase 2.2: Schreibschutz für archivierte Projekte
+
+**Datum:** 2026-09-19
+
+**Ziel:**
+Die aus Phase 2.1 offene fachliche Entscheidung **T0** umsetzen und eine beim
+Durchklicken gefundene Sackgasse in der Kundenauswahl schließen. Kein Electrical-Modul,
+keine neue Phase.
+
+**Fachliche Entscheidung (vom Auftraggeber getroffen):**
+Ein Projekt im Zustand `archived` ist **vollständig schreibgeschützt**. Lesen und das
+Herunterladen bestehender Dateien bleiben erlaubt; Änderungen an Projekt, Gebäuden,
+Geschossen und Dateien sowie neue Uploads werden abgelehnt. Eine Wiederherstellung wäre
+ein eigener administrativer Vorgang und ist nicht Teil dieser Aufgabe.
+
+**Durchgeführte Änderungen:**
+
+1. **Eine zentrale Service-Vorbedingung** `_require_writable(project)` in
+   `app/core/projects/service.py`. Sie wird von allen schreibenden Pfaden aufgerufen;
+   für Gebäude und Geschosse lösen `_writable_building()` und `_writable_floor()` die
+   Eigentümerkette bis zum Projekt auf. Keine verstreute Statusprüfung je Endpunkt.
+2. **Öffentliches `get_writable()`**, damit auch der Datei-Upload
+   (`app/core/files/api.py`) dieselbe Vorbedingung nutzt, statt die Regel zu wiederholen.
+3. **Eigener Fehlertyp** `ProjectArchivedError` → `409` mit
+   `type: …/project-archived`. Clients können den Fall von einem gewöhnlichen Konflikt
+   unterscheiden, ohne die Meldung auszuwerten.
+4. **Eine bewusste Ausnahme:** `DELETE /projects/{id}` (Soft Delete) bleibt möglich.
+   Ohne sie ließe sich ein Kunde mit archiviertem Projekt nie mehr ausblenden — die
+   Kundenlöschung zählt offene Projekte. Die Ausnahme ist im Code und in `docs/api.md`
+   begründet.
+5. **Oberfläche spiegelt den Schreibschutz:** Der Hinweis auf der Projektseite nennt ihn
+   jetzt korrekt; Stammdaten-Formular, Gebäude- und Geschossformulare sowie der
+   Datei-Upload sind bei einem archivierten Projekt gesperrt. Download und Dateiliste
+   bleiben sichtbar.
+6. **Kundenauswahl gefiltert.** `zuordenbareKunden()` lässt anonymisierte Kunden aus der
+   Auswahl beim Anlegen eines Projekts weg. Der Server lehnt sie mit `404` ab; die
+   Oberfläche bot bis dahin eine Sackgasse an.
+
+**Betroffene Module:** ausschließlich `core` und das Planner-Modul `platform`.
+
+**Betroffene wichtige Dateien:**
+`app/core/projects/service.py`, `app/core/projects/api.py`, `app/core/files/api.py`,
+`app/errors.py`, `tests/test_projects.py`, `tests/test_project_files.py`,
+`apps/planner/src/modules/platform/{ProjectDetailPage,ProjectMasterDataTab,ProjectStructureTab,ProjectFilesTab,ProjectsPage}.tsx`,
+`apps/planner/src/modules/platform/auswahl.ts` (neu).
+
+**Tests:**
+
+- `test_archiviertes_projekt_bleibt_fachlich_bearbeitbar` wurde **ersetzt**. Der Test
+  hielt bewusst den Ist-Zustand fest, solange die Entscheidung offen war — genau dafür
+  war er da. An seine Stelle treten drei Tests: vollständiger Schreibschutz über alle
+  sieben schreibenden Unterressourcen, uneingeschränkte Lesbarkeit und die dokumentierte
+  Ausnahme beim Ausblenden (inklusive des Nachweises, dass der Kunde danach ausgeblendet
+  werden kann).
+- Dateien: Upload auf ein archiviertes Projekt → `409 project-archived`; eine bestehende
+  Datei bleibt auflistbar und über die signierte Adresse herunterladbar, Inhalt
+  byteweise verglichen.
+- Frontend: `auswahl.test.ts` mit drei Fällen.
+- Gesamtlauf: **340 Backend-Tests bestanden, 0 übersprungen**; 57 Frontend-Tests.
+  `.\tasks.ps1 check` vollständig grün. Keine Migration — das Schema blieb unverändert.
+
+**Ergebnis:**
+T0 ist entschieden und umgesetzt. Die Liste der offenen fachlichen Entscheidungen in
+`docs/current-status.md` ist um diesen Punkt kürzer.
+
+**Offene Punkte:**
+
+- Eine **Wiederherstellung** archivierter Projekte gibt es nicht. Sobald sie gebraucht
+  wird, braucht sie einen eigenen Endpunkt, eine eigene Berechtigung und einen
+  Audit-Eintrag — das ist eine neue Aufgabe, keine Erweiterung dieser.
+- Die offenen DSGVO-Punkte und die übrigen Einträge aus Task 0007/0008 bleiben
+  unverändert.
+
+**Nächster sinnvoller Schritt:**
+Phase 3 — Electrical Room Model. **Nicht ohne ausdrückliche Freigabe beginnen.**
+
+---
+
+## Task 0010 – Phase 2.3: Workflow- und UX-Nacharbeit
+
+**Datum:** 2026-09-19
+
+**Ziel:**
+Die vorhandene Kunden- und Projektverwaltung im täglichen Betrieb schnell und
+verständlich bedienbar machen — ohne Datenmodell, Architektur oder Migration
+anzufassen. Kein Electrical-Modul, keine Phase 3.
+
+**Durchgeführte Änderungen:**
+
+1. **Kundenanlage im Dialog.** Knopf „Neuer Kunde" **oberhalb** der Liste; das Formular
+   steht nicht mehr dauerhaft darunter. Gewählte Variante: natives `<dialog>` mit
+   `showModal()`. Es bringt Fokusfalle, Escape, Backdrop und die Rolle `dialog` mit —
+   eine Bibliothek hätte nur wiederholt, was der Browser kann. Auf schmalen
+   Bildschirmen füllt der Dialog per CSS die Fläche; eine eigene Vollbildvariante war
+   dafür nicht nötig.
+2. **Projektanlage nach demselben Muster**, mit Kundenauswahl, deutschen Pflichtfeld-
+   und Fehlermeldungen. Nach Erfolg wird die Liste aktualisiert und das neue Projekt
+   geöffnet.
+3. **Startstruktur.** Im Projektdialog ist „Gebäude und Geschoss gleich mit anlegen"
+   vorausgewählt (`Hauptgebäude`, `Erdgeschoss`, Ebene 0, 2500 mm), beide Namen sind
+   änderbar, und für Serviceaufträge lässt sich die Struktur abwählen.
+   *Entscheidung:* umgesetzt als **Folgeablauf** aus den drei vorhandenen Endpunkten,
+   nicht atomar. Eine atomare Anlage hätte einen neuen, geschachtelten Endpunkt samt
+   eigener Transaktionsklammer gebraucht — eine API-Änderung für eine reine
+   Bedienerleichterung. Ein Teilfehler bleibt nicht unbemerkt: Das Projekt ist angelegt,
+   die Meldung benennt, was fehlt, und die Oberfläche bleibt auf der Liste stehen
+   (siehe die Korrektur in Task 0011).
+4. **Projektdetail vereinfacht.** Gebäude und Geschosse erscheinen als ruhige
+   Übersicht; Anlegen, Umbenennen und Löschen liegen darunter im ausklappbaren Bereich
+   „Gebäudestruktur verwalten". Bestehende Projekte werden nicht angefasst.
+5. **Cursor-Bedienung.** Neuer gemeinsamer Baustein `useCursorListe` für Kunden- und
+   Projektliste: „Weitere laden", Entdopplung über die ID, Lade-, Leer- und
+   Fehlerzustand, gesperrte Knöpfe während laufender Anfragen. Das Zurücksetzen bei
+   Such- und Filteränderung steckt im Query-Key — eine zweite Wahrheit von Hand wäre
+   irgendwann abgewichen. Bewusst keine Seitenzahlen (die API kennt keine) und kein
+   Infinite Scrolling.
+6. **Gemeinsame UI-Bausteine.** `Feld`, `Auswahl`, `Schalter`, `Dialog` und
+   `WeitereLaden` liegen in `src/core/ui/`, `useCursorListe` und `eintraegeAus` in
+   `src/core/api/`, die Projektstatusnamen in `modules/platform/status.ts`. Damit ist
+   die dokumentierte technische Schuld abgetragen: Keine Seite exportiert mehr
+   Bausteine für eine andere Seite. Keine Sammelablage `utils`.
+7. **Fehlerübersetzung** (`modules/platform/fehler.ts`): Die englischen Pydantic-Codes
+   werden auf kurze deutsche Sätze abgebildet, mit verständlicher Rückfallmeldung.
+   Eingaben bleiben bei jedem Fehler erhalten.
+
+**Zu Punkt 6 des Auftrags (Schreibschutz archivierter Projekte):** Das war bereits
+Task 0009 (Phase 2.2) und ist unverändert in Kraft — zentrale Service-Vorbedingung,
+`409 project-archived`, serverseitig durchgesetzt. Ergänzt wurde nur ein Test für den
+**Kundenwechsel** an einem archivierten Projekt sowie die Frontend-Tests für die
+ausgeblendeten Aktionen.
+
+**Zu Punkt 7 (Nebenläufigkeit):** Am Backend wurde außer dem einen neuen Test nichts
+geändert. `If-Match`, `428`, `409`, die Zeilensperren und alle Parallelitätstests aus
+Phase 2.1 bleiben unverändert.
+
+**Betroffene Module:** Planner (`core/ui`, `core/api`, Modul `platform`); im Backend nur
+ein zusätzlicher Test.
+
+**Betroffene wichtige Dateien:**
+Neu: `core/ui/{Dialog,Feld,WeitereLaden}.tsx`, `core/api/{seiten,useCursorListe}.ts`,
+`modules/platform/{CustomerFormDialog,ProjectFormDialog}.tsx`,
+`modules/platform/{status,fehler}.ts` und sechs Testdateien.
+Geändert: `modules/platform/{CustomersPage,ProjectsPage,ProjectStructureTab,ProjectDetailPage,CustomerDetailPage,ProjectMasterDataTab}.tsx`,
+`src/styles.css`, `tests/test_projects.py`.
+
+**Tests:**
+
+- Gezielt während der Arbeit: die sechs neuen Frontend-Testdateien einzeln, dann der
+  betroffene Backend-Testlauf.
+- Ein vollständiger Abnahmelauf am Ende: `.	asks.ps1 check`, Exit 0 —
+  **341 Backend-Tests, 0 übersprungen** (4:22), **110 Frontend-Tests** (13 Dateien),
+  dazu Ruff, mypy `--strict`, Modulgrenzen, ein Alembic-Head, OpenAPI-Drift,
+  Frontend-Typecheck, ESLint und Build.
+- Browser-Smoke-Test über alle neun geforderten Schritte; die beiden dabei gefundenen
+  Fehler sind oben beschrieben und behoben.
+
+**Ergebnis:**
+Die Bedienung folgt jetzt dem Alltagsablauf, ohne dass Datenmodell, API-Verträge oder
+Nebenläufigkeitsgarantien angefasst wurden. Keine Migration.
+
+**Zwei Funde aus dem Browser-Smoke-Test, beide behoben:**
+
+1. Bei einem **Teilfehler der Startstruktur** wäre die Warnung verlorengegangen: Die
+   Oberfläche sprang sofort ins Projekt, der Hinweis lebte aber auf der Projektliste.
+   Jetzt wird nur bei vollständigem Erfolg gesprungen; bleibt etwas offen, bleibt die
+   Meldung als Fehlerhinweis stehen. Genau das verlangt der Auftrag.
+2. Der **Planner-Container hatte `packages/api-client` nur aus dem Image**. Dadurch lief
+   der Dev-Server gegen eine Fassung ohne `ifMatch`, und jeder Statuswechsel scheiterte
+   mit `428`. Ursache lag in `docker-compose.yml` und stammt aus Phase 1 — sie fiel erst
+   auf, seit die Oberfläche `If-Match` benutzt. Das Quellverzeichnis ist jetzt wie das
+   des Planners eingebunden.
+
+**Offene Punkte:**
+
+- Die **Kundenbearbeitung** nutzt weiterhin das Formular auf der Detailseite. Der
+  Dialogbaustein ist für beide Fälle ausgelegt (`startwerte`, `absendenLabel`), die
+  Umstellung der Detailseite ist aber nicht Teil dieses Auftrags.
+- Die Suche feuert bei jedem Tastendruck eine Abfrage. Bei den erwarteten Datenmengen
+  unkritisch. *Nachtrag Task 0011:* Für die Kundenauswahl im Projektdialog ist das
+  erledigt (300 ms Entprellung); die Kunden- und Projektliste selbst sucht weiterhin
+  ungebremst.
+- **Projektarten** (Neubau, Sanierung, Service) sind bewusst **nicht** implementiert —
+  dafür liegt keine fachliche Entscheidung vor. Die abwählbare Startstruktur deckt den
+  Serviceauftrag vorerst ab.
+- Eine Wiederherstellung archivierter Projekte gibt es weiterhin nicht.
 
 **Nächster sinnvoller Schritt:**
 Phase 3 — Electrical Room Model. **Nicht ohne ausdrückliche Freigabe beginnen.**

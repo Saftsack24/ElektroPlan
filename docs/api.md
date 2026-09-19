@@ -84,15 +84,69 @@ Belege lesbar, darf aber nicht für neue Geschäftsvorgänge reaktiviert werden
 `draft → active → completed`, `archived` ist von jedem Zustand aus erreichbar und ein
 Endzustand. Ein Wechsel außerhalb dieser Tabelle ist `409`.
 
-> **Bedeutung von `archived` — Stand Phase 2.1.** `archived` ist **ausschließlich ein
-> endgültiger Workflowstatus**: Aus ihm führt kein Statuswechsel zurück. Ein
-> vollständiger Schreibschutz ist damit **nicht** verbunden — Stammdaten, Gebäude,
-> Geschosse und Dateien eines archivierten Projekts bleiben änderbar.
->
-> Kein Projektdokument legt bisher fest, dass ein archiviertes Projekt unveränderlich
-> sein soll. Diese Frage bleibt eine **offene fachliche Entscheidung vor Phase 3** und
-> wird nicht stillschweigend beantwortet. Der Ist-Zustand ist durch Tests festgehalten;
-> die Oberfläche sagt ausdrücklich dasselbe und verspricht keinen Schreibschutz.
+#### `archived` ist ein Schreibschutz
+
+**Fachlich entschieden am 2026-09-19.** Ein archiviertes Projekt ist **vollständig
+schreibgeschützt**. Lesen und das Herunterladen bestehender Dateien bleiben erlaubt;
+jede Änderung wird abgelehnt:
+
+| Zugriff | Antwort |
+|---|---|
+| `GET` auf Projekt, Gebäude, Geschosse, Dateiliste | erlaubt |
+| `GET /files/{id}/download-url` · `/download` | erlaubt |
+| `PATCH /projects/{id}` | `409` `project-archived` |
+| `POST /projects/{id}/buildings` | `409` `project-archived` |
+| `PATCH` · `DELETE` auf `buildings/{id}` | `409` `project-archived` |
+| `POST /buildings/{id}/floors` | `409` `project-archived` |
+| `PATCH` · `DELETE` auf `floors/{id}` | `409` `project-archived` |
+| `POST /files` mit `project_id` des Projekts | `409` `project-archived` |
+| `POST /projects/{id}/activate` · `/complete` · `/archive` | `409` (kein Wechsel aus `archived`) |
+| `DELETE /projects/{id}` (Soft Delete) | **erlaubt** — siehe unten |
+
+Der eigene Fehlertyp `project-archived` erlaubt es Clients, diesen Fall ohne Auswerten
+der Meldung von einem gewöhnlichen Konflikt zu unterscheiden.
+
+**Eine bewusste Ausnahme: das Ausblenden des Projekts.** `DELETE /projects/{id}` bleibt
+möglich. Es ist kein inhaltlicher Eingriff, sondern ein Aufräumschritt — und ohne diese
+Ausnahme ließe sich ein Kunde mit archiviertem Projekt nie mehr ausblenden, weil die
+Kundenlöschung offene Projekte zählt.
+
+**Keine Wiederherstellung.** Aus `archived` führt kein Weg zurück. Sollte eine
+Reaktivierung gebraucht werden, wird sie als eigener administrativer Vorgang mit eigener
+Berechtigung eingeführt — nicht als stiller Statuswechsel.
+
+Die Regel steht als **eine** Service-Vorbedingung im Backend und nicht verstreut je
+Endpunkt. Die Oberfläche spiegelt sie: Formulare und Upload sind bei einem archivierten
+Projekt ausgeblendet, und ein Hinweis benennt den Schreibschutz.
+
+### Startstruktur bei der Projektanlage
+
+Das Datenmodell bleibt `Kunde → Projekt → Gebäude → Geschoss`. Die Oberfläche nimmt dem
+Regelfall nur die Handarbeit ab: Im Anlagedialog ist „Gebäude und Geschoss gleich mit
+anlegen" vorausgewählt (`Hauptgebäude`, `Erdgeschoss`, Ebene 0, 2500 mm). Die Namen sind
+änderbar, und wer die Struktur nicht braucht — etwa bei einem Serviceauftrag ohne
+Raumplanung — wählt sie ab.
+
+**Umgesetzt als Folgeablauf, nicht atomar.** Die Oberfläche ruft nacheinander
+`POST /projects`, `POST /projects/{id}/buildings` und `POST /buildings/{id}/floors` auf.
+Eine atomare Anlage hätte einen neuen, geschachtelten Endpunkt samt eigener
+Transaktionsklammer gebraucht — eine API-Änderung für eine reine Bedienerleichterung.
+Das steht in keinem Verhältnis, solange die drei Endpunkte für sich korrekt sind.
+
+Die Folge daraus wird **nicht** verschwiegen: Schlägt ein späterer Schritt fehl,
+existiert das Projekt bereits. Die Oberfläche unterscheidet dann zwei Stufen — schon das
+Gebäude fehlgeschlagen, oder nur das Geschoss — und benennt im zweiten Fall den bereits
+angelegten Gebäudenamen, damit niemand versehentlich ein zweites Hauptgebäude anlegt.
+Bei einem Teilfehler **bleibt sie auf der Projektliste** stehen; ein Sprung ins Projekt
+würde die Warnung mit dem Seitenwechsel verschlucken.
+
+Bestehende Projekte werden davon nicht berührt; es gibt keine nachträgliche automatische
+Strukturanlage.
+
+**Kundenauswahl im Dialog.** Die Oberfläche sucht über `GET /api/v1/customers?q=…` mit
+kleinem `limit` und wertet `has_more` aus. Sie lädt also nicht den ganzen Kundenstamm in
+den Browser und weist darauf hin, wenn es mehr Treffer gibt als angezeigt. Anonymisierte
+Kunden werden ausgefiltert — der Server lehnt sie für neue Zuordnungen ohnehin ab.
 
 ### Doppelte Geschossebene
 

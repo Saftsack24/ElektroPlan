@@ -673,46 +673,145 @@ def test_unbekannter_kunde_liefert_beim_umhaengen_404(
 # ------------------------------------------- Bedeutung des Status "archived"
 
 
-def test_archiviertes_projekt_bleibt_fachlich_bearbeitbar(
+def test_archiviertes_projekt_ist_vollstaendig_schreibgeschuetzt(
     api: TestClient, token: str, kunde: dict[str, object]
 ) -> None:
-    """Haelt den **dokumentierten Ist-Zustand** fest, keine neue Zusage.
+    """``archived`` ist ein Endzustand **und** ein Schreibschutz.
 
-    ``archived`` ist heute ein endgueltiger Workflowstatus: Aus ihm fuehrt
-    kein Statuswechsel zurueck. Ein vollstaendiger Schreibschutz ist in
-    keinem Projektdokument festgelegt und wird deshalb auch nicht
-    stillschweigend eingefuehrt (docs/api.md, Abschnitt "Projektstatus").
+    Fachliche Entscheidung vom 2026-09-19 (vormals offener Punkt T0):
+    Projektstammdaten, Gebaeude, Geschosse und Dateien eines archivierten
+    Projekts sind unveraenderlich. Lesen bleibt erlaubt.
 
-    Faellt die fachliche Entscheidung spaeter fuer Unveraenderlichkeit, muss
-    dieser Test bewusst geaendert werden - genau das ist seine Aufgabe.
+    Dieser Test hat zuvor das Gegenteil festgehalten - der Ist-Zustand war
+    bewusst dokumentiert, bis die Entscheidung getroffen war.
+    """
+    projekt = _projekt(api, token, kunde["id"])
+    gebaeude_id = api.post(
+        f"/api/v1/projects/{projekt['id']}/buildings",
+        headers=auth_headers(token),
+        json={"name": "Haupthaus"},
+    ).json()["id"]
+    geschoss = api.post(
+        f"/api/v1/buildings/{gebaeude_id}/floors",
+        headers=auth_headers(token),
+        json={"name": "Erdgeschoss", "level": 0},
+    ).json()
+
+    archiviert = api.post(
+        f"/api/v1/projects/{projekt['id']}/archive",
+        headers={**auth_headers(token), "If-Match": "1"},
+    ).json()
+    assert archiviert["status"] == "archived"
+    version = str(archiviert["version"])
+
+    versuche = {
+        "Projektstammdaten": api.patch(
+            f"/api/v1/projects/{projekt['id']}",
+            headers={**auth_headers(token), "If-Match": version},
+            json={"site_city": "Celle"},
+        ),
+        "Gebaeude anlegen": api.post(
+            f"/api/v1/projects/{projekt['id']}/buildings",
+            headers=auth_headers(token),
+            json={"name": "Nachtrag"},
+        ),
+        "Gebaeude aendern": api.patch(
+            f"/api/v1/buildings/{gebaeude_id}",
+            headers={**auth_headers(token), "If-Match": "1"},
+            json={"name": "Umbenannt"},
+        ),
+        "Gebaeude loeschen": api.delete(
+            f"/api/v1/buildings/{gebaeude_id}",
+            headers={**auth_headers(token), "If-Match": "1"},
+        ),
+        "Geschoss anlegen": api.post(
+            f"/api/v1/buildings/{gebaeude_id}/floors",
+            headers=auth_headers(token),
+            json={"name": "Obergeschoss", "level": 1},
+        ),
+        "Geschoss aendern": api.patch(
+            f"/api/v1/floors/{geschoss['id']}",
+            headers={**auth_headers(token), "If-Match": "1"},
+            json={"name": "Umbenannt"},
+        ),
+        "Geschoss loeschen": api.delete(
+            f"/api/v1/floors/{geschoss['id']}",
+            headers={**auth_headers(token), "If-Match": "1"},
+        ),
+    }
+
+    for bezeichnung, antwort in versuche.items():
+        assert antwort.status_code == 409, f"{bezeichnung}: {antwort.status_code}"
+        assert antwort.json()["type"].endswith("/project-archived"), bezeichnung
+
+
+def test_archiviertes_projekt_bleibt_vollstaendig_lesbar(
+    api: TestClient, token: str, kunde: dict[str, object]
+) -> None:
+    """Der Schreibschutz darf das Nachschlagen nicht behindern."""
+    projekt = _projekt(api, token, kunde["id"])
+    gebaeude_id = api.post(
+        f"/api/v1/projects/{projekt['id']}/buildings",
+        headers=auth_headers(token),
+        json={"name": "Haupthaus"},
+    ).json()["id"]
+    api.post(
+        f"/api/v1/buildings/{gebaeude_id}/floors",
+        headers=auth_headers(token),
+        json={"name": "Erdgeschoss", "level": 0},
+    )
+    api.post(
+        f"/api/v1/projects/{projekt['id']}/archive",
+        headers={**auth_headers(token), "If-Match": "1"},
+    )
+
+    assert (
+        api.get(f"/api/v1/projects/{projekt['id']}", headers=auth_headers(token)).status_code == 200
+    )
+    assert (
+        api.get(
+            f"/api/v1/projects/{projekt['id']}/buildings", headers=auth_headers(token)
+        ).status_code
+        == 200
+    )
+    assert (
+        api.get(f"/api/v1/buildings/{gebaeude_id}/floors", headers=auth_headers(token)).json()[0][
+            "name"
+        ]
+        == "Erdgeschoss"
+    )
+    assert (
+        api.get(f"/api/v1/projects/{projekt['id']}/files", headers=auth_headers(token)).status_code
+        == 200
+    )
+    assert api.get("/api/v1/projects", headers=auth_headers(token)).json()["items"]
+
+
+def test_archiviertes_projekt_laesst_sich_weiterhin_ausblenden(
+    api: TestClient, token: str, kunde: dict[str, object]
+) -> None:
+    """Bewusste Ausnahme vom Schreibschutz.
+
+    Ohne sie liesse sich ein Kunde mit archiviertem Projekt nie mehr
+    ausblenden - die Kundenloeschung zaehlt offene Projekte.
     """
     projekt = _projekt(api, token, kunde["id"])
     archiviert = api.post(
         f"/api/v1/projects/{projekt['id']}/archive",
         headers={**auth_headers(token), "If-Match": "1"},
     ).json()
-    version = archiviert["version"]
 
-    geaendert = api.patch(
+    antwort = api.delete(
         f"/api/v1/projects/{projekt['id']}",
-        headers={**auth_headers(token), "If-Match": str(version)},
-        json={"site_city": "Celle"},
-    )
-    gebaeude = api.post(
-        f"/api/v1/projects/{projekt['id']}/buildings",
-        headers=auth_headers(token),
-        json={"name": "Nachtrag"},
-    )
-    geschoss = api.post(
-        f"/api/v1/buildings/{gebaeude.json()['id']}/floors",
-        headers=auth_headers(token),
-        json={"name": "Erdgeschoss", "level": 0},
+        headers={**auth_headers(token), "If-Match": str(archiviert["version"])},
     )
 
-    assert archiviert["status"] == "archived"
-    assert geaendert.status_code == 200
-    assert gebaeude.status_code == 201
-    assert geschoss.status_code == 201
+    assert antwort.status_code == 204
+    kunde_weg = api.delete(
+        f"/api/v1/customers/{kunde['id']}",
+        headers={**auth_headers(token), "If-Match": "1"},
+    )
+    assert kunde_weg.status_code == 204
 
 
 def test_aus_archiviert_fuehrt_weiterhin_kein_statuswechsel_zurueck(
@@ -731,3 +830,24 @@ def test_aus_archiviert_fuehrt_weiterhin_kein_statuswechsel_zurueck(
             headers={**auth_headers(token), "If-Match": str(archiviert["version"])},
         )
         assert antwort.status_code == 409, schritt
+
+
+def test_kundenbezug_eines_archivierten_projekts_ist_gesperrt(
+    api: TestClient, token: str, kunde: dict[str, object]
+) -> None:
+    """Auch der Kundenwechsel faellt unter den Schreibschutz."""
+    projekt = _projekt(api, token, kunde["id"])
+    anderer = _kunde(api, token, "Zweiter Bauherr")
+    archiviert = api.post(
+        f"/api/v1/projects/{projekt['id']}/archive",
+        headers={**auth_headers(token), "If-Match": "1"},
+    ).json()
+
+    response = api.patch(
+        f"/api/v1/projects/{projekt['id']}",
+        headers={**auth_headers(token), "If-Match": str(archiviert["version"])},
+        json={"customer_id": anderer["id"]},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["type"].endswith("/project-archived")

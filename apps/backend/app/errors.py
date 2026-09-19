@@ -140,6 +140,21 @@ class PreconditionRequiredError(AppError):
     status_code = status.HTTP_428_PRECONDITION_REQUIRED
 
 
+class ProjectArchivedError(ConflictError):
+    """Schreibender Zugriff auf ein archiviertes Projekt.
+
+    ``archived`` ist ein Endzustand und vollstaendig schreibgeschuetzt
+    (docs/api.md, Abschnitt "Projektstatus"). Lesen und das Herunterladen
+    bestehender Dateien bleiben erlaubt.
+
+    Eigener ``type``, damit ein Client den Fall von einem gewoehnlichen
+    Konflikt unterscheiden kann, ohne die Meldung auszuwerten.
+    """
+
+    error_type = "project-archived"
+    title = "Projekt ist archiviert"
+
+
 class ValidationFailedError(AppError):
     error_type = "validation-failed"
     title = "Ungueltige Eingabe"
