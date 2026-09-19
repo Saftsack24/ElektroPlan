@@ -1,6 +1,6 @@
 # Roadmap
 
-Stand: 2026-09-18
+Stand: 2026-09-19 (nach Task 0004 — Phase 1.2)
 Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 
 ---
@@ -10,8 +10,9 @@ Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 | Phase | Inhalt | Status | Abhängig von |
 |---|---|---|---|
 | 0 | Architektur, Contracts, Datenmodell, Dokumentation | **DONE** | — |
-| 1 | Platform Foundation | **NOT STARTED** | 0 |
-| 2 | Core Business Data | NOT STARTED | 1 |
+| 1 | Platform Foundation | **DONE** | 0 |
+| 1.2 | Härtung der Architekturgrenzen und der Sitzungslogik | **DONE** | 1 |
+| 2 | Core Business Data | NOT STARTED (wartet auf Freigabe) | 1.2 |
 | 3 | Electrical Room Model | NOT STARTED | 2 |
 | 4a | 2D-Editor | NOT STARTED | 3 |
 | 4b | 3D-Ansicht | NOT STARTED | 4a |
@@ -49,22 +50,36 @@ Abweichungen vom Masterplan.
 
 ---
 
-## Phase 1 — Platform Foundation · NOT STARTED
+## Phase 1 — Platform Foundation · DONE (2026-09-18)
 
 Monorepo, Docker Compose, FastAPI-Grundgerüst, PostgreSQL, Alembic, Organisationen,
 Benutzer, Mitgliedschaften, Authentifizierung, Permissions, Module Registry, Event Bus,
 Audit, React-Shell mit Login und Modulregistrierung.
 
-Detailplan: [`docs/phase-1-plan.md`](phase-1-plan.md)
+Detailplan: [`docs/phase-1-plan.md`](phase-1-plan.md) · Ergebnis:
+[`docs/task-history.md`](task-history.md), Task 0002
 
-**Exit-Kriterien**
-1. `docker compose up` startet Datenbank, MinIO, Backend und Planner.
-2. Anmeldung funktioniert; `/api/v1/me` liefert Benutzer, Organisation und Permissions.
-3. Mandantentrennungstest läuft automatisch über alle Routen und ist grün.
-4. Module Registry verweigert den Start bei ungültigen Abhängigkeiten.
-5. Event Bus stellt nachweislich erst nach dem Commit zu.
-6. `alembic heads` liefert genau einen Head.
-7. `import-linter`, Ruff, mypy, ESLint, `tsc --noEmit` laufen grün.
+Alle 18 Aufgaben (T-0001 bis T-0018) sind umgesetzt. Die Abnahme wurde in Task 0003
+mit echtem Docker, PostgreSQL 17 und MinIO **ausgeführt**.
+
+**Exit-Kriterien — alle erfüllt und nachgewiesen**
+
+| # | Kriterium | Nachweis |
+|---|---|---|
+| 1 | `docker compose up` startet Datenbank, MinIO, Backend und Planner | frischer Start mit neuen Volumes; alle Dienste `healthy`, `minio-init` mit Exit 0 |
+| 2 | Anmeldung funktioniert; `/api/v1/me` liefert Benutzer, Organisation und Permissions | im laufenden System geprüft (API und Browser) |
+| 3 | Mandantentrennungstest läuft automatisch über alle Routen und ist grün | 9 Tests; der Sweep meldet unabgedeckte Routen als Fehler |
+| 4 | Module Registry verweigert den Start bei ungültigen Abhängigkeiten | 19 Tests |
+| 5 | Event Bus stellt nachweislich erst nach dem Commit zu | 16 Tests |
+| 6 | `alembic heads` liefert genau einen Head | geprüft; zusätzlich Migration auf leerer Datenbank inkl. `downgrade`/`upgrade` |
+| 7 | `import-linter`, Ruff, mypy, ESLint, `tsc --noEmit` laufen grün | Gesamtdurchlauf `tasks.ps1 check` |
+
+**Testbilanz:** 145 Backend-Tests, **0 übersprungen**; 8 Frontend-Tests; 48 funktionale
+Prüfungen gegen das laufende System.
+
+Zwei Punkte des Smoke-Tests ließen sich nicht über die Oberfläche prüfen, weil Phase 1
+die **Dateiupload-Oberfläche ausdrücklich ausschließt** (nur Infrastruktur und API):
+Upload und Download wurden stattdessen über die API und die signierte URL nachgewiesen.
 
 ---
 
@@ -82,6 +97,11 @@ lässt sich hochladen und herunterladen; Projektliste ist filterbar und paginier
 
 Datenmodell und API für Räume, Wände, Öffnungen inklusive Geometrievalidierung.
 Noch ohne Editor — Erfassung über API und einfache Formulare.
+
+> **Modulabhängigkeit:** `electrical` wird in den Phasen 3–6 mit
+> `depends_on = ("core",)` registriert. `materials` existiert noch nicht; die
+> Abhängigkeit und die Provider-Ports kommen erst in Phase 7 hinzu. Es wird
+> kein leeres Materials-Modul als Platzhalter angelegt.
 
 **Exit:** Ein Raum mit Polygon, Höhe, Wänden und Türen ist über die API erfassbar; die
 Flächenberechnung ist getestet; ungültige Polygone werden abgelehnt.
@@ -131,6 +151,9 @@ Längenberechnung, Mengenübersicht.
 
 Materialstamm, Kategorien, Preise mit Historie, Einheiten, Verpackungseinheiten,
 Verschnittregeln, `MaterialRequirement`-Contract, Provider-Registrierung.
+
+Hier wird `electrical` erstmals um `depends_on = ("core", "materials")` erweitert
+und implementiert `MaterialRequirementProvider` sowie `LaborRequirementProvider`.
 
 **Exit:** Materialbedarf entsteht aus der Elektroplanung über den Port — ohne dass
 `materials` das Modul `electrical` importiert.
@@ -196,10 +219,27 @@ zulässig, dass sich die Reihenfolge der Phasen 11–20 ändert.
 | 14 Field Execution | Verbrauch, Fotos, Bemerkungen, Zeiten | Verbrauch idempotent buchbar |
 | 15 Actual vs Planned | Soll/Ist, Nachkalkulation, Auswertung | Abweichungsbericht je Auftrag |
 | 16 Offline Sync | lokale Daten, Sync Queue, Konflikterkennung | Auftrag ohne Netz bearbeitbar, danach synchron |
-| 17 AR Measurement | ARCore, Eckpunkte, Raumhöhe, Öffnungen | Aufmaß mit dokumentierter Genauigkeit |
+| 17 AR Measurement | ARCore, Eckpunkte, Raumhöhe, Öffnungen | Technischer Spike auf realer Zielhardware **vor** der Umsetzung; Aufmaß mit dokumentierter Genauigkeit |
 | 18 PV Foundation | Dachmodell, Hindernisse, Modulbelegung | PV erzeugt Bedarf über denselben Port |
 | 19 PV Electrical | Strings, Wechselrichter, DC/AC | PV durchläuft Material → Kalkulation → Angebot |
 | 20 Weitere Module | Wallbox, KNX, Netzwerk, Prüfungen | nach Bedarf |
+
+---
+
+### Phase 17 — technische Vorentscheidung (ARCore)
+
+Vor jeder AR-Implementierung steht ein **technischer Spike auf realer
+Android-Zielhardware**. Geprüft werden Messgenauigkeit, Lifecycle-Verhalten,
+Sensorzugriff und Performance.
+
+**Capacitor ist für den ARCore-Teil keine unveränderliche Vorgabe.** Zeigt der
+Spike, dass sich Genauigkeit, Lifecycle, Sensorzugriff oder Performance über
+Capacitor nicht zuverlässig erreichen lassen, wird die AR-Funktion als
+**natives Kotlin-Modul** umgesetzt und in die App integriert. Die übrige App
+bleibt davon unberührt.
+
+Das Ergebnis des Spikes wird als ADR festgehalten. Bis dahin entsteht **kein**
+AR-Code.
 
 ---
 
@@ -207,7 +247,7 @@ zulässig, dass sich die Reihenfolge der Phasen 11–20 ändert.
 
 | Meilenstein | Bedeutung |
 |---|---|
-| **M1 — Anmeldung und Mandantentrennung** (Ende Phase 1) | Tragfähiges Fundament |
+| **M1 — Anmeldung und Mandantentrennung** (Ende Phase 1) | **erreicht** — Fundament steht und ist abgenommen |
 | **M2 — Projekt mit Grundriss** (Ende Phase 4a) | Erster sichtbarer Nutzen |
 | **M3 — Berechnete Leitungslängen** (Ende Phase 6) | Kern der Fachlichkeit steht |
 | **M4 — Materialliste aus der Planung** (Ende Phase 8) | Plattform-Mechanik nachgewiesen |

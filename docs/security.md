@@ -48,9 +48,38 @@ Die beiden kritischsten Anforderungen des Systems sind:
 - **Refresh Token:** zufälliger, hoch-entroper Wert, nur als Hash gespeichert
   (`refresh_tokens`), Rotation bei jeder Nutzung, Wiederverwendung eines alten Tokens
   invalidiert die gesamte Familie (Diebstahlserkennung).
-- **Transport Web:** Refresh Token als `HttpOnly; Secure; SameSite=Strict`-Cookie.
-- **Transport App:** Refresh Token im sicheren Gerätespeicher (Keystore über Capacitor),
-  nicht in `localStorage`.
+- **Widerrufsgründe.** Der ersetzte Datensatz einer Rotation wird atomar
+  mit `replaced_by_id` an den Nachfolger gebunden und mit einem
+  expliziten `revoked_reason` versehen. Genau ein Grund bedeutet
+  "regulär ersetzt": `rotated`. Alle übrigen (`logout`,
+  `reuse_detected`, `family_revoked`) machen den Token sofort und
+  eindeutig ungültig. Nur ein `rotated`-Token gilt innerhalb des
+  Toleranzfensters (`ELEKTROPLAN_REFRESH_RACE_GRACE_SECONDS`) als
+  paralleler Refresh. Ein durch Logout oder Familienwiderruf beendeter
+  Token löst bei erneuter Vorlage **keinen** zusätzlichen
+  Sammelwiderruf mehr aus — die Ursachenkette bleibt lesbar.
+- **`RefreshConflictError` → HTTP 401.** Ein paralleler Refresh ist
+  serverseitig kein Angriff, aber das Frontend hat kein separates
+  Auswertungssignal für 409 im Single-Flight-Renewer. Das bestehende
+  `AuthProvider.renewSession` interpretiert die Antwort als „Sitzung
+  noch nicht renewt, in aktuellem Cookie steht bereits der Nachfolger",
+  wiederholt den Aufruf mit dem frischen Cookie und kommt so an einen
+  gültigen Access Token. Der Statuscode ist bewusst gemeinsam von API
+  und Frontend gewählt; er wird nur mit einer neuen Frontend-Version
+  verändert.
+- Die Migration `0002_refresh_revocation` hat die Revisions-ID auf 23
+  Zeichen gekürzt, damit sie in
+  `alembic_version.version_num (VARCHAR(32))` sicher passt.
+- **Transport Web:** Der Refresh Token verlässt den Server **ausschließlich** als
+  `HttpOnly; Secure; SameSite=Strict`-Cookie mit engem `Path=/api/v1/auth`. Er steht
+  **nicht** im Antwortkörper von Login, Refresh oder Mandantenwechsel — sonst könnte
+  JavaScript ihn lesen und der HttpOnly-Schutz gegen XSS wäre wirkungslos. Die Endpunkte
+  `/auth/refresh` und `/auth/logout` haben deshalb gar keinen Anfragekörper; sie lesen
+  das Cookie.
+- **Transport App (später):** Die Baustellen-App erhält einen **ausdrücklich getrennten**
+  mobilen Tokenflow mit sicherem Gerätespeicher (Keystore/Keychain über Capacitor). Er
+  wird erst mit Phase 13 gebaut und teilt sich **nicht** das Response-Schema des
+  Webflows — andernfalls bekäme der Webclient den Refresh Token wieder lesbar zurück.
 - **Logout:** widerruft die Token-Familie serverseitig, nicht nur clientseitig.
 - MFA ist im MVP nicht enthalten, aber im Datenmodell nicht ausgeschlossen.
 
@@ -65,6 +94,29 @@ Die beiden kritischsten Anforderungen des Systems sind:
   Client-Angaben, kein Cache über Requests hinweg im MVP).
 - Verweigerung: `403` ohne Hinweis auf die Existenz fremder Objekte; nicht existierende
   **oder fremde** Objekte liefern `404`.
+
+### Umfang des Rollenmodells im MVP
+
+Was **heute** existiert und geprüft ist:
+
+- sechs fest ausgelieferte Systemrollen (Admin, Planer, Kalkulator, Monteur, Lager,
+  Einkauf) als Seed je Organisation,
+- eine **statische** Zuordnung von Permissions zu diesen Rollen, definiert im Code
+  (`app/core/authorization/permissions.py`),
+- serverseitige Prüfung über flache Permission-Schlüssel.
+
+Was es **noch nicht** gibt — und was deshalb nirgends behauptet wird:
+
+- keine Rollenvererbung,
+- keine bedingten oder datenabhängigen Policies,
+- kein Rolleneditor in der Oberfläche; Rollen lassen sich in Phase 1 **nicht** anpassen
+  oder kopieren,
+- keine Benutzerverwaltungs-Oberfläche (Anlage erfolgt über den Seed),
+- keine Lizenz-, Abrechnungs- oder Trial-Logik.
+
+Das Datenmodell (`roles`, `role_permissions`, `member_roles` je Organisation) lässt
+spätere Anpassbarkeit zu. Bis eine geprüfte Funktion dafür existiert, gilt der Umfang
+oben.
 
 ---
 
@@ -111,6 +163,9 @@ Vorbereitet, aber im MVP nicht aktiviert: PostgreSQL Row Level Security
 | SVG/HTML | nicht als anzeigbarer Inhalt zugelassen (XSS-Vektor) |
 | Integrität | SHA-256 bei Upload gespeichert |
 | Virenscan | im MVP nicht enthalten, vor kommerziellem Einsatz nachrüsten |
+| Streaming | Der Upload wird stückweise gelesen (64 KiB); das Größenlimit greift **während** des Lesens. Gepuffert wird in einer `SpooledTemporaryFile`, die oberhalb 1 MiB auf die Festplatte auslagert — keine unbegrenzte Datei im Arbeitsspeicher. |
+| Dateiname im Header | `Content-Disposition` wird injektionssicher gebaut: Steuerzeichen, Zeilenumbrüche, Anführungszeichen und Backslashes werden ersetzt, der Originalname folgt prozentkodiert als `filename*` (RFC 6266). |
+| Verwaiste Objekte | Reihenfolge: Datenbankzeile → Storage-Upload → Commit. Scheitert der Upload, wird die Transaktion zurückgerollt (kein Datensatz ohne Objekt). Scheitert der Commit, wird das Objekt gelöscht (kein Objekt ohne Datensatz). Gelingt auch das Löschen nicht, wird der Schlüssel unter `orphan_object_cleanup_failed` protokolliert und über einen manuellen Cleanup-Lauf entfernt. |
 
 ---
 
@@ -174,31 +229,118 @@ Einzelbetrieb; bei Mehrinstanzbetrieb auf einen gemeinsamen Zähler umstellen.
 
 ## 12. Transport und Browser-Härtung
 
-- TLS erzwungen, HSTS in Produktion.
-- Security Header: `Content-Security-Policy` (keine Inline-Skripte),
-  `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`,
-  `X-Frame-Options: DENY`.
-- CORS: enge Whitelist, keine Wildcards mit Credentials.
-- CSRF: Refresh-Cookie mit `SameSite=Strict` plus Double-Submit-Token für
-  Cookie-basierte Anfragen.
+### Header, die das Backend selbst setzt
+
+| Header | Wert | Geltung |
+|---|---|---|
+| `X-Content-Type-Options` | `nosniff` | immer |
+| `X-Frame-Options` | `DENY` | immer |
+| `Referrer-Policy` | `same-origin` | immer |
+| `Cross-Origin-Opener-Policy` | `same-origin` | immer |
+| `Content-Security-Policy` | `default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'` | Produktion |
+| `Content-Security-Policy` | zusätzlich die von Swagger UI benötigten Quellen (`cdn.jsdelivr.net`) | Entwicklung |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` | **nur** Produktion |
+
+**Zuständigkeiten — bewusst getrennt:**
+
+- Diese API liefert ausschließlich JSON aus. Die strikte CSP ist deshalb
+  angemessen; in der Entwicklung ist sie gelockert, weil `/docs` (Swagger UI)
+  Skripte und Styles von einem CDN lädt. In Produktion ist `/docs` abgeschaltet.
+- Die **Auslieferung des Planners** erfolgt durch Vite bzw. später durch einen
+  Webserver. Dessen CSP wird **dort** gesetzt, nicht im Backend — das Backend
+  kann sie nicht beeinflussen.
+- `Strict-Transport-Security` setzt das Backend nur bei
+  `ELEKTROPLAN_ENVIRONMENT=production`. Terminiert TLS an einem Reverse Proxy,
+  darf dieser den Header ebenfalls setzen. Wird TLS ausschließlich am Proxy
+  terminiert, liegt die Verantwortung dort — das Backend behauptet nicht, HTTPS
+  selbst zu erzwingen.
+
+### CORS
+
+Enge Whitelist aus `ELEKTROPLAN_CORS_ORIGINS`, `allow_credentials=true`, **keine**
+Wildcards. Erlaubte Methoden: `GET, POST, PATCH, DELETE, OPTIONS`. Erlaubte
+Header: `Authorization`, `Content-Type`, `X-Request-Id`, `If-Match`.
+
+### CSRF
+
+Umgesetzt ist eine **zweistufige, überprüfbare** Lösung — kein Double-Submit-Token:
+
+1. **`SameSite=Strict`** auf dem Refresh-Cookie. Moderne Browser senden es bei
+   siteübergreifenden Anfragen überhaupt nicht mit.
+2. **Strenge Herkunftsprüfung** (`require_trusted_origin`) auf allen
+   cookiebasierten Endpunkten (`/auth/login`, `/auth/refresh`, `/auth/logout`,
+   `/auth/switch-organization`): Ist ein `Origin`- oder `Referer`-Header
+   vorhanden, muss er zu den konfigurierten Origins passen, sonst `403`
+   (`csrf-validation-failed`).
+
+Fehlen **beide** Header, wird die Anfrage zugelassen. Begründung: Browser senden
+`Origin` bei zustandsändernden Anfragen immer mit; fehlt er, stammt die Anfrage
+nicht aus einem Browserkontext und kann kein CSRF-Opfer sein. Diese Entscheidung
+ist bewusst getroffen und hier dokumentiert — sie wird nicht als vollwertiger
+Token-Schutz ausgegeben.
+
+Alle übrigen Endpunkte verwenden `Authorization: Bearer` und sind schon deshalb
+nicht CSRF-anfällig: Ein Angreifer kann den Header nicht setzen lassen.
+
+### Cookie-Attribute des Refresh-Cookies
+
+| Attribut | Wert | Zweck |
+|---|---|---|
+| `HttpOnly` | ja | für JavaScript unlesbar |
+| `Secure` | nur Produktion | lokale Entwicklung läuft über HTTP |
+| `SameSite` | `Strict` | keine siteübergreifende Übertragung |
+| `Path` | `/api/v1/auth` | wird nur zu den Sitzungsendpunkten gesendet |
+| `Max-Age` | `ELEKTROPLAN_REFRESH_TOKEN_DAYS` (Standard 14 Tage) | begrenzte Lebensdauer |
+
+Beim Abmelden wird das Cookie mit **denselben** Attributen (`Path`, `Secure`,
+`SameSite`, `HttpOnly`) gelöscht — andernfalls bliebe es im Browser stehen.
 
 ---
 
 ## 13. DSGVO / Datenschutz
 
-| Anforderung | Umsetzung |
-|---|---|
-| Rechtsgrundlage | Vertragserfüllung (Kundendaten), berechtigtes Interesse (Audit) |
-| Datenminimierung | Nur Felder mit konkretem Zweck; keine Vorratsfelder |
-| Auskunft | Export aller personenbezogenen Daten eines Kunden als JSON/PDF |
-| Löschung | Soft Delete für Geschäftsdokumente **plus** dokumentierter Pfad zur Anonymisierung personenbezogener Felder unter Wahrung handelsrechtlicher Aufbewahrungspflichten |
-| Aufbewahrung | Geschäftsdokumente nach GoBD; Audit 12 Monate; Logs 30 Tage |
-| Auftragsverarbeitung | AV-Vertrag erforderlich, sobald ein zweiter Betrieb die Plattform nutzt |
-| Verzeichnis von Verarbeitungstätigkeiten | vor Produktivbetrieb zu erstellen |
+> **Zeitgrenze — korrigiert.** Frühere Fassungen dieses Dokuments verschoben die
+> DSGVO-Anforderungen auf den "ersten externen Mandanten". Das ist falsch.
+> Die Pflichten gelten ab der **ersten Verarbeitung echter personenbezogener
+> Daten** — auch bei rein interner Nutzung im eigenen Elektrofachbetrieb, weil
+> Kunden, Ansprechpartner und Mitarbeiter betroffene Personen sind.
+>
+> **Phase 2 führt genau diese Daten ein** (Kunden, Adressen, Kontakte). Die
+> Voraussetzungen unten müssen deshalb **vor** dem ersten Echtdatensatz erfüllt
+> sein. Bis dahin gilt: **ausschließlich synthetische Testdaten.**
 
-Wichtig: Soft Delete allein erfüllt **kein** Löschbegehren. Der Anonymisierungspfad ist
-Teil des Datenmodells (siehe `docs/database.md`) und wird spätestens vor dem ersten
-externen Kunden implementiert.
+### Voraussetzungen vor dem ersten echten Kundendatensatz
+
+| # | Anforderung | Was konkret vorliegen muss |
+|---|---|---|
+| 1 | Zweck und Rechtsgrundlage | Schriftlich: Vertragserfüllung bzw. -anbahnung (Art. 6 Abs. 1 lit. b) für Kunden- und Projektdaten; berechtigtes Interesse (lit. f) für Audit und Betrieb |
+| 2 | Datenminimierung | Feldliste je Entität mit Zweck; keine Felder „für später“ |
+| 3 | Auskunft und Export | Verfahren, wie alle Daten zu einer Person zusammengestellt und ausgegeben werden |
+| 4 | Berichtigung | Änderbarkeit der Stammdaten, ohne Geschäftsdokumente zu verfälschen |
+| 5 | Löschung / Anonymisierung | Umgesetzter Pfad, der personenbezogene Felder anonymisiert und aufbewahrungspflichtige Belege erhält |
+| 6 | Aufbewahrungspflichten | Festgelegt, welche Dokumente nach HGB/AO/GoBD 6 bzw. 10 Jahre bleiben |
+| 7 | Trennung löschbar / aufbewahrungspflichtig | Dokumentiert je Tabelle: löschbar, anonymisierbar oder aufbewahrungspflichtig |
+| 8 | Backup und Restore | Regel, wie eine Löschung wirkt, wenn ein älteres Backup zurückgespielt wird (Wiederholung der Löschung nach Restore, protokolliert) |
+| 9 | Protokoll- und Audit-Aufbewahrung | Audit 12 Monate, Anwendungslogs 30 Tage; keine personenbezogenen Daten in Logs |
+| 10 | Auftragsverarbeitung | AV-Verträge mit **allen** Verarbeitern: Hosting, Backup, Object Storage, E-Mail-Versand, Monitoring — auch bei rein interner Nutzung, sobald Dritte beteiligt sind |
+| 11 | Verzeichnis von Verarbeitungstätigkeiten | Erstellt und gepflegt (Art. 30) |
+| 12 | Technische und organisatorische Maßnahmen | Dokumentiert (Art. 32): Zugriffskontrolle, Verschlüsselung im Transport, Protokollierung, Backup, Wiederherstellbarkeit |
+
+### Was Phase 1 dazu beiträgt — und was nicht
+
+Vorhanden: Mandantentrennung, rollenbasierte Zugriffskontrolle, Audit-Protokoll,
+`deleted_at` auf Geschäftsdokumenten, Ausschluss personenbezogener Daten aus
+Logs und Event-Payloads.
+
+Nicht vorhanden: Export-, Auskunfts- und Anonymisierungsfunktionen, das
+Verarbeitungsverzeichnis, die TOM-Dokumentation und die AV-Verträge. Das ist
+kein Versäumnis von Phase 1 — Phase 1 verarbeitet keine personenbezogenen
+Daten außer den Konten der Entwickler. Es ist aber eine **harte Voraussetzung
+für Phase 2**.
+
+**Soft Delete allein erfüllt kein Löschbegehren.** Der Anonymisierungspfad ist im
+Datenmodell vorgesehen (siehe `docs/database.md`) und wird mit Phase 2
+implementiert, bevor echte Kundendaten erfasst werden.
 
 ---
 

@@ -1,6 +1,6 @@
 # 0004 — Interner Event Bus mit Post-Commit-Zustellung
 
-Status: accepted
+Status: accepted, teilweise ersetzt durch [ADR 0012](0012-event-delivery-guarantee.md)
 Datum: 2026-09-18
 
 ## Context
@@ -61,6 +61,12 @@ Betriebsaufwand — im MVP nicht gerechtfertigt.
 
 ## Migrationspfad
 
-Ein Worker, der `domain_events` abarbeitet, statt direkt zuzustellen, macht daraus
-*at least once*, ohne Produzenten oder Handler zu ändern. Deshalb wird die Tabelle von
-Anfang an geschrieben.
+> **Korrektur durch [ADR 0012](0012-event-delivery-guarantee.md).**
+> Der ursprünglich hier beschriebene Migrationspfad war zu optimistisch:
+> `domain_events` wird **nach** dem Commit des Fachzustands in einer eigenen
+> Transaktion geschrieben und ist damit **keine transaktionale Outbox**. Ein
+> Absturz zwischen beiden Schritten lässt das Event verschwinden.
+>
+> Ein Umstieg auf *at least once* erfordert deshalb mehr als einen Worker: Das
+> Schreiben des Events muss in die Transaktion des Auslösers wandern, und es
+> braucht einen Zustellstatus je Event **und Handler**.

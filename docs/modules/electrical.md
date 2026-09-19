@@ -1,7 +1,12 @@
 # Modul: electrical (Elektroplanung)
 
 Art: Fachmodul · Präfix: `electrical_` · Status: geplant (Phasen 3–6)
-Abhängig von: `core`, `materials`
+Abhängig von: **Phasen 3–6 nur `core`** · ab Phase 7 zusätzlich `materials`
+
+> Die Module Registry verweigert den Start bei einer Abhängigkeit auf ein nicht
+> registriertes Modul. `materials` entsteht erst in Phase 7 — bis dahin wird
+> `electrical` mit `depends_on = ("core",)` registriert, und die Provider-Ports
+> bleiben unimplementiert. Ein leeres Platzhaltermodul wird nicht angelegt.
 
 ---
 
@@ -126,7 +131,7 @@ Tests aus §39 des Masterplans.
 
 ---
 
-## 6. Erzeugter Bedarf (Provider)
+## 6. Erzeugter Bedarf (Provider) — ab Phase 7
 
 ### `ElectricalMaterialProvider`
 

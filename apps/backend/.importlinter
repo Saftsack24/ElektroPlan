@@ -1,0 +1,52 @@
+; Durchsetzung der Modulgrenzen aus docs/modules.md (ADR 0001).
+; Ausfuehren mit: lint-imports --config .importlinter
+;
+; Schichten von oben nach unten: hoehere duerfen tiefere importieren,
+; niemals umgekehrt. Contracts sind die unterste Schicht - sie haengen an
+; nichts (ADR 0003/0009).
+;
+; Feinere Grenzen *innerhalb* von app.modules (Shared -> Fachmodul, keine
+; models/repositories/services eines anderen Moduls, kein Fachmodul ->
+; Fachmodul) prueft zusaetzlich der statische Architekturtest
+; tests/test_module_boundaries.py auf Basis der ModuleDescriptor-Metadaten.
+
+[importlinter]
+root_packages =
+    app
+include_external_packages = False
+
+[importlinter:contract:layers]
+name = Schichten: modules -> core -> db -> contracts
+type = layers
+layers =
+    app.modules
+    app.core
+    app.db
+    app.contracts
+
+[importlinter:contract:core-not-to-modules]
+name = Core kennt keine Module
+type = forbidden
+source_modules =
+    app.core
+forbidden_modules =
+    app.modules
+
+[importlinter:contract:contracts-are-standalone]
+name = Contracts haengen an nichts
+type = forbidden
+source_modules =
+    app.contracts
+forbidden_modules =
+    app.core
+    app.modules
+    app.db
+
+[importlinter:contract:db-is-independent]
+name = Datenbankschicht kennt keine Fachlogik
+type = forbidden
+source_modules =
+    app.db
+forbidden_modules =
+    app.core
+    app.modules

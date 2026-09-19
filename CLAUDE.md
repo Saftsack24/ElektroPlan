@@ -25,20 +25,32 @@ widersprüchlich sind: den Widerspruch melden, nicht stillschweigend eine Seite 
 
 ## 2. Session End Rule
 
-Nach **jedem** abgeschlossenen Entwicklungsauftrag:
+**Immer** — nach jeder Änderung am Code:
 
 1. Tests ausführen
 2. Typecheck ausführen
 3. Build ausführen
 4. relevante Fehler beheben
-5. `docs/current-status.md` aktualisieren
-6. `docs/task-history.md` ergänzen
-7. `docs/changelog.md` aktualisieren, falls relevant
-8. `docs/roadmap.md` aktualisieren, falls relevant
-9. Modul-Dokumentation aktualisieren, falls sich Verhalten oder Architektur geändert hat
-10. ADR erstellen, falls eine wichtige Architekturentscheidung getroffen wurde
 
-Danach Zusammenfassung ausgeben in genau diesem Format:
+**Dokumentation nach Bedarf, nicht nach Ritual.** Maßgeblich ist die Wirkung der
+Änderung, nicht ihre Größe:
+
+| Dokument | Wann aktualisieren |
+|---|---|
+| `docs/current-status.md` | nach einem größeren abgeschlossenen Auftrag oder am Ende einer Session |
+| `docs/task-history.md` | für relevante abgeschlossene Entwicklungsaufträge |
+| `docs/changelog.md` | nur bei Änderungen, die Nutzer, API, Architektur oder Betrieb betreffen |
+| `docs/roadmap.md` | nur bei Änderungen an Status, Reihenfolge oder Umfang |
+| Modul-Dokumentation | nur wenn sich Verhalten oder Architektur des Moduls geändert hat |
+| ADR | nur bei einer **echten** Architekturentscheidung |
+
+Eine kleine interne Fehlerkorrektur ohne Zustands- oder Architekturwirkung —
+etwa ein Tippfehler, eine Lint-Bereinigung oder ein nachgezogener Test — muss
+**nicht** mehrere Dokumente verändern. Dokumentation soll verlässlich sein, nicht
+zeremoniell.
+
+Nach einem **größeren Auftrag** ist die Abschlusszusammenfassung verpflichtend,
+in genau diesem Format:
 
 ```
 DONE        — was umgesetzt wurde
@@ -172,15 +184,31 @@ existiert.
 
 ---
 
-## 11. Wichtige Befehle (ab Phase 1)
+## 11. Wichtige Befehle
 
-```bash
-make dev        # Compose starten
-make test       # Backend- und Frontend-Tests
-make lint       # ruff + eslint
-make typecheck  # mypy + tsc
-make migrate    # Alembic upgrade head
-make check      # alle Qualitätsschranken inkl. import-linter und Drift-Check
+Unter Windows ist `tasks.ps1` der Hauptweg (`make` ist dort meist nicht installiert);
+das `Makefile` bietet dieselben Ziele.
+
+```powershell
+.\tasks.ps1 install     # uv sync --frozen + npm ci
+.\tasks.ps1 check       # alle Qualitätsschranken auf einmal
+.\tasks.ps1 test        # Backend- und Frontend-Tests
+.\tasks.ps1 lint        # ruff + eslint
+.\tasks.ps1 typecheck   # mypy + tsc
+.\tasks.ps1 boundaries  # import-linter
+.\tasks.ps1 migrate     # alembic upgrade head
+.\tasks.ps1 seed        # Startbestand anlegen
+.\tasks.ps1 openapi     # OpenAPI exportieren + API-Client erzeugen
+```
+
+`check` umfasst: Ruff (Lint und Format), mypy `--strict`, Modulgrenzen, genau ein
+Alembic-Head, Backend-Tests, OpenAPI-Drift-Check, Frontend-Typecheck, ESLint,
+Frontend-Tests und Build.
+
+Datenbanktests brauchen PostgreSQL:
+
+```powershell
+$env:ELEKTROPLAN_TEST_DATABASE_URL = 'postgresql+psycopg://elektroplan:elektroplan@localhost:5432/elektroplan'
 ```
 
 ---
@@ -189,5 +217,17 @@ make check      # alle Qualitätsschranken inkl. import-linter und Drift-Check
 
 Siehe `docs/current-status.md`. **Immer zuerst dort nachsehen.**
 
-Phase 0 (Architektur und Dokumentation) ist abgeschlossen. Es existiert noch **kein**
-Anwendungscode. Phase 1 ist geplant (`docs/phase-1-plan.md`) und wartet auf Freigabe.
+Phase 0 (Architektur) ist abgeschlossen. Phase 1 (Platform Foundation) ist
+implementiert; drei Exit-Kriterien warten auf die Abnahme mit laufender Datenbank.
+
+Für die Arbeit am Code wichtig:
+
+- Das Backend ist **synchron** (ADR 0011): Endpunkte sind `def`, nicht `async def`.
+- Neues Backend-Modul: `ModuleDescriptor` anlegen und in
+  `apps/backend/app/modules/__init__.py` eintragen.
+- Neues Frontend-Modul: eine Zeile in `apps/planner/src/modules/index.ts`.
+- Nach Schemaänderungen eine Migration erzeugen — es darf nur **einen** Alembic-Head geben.
+- Nach API-Änderungen den API-Client neu erzeugen, sonst schlägt der Drift-Check fehl.
+- Abhängigkeiten **nur** über `uv`: `pyproject.toml` ändern, dann `uv lock`.
+  `uv.lock` wird eingecheckt; installiert wird ausschließlich mit `--frozen`.
+  Kein paralleler `pip install`-Pfad.

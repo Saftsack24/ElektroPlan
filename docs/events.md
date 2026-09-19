@@ -1,7 +1,8 @@
 # Domain Events und interner Event Bus
 
 Version: 1.0 (Phase 0)
-Verbindliche Entscheidung: [ADR 0004](decisions/0004-internal-event-bus.md)
+Verbindliche Entscheidungen: [ADR 0004](decisions/0004-internal-event-bus.md) und
+[ADR 0012](decisions/0012-event-delivery-guarantee.md) (Zustellgarantie)
 
 ---
 
@@ -99,6 +100,18 @@ Drei Regeln, die nicht verhandelbar sind:
 > Die Zustellung ist **at most once**. Stürzt der Prozess zwischen Commit und Zustellung
 > ab, ist das Event verloren.
 
+### Was `domain_events` ist — und was nicht
+
+`domain_events` ist ein **Best-Effort-Ereignisprotokoll** für Nachvollziehbarkeit und
+Fehlersuche. Es ist ausdrücklich **keine transaktionale Outbox**: Der Fachzustand wird
+zuerst committet, das Event danach in einer eigenen Transaktion geschrieben. Zwischen
+beiden Schritten kann ein Absturz das Event spurlos verschwinden lassen — es taucht dann
+auch nicht als `pending` auf.
+
+Der Status `pending` bedeutet daher „Zustellung begonnen“, nicht „wird garantiert
+nachgeholt“. Begründung und die Bedingungen für eine spätere echte Outbox:
+[ADR 0012](decisions/0012-event-delivery-guarantee.md).
+
 Daraus folgt die wichtigste Regel dieses Dokuments:
 
 > **Jede eventgetriebene Ableitung muss zusätzlich als idempotenter, direkt aufrufbarer
@@ -125,6 +138,7 @@ Events. Alles, was Geld oder Bestand verändert, ist ein synchroner Aufruf mit E
 | Maximal eine Folgeebene | Ein Handler darf ein Event auslösen, dessen Handler keins mehr auslöst |
 | Keine Zyklen | Beim Start geprüft: Event-Graph muss azyklisch sein |
 | Registriert im `ModuleDescriptor` | Keine versteckten Handler irgendwo im Code |
+| Bus wird vor dem Verdrahten geleert | Mehrfaches Erzeugen der Anwendung (Tests) darf Handler nicht doppelt registrieren |
 
 ```python
 subscriptions=(
@@ -171,7 +185,8 @@ Nutzen:
 
 - Nachvollziehbarkeit ("warum ist der Bedarf gestiegen?")
 - Fehlersuche bei fehlgeschlagenen Handlern
-- späterer Umstieg auf asynchrone Verarbeitung ohne Datenverlust
+
+**Kein** Nutzen: eine Zustellgarantie. Siehe Abschnitt 4.
 
 `handler_status` ist `ok`, `partial` oder `failed` samt Fehlertext. Die Tabelle ist
 append-only; einzige erlaubte Änderung ist `handler_status`.
@@ -199,7 +214,13 @@ Kein Kafka, kein RabbitMQ, kein Celery, kein Redis-Pub/Sub. Kein Event Sourcing 
 Zustand lebt in Tabellen, nicht im Event-Log. Keine Retry-Mechanik, keine Dead Letter
 Queue, keine Saga-Orchestrierung.
 
-**Migrationspfad** (falls je nötig): `domain_events` existiert bereits als Outbox. Ein
-Worker, der die Tabelle abarbeitet, statt direkt zuzustellen, macht aus *at most once*
-ein *at least once*, ohne dass Produzenten oder Handler geändert werden müssen. Genau
-deshalb wird die Tabelle von Anfang an geschrieben.
+**Migrationspfad** (falls je nötig): Ein Umstieg auf *at least once* ist **kein** reiner
+Worker-Nachbau. Dafür müssten zusätzlich
+
+1. der Eventdatensatz in derselben Transaktion wie der Fachzustand geschrieben werden,
+2. ein Zustellstatus je Event **und Handler** geführt werden,
+3. ein Worker die offenen Einträge wiederaufnehmen — inklusive Tests für
+   Mehrfachzustellung.
+
+Dieser Aufwand wird hier benannt, damit er später nicht unterschätzt wird
+([ADR 0012](decisions/0012-event-delivery-guarantee.md)).

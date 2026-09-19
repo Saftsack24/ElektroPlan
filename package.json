@@ -1,0 +1,23 @@
+{
+  "name": "elektroplan",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Modulare Softwareplattform fuer Elektrofachbetriebe",
+  "workspaces": [
+    "apps/planner",
+    "packages/api-client"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @elektroplan/planner",
+    "build": "npm run build --workspace @elektroplan/planner",
+    "lint": "npm run lint --workspace @elektroplan/planner",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "generate:api": "npm run generate --workspace @elektroplan/api-client",
+    "check:api": "npm run generate --workspace @elektroplan/api-client -- --check",
+    "check:boundaries": "npm run check:boundaries --workspace @elektroplan/planner"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

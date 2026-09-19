@@ -18,6 +18,8 @@ Format: Context · Problem · Considered Options · Decision · Consequences
 | [0008](0008-documentation-language-and-naming.md) | Sprache in Dokumentation und Code | accepted | 2026-09-18 |
 | [0009](0009-contracts-source-of-truth.md) | Quelle der Wahrheit für Contracts | accepted | 2026-09-18 |
 | [0010](0010-2d-first-editor-with-installation-zones.md) | 2D-First-Editor mit Installationszonen | accepted | 2026-09-18 |
+| [0011](0011-synchronous-sqlalchemy.md) | Synchrones SQLAlchemy statt async | accepted | 2026-09-18 |
+| [0012](0012-event-delivery-guarantee.md) | Event-Zustellung: at most once, keine Outbox | accepted | 2026-09-18 |
 
 ## Wann ein ADR nötig ist
 

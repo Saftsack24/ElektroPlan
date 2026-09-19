@@ -17,7 +17,7 @@ wie sie sich registrieren.
 | `calculation` | Shared | Phase 9 | `calculation_` | core, materials |
 | `offers` | Shared | Phase 10 | `offer_` | core, calculation |
 | `work_orders` | Shared | Phase 11 | `work_order_` | core, offers |
-| `electrical` | Fachmodul | Phase 3–6 | `electrical_` | core, materials |
+| `electrical` | Fachmodul | Phase 3–6 | `electrical_` | **Phase 3–6: nur core** · ab Phase 7: core, materials |
 | `pv` | Fachmodul | Phase 18/19 | `pv_` | core, materials |
 | `knx`, `wallbox`, `network`, … | Fachmodul | offen | je eigen | core, materials |
 
@@ -25,8 +25,26 @@ wie sie sich registrieren.
 
 ## 2. Die eine Regel
 
-> Ein Modul kennt von einem anderen Modul **ausschließlich** dessen veröffentlichte
-> Contracts. Niemals Tabellen, Modelle, Repositories oder interne Services.
+> Ein Modul kennt von einem anderen Modul **ausschließlich** die Contracts unter
+> `app.contracts.v1`. Es importiert **keinerlei** Code aus `app.modules.<anderes>` —
+> weder dessen Paket-Root, `models`, `repositories`, `services`, `api`, `providers`,
+> `schemas`, `domain` noch irgendein anderes Submodul. Modultabellen tragen **keine
+> Fremdschlüssel** auf Tabellen anderer Module.
+
+**`depends_on` ist keine Importerlaubnis.** Es beschreibt eine fachliche Abhängigkeit
+und die Verdrahtungsreihenfolge in der Composition Root. Selbst wenn `electrical` in
+`depends_on = ("core", "materials")` steht, darf `electrical` weder eine Python-Zeile
+aus `app.modules.materials.*` importieren noch eine `materials_`-Tabelle per FK
+referenzieren.
+
+Modulübergreifende Kommunikation läuft ausschließlich über:
+
+* veröffentlichte Contracts unter `app.contracts.v1` (Pydantic-Modelle bzw. `Protocol`),
+* typisierte Ports und ihre Verdrahtung im `ModuleDescriptor` (siehe Abschnitt 4),
+* Domain Events als *unverbindliche* Post-Commit-Reaktion (siehe `docs/events.md`).
+
+Braucht ein Modul Daten aus einem anderen Modul, hält es dessen fachliche UUID
+**ohne FK** in einer eigenen Spalte und validiert sie über den Contract.
 
 ### Erlaubt
 
@@ -38,19 +56,27 @@ inventory.reserve(ReservationRequest(...))
 ### Verboten
 
 ```python
-from app.modules.inventory.models import InventoryStock      # fremdes Modell
-session.execute(text("UPDATE inventory_stocks SET ..."))      # fremde Tabelle
-from app.modules.electrical.services import RoomService      # Shared -> Fachmodul
+# Alle Formen sind gleichwertig verboten - unabhaengig von depends_on:
+from app.modules.materials                            # Paket-Root
+from app.modules.materials.contracts import ...       # angeblich "oeffentlich"
+from app.modules.materials.providers import ...
+from app.modules.materials.schemas   import ...
+from app.modules.materials.domain    import ...
+from app.modules.materials.models    import ...       # fremdes Modell
+session.execute(text("UPDATE materials_items SET ...")) # fremde Tabelle
+from app.modules.electrical.services import RoomService # Shared -> Fachmodul
 ```
 
-### Abhängigkeitsrichtungen
+### Abhängigkeitsrichtungen (fachlich, nicht als Importfreigabe)
 
 ```
-Fachmodul ──▶ Shared ──▶ Core
-Fachmodul ──▶ Core
-Shared ──▶ Shared   (nur Contracts)
+Fachmodul ──▶ Shared ──▶ Core     (nur ueber app.contracts.v1)
+Fachmodul ──▶ Core                (Core-Code, app.db)
+Shared ──▶ Shared                 (nur ueber app.contracts.v1)
 
-VERBOTEN: Core ──▶ Shared/Fachmodul · Shared ──▶ Fachmodul · Fachmodul ──▶ Fachmodul
+VERBOTEN als Python-Import: Core ──▶ Shared/Fachmodul,
+Shared ──▶ Fachmodul, Fachmodul ──▶ Fachmodul,
+Modul ──▶ Datei eines anderen Moduls (in jeder Form).
 ```
 
 Braucht ein Shared Module Daten aus einem Fachmodul, wird **kein Import** eingeführt,
@@ -90,8 +116,17 @@ Aufträge aus angenommenen Angeboten, Soll-Material, Soll-Zeiten, Status, späte
 
 ### electrical
 Räume, Wände, Öffnungen, Geräte, Verteilungen, Stromkreise, Leitungswege,
-Installationszonen, Längenberechnung. Erzeugt Material- und Arbeitszeitbedarf über Ports.
-Kennt keine Preise.
+Installationszonen, Längenberechnung. Kennt keine Preise.
+
+**Abhängigkeit zeitlich gestaffelt.** In den Phasen 3–6 hängt `electrical`
+ausschließlich von `core` ab. Das Modul `materials` existiert zu diesem Zeitpunkt
+noch nicht; die Module Registry würde eine Abhängigkeit auf ein nicht registriertes
+Modul beim Start ablehnen.
+
+Erst in **Phase 7** kommen hinzu: `depends_on = ("core", "materials")` sowie die
+Implementierungen von `MaterialRequirementProvider` und `LaborRequirementProvider`.
+Bis dahin wird **kein leeres Materials-Modul als Platzhalter** angelegt — ein Modul
+ohne Inhalt wäre genau die Art von Vorratscode, die CLAUDE.md Abschnitt 8 ausschließt.
 
 ---
 
@@ -100,11 +135,14 @@ Kennt keine Preise.
 Ports sind die einzige Möglichkeit, dass ein Shared Module fachmodulspezifische Daten
 erhält, ohne das Fachmodul zu kennen.
 
-| Port | Definiert in | Aufgerufen von | Implementiert von |
-|---|---|---|---|
-| `MaterialRequirementProvider` | `contracts/v1/material.py` | Material Engine | jedes Fachmodul |
-| `LaborRequirementProvider` | `contracts/v1/labor.py` | Material Engine | jedes Fachmodul |
-| `OfferItemSuggestionProvider` | `contracts/v1/offer.py` | Angebotsassistent | jedes Fachmodul |
+| Port | Definiert in | Aufgerufen von | Implementiert von | Ab Phase |
+|---|---|---|---|---|
+| `MaterialRequirementProvider` | `contracts/v1/material.py` | Material Engine | jedes Fachmodul | 7 |
+| `LaborRequirementProvider` | `contracts/v1/labor.py` | Material Engine | jedes Fachmodul | 7 |
+| `OfferItemSuggestionProvider` | `contracts/v1/offer.py` | Angebotsassistent | jedes Fachmodul | 10 |
+
+Die Ports entstehen **mit dem Modul, das sie definiert** — nicht vorher. Ein Port
+ohne Aufrufer wäre tote Abstraktion.
 
 Regeln:
 
@@ -123,6 +161,8 @@ Regeln:
 
 ```python
 # apps/backend/app/modules/electrical/module.py
+# Zustand ab Phase 7. In den Phasen 3-6 lautet depends_on nur ("core",),
+# und `provides` bleibt leer (siehe Abschnitt 3).
 from app.core.module_registry import ModuleDescriptor, ModuleKind, PermissionDef, PortBinding
 from app.contracts.v1.material import MaterialRequirementProvider, LaborRequirementProvider
 from .api import router
@@ -281,69 +321,107 @@ Keine Lizenz-, Abrechnungs- oder Trial-Logik.
 
 ## 8. Durchsetzung der Grenzen
 
+Die Regeln aus Abschnitt 2 werden auf sechs Ebenen automatisiert geprüft. Jede
+Ebene hat einen **eindeutigen** Zuständigkeitsbereich; sie ersetzen einander
+nicht.
+
+| Ebene | Werkzeug | Prüft |
+|---|---|---|
+| Registry (Laufzeit) | `ModuleRegistry.validate()` in `app/core/module_registry/registry.py` | eindeutige Modul-IDs, existierende und richtungskonforme Abhängigkeiten, keine Zyklen, eindeutige Tabellenpräfixe, Permission-Namensraum, Port-Bindings (Existenz, Signatur, sync/async, Rückgabetyp, Parametertypen) |
+| Statische Import-Analyse | `check_import_boundaries()` in `app/core/module_registry/boundaries.py`, aufgerufen von `tests/test_module_boundaries.py` | Rein dateisystembasierte AST-Analyse: **jeder** Import auf `app.modules.<anderes>` ist verboten, unabhängig von `depends_on`. Syntaxfehler, unlesbare Dateien und relative Importe über das Backend hinaus führen zu einem klaren Fehler; fehlende Modul-Ordner werden gemeldet. |
+| Schichten (`import-linter`) | `apps/backend/.importlinter` | `app.modules → app.core → app.db → app.contracts`; Core kennt keine Module; Contracts hängen an nichts; DB kennt keine Fachlogik |
+| Datenbank (Metadaten) | `check_table_boundaries()` in `boundaries.py`, aufgerufen von `tests/test_module_boundaries.py` | Jede Tabelle gehört einem Modul über `table_prefix` oder der Core-Positivliste `CORE_TABLES`. Jeder FK trifft nur eigene Tabellen oder Core-Tabellen. **Kein FK auf fremde Modultabellen — auch bei `depends_on` nicht.** Fremde Daten leben als externe UUID ohne FK. |
+| Statische Port-Typisierung | `PortBinding[TPort]` + `bind_port(TPort, TPort)` in `descriptor.py`, gegengeprüft mit `tests/test_ports_typing.py` | Vier mypy-Negativ-Fixtures (`bad_missing_method`, `bad_wrong_arity`, `bad_wrong_param_type`, `bad_wrong_return`) laufen mypy `--strict` als Subprozess an und werden nachweislich abgelehnt. Die positive Fixture wird akzeptiert. |
+| Frontend | `apps/planner/scripts/module-boundaries.mjs` (`npm run check:boundaries`), zusätzlich `no-restricted-imports` als Frühwarner | Absolute und relative Importpfade werden gegen den *tatsächlichen* Datei-Owner aufgelöst. Ein Sibling-Import wie `../andereModul/internal` wird technisch erkannt — nicht mehr nur konventionell. Der Vitest-Test importiert die produktive Funktion; Test und Regel bleiben synchron. |
+
+**Ein Verstoß auf jeder dieser Ebenen bricht den Build.** Regeln ohne
+Prüfung halten in einem KI-gestützten Projekt keine drei Wochen.
+
+Die statischen Prüfungen greifen automatisch, sobald ein Modul im
+`ModuleDescriptor` registriert wird — es sind **keine** manuellen
+Nachträge an `.importlinter` oder ESLint mehr nötig. Ein neues Modul, das
+falsche `depends_on`-Werte oder fremde Tabellen anfässt, ist damit auch
+in der ersten Version nicht grün.
+
 ### Backend — `import-linter`
 
 ```ini
 [importlinter:contract:layers]
-name = ElektroPlan Schichten
+name = Schichten: modules -> core -> db -> contracts
 type = layers
 layers =
     app.modules
-    app.contracts
     app.core
+    app.db
+    app.contracts
 
-[importlinter:contract:no-domain-to-domain]
-name = Fachmodule kennen einander nicht
-type = independence
-modules =
-    app.modules.electrical
-    app.modules.pv
-
-[importlinter:contract:shared-not-to-domain]
-name = Shared Modules kennen keine Fachmodule
+[importlinter:contract:core-not-to-modules]
+name = Core kennt keine Module
 type = forbidden
-source_modules =
-    app.modules.materials
-    app.modules.inventory
-    app.modules.calculation
-    app.modules.offers
-    app.modules.work_orders
-forbidden_modules =
-    app.modules.electrical
-    app.modules.pv
-
-[importlinter:contract:no-cross-module-models]
-name = Keine fremden Models/Repositories
-type = forbidden
-source_modules = app.modules
-forbidden_modules =
-    app.modules.*.models
-    app.modules.*.repositories
+source_modules = app.core
+forbidden_modules = app.modules
 ```
 
-(Die letzte Regel wird in der Umsetzung als explizite Paarliste ausformuliert.)
+Die feineren Regeln (Shared → Fachmodul, Fachmodul → Fachmodul, jeder
+Zugriff aus `app.modules.<a>` auf `app.modules.<b>`) werden nicht über
+`import-linter`-Contracts pro Modulpaar geschrieben, sondern über die
+statische AST-Analyse in `boundaries.py`, die die
+`ModuleDescriptor`-Metadaten selbst zur Quelle nimmt und **keinen
+Modulcode ausführt**. Damit gibt es keinen "zweiten Ort", der bei jedem
+neuen Modul mitgepflegt werden müsste.
 
-### Frontend — ESLint
+### Frontend — produktives Skript
 
-```js
-"no-restricted-imports": ["error", {
-  patterns: [
-    { group: ["@/modules/*/!(index)", "../*/!(index)"],
-      message: "Module nur über ihren index.ts-Contract verwenden." },
-    { group: ["@/modules/*"],
-      message: "Kein Modul-Import aus core/. Beiträge laufen über die Registry." }
-  ]
-}]
 ```
+node apps/planner/scripts/module-boundaries.mjs apps/planner/src
+```
+
+`npm run check:boundaries`, `tasks.ps1 boundaries` und `tasks.ps1 check`
+rufen dieselbe Funktion auf, die auch die Vitest-Fixtures in
+`apps/planner/src/core/modules/boundaries.test.ts` benutzen. Die Regel
+nutzt den TypeScript-Compiler und erkennt:
+
+* statische `import`-Deklarationen,
+* Re-Exports (`export ... from "…"`, `export * from "…"`),
+* dynamische `import("…")` (auch in `React.lazy(() => import("…"))`,
+  auch mehrzeilig).
+
+**Nicht statisch bestimmbare** dynamische Imports (`import(variable)`
+oder `` import(`.../${x}`) ``) werden ausdrücklich als
+Architekturverstoß `dynamic-non-literal` gemeldet — sie würden die
+Grenze umgehen können.
+
+Verbindliche Kombinationen (Verstoß bricht den Build):
+
+* `app/**` → konkretes Modul (public **oder** internal) — verboten.
+  App importiert ausschließlich die zentrale Composition-Root-Fassade
+  `src/modules/index.ts` sowie Core/Utility-Code.
+* `core/**` → konkretes Modul — verboten.
+* Modul A → Modul B (in jeder Form) — verboten.
+* Composition Root → Modul-Interna — verboten (nur öffentliche
+  Modul-Indizes).
+* Nur `src/modules/index.ts` (Composition Root) darf konkrete
+  Modul-Indizes importieren.
+
+**Der öffentliche Einstieg eines Moduls ist genau `src/modules/<id>`
+bzw. `src/modules/<id>/index.ts[x]` — keine tiefer verschachtelte
+`index.ts`.** Eine Datei wie `src/modules/<id>/pages/index.ts` oder
+`src/modules/<id>/internal/index.ts` bleibt intern; auch die
+Composition Root darf sie nicht importieren. Der Modul-Eigentümer
+selbst darf seine eigenen verschachtelten `index`-Dateien natürlich
+nutzen.
+
+ESLint bleibt als Frühwarner für die häufigsten absoluten Patterns
+(`@/modules/*`, `../../modules/*`); die verbindliche Grenze ist das
+Skript.
 
 ### Datenbank
 
-Ein Test liest die SQLAlchemy-Metadaten jedes Moduls und prüft, dass alle Tabellen mit dem
-eigenen Präfix beginnen und Fremdschlüssel nur auf Core-Tabellen oder eigene Tabellen
-zeigen.
-
-**Ein Verstoß bricht den Build.** Regeln ohne Prüfung halten in einem KI-gestützten
-Projekt keine drei Wochen.
+Der Test liest die SQLAlchemy-Metadaten jedes Moduls und prüft, dass alle Tabellen
+mit dem eigenen Präfix beginnen und Fremdschlüssel **ausschließlich** auf eigene
+Tabellen oder Core-Tabellen zeigen. `depends_on` erlaubt **keine** FK-Referenzen
+auf fremde Modultabellen. Die zulässigen Core-Tabellen stehen als Positivliste in
+`app.core.module.CORE_TABLES`; sie ist die einzige Quelle für „gehört zum Core".
 
 ---
 

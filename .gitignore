@@ -1,0 +1,47 @@
+# --- Python ---------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.uv-cache/
+*.egg-info/
+htmlcov/
+.coverage
+.coverage.*
+
+# uv.lock wird BEWUSST versioniert: Nur so installiert eine frische Umgebung
+# exakt die getesteten Versionen.
+!uv.lock
+
+# --- Node -----------------------------------------------------------------
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# package-lock.json wird BEWUSST versioniert (npm ci).
+!package-lock.json
+
+# --- Environment / Secrets ------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!**/scripts/*.key
+
+# --- Betriebssystem / Editor ----------------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# --- Erzeugt, aber versioniert --------------------------------------------
+# apps/backend/openapi.json und packages/api-client/src/generated.ts werden
+# bewusst eingecheckt: Ein frischer Klon muss ohne laufendes Backend
+# typpruefbar und baubar sein. Der Drift-Check (npm run check:api) stellt
+# sicher, dass sie aktuell bleiben.

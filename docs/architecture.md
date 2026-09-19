@@ -208,7 +208,12 @@ Request ──▶ UoW öffnen ──▶ Service-Logik ──▶ Events sammeln �
 - Daraus folgt: Zustellung ist *at most once*. **Jede eventgetriebene Ableitung braucht
   einen idempotenten Recompute-Endpunkt.**
 
-Siehe [ADR 0004](decisions/0004-internal-event-bus.md).
+`domain_events` ist ein **Best-Effort-Protokoll**, ausdrücklich **keine transaktionale
+Outbox**: Der Fachzustand wird zuerst committet, das Event danach in einer eigenen
+Transaktion geschrieben. Ein Absturz dazwischen lässt das Event verschwinden.
+
+Siehe [ADR 0004](decisions/0004-internal-event-bus.md) und
+[ADR 0012](decisions/0012-event-delivery-guarantee.md).
 
 ---
 
@@ -460,12 +465,20 @@ beschrieben werden — eingeführt in Phase 13/16. Ausnahme: `inventory_transact
 `client_txn_id` (Unique) bereits bei der Ersteinführung, weil Idempotenz bei Buchungen
 nachträglich teuer ist.
 
+Welche Aggregate offline entstehen dürfen, wie Idempotenz, Versionierung, Tombstones und
+die vier Konfliktklassen geregelt sind, steht in [`docs/offline-sync.md`](offline-sync.md).
+Dort ist auch festgelegt, welche Konflikte automatisch und welche **nur manuell** gelöst
+werden dürfen.
+
 ---
 
 ## 17. Fehlerbehandlung, Logging, Observability
 
 - Fehlerformat: RFC 9457 Problem Details (`application/problem+json`), stabile
   `type`-Werte, keine Stacktraces, keine internen Bezeichner nach außen.
+- Sicherheitsheader setzt das Backend für die **API**; die CSP der Planner-Auslieferung
+  liegt beim Webserver, HSTS nur in Produktion bzw. am Reverse Proxy
+  (`docs/security.md`, Abschnitt 12).
 - Strukturiertes JSON-Logging mit `request_id`, `user_id`, `organization_id`, `module`.
 - Health-Endpunkte: `/health/live`, `/health/ready`.
 - Kein APM/Tracing-Stack im MVP.

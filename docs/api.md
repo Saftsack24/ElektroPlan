@@ -156,11 +156,39 @@ POST /api/v1/calculations/{calculation_id}/check-stale
 ## 7. Modul- und Kontextendpunkte
 
 ```
-GET /api/v1/me                 Benutzer, aktive Organisation, Permissions
-GET /api/v1/me/organizations   Mitgliedschaften
-GET /api/v1/me/modules         aktive Module inkl. Version
+GET  /api/v1/me                 Benutzer, aktive Organisation, Permissions
+GET  /api/v1/me/organizations   Mitgliedschaften
+GET  /api/v1/me/modules         aktive Module inkl. Version
+POST /api/v1/auth/login         Anmeldung
+POST /api/v1/auth/refresh       Sitzung erneuern (liest das Cookie, kein Body)
+POST /api/v1/auth/logout        Abmelden (liest das Cookie, kein Body)
 POST /api/v1/auth/switch-organization
 ```
+
+### Sitzungsendpunkte: Cookie statt Antwortkörper
+
+`TokenResponse` enthält **keinen** Refresh Token. Er verlässt den Server
+ausschließlich als `HttpOnly`-Cookie (`Path=/api/v1/auth`, `SameSite=Strict`,
+`Secure` in Produktion). Damit kann JavaScript ihn nicht lesen — und ein
+XSS-Angriff ebenso wenig.
+
+Folgen für Clients:
+
+- Anfragen an Sitzungsendpunkte brauchen `credentials: "include"`.
+- `/auth/refresh` und `/auth/logout` haben **keinen** Anfragekörper.
+- Die vier cookiebasierten Endpunkte prüfen zusätzlich `Origin`/`Referer`
+  (`403 csrf-validation-failed` bei fremder Herkunft), siehe
+  `docs/security.md`, Abschnitt 12.
+- Die spätere Baustellen-App erhält einen **getrennten** mobilen Tokenflow; sie
+  verwendet dieses Schema nicht.
+
+### Mehrere Betriebe beim Login
+
+Gehört ein Konto mehreren aktiven Betrieben an und wurde keiner gewählt,
+antwortet `/auth/login` mit `409` und
+`type: …/organization-selection-required`. Das Problem-Dokument enthält dann das
+Feld `organizations` mit `id` und `name` zur Auswahl. Ein erneuter Login mit
+`organization_id` schließt den Vorgang ab.
 
 `GET /api/v1/me/modules` steuert die Sichtbarkeit im Frontend. Die eigentliche
 Absicherung bleibt serverseitig.

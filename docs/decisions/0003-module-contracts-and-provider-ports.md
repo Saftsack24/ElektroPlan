@@ -33,7 +33,14 @@ Fachmodul implementiert es, die Module Registry verdrahtet beide.
 
 ## Decision
 
-**Option D.** Drei Ports werden eingeführt:
+**Option D.** Drei Ports werden eingeführt. Klarstellung nach Phase 1.2:
+`ModuleDescriptor.depends_on` beschreibt die *fachliche* Reihenfolge — sie ist
+**keine Python-Importerlaubnis** und **kein Freibrief für FKs auf fremde
+Modultabellen**. Ein Modul, das Daten eines anderen Moduls braucht,
+kommuniziert ausschließlich über Contracts unter `app.contracts.v1` und über
+typisierte Ports. Externe Referenzen werden als UUID ohne FK geführt.
+
+Drei Ports:
 
 | Port | Definiert von | Implementiert von |
 |---|---|---|
@@ -52,6 +59,12 @@ Ergänzende Festlegungen:
 3. Ports liefern Daten und schreiben nicht. Der Aufrufer persistiert.
 4. Ein neuer Port braucht einen eigenen ADR.
 5. ServiceTemplates liegen im Modul `materials` (Katalogdaten), nicht in `calculation`.
+6. **Ein Port entsteht mit dem Modul, das ihn definiert — nicht vorher.**
+   `electrical` wird in den Phasen 3–6 mit `depends_on = ("core",)` registriert;
+   `materials` existiert dann noch nicht, und die Module Registry würde eine
+   Abhängigkeit auf ein unregistriertes Modul beim Start ablehnen. Erst in Phase 7
+   kommen die Abhängigkeit und die Provider-Implementierungen hinzu. Ein leeres
+   Platzhalter-Modul `materials` wird ausdrücklich **nicht** angelegt.
 
 ## Consequences
 

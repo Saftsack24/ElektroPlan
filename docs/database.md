@@ -105,7 +105,7 @@ erDiagram
     }
     USERS {
         uuid id PK
-        citext email UK
+        text email UK
         text password_hash
         text full_name
         bool is_active
@@ -220,7 +220,7 @@ erDiagram
 ### Wichtige Constraints (Core)
 
 - `organizations.slug` UNIQUE
-- `users.email` UNIQUE (citext)
+- `users.email` UNIQUE (immer klein geschrieben gespeichert)
 - `organization_members` UNIQUE `(organization_id, user_id)`
 - `roles` UNIQUE `(organization_id, key)`
 - `permissions.key` UNIQUE, Format `<modul>.<objekt>.<aktion>`
@@ -743,7 +743,10 @@ Weitere Indizes erst nach Messung (`EXPLAIN ANALYZE`), nicht auf Verdacht.
 - Migrationen sind vorwärtsgerichtet; `downgrade` wird nur dort gepflegt, wo es trivial
   ist.
 - Datenmigrationen laufen nie automatisch beim Start, sondern über einen expliziten Befehl.
-- Erweiterungen: `pgcrypto` (für `gen_random_uuid()`), `citext`.
+- **Keine** Datenbankerweiterungen nötig: `gen_random_uuid()` ist seit
+  PostgreSQL 13 im Kern enthalten, und E-Mails werden statt über `citext`
+  grundsätzlich klein geschrieben gespeichert (Normalisierung im Service).
+  Das hält Migrationen und Testdatenbanken erweiterungsfrei.
 - Seeds (Systemrollen, Permissions, Basis-Gerätetypen, Standard-Installationszonen) sind
   idempotente Skripte, keine Migrationen.
 
