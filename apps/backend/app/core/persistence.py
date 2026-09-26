@@ -44,6 +44,16 @@ CONCURRENT_UPDATE_DETAIL = (
 )
 
 
+#: SQLSTATE einer Fremdschluesselverletzung in PostgreSQL.
+FOREIGN_KEY_VIOLATION = "23503"
+
+
+def _sqlstate_of(error: IntegrityError) -> str | None:
+    """SQLSTATE der Datenbankmeldung, sofern der Treiber ihn liefert."""
+    code = getattr(getattr(error, "orig", None), "sqlstate", None)
+    return str(code) if code else None
+
+
 def constraint_name_of(error: IntegrityError) -> str | None:
     """Name der verletzten Constraint, sofern der Treiber ihn liefert.
 
@@ -83,6 +93,32 @@ def unique_violation_translated(
     except IntegrityError as exc:
         session.rollback()
         if constraint_name_of(exc) != constraint:
+            raise
+        raise error from exc
+
+
+@contextmanager
+def foreign_key_violation_translated(session: Session, *, error: AppError) -> Iterator[None]:
+    """Uebersetzt eine Fremdschluesselverletzung in einen fachlichen Fehler.
+
+    Gebraucht beim Loeschen einer Struktur, auf die ein Fachmodul verweist:
+    Ein Geschoss mit Planungsdaten laesst sich nicht entfernen, weil der
+    Fremdschluessel ``RESTRICT`` traegt. Ohne diese Uebersetzung waere die
+    Antwort ein ``500`` - technisch richtig, fachlich nutzlos.
+
+    Der Core erfaehrt dabei **nicht**, welches Modul verweist. Die Meldung
+    bleibt deshalb fachneutral: Der Datensatz wird verwendet. Welches Modul ihn
+    verwendet, gehoert nicht in die Antwort - der Core kennt keine Module
+    (ADR 0001).
+
+    Nur die Verletzung eines Fremdschluessels (PostgreSQL ``23503``) wird
+    uebersetzt; jeder andere Integritaetsfehler bleibt ein unerwarteter Fehler.
+    """
+    try:
+        yield
+    except IntegrityError as exc:
+        session.rollback()
+        if _sqlstate_of(exc) != FOREIGN_KEY_VIOLATION:
             raise
         raise error from exc
 

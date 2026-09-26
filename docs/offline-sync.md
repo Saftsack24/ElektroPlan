@@ -30,6 +30,11 @@ Baustelle **lesend**.
 Nicht offline schreibbar: Kunden, Projekte, Planung, Material- und Preisstamm,
 Kalkulationen, Angebote, Rollen und Rechte.
 
+**Das Raummodell (Phase 3) ist damit ausdrücklich nicht offline schreibbar.** Räume,
+Wände und Öffnungen erhalten deshalb **kein** `client_txn_id` und **kein** `sync_status` —
+ein Feld, das nie einen sinnvollen Wert annimmt, ist Ballast in Schema, Migration und
+DTO. Was das Modell trotzdem einhält, steht in Abschnitt 5.
+
 ---
 
 ## 2. Grundmechanismen
@@ -121,6 +126,24 @@ Verbindlich für die Phasen 11–14, damit Phase 16 nicht umbauen muss:
    Tabellen eingeführt, falls sich dann zeigt, dass ein serverseitiger
    Zustandswert überhaupt gebraucht wird. Die Queue liegt primär auf dem Gerät.
 
+### Was das Raummodell aus Phase 3 einhält
+
+Auch nicht offline beschreibbare Aggregate müssen mit diesem Konzept vereinbar bleiben —
+sonst wäre eine späte Erweiterung ein Umbau. Erfüllt sind:
+
+| Regel | Umsetzung in `electrical_rooms/_walls/_openings` |
+|---|---|
+| Stabile, clientseitig erzeugbare UUIDs | Primärschlüssel ist eine UUID; der Server erzeugt sie **vor** dem Schreiben im Anwendungscode, nicht erst in der Datenbank. Ein Gerät könnte sie genauso vergeben |
+| Versionsinformation | `version` auf allen drei Tabellen, `If-Match` Pflicht bei jeder Änderung |
+| Deterministische Änderungszeitpunkte | `created_at`, `updated_at` als `timestamptz` in UTC |
+| Keine rein positionsabhängige Identität | Eine Wand ist über ihre UUID identifiziert, nicht über ihre Position in der Kontur |
+| Explizite Reihenfolge | `sort_order` je Raum, lückenlos ab 0, eindeutig — nicht aus der Geometrie abgeleitet |
+| Keine stille Last-Write-Wins-Annahme | Jede Änderung braucht `If-Match`; eine veraltete Version ist `409` |
+
+**Ein zweiter Synchronisationsvertrag entsteht nicht.** Das Modul erfindet keine eigene
+Idempotenz und keine eigene Konfliktklasse; sollte Planung je offline entstehen, gilt
+dieses Dokument.
+
 ---
 
 ## 6. Ausdrücklich nicht Teil dieses Konzepts
@@ -129,3 +152,7 @@ Keine CRDTs, kein automatisches Zusammenführen von Textfeldern, keine
 Mehrgeräte-Bearbeitung desselben Datensatzes, keine Offline-Planung (Räume,
 Leitungen), keine Offline-Kalkulation. Die Baustellen-App **erfasst**, sie plant
 nicht.
+
+Phase 3 setzt **nichts** davon um: Es gibt keinen Synchronisationsmechanismus, keine
+Queue und keinen Client, der offline schreibt. Das Modell ist lediglich so gebaut, dass
+Phase 16 nicht umbauen muss.

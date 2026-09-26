@@ -1,6 +1,6 @@
 # Roadmap
 
-Stand: 2026-09-19 (nach Task 0011 — Phase 2.4)
+Stand: 2026-09-26 (nach Task 0012 — Phase 3)
 Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 
 ---
@@ -17,7 +17,7 @@ Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 | 2.2 | Schreibschutz für archivierte Projekte | **DONE** | 2.1 |
 | 2.3 | Workflow- und UX-Nacharbeit | **DONE** | 2.2 |
 | 2.4 | Nachkorrektur zu 2.2 und 2.3 | **DONE** | 2.3 |
-| 3 | Electrical Room Model | NOT STARTED (wartet auf Freigabe) | 2 |
+| 3 | Electrical Room Model | **DONE** | 2 |
 | 4a | 2D-Editor | NOT STARTED | 3 |
 | 4b | 3D-Ansicht | NOT STARTED | 4a |
 | 5 | Electrical Devices | NOT STARTED | 4a |
@@ -183,18 +183,51 @@ Kein Backend, keine Migration. Ergebnis:
 
 ---
 
-## Phase 3 — Electrical Room Model · NOT STARTED
+## Phase 3 — Electrical Room Model · DONE (2026-09-26)
 
-Datenmodell und API für Räume, Wände, Öffnungen inklusive Geometrievalidierung.
-Noch ohne Editor — Erfassung über API und einfache Formulare.
+Erstes echtes Fachmodul: `electrical` mit Räumen, Wänden und Öffnungen auf einem
+bestehenden Geschoss, samt serverseitiger Geometrieprüfung. Ohne Editor — Erfassung über
+API und formularbasierte Oberfläche.
 
-> **Modulabhängigkeit:** `electrical` wird in den Phasen 3–6 mit
-> `depends_on = ("core",)` registriert. `materials` existiert noch nicht; die
-> Abhängigkeit und die Provider-Ports kommen erst in Phase 7 hinzu. Es wird
-> kein leeres Materials-Modul als Platzhalter angelegt.
+Ergebnis: [`docs/task-history.md`](task-history.md), Task 0012.
+Geometriemodell verbindlich in
+[ADR 0013](decisions/0013-room-contour-as-ordered-wall-segments.md).
 
-**Exit:** Ein Raum mit Polygon, Höhe, Wänden und Türen ist über die API erfassbar; die
-Flächenberechnung ist getestet; ungültige Polygone werden abgelehnt.
+> **Modulabhängigkeit:** `electrical` ist mit `depends_on = ("core",)` registriert.
+> `materials` existiert nicht; die Abhängigkeit und die Provider-Ports kommen erst in
+> Phase 7 hinzu. Es wurde **kein** leeres Materials-Modul als Platzhalter angelegt.
+
+**Exit-Kriterien — erfüllt und nachgewiesen**
+
+| # | Kriterium | Nachweis |
+|---|---|---|
+| 1 | Ein Raum mit Höhe, Wänden und Türen ist über die API erfassbar | `tests/test_electrical_rooms.py` — Raum, vier Wände, Tür über die Endpunkte; zusätzlich im laufenden System über die Oberfläche |
+| 2 | Die Flächenberechnung ist getestet | Rechteck, Dreieck mit schräger Wand, L-Form, Umlaufsinn, Halb-mm²-Rundung — exakte Werte, keine Toleranzen (`tests/test_electrical_geometry.py`) |
+| 3 | Ungültige Geometrien werden abgelehnt | entartete Wand, Dublette, Überschneidung, Einschnürung, offene Kontur, Lücke, Öffnung außerhalb, überlappende Öffnungen — je mit eigenem Fehlercode |
+
+**Abweichung vom Exit-Wortlaut, ausdrücklich:** Das Kriterium nannte ein „Polygon" und
+„ungültige Polygone". Umgesetzt ist die Kontur als **geordnete Wandsegmente** ohne
+Polygonspalte; „ungültiges Polygon" heißt jetzt „ungültige Raumkontur". Begründung und
+Abgrenzung stehen in ADR 0013. Der fachliche Gehalt des Kriteriums ist damit erfüllt, die
+Datenhaltung eine andere.
+
+**Zusätzlich umgesetzt, weil die Umsetzung es verlangte:**
+
+- **Veröffentlichte Core-Oberfläche** (`CORE_PUBLIC_SURFACE`): Ein Fachmodul darf aus dem
+  Core nur eine benannte Positivliste importieren — statisch geprüft.
+- **Erweiterungspunkt `app/core/projects/planning.py`**: die einzige Stelle, an der ein
+  Fachmodul Geschoss, Projekt und Schreibschutz erfährt.
+- **`409` statt `500`**, wenn ein Geschoss oder Gebäude mit Planungsdaten gelöscht werden
+  soll (Fremdschlüssel `RESTRICT`, zentral übersetzt).
+- **Modulberechtigungen im Seed**: Der Administrator erhält jede registrierte
+  Berechtigung; weitere Systemrollen über `PermissionDef.default_roles`.
+
+**Testbilanz nach Phase 3:** 552 Backend-Tests, 0 übersprungen (Phase 2.4: 341); 163
+Frontend-Tests (Phase 2.4: 129).
+
+**Ausdrücklich nicht in Phase 3:** kein 2D-Editor, kein Canvas, keine 3D-Ansicht, kein
+AR-Aufmaß, keine Elektrobauteile, keine Stromkreise, keine Leitungswege, keine
+Materialermittlung, keine Kalkulation, kein Offline-Sync, kein Platzhaltermodul.
 
 ---
 

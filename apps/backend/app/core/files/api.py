@@ -75,11 +75,13 @@ def upload_file(
     Mit ``project_id`` wird die Datei einem Projekt zugeordnet; das Projekt
     muss der eigenen Organisation gehoeren und darf nicht archiviert sein.
     """
+    projects = ProjectService(session, current_user.organization_id)
     if project_id is not None:
-        # Fremde oder unbekannte Projekte liefern 404, archivierte 409. Die
-        # Vorbedingung liegt im Projektdienst, damit die Regel an einer
+        # Erste Pruefung **ohne** Sperre: Fremde oder unbekannte Projekte
+        # liefern 404, archivierte 409 - und zwar bevor Bytes bewegt werden.
+        # Die Vorbedingung liegt im Projektdienst, damit die Regel an einer
         # Stelle steht (docs/api.md, Abschnitt "Projektstatus").
-        ProjectService(session, current_user.organization_id).get_writable(project_id)
+        projects.require_writable_unlocked(project_id)
 
     service = FileService(session, storage, current_user.organization_id)
     # Der Strom wird stueckweise gelesen; das Groessenlimit greift waehrend des
@@ -107,8 +109,22 @@ def upload_file(
             "project_id": str(project_id) if project_id else None,
         },
     )
+
     # Committet und raeumt bei Fehlschlag das bereits geladene Objekt ab.
-    service.finalize(record)
+    #
+    # Die **verbindliche** Archivpruefung laeuft erst unmittelbar vor dem
+    # Commit und sperrt dabei die Projektzeile. Vorher waere die Sperre ueber
+    # die gesamte Uebertragung in den Object Storage gehalten worden - eine
+    # Datenbanksperre ueber einen externen Aufruf hinweg ist genau das, was man
+    # nicht will. Wird das Projekt zwischenzeitlich archiviert, scheitert der
+    # Upload mit ``409 project-archived``, und das geladene Objekt wird
+    # verworfen (docs/architecture.md, Abschnitt 7).
+    def sperren_und_pruefen() -> None:
+        """Sperrt die Projektzeile und prueft den Schreibschutz erneut."""
+        if project_id is not None:
+            projects.lock_writable(project_id)
+
+    service.finalize(record, before_commit=sperren_und_pruefen)
     return FileOut.model_validate(record)
 
 

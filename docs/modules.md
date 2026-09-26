@@ -1,6 +1,6 @@
 # Module, Grenzen und Registrierung
 
-Version: 1.0 (Phase 0)
+Version: 1.2 (Phase 3: erstes Fachmodul registriert)
 
 Dieses Dokument definiert, welche Module es gibt, was sie dürfen, was sie nicht dürfen und
 wie sie sich registrieren.
@@ -17,7 +17,7 @@ wie sie sich registrieren.
 | `calculation` | Shared | Phase 9 | `calculation_` | core, materials |
 | `offers` | Shared | Phase 10 | `offer_` | core, calculation |
 | `work_orders` | Shared | Phase 11 | `work_order_` | core, offers |
-| `electrical` | Fachmodul | Phase 3–6 | `electrical_` | **Phase 3–6: nur core** · ab Phase 7: core, materials |
+| `electrical` | Fachmodul | **ab Phase 3 registriert** | `electrical_` | **Phase 3–6: nur core** · ab Phase 7: core, materials |
 | `pv` | Fachmodul | Phase 18/19 | `pv_` | core, materials |
 | `knx`, `wallbox`, `network`, … | Fachmodul | offen | je eigen | core, materials |
 
@@ -42,6 +42,59 @@ Modulübergreifende Kommunikation läuft ausschließlich über:
 * veröffentlichte Contracts unter `app.contracts.v1` (Pydantic-Modelle bzw. `Protocol`),
 * typisierte Ports und ihre Verdrahtung im `ModuleDescriptor` (siehe Abschnitt 4),
 * Domain Events als *unverbindliche* Post-Commit-Reaktion (siehe `docs/events.md`).
+
+### Die zweite Regel: Der Core hat eine Oberfläche
+
+Ein Fachmodul darf Core-Code benutzen — aber nicht jeden. Erlaubt ist ausschließlich die
+**veröffentlichte Oberfläche**, als Positivliste geführt in
+`app/core/module_registry/boundaries.py` (`CORE_PUBLIC_SURFACE`) und statisch geprüft:
+
+| Erlaubt | Zweck |
+|---|---|
+| `app.config`, `app.logging_config` | Konfiguration, Protokollierung |
+| `app.contracts.*` | modulunabhängige Sprache der Plattform |
+| `app.errors` | Fehlervertrag nach RFC 9457 |
+| `app.db.base`, `app.db.mixins`, `app.db.session` | Basisklasse, Spalten-Mixins und mandantensichere Fremdschlüssel, Session-Dependency |
+| `app.core.auth.dependencies` | angemeldeter Benutzer, Permission-Dependency |
+| `app.core.events.bus`, `app.core.events.uow` | Event Bus und Unit of Work |
+| `app.core.module_registry.descriptor` | Modulbeschreibung und Ports |
+| `app.core.pagination`, `app.core.persistence`, `app.core.preconditions`, `app.core.validation` | Cursor-Auflistung, Konfliktübersetzung, `If-Match`, gemeinsame Validatoren |
+| `app.core.tenancy.repository` | mandantengefilterter Datenzugriff |
+| `app.core.projects.planning` | Erweiterungspunkt: Planungsdaten an einem Geschoss |
+
+**Nicht erlaubt** ist alles andere im Core — insbesondere `app.core.<bereich>.models`,
+`…service`, `…schemas`, `app.core.files.storage`, `app.core.seed` und
+`app.core.module_registry.registry`. Das ist Implementierung, nicht Schnittstelle.
+
+**Die Liste nennt Module, keine Pakete.** Ein Präfix wie `app.db` hätte jede künftige
+Datei darunter mitfreigegeben, ohne dass das je entschieden worden wäre; `app.core.events`
+hätte `app.core.events.models` und damit die Tabelle `domain_events` eingeschlossen.
+Einzige Ausnahme ist `app.contracts`: Dieser Ordner **ist** die veröffentlichte Sprache
+zwischen Modulen und trägt seine Version im Pfad (ADR 0009). Negativtests halten beides
+fest.
+
+Fehlt einem Modul ein Zugang, wird er **dort** ergänzt und dokumentiert — nicht umgangen.
+Ein neuer Eintrag erklärt einen Teil des Core zur Schnittstelle, die stabil bleiben muss.
+
+#### Der Erweiterungspunkt für Planungsdaten
+
+`app/core/projects/planning.py` ist die einzige Stelle, an der ein Fachmodul erfährt,
+* ob ein Geschoss zu seinem Mandanten gehört (sonst `404`),
+* zu welchem Projekt es gehört,
+* ob darunter geschrieben werden darf (sonst `409 project-archived`).
+
+Er liefert einen unveränderlichen Wertetyp (`FloorPlanningContext`), kein ORM-Objekt: Die
+Modelle und Repositories des Core verlassen den Core nicht. Die Archivregel wird dabei
+nicht wiederholt, sondern von `ProjectService.lock_writable` übernommen — sie steht damit
+weiterhin an genau einer Stelle. Der Core kennt kein Fachmodul; er stellt den Kanal, das
+Modul benutzt ihn.
+
+**`writable_context` sperrt die Projektzeile** (`SELECT … FOR UPDATE`), bevor es den
+Schreibschutz prüft. Ein Fachmodul erhält damit dieselbe Zusage wie der Core: Nach einer
+abgeschlossenen Archivierung committet keine Änderung mehr. Es ruft diesen Zugang auf,
+**bevor** es eigene Zeilen sperrt — die Reihenfolge ist überall `Projekt → Unterressource`
+(docs/architecture.md, Abschnitt 7). `context` bleibt die sperrfreie Variante für lesende
+Zugriffe.
 
 Braucht ein Modul Daten aus einem anderen Modul, hält es dessen fachliche UUID
 **ohne FK** in einer eigenen Spalte und validiert sie über den Contract.
@@ -122,6 +175,11 @@ Aufträge aus angenommenen Angeboten, Soll-Material, Soll-Zeiten, Status, späte
 ### electrical
 Räume, Wände, Öffnungen, Geräte, Verteilungen, Stromkreise, Leitungswege,
 Installationszonen, Längenberechnung. Kennt keine Preise.
+
+**Stand:** Seit Phase 3 ist das Raummodell umgesetzt — `electrical_rooms`,
+`electrical_walls`, `electrical_openings` samt Geometrieprüfung
+([ADR 0013](decisions/0013-room-contour-as-ordered-wall-segments.md)). Geräte,
+Stromkreise und Leitungswege folgen in den Phasen 5 und 6.
 
 **Abhängigkeit zeitlich gestaffelt.** In den Phasen 3–6 hängt `electrical`
 ausschließlich von `core` ab. Das Modul `materials` existiert zu diesem Zeitpunkt

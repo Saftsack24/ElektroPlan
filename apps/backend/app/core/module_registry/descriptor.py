@@ -34,10 +34,19 @@ ALLOWED_DEPENDENCIES: dict[ModuleKind, frozenset[ModuleKind]] = {
 
 @dataclass(frozen=True, slots=True)
 class PermissionDef:
-    """Eine vom Modul registrierte Berechtigung."""
+    """Eine vom Modul registrierte Berechtigung.
+
+    ``default_roles`` nennt die ausgelieferten Systemrollen, die diesen
+    Schluessel beim Seed erhalten sollen. Damit kann ein Modul seine
+    Berechtigungen verteilen, ohne dass der Core die Schluessel kennen muss -
+    und ohne dass jedes neue Modul nur fuer den Administrator nutzbar waere.
+    Der Administrator erhaelt ohnehin jede registrierte Berechtigung
+    (docs/security.md, Abschnitt 4).
+    """
 
     key: str
     description: str
+    default_roles: tuple[str, ...] = field(default=())
 
 
 TPort = TypeVar("TPort")

@@ -8,7 +8,7 @@ import { useAuth, usePermission } from "../../core/auth/AuthProvider";
 import { WeitereLaden } from "../../core/ui/WeitereLaden";
 import { CustomerFormDialog } from "./CustomerFormDialog";
 import type { KundenWerte } from "./CustomerFormDialog";
-import { alsFormularfehler } from "./fehler";
+import { alsFormularfehler } from "../../core/api/fehler";
 
 const SEITENGROESSE = 25;
 

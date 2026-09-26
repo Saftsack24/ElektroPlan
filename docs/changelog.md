@@ -5,6 +5,136 @@ Einträge entstehen nach relevanten Änderungen, nicht nach jedem Commit.
 
 ---
 
+## 2026-09-26 — Phase 3.1: Projektweiter Schreibschutz unter Nebenläufigkeit
+
+Korrektur einer Nebenläufigkeitslücke aus Phase 3. Keine Migration, keine API-Änderung,
+kein neuer Fehlertyp.
+
+### Fixed
+
+- **Eine Änderung konnte unter einem bereits archivierten Projekt committen.**
+  Electrical-Schreibvorgänge sperrten die Raumzeile und lasen den Projektstatus danach
+  ohne Sperre; das Archivieren nahm dieselbe Zeile nicht. Jetzt ist das **Projekt die
+  gemeinsame Sperrwurzel**: Jeder schreibende Zugriff auf ein Projekt oder eine
+  Unterressource sperrt zuerst die Projektzeile (`SELECT … FOR UPDATE`) — der
+  Statuswechsel eingeschlossen. Es bleiben genau zwei Ausgänge: Fachänderung committet
+  zuerst und die Archivierung folgt, oder die Archivierung committet zuerst und die
+  Fachänderung erhält `409 project-archived`.
+- **Verbindliche Sperrreihenfolge `Projekt → (Kunde) → Unterressource`.** Die vorherige
+  Reihenfolge Raum → Projekt im Fachmodul war zugleich eine Deadlock-Quelle gegenüber den
+  Core-Wegen.
+- **Der Datei-Upload hält keine Datenbanksperre über die Übertragung in den Object
+  Storage.** Erst eine unverbindliche Vorprüfung, dann der Upload, dann die verbindliche
+  Prüfung mit Sperre unmittelbar vor dem Commit. Scheitert sie, wird zurückgerollt und das
+  geladene Objekt verworfen.
+
+### Changed
+
+- `ProjectService.get_writable` heißt jetzt `lock_writable` und sperrt. Neu daneben:
+  `lock_project` (nur sperren) und `require_writable_unlocked` (unverbindliche
+  Vorprüfung, ausschließlich für den Uploadpfad).
+- `FloorPlanningAccess.writable_context` sperrt die Projektzeile — der öffentliche,
+  fachneutrale Zugang der Fachmodule zur Sperrwurzel. `context` bleibt sperrfrei.
+- `FileService.finalize` nimmt eine `before_commit`-Vorbedingung.
+- **`CORE_PUBLIC_SURFACE` präzisiert:** `app.db` → `app.db.base`, `app.db.mixins`,
+  `app.db.session`; `app.core.events` → `app.core.events.bus`, `app.core.events.uow`.
+  `app.core.events.models` und damit die Tabelle `domain_events` sind für Module nicht
+  mehr erreichbar. Keine Grenze wurde gelockert.
+
+### Tests
+
+- Neu: `tests/test_archive_concurrency.py` (18) — sieben Schreibwege in beiden Richtungen,
+  Sperrreihenfolge am mitgeschriebenen SQL, Deadlockfreiheit, doppelte Archivierung,
+  Unveränderlichkeit der Zugehörigkeitskette.
+- Mit vorübergehend entfernter Sperre fallen 8 dieser Tests um; die Änderung wurde
+  zurückgenommen.
+- Grenztests um erlaubte und verbotene Imports unter `app.db` und `app.core.events`
+  erweitert.
+- Backend **579** Tests, 0 übersprungen (Phase 3: 552); Frontend **163** unverändert.
+
+---
+
+## 2026-09-26 — Phase 3: Electrical Room Model
+
+Erstes echtes Fachmodul. Räume, Wände und Öffnungen auf einem bestehenden Geschoss, mit
+serverseitiger Geometrieprüfung. Eine Migration (`0004_electrical_room_model`).
+
+### Added
+
+- **Fachmodul `electrical`** (`depends_on = ("core",)`) mit drei Tabellen
+  (`electrical_rooms`, `electrical_walls`, `electrical_openings`), 15 Endpunkten unter
+  `/api/v1/modules/electrical`, zwei Berechtigungen und einem Event.
+- **Raummodell**: Raum auf genau einem Geschoss (Name, optionale Raumnummer je Geschoss
+  eindeutig, optionale Raumhöhe), gerichtete Wandsegmente mit expliziter Reihenfolge,
+  Öffnungen (Tür, Fenster, Durchgang) mit Abstand vom Wandanfang.
+- **Geometrieprüfung serverseitig**, rein ganzzahlig: entartete Wand, Bereichsgrenzen,
+  Dubletten, Überschneidungen und Einschnürungen, Konturschluss, Öffnung innerhalb der
+  Wand, Überlappung von Öffnungen, Höhenlage gegen die Raumhöhe. Jeder Befund hat einen
+  stabilen Code und eine deutsche Meldung.
+- **Prüfbericht `GET …/rooms/{room_id}/contour`** mit Konturzustand (`draft` / `valid`),
+  Fläche, Umfang und Einzelbefunden. Reine Auskunft, beliebig wiederholbar.
+- **Veröffentlichte Core-Oberfläche** (`CORE_PUBLIC_SURFACE`): Positivliste der
+  Core-Namen, die ein Fachmodul importieren darf — statisch geprüft.
+- **Erweiterungspunkt `app/core/projects/planning.py`**: einzige Stelle, an der ein
+  Fachmodul Geschoss, Projekt und Schreibschutz erfährt.
+- **`PermissionDef.default_roles`**: Ein Modul verteilt seine Berechtigungen an die
+  ausgelieferten Systemrollen, ohne dass der Core die Schlüssel kennt. Der Administrator
+  erhält jede registrierte Berechtigung.
+- **Projekt-Tab „Räume & Grundriss"** über den vorhandenen Beitragspunkt `project.tabs`.
+  Die zentrale Projektseite wurde dafür **nicht** geändert.
+
+### Changed
+
+- **API:** `electrical`-Räume hängen an einem **Geschoss**, nicht am Projekt — der Pfad
+  lautet `/floors/{floor_id}/rooms` (vorher im Entwurf: `/projects/{project_id}/rooms`).
+- **`DELETE /api/v1/floors/{id}`** und **`DELETE /api/v1/buildings/{id}`** antworten mit
+  `409`, wenn Planungsdaten daran hängen. Vorher wäre daraus ein `500` geworden, sobald
+  ein Fachmodul auf ein Geschoss verweist.
+- **Archiv-Schreibschutz** gilt für alle zehn schreibenden Endpunkte des neuen Moduls,
+  mit demselben Fehlervertrag `409 project-archived` wie bei den Core-Unterressourcen.
+- **`reject_explicit_null`** liegt in `app/core/validation.py` (vorher
+  `app/core/customers/schemas.py`), **`alsFormularfehler`** in
+  `apps/planner/src/core/api/fehler.ts` (vorher im Plattform-Modul). Beide haben mit
+  Phase 3 einen Consumer außerhalb ihres alten Zuhauses.
+- **Modulgrenzen strenger:** Ein Import auf interne Core-Dateien
+  (`app.core.<bereich>.models`, `…service`, `…schemas`, `app.core.seed`, …) ist für
+  Module jetzt ein Grenzverstoß. Bisher war jeder `app.core`-Import erlaubt.
+
+### Contracts
+
+- **`electrical.plan.updated`** (`event_version` 1) wird erstmals tatsächlich erzeugt.
+  Nutzlast: `project_id`, `floor_id`, `room_id`, `change_kind`
+  (`room_created`, `room_updated`, `room_deleted`, `walls_changed`, `openings_changed`).
+  Keine personenbezogenen Daten, kein Handler in Phase 3, keine Zustellgarantie
+  (ADR 0012).
+- **Neue Schemas** im generierten API-Client: `RoomOut`, `RoomCreate`, `RoomUpdate`,
+  `RoomContourOut`, `GeometryProblemOut`, `WallOut`, `WallCreate`, `WallUpdate`,
+  `WallOrder`, `OpeningOut`, `OpeningCreate`, `OpeningUpdate`.
+
+### Decisions
+
+- **[ADR 0013](decisions/0013-room-contour-as-ordered-wall-segments.md)** — Raumkontur als
+  geordnete Wandsegmente: kein Polygonfeld, keine gespeicherte Fläche, kein gespeicherter
+  Konturzustand, Koordinatensystem je Geschoss, verbindliche Rundungsregel, zwei
+  Prüfstufen, Löschregeln, kein PostGIS. Verfeinert die Entwurfsfassung aus Phase 0.
+
+### Tests
+
+- Backend **552** (vorher 341), 0 übersprungen: Geometrie (58, ohne Datenbank), API (76),
+  Architekturnachweis des Moduls (34), echte Parallelität (6, zwei Threads mit Barriere).
+- Frontend **163** (vorher 129): Modulregistrierung (9), Oberfläche (25).
+- Migration von der Phase-2-Datenbank auf `0004`, genau ein Alembic-Head, kein
+  Schema-Drift.
+
+### Not included
+
+Kein 2D-Editor, kein Canvas, keine 3D-Ansicht, kein AR-Aufmaß, keine Elektrobauteile,
+keine Stromkreise, keine Verteilerplanung, keine Leitungswege, keine Materialermittlung,
+keine Kalkulation, kein Offline-Synchronisationsmechanismus, kein leeres
+`materials`-Modul.
+
+---
+
 ## 2026-09-19 — Phase 2.4: Nachkorrektur zu 2.2 und 2.3
 
 Kleine, abgegrenzte Korrektur. Kein Backend, keine Migration, keine

@@ -1,5 +1,6 @@
 import { ModuleRegistry } from "../core/modules/registry";
 import type { PlannerModule } from "../core/modules/types";
+import { electricalModule } from "./electrical";
 import { platformModule } from "./platform";
 
 /**
@@ -11,7 +12,7 @@ import { platformModule } from "./platform";
  */
 export const MODULES: readonly PlannerModule[] = [
   platformModule,
-  // ab Phase 3:  electricalModule,
+  electricalModule,
   // ab Phase 7:  materialsModule,
   // ab Phase 9:  calculationModule,
   // ab Phase 10: offersModule,

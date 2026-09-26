@@ -1175,3 +1175,235 @@ Nebenläufigkeitsgarantien angefasst wurden. Keine Migration.
 
 **Nächster sinnvoller Schritt:**
 Phase 3 — Electrical Room Model. **Nicht ohne ausdrückliche Freigabe beginnen.**
+
+---
+
+## Task 0012 – Phase 3: Electrical Room Model
+
+**Datum:** 2026-09-26
+
+**Ziel:**
+Das erste echte Fachmodul einführen: `electrical` mit Räumen, Wänden und Öffnungen auf
+einem bestehenden Geschoss, samt serverseitiger Geometrieprüfung. Ohne Editor, ohne
+Canvas, ohne Elektrobauteile. Der eigentliche Prüfstein war die **Architektur**: Ein
+Fachmodul muss sich an den Core hängen können, ohne ihn zu verbiegen.
+
+**Durchgeführte Änderungen:**
+
+1. **Fachmodell `Geschoss → Raum → Wand → Öffnung`** in drei Tabellen mit Präfix
+   `electrical_`. Ein Raum gehört zu genau einem Geschoss, eine Wand zu genau einem Raum,
+   eine Öffnung zu genau einer Wand. Alle Verweise laufen über zusammengesetzte
+   Fremdschlüssel `(organization_id, <ref>_id)`.
+2. **Geometriemodell entschieden und dokumentiert**
+   ([ADR 0013](decisions/0013-room-contour-as-ordered-wall-segments.md)): Die Raumkontur
+   **sind** die geordneten Wandsegmente. Kein Polygonfeld, keine gespeicherte Fläche, kein
+   gespeicherter Konturzustand, kein `project_id` am Raum — alles vier wäre eine zweite
+   Wahrheit. Die Entwurfsfassung aus Phase 0 ist damit ausdrücklich überholt; die
+   Abweichungen sind im ADR einzeln benannt.
+3. **Reine, ganzzahlige Geometrie** in `geometry.py` — ohne Datenbank, ohne Framework,
+   ohne Fließkomma. Längen über `(isqrt(4n)+1)//2` (kaufmännisch gerundet), Flächen über
+   die doppelte Gauß-Trapezfläche. Jeder Vergleich läuft gegen den gerundeten Wert, damit
+   Backend, Tests und späterer Editor dasselbe Ergebnis erhalten.
+4. **Zwei Prüfstufen.** Jeder Schreibvorgang prüft die Entwurfsregeln (nicht entartet,
+   Bereiche, keine Dublette, keine Überschneidung); der Konturschluss wird nur im
+   Prüfbericht `GET …/rooms/{id}/contour` verlangt. Ein Raum darf zwischendurch eine offene
+   Kontur haben — das ist der normale Erfassungszustand und kein Fehler.
+5. **15 Endpunkte** unter `/api/v1/modules/electrical`, `If-Match` Pflicht bei jeder
+   Änderung. Beim Umordnen der Wände trägt `If-Match` die Version des **Raums**; die
+   Reihenfolge wird als vollständige Permutation gesetzt.
+6. **Ein Event**: `electrical.plan.updated` mit `change_kind`, über die Unit of Work nach
+   dem Commit zugestellt. Keine personenbezogenen Daten in der Nutzlast, kein Handler in
+   Phase 3 — der Nutzen ist heute die Nachvollziehbarkeit im Ereignisprotokoll.
+7. **Zwei Berechtigungen**: `electrical.plan.read` und `electrical.plan.write`. Der
+   Administrator erhält über den Seed jede registrierte Berechtigung; weitere Systemrollen
+   über das neue Feld `PermissionDef.default_roles`. Der Core kennt dabei keine
+   Modulschlüssel — er liest sie aus der Registry.
+8. **Veröffentlichte Core-Oberfläche.** Neu ist `CORE_PUBLIC_SURFACE` in
+   `boundaries.py`: eine Positivliste der Core-Namen, die ein Modul importieren darf.
+   Alles andere im Core — `models`, `service`, `schemas`, `storage`, `seed`, `registry` —
+   ist ab jetzt statisch verboten. Die bestehende Regel „jeder Import auf ein fremdes
+   Modul ist verboten" bleibt unverändert.
+9. **Erweiterungspunkt `app/core/projects/planning.py`**: die einzige Stelle, an der ein
+   Fachmodul erfährt, ob ein Geschoss zu seinem Mandanten gehört, zu welchem Projekt es
+   gehört und ob darunter geschrieben werden darf. Liefert einen unveränderlichen
+   Wertetyp, kein ORM-Objekt. Die Archivregel wird nicht wiederholt, sondern von
+   `ProjectService.get_writable` übernommen.
+10. **Nebenläufigkeit über eine Zeilensperre auf dem Raum.** Jede Änderung an Kontur,
+    Öffnungen oder Raumhöhe nimmt `SELECT … FOR UPDATE` auf die Raumzeile. Ohne diese
+    Sperre könnten zwei gleichzeitige Anfragen jede für sich gültig sein und gemeinsam
+    eine ungültige Kontur erzeugen.
+11. **Löschregeln ausdrücklich entschieden:** Raum löschen nimmt Wände und Öffnungen mit
+    (`CASCADE`); eine **einzelne** Wand mit Öffnungen lässt sich nicht löschen (`409`);
+    ein Geschoss oder Gebäude mit Planungsdaten lässt sich nicht löschen (`409` statt
+    vorher `500` — der Fremdschlüsselkonflikt wird zentral übersetzt).
+12. **Oberfläche**: Projekt-Tab „Räume & Grundriss", registriert über den vorhandenen
+    Beitragspunkt `project.tabs`. **Die zentrale Projektseite wurde nicht angefasst.**
+    Geschossauswahl, Raumliste mit Konturzustand und Fläche, Dialoge für Raum, Wand und
+    Öffnung, Wandtabelle mit Reihenfolge und Länge, Öffnungen je Wand, Konturbericht mit
+    Einzelbefunden im Klartext, sichtbarer Schreibschutz bei archivierten Projekten.
+13. **`fehler.ts` ist in den Core gezogen** (`src/core/api/fehler.ts`): Mit der
+    Elektroplanung hat der Fehlerübersetzer einen zweiten Consumer, und ein Modul darf die
+    Dateien eines anderen Moduls nicht importieren.
+14. **`reject_explicit_null` ist nach `app/core/validation.py` gezogen** — aus demselben
+    Grund: Das Schema eines Fachmoduls darf die Schemadatei eines Core-Fachbereichs nicht
+    importieren.
+
+**Betroffene Module:**
+`electrical` (neu), `core` (vier kleine, fachneutrale Erweiterungen: Erweiterungspunkt
+für Planungsdaten, Fremdschlüsselübersetzung, `default_roles`, gemeinsame Validatoren),
+Planner-Frontend.
+
+**Betroffene wichtige Dateien:**
+
+- `apps/backend/app/modules/electrical/` — `geometry.py`, `models.py`, `schemas.py`,
+  `service.py`, `api.py`, `events.py`, `permissions.py`, `module.py`, `__init__.py`
+- `apps/backend/app/core/projects/planning.py` (neu), `app/core/validation.py` (neu)
+- `apps/backend/app/core/module_registry/boundaries.py` (`CORE_PUBLIC_SURFACE`)
+- `apps/backend/app/core/persistence.py` (`foreign_key_violation_translated`)
+- `apps/backend/app/core/authorization/service.py`, `app/core/module_registry/descriptor.py`
+- `apps/backend/migrations/versions/0004_electrical_room_model.py`
+- `apps/planner/src/modules/electrical/` — `index.ts`, `RoomsTab.tsx`, `RaumDetail.tsx`,
+  drei Dialoge, `texte.ts`
+- `apps/planner/src/core/api/fehler.ts` (verschoben)
+
+**Tests:**
+
+- **Backend 552** (Phase 2.4: 341), 0 übersprungen, gegen echtes PostgreSQL 17:
+  `test_electrical_geometry.py` (58, ohne Datenbank), `test_electrical_rooms.py` (76),
+  `test_electrical_module.py` (34), `test_electrical_concurrency.py` (6 mit zwei Threads,
+  zwei Sessions und Barriere), dazu erweiterte Mandanten-, Architektur- und
+  Grenztests.
+- **Frontend 163** (Phase 2.4: 129): Modulregistrierung (9), Oberfläche (25).
+- Vollständiger `tasks.ps1 check` und ein Browser-Smoke-Test im laufenden
+  Compose-System.
+
+**Ergebnis:**
+Phase 3 ist abgeschlossen. Die drei Exit-Kriterien sind erfüllt (siehe
+`docs/roadmap.md`); der Wortlaut „Polygon" ist durch die Kontur aus Wandsegmenten
+ersetzt, dokumentiert in ADR 0013.
+
+**Offene Punkte:**
+
+- Räume tragen noch **keinen Raumtyp** (`living`, `kitchen`, …). Er wird erst mit den
+  Ausstattungsvorlagen gebraucht.
+- Wände tragen **keine eigene Höhe** und keinen Wandtyp. Solange die Raumhöhe gilt, ist
+  beides unnötig; eine Kniestockwand wäre der erste echte Bedarf.
+- Der Konturbericht berechnet Fläche und Umfang bei jedem Lesen. Messbar langsam ist das
+  bei diesen Datenmengen nicht.
+- Es gibt **keine textuelle oder grafische Konturvorschau** über die Wandtabelle hinaus —
+  bewusst, der Editor kommt in Phase 4a.
+- Zu Phase 2.4 (**Task 0011**) fehlt in dieser Datei ein eigener Eintrag;
+  `docs/current-status.md` verweist darauf. Der Verweis ist damit ins Leere gerichtet.
+  Nicht in Phase 3 nachgetragen, weil die Einzelheiten dieses Auftrags hier nicht
+  belegbar sind.
+
+**Nächster sinnvoller Schritt:**
+Phase 4a — 2D-Editor. **Nicht ohne ausdrückliche Freigabe beginnen.**
+
+---
+
+## Task 0013 – Phase 3.1: Projektweiter Schreibschutz unter Nebenläufigkeit
+
+**Datum:** 2026-09-26
+
+**Ziel:**
+Eine Nebenläufigkeitslücke schließen, die eine unabhängige Kontrolle nach Phase 3
+gefunden hat: Electrical-Schreibvorgänge sperrten die **Raumzeile** und lasen den
+Projektstatus danach **ohne Sperre**. Eine Änderung konnte das Projekt als aktiv lesen,
+während eine andere Transaktion es archivierte — und anschließend unter dem bereits
+archivierten Projekt committen. Verbindlich ist: Sobald ein Projekt archiviert ist,
+committet keine Änderung an ihm oder an einer Unterressource mehr, auch nicht unter echter
+Parallelität.
+
+**Durchgeführte Änderungen:**
+
+1. **Das Projekt ist die Sperrwurzel.** Neu im Core: `ProjectService.lock_project`
+   (sperrt die Projektzeile mit `SELECT … FOR UPDATE` und liest sie neu) und
+   `ProjectService.lock_writable` (sperrt und prüft den Schreibschutz). Letztere ist die
+   **eine** Stelle, an der der Archivschutz entschieden wird; das frühere `get_writable`
+   ist darin aufgegangen.
+2. **Der Statuswechsel ist kein Sonderweg mehr.** `change_status` und `soft_delete`
+   sperren dieselbe Projektzeile wie jeder fachliche Schreibvorgang. Die Archivierung
+   reiht sich damit in dieselbe Warteschlange ein.
+3. **Verbindliche Sperrreihenfolge `Projekt → (Kunde) → Unterressource`.**
+   `_writable_building` und `_writable_floor` lösen die Unterressource ungesperrt auf und
+   sperren dann das Projekt; `create_building` und `create_floor` sperren das Projekt,
+   bevor die Unterressource entsteht.
+4. **`ElectricalRoomService._locked_room` umgebaut** — vorher Raum → Projekt, jetzt in
+   drei Schritten: Raum mandantensicher auflösen (ohne Sperre) → Projektzeile über den
+   öffentlichen Planning-Contract sperren und Schreibschutz prüfen → erst danach die
+   Raumzeile sperren. Zusätzlich prüft der Service, dass sich die Geschosszuordnung
+   dazwischen nicht geändert hat, und hält die Annahme der unveränderlichen Kette
+   `Raum → Geschoss → Gebäude → Projekt` mit einem Test fest.
+5. **`FloorPlanningAccess.writable_context` sperrt jetzt** und ist damit der öffentliche,
+   fachneutrale Zugang zur Sperrwurzel. `context` bleibt die sperrfreie Variante fürs
+   Lesen.
+6. **Der Datei-Upload hält keine Sperre über die Übertragung.** Neu: die unverbindliche
+   Vorprüfung `require_writable_unlocked` (frühe Absage, bevor Bytes bewegt werden) und
+   `FileService.finalize(record, before_commit=…)`. Die verbindliche Prüfung sperrt die
+   Projektzeile erst unmittelbar vor dem Commit; scheitert sie, wird zurückgerollt und das
+   bereits geladene Objekt verworfen.
+7. **`CORE_PUBLIC_SURFACE` präzisiert**: `app.db` → `app.db.base`, `app.db.mixins`,
+   `app.db.session`; `app.core.events` → `app.core.events.bus`, `app.core.events.uow`.
+   Damit ist `app.core.events.models` (Tabelle `domain_events`) für Module nicht mehr
+   erreichbar, und keine künftige Datei unter `app.db` wird unbemerkt mitfreigegeben.
+   `app.contracts` bleibt als Ganzes offen — der Ordner **ist** der Modulvertrag (ADR 0009).
+
+**Betroffene Module:**
+`core` (Projekte, Dateien, Grenzprüfung), `electrical` (Sperrreihenfolge). Keine Migration,
+keine API-Änderung, kein neuer Fehlertyp, keine neue Abhängigkeit.
+
+**Betroffene wichtige Dateien:**
+
+- `apps/backend/app/core/projects/service.py` — `lock_project`, `lock_writable`,
+  `require_writable_unlocked`, gesperrte Statuswechsel
+- `apps/backend/app/core/projects/planning.py` — sperrender Planning-Contract
+- `apps/backend/app/core/files/service.py`, `app/core/files/api.py` — Prüfung vor dem
+  Commit statt vor dem Upload
+- `apps/backend/app/modules/electrical/service.py` — `_locked_room` in drei Schritten
+- `apps/backend/app/core/module_registry/boundaries.py` — präzisierte Oberfläche
+- `apps/backend/tests/test_archive_concurrency.py` (neu)
+
+**Tests:**
+
+- **Neu: `tests/test_archive_concurrency.py` (18 Tests)** mit zwei Threads, zwei Sessions,
+  Ereignissen als Synchronisationspunkten und Prüfung des Datenbankzustands. Sieben
+  Schreibwege — Raum anlegen, Wand ändern, Öffnung anlegen, Gebäude anlegen, Geschoss
+  anlegen, Projektstammdaten ändern, Dateizuordnung — jeweils in **beiden** Richtungen,
+  dazu Sperrreihenfolge am mitgeschriebenen SQL, Deadlockfreiheit gegenläufiger
+  Unterressourcen, zwei gleichzeitige Archivierungen und die Unveränderlichkeit der Kette.
+- **Nachweis, dass die Tests ohne die Sperre fehlschlagen:** Mit vorübergehend entfernter
+  `FOR UPDATE`-Sperre fallen **8** Tests um (alle sieben Schreibwege in Richtung 1 plus
+  der Reihenfolgetest). Die Änderung wurde danach zurückgenommen.
+- **Ehrlicher Zusatzbefund:** `populate_existing` ist neben `with_for_update()` **nicht**
+  wirksamkeitsentscheidend — SQLAlchemy ersetzt geladene Attribute bei sperrenden Abfragen
+  ohnehin. Ohne die Option bleiben alle 18 Tests grün. Sie steht trotzdem im Code, weil
+  die Abhängigkeit sichtbar sein soll; der Kommentar behauptet nichts anderes mehr.
+- **Neu bei den Grenztests:** erlaubte konkrete Imports (`app.db.base`,
+  `app.core.events.uow`, …), synthetische Verstöße unter `app.db` und `app.core.events`,
+  und die Zusicherung, dass die Positivliste kein ganzes Paket freigibt (außer
+  `app.contracts`).
+- Gezielt nachgeprüft: `test_concurrency.py`, `test_projects.py`, `test_project_files.py`,
+  `test_file_upload.py`, `test_electrical_*`, `test_module_boundaries.py`,
+  `test_tenant_isolation.py` — 311 Tests grün.
+- Vollständiger `tasks.ps1 check` und ein kurzer Smoke-Test (bearbeiten, dann archivieren).
+
+**Ergebnis:**
+Die Invariante gilt jetzt auch unter echter Parallelität, mit genau zwei serialisierbaren
+Ausgängen. Der Fehlervertrag bleibt `409 project-archived`; `If-Match` und die
+Versionskonfliktregeln sind unverändert.
+
+**Offene Punkte:**
+
+- Die Sperre serialisiert **alle** Schreibvorgänge eines Projekts. Bei einem Projekt mit
+  vielen gleichzeitigen Bearbeitern ist das eine bewusste Engstelle; sie ist im Baualltag
+  (ein bis zwei Personen je Projekt) unkritisch und wurde nicht gemessen.
+- Ein Upload kann nach vollständiger Übertragung noch mit `409` scheitern. Das ist der
+  Preis dafür, die Sperre nicht über die Übertragung zu halten — dokumentiert in
+  `docs/api.md`.
+- Der Verzicht auf `populate_existing` wäre möglich; die Option bleibt als ausdrückliche
+  Zusicherung stehen.
+
+**Nächster sinnvoller Schritt:**
+Commit von Phase 3 samt dieser Korrektur, danach Phase 4a — 2D-Editor.
+**Nicht ohne ausdrückliche Freigabe beginnen.**

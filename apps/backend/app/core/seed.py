@@ -71,7 +71,7 @@ def seed_initial_data(
         session.add(organization)
         session.flush()
 
-    roles = ensure_system_roles(session, organization.id)
+    roles = ensure_system_roles(session, organization.id, registry)
     sync_organization_modules(session, organization.id, registry)
 
     user = session.execute(select(User).where(User.email == admin_email)).scalar_one_or_none()

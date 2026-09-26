@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.authorization.models import MemberRole, Permission, Role, RolePermission
-from app.core.authorization.permissions import SYSTEM_ROLES
+from app.core.authorization.permissions import ADMIN_ROLE_KEY, SYSTEM_ROLES
 from app.core.module_registry.registry import ModuleRegistry
 from app.logging_config import get_logger
 
@@ -68,10 +68,34 @@ def sync_permissions(session: Session, registry: ModuleRegistry) -> int:
     return created
 
 
-def ensure_system_roles(session: Session, organization_id: uuid.UUID) -> dict[str, Role]:
+def _role_permission_keys(registry: ModuleRegistry, role_key: str) -> tuple[str, ...]:
+    """Welche Schluessel eines Moduls diese Systemrolle beim Seed erhaelt.
+
+    Der Administrator bekommt **jede** registrierte Berechtigung - sonst
+    verliert er mit jedem neuen Modul an Reichweite, obwohl seine Rolle
+    "Vollzugriff" heisst. Die uebrigen Systemrollen erhalten genau die
+    Schluessel, die das Modul ihnen in ``PermissionDef.default_roles``
+    zuschreibt. Der Core kennt dabei keine Modulschluessel; er liest sie aus
+    der Registry (ADR 0001).
+    """
+    if role_key == ADMIN_ROLE_KEY:
+        return tuple(key for key, _, _ in registry.all_permissions())
+    return tuple(
+        permission.key
+        for module in registry.modules
+        for permission in module.permissions
+        if role_key in permission.default_roles
+    )
+
+
+def ensure_system_roles(
+    session: Session, organization_id: uuid.UUID, registry: ModuleRegistry
+) -> dict[str, Role]:
     """Legt die ausgelieferten Systemrollen fuer eine Organisation an.
 
-    Idempotent: bestehende Rollen werden aktualisiert, nicht dupliziert.
+    Idempotent: bestehende Rollen werden aktualisiert, nicht dupliziert. Eine
+    Rolle **verliert** dabei nie eine Berechtigung - es werden nur fehlende
+    ergaenzt (siehe :func:`_assign_permissions`).
     """
     permissions_by_key = {
         permission.key: permission
@@ -100,7 +124,12 @@ def ensure_system_roles(session: Session, organization_id: uuid.UUID) -> dict[st
         else:
             role.name = template.name
             role.description = template.description
-        _assign_permissions(session, role, template.permissions, permissions_by_key)
+        _assign_permissions(
+            session,
+            role,
+            (*template.permissions, *_role_permission_keys(registry, template.key)),
+            permissions_by_key,
+        )
         result[template.key] = role
     session.flush()
     return result
@@ -119,7 +148,7 @@ def _assign_permissions(
         .scalars()
         .all()
     )
-    for key in permission_keys:
+    for key in dict.fromkeys(permission_keys):
         permission = permissions_by_key.get(key)
         if permission is None:
             logger.warning("unknown_permission_in_system_role", role=role.key, permission=key)

@@ -48,6 +48,60 @@ from app.core.module_registry.registry import ModuleRegistry
 #: Namensraum fuer Fach- und Shared-Business-Module.
 MODULES_ROOT = "app.modules"
 
+#: **Oeffentliche Oberflaeche des Core.** Nur diese Namen darf ein Modul unter
+#: ``app.modules`` importieren. Alles andere im Core ist Implementierung:
+#: ``app.core.projects.models``, ``app.core.customers.service``,
+#: ``app.core.files.storage`` und so weiter bleiben drinnen.
+#:
+#: Die Liste ist bewusst eine **Positivliste**. Eine Verbotsliste muesste bei
+#: jeder neuen Core-Datei nachgezogen werden und waere nach dem dritten Modul
+#: unvollstaendig. Ein neuer Eintrag hier ist eine bewusste Entscheidung: Er
+#: erklaert einen Teil des Core zur Schnittstelle, die stabil bleiben muss
+#: (docs/modules.md, Abschnitt 2).
+#:
+#: Fuer ``app.modules.<eigenes>`` gilt die Liste nicht - ein Modul darf sich
+#: selbst vollstaendig importieren.
+#:
+#: **Eintraege sind so eng wie moeglich.** Ein Paketpraefix wie ``app.db`` haette
+#: jede kuenftige Datei darunter mitfreigegeben, ohne dass das je entschieden
+#: worden waere. Deshalb stehen hier einzelne Module - mit genau einer Ausnahme:
+#: ``app.contracts`` ist als Ganzes oeffentlich, weil der Ordner **die**
+#: veroeffentlichte Sprache zwischen Modulen ist und seine Version im Pfad
+#: traegt (ADR 0009, docs/contracts.md).
+CORE_PUBLIC_SURFACE: tuple[str, ...] = (
+    # Konfiguration und Protokollierung
+    "app.config",
+    "app.logging_config",
+    # Contracts sind die modulunabhaengige Sprache der Plattform (ADR 0009)
+    "app.contracts",
+    # Fehlervertrag nach RFC 9457
+    "app.errors",
+    # Datenbankschicht: Basisklasse, Mixins, Session - **nicht** das ganze Paket.
+    # ``app.db.base`` bringt ``Base`` und die Namenskonvention, ``app.db.mixins``
+    # die Spalten-Mixins und die mandantensicheren Fremdschluessel,
+    # ``app.db.session`` die FastAPI-Dependency.
+    "app.db.base",
+    "app.db.mixins",
+    "app.db.session",
+    # Angemeldeter Benutzer und Permission-Dependency
+    "app.core.auth.dependencies",
+    # Event Bus und Unit of Work - **nicht** ``app.core.events.models``: Die
+    # Tabelle ``domain_events`` ist Core-Interna, kein Modulvertrag.
+    "app.core.events.bus",
+    "app.core.events.uow",
+    # Modulbeschreibung und Ports
+    "app.core.module_registry.descriptor",
+    # Cursor-Auflistung, Sperren, Konfliktuebersetzung, Validatoren
+    "app.core.pagination",
+    "app.core.persistence",
+    "app.core.preconditions",
+    "app.core.validation",
+    # Mandantengefilterter Datenzugriff
+    "app.core.tenancy.repository",
+    # Erweiterungspunkt: Planungsdaten an einem Geschoss, samt Projektsperre
+    "app.core.projects.planning",
+)
+
 
 # ------------------------------------------------------------ Grundtypen
 
@@ -217,6 +271,10 @@ def check_import_boundaries(
       und ueber Ports, die in der Composition Root verdrahtet werden.
     * ``depends_on`` ist keine Importerlaubnis, sondern eine fachliche
       Abhaengigkeit und Verdrahtungsreihenfolge.
+    * Aus dem Core benutzt ein Modul nur die veroeffentlichte Oberflaeche
+      :data:`CORE_PUBLIC_SURFACE`. Ein Zugriff auf ``models``,
+      ``repositories`` oder einen internen Service des Core ist ein
+      Verstoss - auch wenn er technisch funktionieren wuerde.
 
     :param source_root: Optional. Standard: ``apps/backend/app`` relativ
         zu dieser Datei.
@@ -278,22 +336,48 @@ def check_import_boundaries(
     return violations
 
 
+def _is_within(target: str, prefix: str) -> bool:
+    """Liegt ``target`` genau auf oder unter ``prefix``?
+
+    ``app.core.events`` deckt ``app.core.events.uow.UnitOfWork`` ab, aber
+    nicht ``app.core.eventstore``.
+    """
+    return target == prefix or target.startswith(prefix + ".")
+
+
 def _classify_import(target: str, descriptor: ModuleDescriptor) -> str | None:
     """Ordnet einen absoluten Zielimport ein.
 
     Rueckgabe ``None`` bedeutet "erlaubt". Ein String beschreibt den
-    Verstoss.
+    Verstoss. Zwei Regeln greifen hier:
+
+    1. Kein Import auf ein **fremdes Modul** - in keiner Form.
+    2. Aus dem Core nur die oeffentliche Oberflaeche
+       (:data:`CORE_PUBLIC_SURFACE`).
     """
-    if not target.startswith(MODULES_ROOT + "."):
+    if target.startswith(MODULES_ROOT + "."):
+        remainder = target[len(MODULES_ROOT) + 1 :]
+        target_module_id = remainder.split(".", 1)[0]
+        if target_module_id == descriptor.id:
+            return None
+        return (
+            f"Fremder Modulimport {target!r} - depends_on ist keine "
+            "Importerlaubnis. Modulkommunikation laeuft ausschliesslich "
+            "ueber app.contracts.v1.*"
+        )
+
+    if not target.startswith("app.") and target != "app":
+        # Fremdbibliotheken und die Standardbibliothek sind nicht Gegenstand
+        # der Modulgrenzen.
         return None
-    remainder = target[len(MODULES_ROOT) + 1 :]
-    target_module_id = remainder.split(".", 1)[0]
-    if target_module_id == descriptor.id:
+
+    if any(_is_within(target, prefix) for prefix in CORE_PUBLIC_SURFACE):
         return None
     return (
-        f"Fremder Modulimport {target!r} - depends_on ist keine "
-        "Importerlaubnis. Modulkommunikation laeuft ausschliesslich "
-        "ueber app.contracts.v1.*"
+        f"Interner Core-Import {target!r} - ein Modul benutzt nur die "
+        "oeffentliche Oberflaeche des Core (CORE_PUBLIC_SURFACE in "
+        "app/core/module_registry/boundaries.py). Fehlt ein Zugang, wird er "
+        "dort bewusst ergaenzt und dokumentiert - nicht umgangen."
     )
 
 

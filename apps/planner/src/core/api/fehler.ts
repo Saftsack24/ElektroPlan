@@ -8,6 +8,11 @@ import { ApiError } from "@elektroplan/api-client";
  * Validierungsfehlern zusaetzlich ``errors`` mit Feldnamen und Code. Die
  * Codes stammen aus Pydantic und sind englisch - sie werden hier auf kurze
  * deutsche Saetze abgebildet, mit einer verstaendlichen Rueckfallmeldung.
+ *
+ * Liegt seit Phase 3 im Core: Mit der Elektroplanung gibt es einen zweiten
+ * Consumer, und ein Modul darf die Dateien eines anderen Moduls nicht
+ * importieren (docs/modules.md, Abschnitt 8). Vorher stand die Datei im
+ * Plattform-Modul, weil sie nur dort gebraucht wurde.
  */
 const CODE_TEXTE: Record<string, string> = {
   missing: "Dieses Feld wird benötigt.",

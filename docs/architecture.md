@@ -215,6 +215,54 @@ Transaktion geschrieben. Ein Absturz dazwischen lässt das Event verschwinden.
 Siehe [ADR 0004](decisions/0004-internal-event-bus.md) und
 [ADR 0012](decisions/0012-event-delivery-guarantee.md).
 
+### Das Projekt ist die Sperrwurzel
+
+Eine Vorabprüfung allein hält keine Invariante, die zwei Transaktionen gemeinsam
+verletzen können. Für alles unterhalb eines Projekts gilt deshalb:
+
+> **Jeder schreibende Zugriff auf ein Projekt oder eine seiner Unterressourcen sperrt
+> zuerst die Projektzeile (`SELECT … FOR UPDATE`) — der Statuswechsel eingeschlossen.**
+
+Die Regel steht **einmal** im Core, in
+`ProjectService.lock_writable`. Fachmodule erreichen sie über den öffentlichen
+Erweiterungspunkt `app/core/projects/planning.py`; sie bauen nichts nach und kennen
+keine Projektmodelle.
+
+**Verbindliche Sperrreihenfolge — überall dieselbe:**
+
+```
+Projekt  ──▶  (Kunde, nur wenn er wechselt)  ──▶  Unterressource
+                                                  (Gebäude, Geschoss, Raum, Wand,
+                                                   Öffnung, Datei)
+```
+
+Die umgekehrte Richtung ist verboten. Ein Weg, der erst einen Raum und dann das Projekt
+sperrt, während ein anderer Projekt → Raum sperrt, wäre eine Deadlock-Quelle — und war
+genau die Lücke, die in Phase 3.1 geschlossen wurde. Ein Pfad, der eine Kundenzeile hält
+und danach auf eine Projektzeile wartet, existiert nicht; der Zyklus ist damit
+ausgeschlossen (Einzelheiten in `docs/database.md`, „Sperrreihenfolge und
+Nebenläufigkeit").
+
+**Verhalten bei gleichzeitiger Archivierung.** Es gibt genau zwei serialisierbare
+Ausgänge:
+
+| Wer die Projektsperre zuerst erhält | Ergebnis |
+|---|---|
+| die Fachänderung | Sie committet vollständig. Die Archivierung wartet und läuft danach durch. |
+| die Archivierung | Sie committet. Die wartende Fachänderung liest anschließend den neuen Status und wird mit `409 project-archived` abgelehnt. |
+
+**Ausgeschlossen** ist der dritte Fall: eine Änderung, die nach abgeschlossener
+Archivierung committet. Die Zusage gilt unter echter Parallelität und ist mit zwei
+Threads, zwei Sessions und Prüfung des Datenbankzustands belegt
+(`tests/test_archive_concurrency.py`).
+
+**Eine Sperre überdauert keinen externen Aufruf.** Der Datei-Upload prüft die
+Projektzuordnung zuerst **ohne** Sperre (frühe, unverbindliche Absage), überträgt danach
+in den Object Storage und sperrt die Projektzeile erst unmittelbar **vor** dem Commit.
+Eine Datenbanksperre über eine S3-Übertragung hinweg zu halten wäre der falsche Tausch:
+Sie würde jede parallele Änderung am Projekt für die Dauer des Uploads blockieren.
+Scheitert die Prüfung, wird zurückgerollt und das bereits geladene Objekt verworfen.
+
 ---
 
 ## 8. Mandantenfähigkeit

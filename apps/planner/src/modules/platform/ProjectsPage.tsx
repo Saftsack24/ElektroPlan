@@ -7,7 +7,7 @@ import { useCursorListe } from "../../core/api/useCursorListe";
 import { useAuth, usePermission } from "../../core/auth/AuthProvider";
 import { WeitereLaden } from "../../core/ui/WeitereLaden";
 import { zuordenbareKunden } from "./auswahl";
-import { alsFormularfehler } from "./fehler";
+import { alsFormularfehler } from "../../core/api/fehler";
 import type { Suchergebnis } from "./KundenAuswahl";
 import { ProjectFormDialog } from "./ProjectFormDialog";
 import type { ProjektWerte } from "./ProjectFormDialog";

@@ -1,6 +1,6 @@
 # API-Richtlinien
 
-Version: 1.0 (Phase 0)
+Version: 1.2 (Core-Geschäftsdaten und Electrical Room Model umgesetzt)
 Basis: FastAPI · OpenAPI 3.1 · JSON
 
 ---
@@ -21,7 +21,7 @@ POST   /api/v1/projects
 GET    /api/v1/projects/{project_id}
 GET    /api/v1/materials
 POST   /api/v1/offers/{offer_id}/versions
-GET    /api/v1/modules/electrical/projects/{project_id}/rooms
+GET    /api/v1/modules/electrical/floors/{floor_id}/rooms
 POST   /api/v1/modules/electrical/cable-routes/{route_id}/points
 ```
 
@@ -59,6 +59,57 @@ GET    /api/v1/files/{file_id}
 GET    /api/v1/files/{file_id}/download-url   JSON mit signierter Adresse
 GET    /api/v1/files/{file_id}/download       307 auf die signierte Adresse
 ```
+
+### Raummodell des Fachmoduls `electrical` (ab Phase 3)
+
+Alle Pfade unter `/api/v1/modules/electrical` — Fachmodulrouten liegen unter ihrem Modul
+(`docs/modules.md`, Abschnitt 5). Eigentümer der Endpunkte und der Tabellen
+`electrical_*` ist das Modul, nicht der Core.
+
+```
+GET    /floors/{floor_id}/rooms            Räume des Geschosses
+POST   /floors/{floor_id}/rooms
+GET    /rooms/{room_id}
+PATCH  /rooms/{room_id}                    If-Match
+DELETE /rooms/{room_id}                    If-Match  (Hard Delete, kaskadiert)
+GET    /rooms/{room_id}/contour            Prüfbericht der Raumkontur
+GET    /rooms/{room_id}/walls              in Konturreihenfolge
+POST   /rooms/{room_id}/walls              hängt hinten an die Kontur an
+POST   /rooms/{room_id}/walls/reorder      If-Match (Version des **Raums**)
+PATCH  /walls/{wall_id}                    If-Match
+DELETE /walls/{wall_id}                    If-Match
+GET    /walls/{wall_id}/openings
+POST   /walls/{wall_id}/openings
+PATCH  /openings/{opening_id}              If-Match
+DELETE /openings/{opening_id}              If-Match
+```
+
+**Geometrie geht als Integer in Millimetern** über die Leitung, Flächen zusätzlich als
+Dezimalstring in Quadratmetern (`area_m2`, drei Nachkommastellen). Die Regeln stehen in
+[ADR 0013](decisions/0013-room-contour-as-ordered-wall-segments.md).
+
+| Fall | Antwort |
+|---|---|
+| Geometrie unzulässig (entartete Wand, Überschneidung, Dublette, Öffnung außerhalb, Überlappung) | `422 validation-failed`; `errors[]` nennt je Befund einen stabilen `code` und eine deutsche Meldung |
+| Raumnummer im Geschoss bereits vergeben | `422 validation-failed` |
+| Wand mit Öffnungen löschen | `409 conflict` |
+| Geschoss oder Gebäude mit Planungsdaten löschen | `409 conflict` (Fremdschlüssel `RESTRICT`) |
+| Änderung würde eine vorhandene Öffnung ungültig machen | `422 validation-failed`, Änderung wird **nicht** ausgeführt |
+| Projekt archiviert | `409 project-archived` — derselbe Fehlervertrag wie bei den Core-Unterressourcen |
+| Fremdes oder unbekanntes Geschoss, Raum, Wand, Öffnung | `404 not-found` |
+
+**`sort_order` vergibt der Server.** `POST …/walls` hängt die Wand hinten an; Umordnen ist
+ein eigener Vorgang mit der **vollständigen** Liste der Wand-IDs. Eine Teilliste wäre
+mehrdeutig, und eine vom Client gesetzte Position könnte Lücken erzeugen.
+
+**Der Konturbericht ist ein `GET`**, kein Abschlussvorgang: Der Konturzustand ist
+abgeleitet und wird nicht gespeichert (ADR 0013). Der Aufruf ändert nichts, ist beliebig
+wiederholbar und liefert `contour_status` (`draft` / `valid`), Fläche, Umfang und die
+Einzelbefunde.
+
+**Keine Cursor-Pagination:** Ein Geschoss hat Räume in zweistelliger, ein Raum Wände in
+einstelliger Anzahl. Die Sortierung ist trotzdem deterministisch — Räume nach Raumnummer,
+dann Name, dann ID; Wände nach `sort_order`, dann ID; Öffnungen nach Abstand, dann ID.
 
 ### Zustand des Kunden bei der Projektzuordnung
 
@@ -99,12 +150,23 @@ jede Änderung wird abgelehnt:
 | `PATCH` · `DELETE` auf `buildings/{id}` | `409` `project-archived` |
 | `POST /buildings/{id}/floors` | `409` `project-archived` |
 | `PATCH` · `DELETE` auf `floors/{id}` | `409` `project-archived` |
+| jeder schreibende Zugriff auf `modules/electrical/…` (Raum, Wand, Öffnung) | `409` `project-archived` |
 | `POST /files` mit `project_id` des Projekts | `409` `project-archived` |
 | `POST /projects/{id}/activate` · `/complete` · `/archive` | `409` (kein Wechsel aus `archived`) |
 | `DELETE /projects/{id}` (Soft Delete) | **erlaubt** — siehe unten |
 
 Der eigene Fehlertyp `project-archived` erlaubt es Clients, diesen Fall ohne Auswerten
 der Meldung von einem gewöhnlichen Konflikt zu unterscheiden.
+
+**Auch unter Parallelität.** Wird ein Projekt archiviert, während eine Änderung an ihm
+oder an einer Unterressource läuft, gibt es genau zwei Ausgänge: Die Änderung committet
+zuerst und die Archivierung folgt, oder die Archivierung committet zuerst und die
+Änderung erhält `409 project-archived`. Eine Änderung, die **nach** abgeschlossener
+Archivierung wirksam wird, ist ausgeschlossen — das Projekt ist die gemeinsame Sperrwurzel
+(docs/architecture.md, Abschnitt 7). Für den Datei-Upload heißt das: Die verbindliche
+Prüfung erfolgt erst unmittelbar vor dem Commit, also nach der Übertragung. Ein Upload
+kann deshalb mit `409 project-archived` scheitern, obwohl die Datei bereits übertragen
+war; sie wird dann verworfen.
 
 **Eine bewusste Ausnahme: das Ausblenden des Projekts.** `DELETE /projects/{id}` bleibt
 möglich. Es ist kein inhaltlicher Eingriff, sondern ein Aufräumschritt — und ohne diese
@@ -284,6 +346,11 @@ wäre ein stilles Überschreiben — die Versionsspalte hätte dann keinerlei Wi
 verlangt, dass die Anfrage bedingt gestellt wird.
 
 Versioniert sind in Phase 2: `customers`, `projects`, `buildings`, `floors`.
+Ab Phase 3 zusätzlich: `electrical_rooms`, `electrical_walls`, `electrical_openings`.
+
+Beim Umordnen der Wände trägt `If-Match` die Version des **Raums**: Die Reihenfolge gehört
+der Kontur als Ganzes, nicht einer einzelnen Wand. Der Raum zählt dabei seine Version
+weiter, damit ein zweiter Client den Wechsel bemerkt.
 
 #### Genaue Syntax
 

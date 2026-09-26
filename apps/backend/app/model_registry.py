@@ -21,6 +21,11 @@ from app.core.organizations.models import Organization, OrganizationMember, Orga
 from app.core.projects.models import Building, Floor, Project
 from app.core.users.models import User
 from app.db.base import Base, metadata
+from app.modules.electrical.models import (
+    ElectricalOpening,
+    ElectricalRoom,
+    ElectricalWall,
+)
 
 __all__ = [
     "AuditEntry",
@@ -28,6 +33,9 @@ __all__ = [
     "Building",
     "Customer",
     "DomainEventRecord",
+    "ElectricalOpening",
+    "ElectricalRoom",
+    "ElectricalWall",
     "FileRecord",
     "Floor",
     "MemberRole",

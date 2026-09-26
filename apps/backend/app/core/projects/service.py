@@ -23,7 +23,11 @@ from app.core.pagination import (
     parse_datetime_key,
     parse_text_key,
 )
-from app.core.persistence import flush, unique_violation_translated
+from app.core.persistence import (
+    flush,
+    foreign_key_violation_translated,
+    unique_violation_translated,
+)
 from app.core.preconditions import check_version
 from app.core.projects.models import (
     PROJECT_STATUS_ARCHIVED,
@@ -55,6 +59,19 @@ ProjectSort = Literal["created_at", "name"]
 #: Die Namenskonvention in ``app/db/base.py`` erzeugt ihn aus Tabelle und
 #: Spalten; er ist damit stabil und nicht geraten.
 FLOOR_LEVEL_CONSTRAINT = "uq_floors_building_id_level"
+
+
+#: Meldungen, wenn ein Fachmodul auf die Struktur verweist. Bewusst
+#: fachneutral: Der Core kennt keine Module (ADR 0001) und nennt deshalb weder
+#: Raeume noch Leitungen, sondern nur den Umstand.
+_IN_USE_FLOOR = (
+    "Zu diesem Geschoss gibt es Planungsdaten. Bitte diese zuerst entfernen; "
+    "danach laesst sich das Geschoss loeschen."
+)
+_IN_USE_BUILDING = (
+    "Zu einem Geschoss dieses Gebaeudes gibt es Planungsdaten. Bitte diese zuerst "
+    "entfernen; danach laesst sich das Gebaeude loeschen."
+)
 
 
 def _level_taken_detail(level: int) -> str:
@@ -209,7 +226,9 @@ class ProjectService:
         expected_version: int,
         actor_user_id: uuid.UUID,
     ) -> Project:
-        project = self.get_writable(project_id)
+        # Reihenfolge: erst das Projekt sperren, dann - falls der Kunde
+        # wechselt - die Kundenzeile. Nie umgekehrt (docs/database.md).
+        project = self.lock_writable(project_id)
         check_version(project, expected_version)
         changes = payload.model_dump(exclude_unset=True)
         new_customer_id = changes.get("customer_id")
@@ -229,8 +248,16 @@ class ProjectService:
         expected_version: int,
         actor_user_id: uuid.UUID,
     ) -> Project:
-        """Fuehrt einen Statuswechsel aus, wenn er erlaubt ist."""
-        project = self.projects.get_or_404(project_id)
+        """Fuehrt einen Statuswechsel aus, wenn er erlaubt ist.
+
+        **Sperrt dieselbe Projektzeile** wie jeder fachliche Schreibvorgang.
+        Die Archivierung ist damit kein Sonderweg: Sie reiht sich in dieselbe
+        Warteschlange ein. Entweder committet die Fachaenderung zuerst und die
+        Archivierung folgt, oder die Archivierung gewinnt und die Fachaenderung
+        wird mit ``409 project-archived`` abgelehnt. Ein Dazwischen gibt es
+        nicht.
+        """
+        project = self.lock_project(project_id)
         check_version(project, expected_version)
         allowed = PROJECT_STATUS_TRANSITIONS[project.status]
         if target_status not in allowed:
@@ -247,7 +274,12 @@ class ProjectService:
     def soft_delete(
         self, project_id: uuid.UUID, *, expected_version: int, actor_user_id: uuid.UUID
     ) -> Project:
-        project = self.projects.get_or_404(project_id)
+        """Blendet das Projekt aus - auch ein archiviertes (bewusste Ausnahme).
+
+        Sperrt trotzdem dieselbe Zeile: Die Sperrwurzel gilt fuer **jeden**
+        Schreibvorgang am Projekt, damit die Reihenfolge ueberall dieselbe ist.
+        """
+        project = self.lock_project(project_id)
         check_version(project, expected_version)
         project.deleted_at = utcnow()
         project.updated_by_user_id = actor_user_id
@@ -266,7 +298,8 @@ class ProjectService:
         return list(self.session.execute(stmt).scalars().all())
 
     def create_building(self, project_id: uuid.UUID, payload: BuildingCreate) -> Building:
-        self.get_writable(project_id)
+        # Projekt zuerst sperren - danach entsteht die Unterressource.
+        self.lock_writable(project_id)
         building = Building(
             organization_id=self.organization_id,
             project_id=project_id,
@@ -292,12 +325,13 @@ class ProjectService:
         Gebaeude und Geschosse sind Struktur, kein Geschaeftsdokument; sie
         werden deshalb hart geloescht (docs/database.md, Abschnitt 1). Sobald
         ein Fachmodul auf ein Geschoss verweist, verhindert der Fremdschluessel
-        das Loeschen - der Verweis geht nicht verloren.
+        das Loeschen - der Verweis geht nicht verloren, und die Antwort ist ein
+        fachlicher Konflikt (``409``), kein Serverfehler.
         """
         building = self._writable_building(building_id)
         check_version(building, expected_version)
         self.session.delete(building)
-        flush(self.session)
+        self._flush_structure_delete(_IN_USE_BUILDING)
 
     # ------------------------------------------------------------- Geschosse
 
@@ -335,32 +369,103 @@ class ProjectService:
         return floor
 
     def delete_floor(self, floor_id: uuid.UUID, *, expected_version: int) -> None:
+        """Entfernt ein Geschoss endgueltig.
+
+        Haengen Planungsdaten eines Fachmoduls daran, lehnt der
+        Fremdschluessel das Loeschen ab. Das ist gewollt: Ein Geschoss
+        verschwindet nicht unter der Planung weg.
+        """
         floor = self._writable_floor(floor_id)
         check_version(floor, expected_version)
         self.session.delete(floor)
-        flush(self.session)
+        self._flush_structure_delete(_IN_USE_FLOOR)
 
     # -------------------------------------------------- Schreibschutz
 
-    def get_writable(self, project_id: uuid.UUID) -> Project:
-        """Laedt ein Projekt und stellt sicher, dass es beschreibbar ist.
+    def lock_project(self, project_id: uuid.UUID) -> Project:
+        """Sperrt die Projektzeile und liefert ihren **aktuellen** Stand.
 
-        Oeffentlich, weil auch der Datei-Upload diese Vorbedingung braucht
-        (``app/core/files/api.py``). Damit steht die Regel an genau einer
-        Stelle und nicht verstreut in jedem Endpunkt.
+        Das Projekt ist die **gemeinsame Sperrwurzel** aller projektbezogenen
+        Schreibvorgaenge (docs/architecture.md, Abschnitt 7). Ohne diese Sperre
+        entsteht folgendes Rennen: Ein Schreibvorgang liest das Projekt als
+        aktiv, eine andere Transaktion archiviert es und committet, und der
+        erste committet danach unter dem bereits archivierten Projekt.
+
+        **Der gesperrte Stand muss auch gelesen werden.** Liegt das Projekt schon
+        in der Identity Map der Session - etwa weil zuvor die Geschosskette
+        aufgeloest wurde -, darf nicht der alte ``status`` zurueckkommen.
+        SQLAlchemy ueberschreibt geladene Attribute bei einer sperrenden Abfrage
+        von sich aus; ``populate_existing`` schreibt diese Abhaengigkeit
+        ausdruecklich hin, statt sie stillschweigend vorauszusetzen. Sie ist
+        damit Absicherung gegen eine spaetere Umstellung, nicht die eigentliche
+        Wirkung - die kommt von ``FOR UPDATE``. Belegt wird beides in
+        ``tests/test_archive_concurrency.py``.
+
+        Ein fremdes oder unbekanntes Projekt liefert ``404`` - wie ueberall,
+        damit die Existenz fremder Daten nicht ableitbar ist.
+        """
+        project = self.session.execute(
+            select(Project)
+            .where(
+                Project.organization_id == self.organization_id,
+                Project.id == project_id,
+                Project.deleted_at.is_(None),
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).scalar_one_or_none()
+        if project is None:
+            raise NotFoundError("Project wurde nicht gefunden.")
+        return project
+
+    def require_writable_unlocked(self, project_id: uuid.UUID) -> Project:
+        """Prueft den Schreibschutz **ohne** Sperre - nur als fruehe Absage.
+
+        Gedacht fuer den einen Fall, in dem eine Sperre zu lange gehalten
+        wuerde: Der Datei-Upload soll eine unbekannte oder archivierte
+        Projektzuordnung ablehnen, **bevor** Bytes in den Object Storage
+        wandern. Diese Pruefung ist deshalb ausdruecklich **nicht** verbindlich;
+        verbindlich ist :meth:`lock_writable` unmittelbar vor dem Commit
+        (docs/architecture.md, Abschnitt 7).
         """
         project = self.projects.get_or_404(project_id)
         _require_writable(project)
         return project
 
+    def lock_writable(self, project_id: uuid.UUID) -> Project:
+        """Sperrt das Projekt und stellt sicher, dass es beschreibbar ist.
+
+        **Die eine Stelle**, an der der Schreibschutz archivierter Projekte
+        entschieden wird. Jeder schreibende Weg unterhalb eines Projekts laeuft
+        hier durch - Projektstammdaten, Gebaeude, Geschosse, Dateien und die
+        Planungsdaten der Fachmodule (ueber
+        :mod:`app.core.projects.planning`).
+
+        Weil die Zeile gesperrt **und** neu gelesen wird, gilt die Zusage auch
+        unter echter Parallelitaet: Nach einer abgeschlossenen Archivierung
+        kann keine Aenderung mehr committen. Wer die Sperre zuerst erhaelt,
+        gewinnt; der Wartende sieht anschliessend den neuen Status und erhaelt
+        ``409 project-archived``.
+        """
+        project = self.lock_project(project_id)
+        _require_writable(project)
+        return project
+
     def _writable_building(self, building_id: uuid.UUID) -> Building:
-        """Gebaeude laden und das zugehoerige Projekt pruefen."""
+        """Gebaeude laden und das zugehoerige Projekt sperren.
+
+        Reihenfolge: **erst das Projekt, dann die Unterressource.** Das Gebaeude
+        wird ungesperrt aufgeloest - seine Projektzugehoerigkeit ist
+        unveraenderlich (siehe :class:`~app.core.projects.schemas.BuildingUpdate`) -
+        und erst danach gesperrt, naemlich durch das ``UPDATE`` bzw. ``DELETE``
+        des Aufrufers.
+        """
         building = self.buildings.get_or_404(building_id)
-        _require_writable(self.projects.get_or_404(building.project_id))
+        self.lock_writable(building.project_id)
         return building
 
     def _writable_floor(self, floor_id: uuid.UUID) -> Floor:
-        """Geschoss laden und ueber Gebaeude und Projekt pruefen."""
+        """Geschoss laden und ueber Gebaeude und Projekt sperren."""
         floor = self.floors.get_or_404(floor_id)
         self._writable_building(floor.building_id)
         return floor
@@ -401,6 +506,11 @@ class ProjectService:
         if customer is None:
             raise NotFoundError("Der angegebene Kunde wurde nicht gefunden.")
         return customer
+
+    def _flush_structure_delete(self, detail: str) -> None:
+        """Schreibt ein Loeschen und faengt einen verbleibenden Verweis ab."""
+        with foreign_key_violation_translated(self.session, error=ConflictError(detail)):
+            flush(self.session)
 
     def _flush_floor(self, level: int) -> None:
         """Schreibt ein Geschoss und faengt die Ebenen-Kollision ab.

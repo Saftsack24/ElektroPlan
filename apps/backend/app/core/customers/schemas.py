@@ -8,29 +8,13 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
+from app.core.validation import reject_explicit_null
+
 CustomerKind = Literal["private", "company"]
 
 
 class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
-
-def reject_explicit_null[T](value: T | None) -> T | None:
-    """Lehnt ein ausdruecklich gesendetes ``null`` ab.
-
-    In einem ``PATCH`` bedeutet ein fehlendes Feld "unveraendert" und ``null``
-    "leeren". Bei Feldern, die in der Datenbank ``NOT NULL`` sind, waere
-    Leeren nicht moeglich - ohne diese Pruefung endete es in einem
-    Datenbankfehler (``500``) statt in einer Eingabemeldung (``422``).
-
-    Der Validator laeuft nur fuer ausdruecklich uebergebene Werte: Pydantic
-    prueft Standardwerte nicht (``validate_default`` ist aus). Ein
-    weggelassenes Feld erreicht ihn also nie.
-    """
-    if value is None:
-        msg = "Dieses Feld darf nicht auf null gesetzt werden."
-        raise ValueError(msg)
-    return value
 
 
 class CustomerCreate(_Strict):

@@ -1,7 +1,8 @@
 # Aktueller Projektstand
 
-**Letzte Aktualisierung:** 2026-09-19
-**Aktualisiert nach:** Task 0011 — Phase 2.4: Nachkorrektur zu 2.2 und 2.3
+**Letzte Aktualisierung:** 2026-09-26
+**Aktualisiert nach:** Task 0013 — Phase 3.1: Projektweiter Schreibschutz unter
+Nebenläufigkeit
 
 > Dieses Dokument soll einer neuen Session in wenigen Minuten vermitteln, wo das Projekt
 > steht.
@@ -17,14 +18,78 @@
 **Phase 2.1 — Nebenläufigkeit und Zustandskonsistenz: ABGESCHLOSSEN**
 **Phase 2.2 — Schreibschutz für archivierte Projekte: ABGESCHLOSSEN**
 **Phase 2.3 — Workflow- und UX-Nacharbeit: ABGESCHLOSSEN**
-**Phase 2.4 — Nachkorrektur zu 2.2 und 2.3: ABGESCHLOSSEN** (siehe Abschnitt 2)
-**Phase 3 — Electrical Room Model: NICHT BEGONNEN**, wartet auf Freigabe
+**Phase 2.4 — Nachkorrektur zu 2.2 und 2.3: ABGESCHLOSSEN**
+**Phase 3 — Electrical Room Model: ABGESCHLOSSEN** (siehe Abschnitt 3)
+**Phase 3.1 — Projektweiter Schreibschutz unter Nebenläufigkeit: ABGESCHLOSSEN**
+(siehe Abschnitt 2)
+**Phase 4a — 2D-Editor: NICHT BEGONNEN**, wartet auf Freigabe
+
+> Phase 3 ist noch **nicht committet**; Phase 3.1 gehört fachlich dazu.
 
 ---
 
 ## 2. Zuletzt abgeschlossene Aufgabe
 
-**Task 0011 — Phase 2.4: Nachkorrektur zu 2.2 und 2.3**
+**Task 0013 — Phase 3.1: Projektweiter Schreibschutz unter Nebenläufigkeit**
+
+Eine unabhängige Kontrolle nach Phase 3 fand eine echte Nebenläufigkeitslücke: Ein
+Electrical-Schreibvorgang sperrte die **Raumzeile** und las den Projektstatus danach
+**ohne Sperre**. Er konnte das Projekt als aktiv lesen, während eine andere Transaktion es
+archivierte, und anschließend unter dem archivierten Projekt committen.
+
+1. **Das Projekt ist jetzt die gemeinsame Sperrwurzel.** Jeder schreibende Zugriff auf ein
+   Projekt oder eine Unterressource sperrt zuerst die Projektzeile
+   (`SELECT … FOR UPDATE`) — **der Statuswechsel eingeschlossen**. Die Regel steht einmal
+   im Core (`ProjectService.lock_writable`).
+2. **Verbindliche Sperrreihenfolge `Projekt → (Kunde) → Unterressource`**, überall
+   dieselbe. Die vorherige Reihenfolge Raum → Projekt war zugleich eine Deadlock-Quelle.
+3. **Zwei serialisierbare Ausgänge, nichts dazwischen:** Fachänderung committet zuerst und
+   die Archivierung folgt — oder die Archivierung committet zuerst und die Fachänderung
+   erhält `409 project-archived`.
+4. **Der Datei-Upload hält keine Sperre über die Übertragung** in den Object Storage:
+   unverbindliche Vorprüfung → Upload → verbindliche Prüfung mit Sperre unmittelbar vor
+   dem Commit.
+5. **`CORE_PUBLIC_SURFACE` präzisiert**: keine Paketpräfixe mehr für `app.db` und
+   `app.core.events`; `domain_events` ist für Module nicht mehr erreichbar.
+
+Nachgewiesen mit 18 Parallelitätstests über sieben Schreibwege in beiden Richtungen; mit
+vorübergehend entfernter Sperre fallen 8 davon um. Details: `docs/task-history.md`,
+Task 0013.
+
+**Task 0012 — Phase 3: Electrical Room Model** (Vorgänger)
+
+Das **erste echte Fachmodul**. `electrical` modelliert Räume, Wände und Öffnungen auf
+einem bestehenden Geschoss und prüft deren Geometrie serverseitig. Kein Editor, kein
+Canvas, keine Elektrobauteile.
+
+1. **Fachmodell** `Geschoss → Raum → Wand → Öffnung` in drei Tabellen (`electrical_rooms`,
+   `electrical_walls`, `electrical_openings`), eine Migration (`0004`).
+2. **Die Raumkontur sind die geordneten Wandsegmente** — kein Polygonfeld, keine
+   gespeicherte Fläche, kein gespeicherter Konturzustand, kein `project_id` am Raum.
+   Verbindlich in [ADR 0013](decisions/0013-room-contour-as-ordered-wall-segments.md); die
+   Entwurfsfassung aus Phase 0 ist damit ausdrücklich überholt.
+3. **Ganzzahlige Geometrie ohne Fließkomma**: Längen über `(isqrt(4n)+1)//2`, Flächen über
+   die doppelte Gauß-Trapezfläche. Eine Funktion für Backend, Tests und späteren Editor.
+4. **Zwei Prüfstufen**: Entwurfsregeln bei jedem Schreibvorgang, Konturschluss nur im
+   Prüfbericht. Eine unvollständige Kontur ist ein zulässiger Zwischenstand.
+5. **15 Endpunkte** unter `/api/v1/modules/electrical`, `If-Match` Pflicht, Archiv-Schutz
+   über denselben Fehlervertrag wie im Core (`409 project-archived`).
+6. **Ein Event** (`electrical.plan.updated` mit `change_kind`) über die Unit of Work nach
+   dem Commit — ohne Empfänger in Phase 3, ohne personenbezogene Daten.
+7. **Zwei Berechtigungen** (`electrical.plan.read`, `electrical.plan.write`). Der
+   Administrator erhält über den Seed jede registrierte Berechtigung.
+8. **Architekturgrenzen geschärft**: Ein Modul darf aus dem Core nur die veröffentlichte
+   Oberfläche `CORE_PUBLIC_SURFACE` importieren — statisch geprüft. Der neue
+   Erweiterungspunkt `app/core/projects/planning.py` ist die einzige Stelle, an der ein
+   Fachmodul Geschoss, Projekt und Schreibschutz erfährt.
+9. **Zeilensperre auf dem Raum** für jede Konturänderung: Zwei gleichzeitige Anfragen
+   können keine gemeinsam ungültige Kontur erzeugen.
+10. **Oberfläche**: Projekt-Tab „Räume & Grundriss" über den vorhandenen Beitragspunkt.
+    **Die zentrale Projektseite wurde nicht angefasst.**
+
+Details: `docs/task-history.md`, Task 0012.
+
+**Task 0011 — Phase 2.4: Nachkorrektur zu 2.2 und 2.3** (Vorgänger)
 
 Vier abgegrenzte Korrekturen, ohne Backend, Migration oder Architekturänderung:
 
@@ -268,7 +333,27 @@ Details: `docs/task-history.md`, Task 0003.
 
 ---
 
-## 3. Abnahme von Phase 2 — Ergebnis
+## 3. Abnahme von Phase 3 — Ergebnis
+
+| # | Exit-Kriterium | Nachweis |
+|---|---|---|
+| 1 | Ein Raum mit Höhe, Wänden und Türen ist über die API erfassbar | Tests in `test_electrical_rooms.py`; im laufenden System über die Oberfläche: Raum `0.01`, vier Wände (5000 × 4000), Tür bei 1200 mm |
+| 2 | Die Flächenberechnung ist getestet | Rechteck, Dreieck mit schräger Wand, L-Form, Umlaufsinn, Halb-mm²-Rundung — exakte Werte; im laufenden System 20,00 m² bei Umfang 18000 mm |
+| 3 | Ungültige Geometrien werden abgelehnt | entartete Wand, Dublette, Überschneidung, Einschnürung, offene Kontur, Lücke, Öffnung außerhalb der Wand, überlappende Öffnungen — je mit eigenem Fehlercode |
+
+**Abweichung vom Wortlaut des Exit-Kriteriums:** Dort stand „Polygon". Umgesetzt ist die
+Kontur als geordnete Wandsegmente (ADR 0013); „ungültiges Polygon" heißt jetzt „ungültige
+Raumkontur". Der fachliche Gehalt ist erfüllt, die Datenhaltung eine andere.
+
+**Zusätzlich im laufenden System geprüft:** `PATCH` ohne `If-Match` → `428`, mit veralteter
+Version → `409`; eine Wandverkürzung, die eine Tür ungültig machen würde, → `422` mit
+verständlicher Meldung und unveränderter Wand; archiviertes Projekt → Räume, Wände und
+Öffnungen lesbar, jeder schreibende Endpunkt `409 project-archived`, Oberfläche ohne
+Aktionen; Abmelden und Neuladen einer Projekt-URL landet auf der Anmeldung.
+
+---
+
+## 4. Abnahme von Phase 2 — Ergebnis
 
 | # | Exit-Kriterium | Nachweis |
 |---|---|---|
@@ -283,7 +368,7 @@ ausblenden (`409`).
 
 ---
 
-## 4. Abnahme von Phase 1 — Ergebnis
+## 5. Abnahme von Phase 1 — Ergebnis
 
 Alle sieben Exit-Kriterien wurden **ausgeführt** und sind erfüllt:
 
@@ -302,25 +387,26 @@ Frontend-Tests. Ausgeführt gegen echtes PostgreSQL 17 und echtes MinIO.
 
 ---
 
-## 5. Was funktioniert
+## 6. Was funktioniert
 
 ### Nachgewiesen geprüft
 
-Stand nach Task 0007, gegen echtes PostgreSQL 17 und MinIO:
+Stand nach Task 0012 (Phase 3), gegen echtes PostgreSQL 17 und MinIO:
 
 | Bereich | Nachweis |
 |---|---|
 | Ruff (Lint + Format) | `All checks passed` |
-| mypy `--strict` | keine Befunde, 73 Dateien |
-| Modulgrenzen (import-linter) | 4 Contracts, 0 verletzt, 72 Dateien / 193 Abhängigkeiten |
-| Modul- und Datenbankgrenzen (AST + Metadaten) | keine Verstöße |
+| mypy `--strict` | keine Befunde, 84 Dateien |
+| Modulgrenzen (import-linter) | 4 Contracts, 0 verletzt |
+| Modul- und Datenbankgrenzen (AST + Metadaten) | keine Verstöße; neu: Core-Oberfläche als Positivliste |
 | Frontend-Modulgrenzen | `npm run check:boundaries` OK |
 | Lockfile aktuell | `uv lock --check` grün |
-| Alembic | genau ein Head (`0003_core_business_data`); Autogenerate meldet keinen Unterschied zum Modell |
-| Backend-Tests | **341 bestanden, 0 übersprungen** (4:22) |
-| Frontend | Typecheck, ESLint, Modulgrenzen, **129 Tests**, Build |
+| Alembic | genau ein Head (`0004_electrical_room_model`); Autogenerate und `alembic check` melden keinen Unterschied zum Modell |
+| Backend-Tests | **579 bestanden, 0 übersprungen** (Phase 3: 552) |
+| Frontend | Typecheck, ESLint, Modulgrenzen, **163 Tests**, Produktionsbuild |
 | API-Client-Drift | `npm run check:api` grün |
-| Compose | Dienste gesund; Migration und Seed im Container ausgeführt |
+| Compose | Dienste gesund; Migration `0004` und Seed im Container ausgeführt, Seed legte die zwei neuen Berechtigungen an |
+| Browser-Smoke-Test | 12 Schritte im laufenden System, siehe Abschnitt 3; nach Phase 3.1 ein kurzer Nachtest (bearbeiten, dann archivieren) |
 
 ### Umgesetzte Funktionen
 
@@ -351,12 +437,20 @@ Stand nach Task 0007, gegen echtes PostgreSQL 17 und MinIO:
   Kunden- und Projektverwaltung, Projektdetail mit Tabs und Dateiupload, Protokollseite,
   typsicherer API-Client mit Compile-Zeit-Tests.
 - **Projekt-Tabs der Fachmodule** sind als Beitragspunkt live: Der Core stellt den Kanal,
-  die Composition Root füllt ihn. Ab Phase 3 hängt sich die Elektroplanung dort ein, ohne
-  dass die Projektseite geändert werden muss.
+  die Composition Root füllt ihn. Die Elektroplanung hängt sich seit Phase 3 dort ein,
+  **ohne dass die Projektseite geändert wurde**.
+- **Raummodell der Elektroplanung (Phase 3):** Räume, Wände und Öffnungen auf einem
+  Geschoss; ganzzahlige Geometrie in Millimetern; Kontur aus geordneten Wandsegmenten;
+  berechnete Fläche, Umfang und Konturzustand; zwei Prüfstufen (Entwurf / geschlossene
+  Kontur); Zeilensperre auf dem Raum gegen gleichzeitige Änderungen; ein Event;
+  formularbasierte Oberfläche mit Geschossauswahl, Dialogen und Konturbericht.
+- **Veröffentlichte Core-Oberfläche:** Ein Fachmodul darf nur eine benannte Positivliste
+  aus dem Core importieren (`CORE_PUBLIC_SURFACE`) — statisch geprüft, mit Negativfällen
+  für `models`, `service`, `schemas`, `storage`, `seed` und `registry`.
 
 ---
 
-## 6. Status der Einzelpunkte
+## 7. Status der Einzelpunkte
 
 Getrennt nach Art — nicht alles, was erledigt ist, ist auch getestet, und nicht alles,
 was offen ist, ist eine Schuld.
@@ -365,6 +459,23 @@ was offen ist, ist eine Schuld.
 
 | Punkt | Nachweis |
 |---|---|
+| Nach abgeschlossener Archivierung committet keine Änderung mehr | 14 Paralleltests (7 Schreibwege × 2 Richtungen), Prüfung des Datenbankzustands; ohne die Projektsperre fallen 8 Tests um |
+| Sperrreihenfolge `Projekt → Unterressource` | mitgeschriebenes SQL belegt die Reihenfolge `projects` vor `electrical_rooms` |
+| Keine Deadlocks bei gegenläufigen Unterressourcen | Gebäudeanlage und Wandänderung gleichzeitig, beide kommen durch |
+| Datei-Upload hält keine Sperre über die Übertragung | Reihenfolge im Endpunkt: Vorprüfung ohne Sperre → Upload → Sperre vor dem Commit; der Datenbankteil ist als Paralleltest abgedeckt |
+| Core-Oberfläche gibt keine Pakete frei | Negativtests für `app.db.*` und `app.core.events.models`, Zusicherung gegen Paketpräfixe |
+| Raumkontur: geschlossen, offen, Lücke, Selbstüberschneidung, Einschnürung | 58 Geometrietests ohne Datenbank, exakte Werte statt Toleranzen |
+| Flächen- und Umfangsberechnung | Rechteck, Dreieck mit schräger Wand, L-Form, Umlaufsinn, Halb-mm²-Rundung; zusätzlich über die API und im Browser |
+| Öffnungen: innerhalb, außerhalb, überlappend, berührend, zu hoch | je eigener Fehlercode; Berührung an der Kante ist ausdrücklich erlaubt |
+| Wandänderung macht keine Öffnung stillschweigend ungültig | `422`, Änderung wird nicht ausgeführt, Version bleibt stehen — auch im Browser geprüft |
+| Löschregel für Wände mit Öffnungen | `409`; Raum löschen kaskadiert, im Datenbankzustand geprüft |
+| Geschoss oder Gebäude mit Planungsdaten löschen | `409` statt `500`; Fremdschlüssel `RESTRICT` zentral übersetzt |
+| Gleichzeitige Konturänderungen | 6 Paralleltests mit zwei Threads und Barriere; zwei davon schlagen ohne die Raumsperre nachweislich fehl |
+| Mandantentrennung für Raum, Wand, Öffnung | Sweep über alle ID-Routen plus drei `IntegrityError`-Tests gegen mandantenübergreifende Verweise |
+| Archiv-Schreibschutz im Fachmodul | alle zehn schreibenden Endpunkte liefern `409 project-archived`; Lesen bleibt geprüft möglich |
+| `electrical` benutzt nur die öffentliche Core-Oberfläche | statische Prüfung mit Negativfällen für `models`, `service`, `schemas`, `storage`, `seed`, `registry` |
+| Core importiert kein Fachmodul | AST-Prüfung über `app/core/**` und `app/db/**` |
+| Projekt-Tab über den Beitragspunkt, ohne Änderung der Projektseite | 9 Frontend-Tests plus Sichtprüfung im Browser |
 | Startstruktur meldet beide Fehlerstufen unterscheidbar | 9 Tests; bei fehlendem Geschoss wird der bereits angelegte Gebäudename genannt |
 | Kundenauswahl ohne stille Obergrenze | 10 Tests für Suche, Entprellung, Auswahlbeständigkeit und den Hinweis auf weitere Treffer |
 | Dialogbedienung (öffnen, abbrechen, Escape, Fokus, Doppelklick) | 24 Komponententests über beide Dialoge |
@@ -426,6 +537,12 @@ was offen ist, ist eine Schuld.
 | `tests/test_ports_typing.py` startet mypy je Fixture als Subprozess | Bei kaltem mypy-Cache dauert der Gesamtlauf mehrere Minuten; funktional unbedenklich | wenn der Testlauf spürbar stört |
 | `.uv-cache` projektlokal wegen defektem Benutzer-Cache | Umgehung, kein Fehler im Projekt | wenn der globale uv-Cache repariert ist |
 | Compose-Datei dient Entwicklung **und** Abnahme | Für Produktion fehlt eine eigene Datei (Secrets, TLS, Backup) | vor Produktivbetrieb |
+| Zu **Task 0011** (Phase 2.4) fehlt der Eintrag in `docs/task-history.md` | `current-status.md` verweist auf einen Abschnitt, den es nicht gibt | wenn die Einzelheiten dieses Auftrags belegbar sind; in Phase 3 nicht rekonstruiert |
+| Fachliche Fehlermeldungen des Backends sind in ASCII geschrieben (`schreibgeschuetzt`, `Aenderung`) | Im Browser erscheinen Umlaute als Umschrift; die Oberfläche selbst schreibt korrekt. Bestand seit Phase 2 | wenn eine Entscheidung zur Schreibweise der Servermeldungen getroffen wird |
+| Fläche, Umfang und Konturzustand werden bei jedem Lesen berechnet | Bei den erwarteten Datenmengen nicht messbar; ein gespeicherter Wert bleibt ausgeschlossen (ADR 0013) | erst, wenn ein Profiling es verlangt |
+| Die Überschneidungsprüfung ist quadratisch in der Wandzahl | Deshalb die Grenze von 200 Wänden je Raum | erst, wenn ein realer Grundriss daran scheitert |
+| Die Projektsperre serialisiert **alle** Schreibvorgänge eines Projekts | Im Baualltag (ein bis zwei Bearbeiter je Projekt) unkritisch; nicht gemessen | wenn mehrere Personen gleichzeitig an einem Projekt arbeiten |
+| Ein Datei-Upload kann nach vollständiger Übertragung noch mit `409` scheitern | Bewusster Tausch: Die Sperre wird nicht über die Übertragung gehalten. Das Objekt wird verworfen | keine Absicht, das zu ändern |
 
 ### Offene fachliche Entscheidungen
 
@@ -433,6 +550,8 @@ was offen ist, ist eine Schuld.
 |---|---|---|
 | T6 | **Projektarten** (Neubau, Sanierung, Service): Braucht es sie, und was unterscheidet sie? Bis dahin deckt die abwählbare Startstruktur den Serviceauftrag ab | vor Phase 8 |
 | T1 | Symbolbibliothek: eigene SVGs oder DIN EN 60617 | Phase 4a |
+| T7 | **Raumtyp** (`living`, `kitchen`, …): Wird er für Ausstattungsvorlagen gebraucht, und mit welcher Werteliste? In Phase 3 bewusst nicht angelegt | vor Phase 5 |
+| T8 | **Wandhöhe und Wandtyp** je Wand: Braucht es sie neben der Raumhöhe (Kniestock, Außen- gegen Innenwand)? | vor Phase 4b |
 | T2 | PDF-Erzeugung: WeasyPrint (Empfehlung) oder ReportLab | Phase 10 |
 | T3 | Kleinmaterial: eigenes Material oder prozentualer Zuschlag | Phase 8 |
 | T4 | Mehrgeschossige Steigezonen für Leitungswege | Phase 6 |
@@ -474,7 +593,7 @@ HSTS, Virenscan, MFA für administrative Konten.
 
 ---
 
-## 7. Bekannte Probleme
+## 8. Bekannte Probleme
 
 | # | Punkt | Bewertung |
 |---|---|---|
@@ -484,27 +603,27 @@ HSTS, Virenscan, MFA für administrative Konten.
 
 ---
 
-## 8. Nächste geplante Aufgabe
+## 9. Nächste geplante Aufgabe
 
-**Phase 3 — Electrical Room Model:** Datenmodell und API für Räume, Wände und Öffnungen
-inklusive Geometrievalidierung. Noch ohne Editor — Erfassung über API und einfache
-Formulare.
+**Phase 4a — 2D-Editor:** Canvas-Editor für Räume, Wände und Öffnungen mit Raster,
+Fangfunktion, Maßanzeige und Undo/Redo.
 
 Für die Umsetzung wichtig:
 
-- `electrical` wird mit `depends_on = ("core",)` registriert. `materials` existiert noch
-  nicht und wird **nicht** als leerer Platzhalter angelegt (ADR 0003, Punkt 6).
-- Räume und Wände hängen an `floors` — die Tabelle existiert seit Phase 2 und trägt
-  `UNIQUE (organization_id, id)`, ein Fremdschlüssel aus `electrical_` darauf ist
-  erlaubt (Core-Tabelle).
-- Der Projekt-Tab-Beitragspunkt ist live; die Elektroplanung trägt sich mit einer Zeile
-  in `apps/planner/src/modules/index.ts` ein.
+- Das Datenmodell aus Phase 3 bleibt: Der Editor verschiebt Wandpunkte und ordnet Wände
+  um — beides gibt es schon. Es entsteht **kein** zweites Geometriemodell (ADR 0013).
+- Die Geometrieregeln liegen in `app/modules/electrical/geometry.py` und sind ohne
+  Datenbank aufrufbar. Der Editor sollte dieselben Regeln spiegeln, aber die verbindliche
+  Prüfung bleibt serverseitig.
+- Die Rundungsregel für schräge Wände ist verbindlich und darf im Editor nicht abweichen.
+- Offen vor Phase 4a: **Symbolbibliothek** (offene Entscheidung T1) — betrifft erst
+  Phase 5, sollte aber vor dem Editor geklärt sein.
 
-> Phase 3 wird erst nach ausdrücklicher Freigabe begonnen.
+> Phase 4a wird erst nach ausdrücklicher Freigabe begonnen.
 
 ---
 
-## 9. Hinweise für die nächste Session
+## 10. Hinweise für die nächste Session
 
 1. Zuerst `CLAUDE.md`, dieses Dokument und `docs/roadmap.md` lesen.
 2. Umgebung: `.\tasks.ps1 install` (installiert aus `uv.lock` und `package-lock.json`),
@@ -514,6 +633,13 @@ Für die Umsetzung wichtig:
 4. Das Backend ist **synchron** (ADR 0011): Endpunkte sind `def`, nicht `async def`.
 5. `electrical` hängt in den Phasen 3–6 **nur** von `core` ab; `materials` kommt erst in
    Phase 7 (siehe `docs/modules.md`).
+5a. Ein Modul darf aus dem Core **nur** die Positivliste `CORE_PUBLIC_SURFACE`
+   (`app/core/module_registry/boundaries.py`) importieren. Fehlt ein Zugang, wird er dort
+   bewusst ergänzt und dokumentiert — nicht umgangen.
+5b. Nach dem Hinzufügen eines Moduls muss `.\tasks.ps1 seed` laufen: Erst dadurch werden
+   die neuen Berechtigungen angelegt, den Systemrollen zugeordnet und das Modul für die
+   Organisation aktiviert (`organization_modules`). Ohne diesen Lauf bleibt der Projekt-Tab
+   unsichtbar.
 7. Aendernde Endpunkte auf versionierten Entitäten verlangen `If-Match`; fehlt der
    Header, antwortet der Server mit `428` (docs/api.md, Abschnitt 5).
 8. Der volle Testlauf dauert wegen der mypy-Subprozesse in

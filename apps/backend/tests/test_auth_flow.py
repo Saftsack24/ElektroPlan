@@ -175,9 +175,15 @@ def test_me_ohne_token_ist_401(api: TestClient, betrieb: uuid.UUID) -> None:
 
 
 def test_aktive_module_werden_geliefert(api: TestClient, betrieb: uuid.UUID) -> None:
+    """Alle registrierten Module - seit Phase 3 auch die Elektroplanung.
+
+    Der Seed aktiviert jedes registrierte Modul fuer den Betrieb
+    (docs/modules.md, Abschnitt 7). Kommt ein Modul hinzu, gehoert es hierher.
+    """
     token = login(api, ADMIN_EMAIL)
     module = api.get("/api/v1/me/modules", headers=auth_headers(token)).json()
-    assert {eintrag["id"] for eintrag in module} == {"core"}
+    assert {eintrag["id"] for eintrag in module} == {"core", "electrical"}
+    assert all(eintrag["enabled"] for eintrag in module)
 
 
 # ------------------------------------------------------------- Autorisierung

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from tempfile import SpooledTemporaryFile
 from typing import IO
@@ -174,10 +175,26 @@ class FileService:
 
         return record
 
-    def finalize(self, record: FileRecord) -> None:
-        """Committet den Upload und raeumt bei Fehlschlag das Objekt ab."""
+    def finalize(
+        self, record: FileRecord, *, before_commit: Callable[[], None] | None = None
+    ) -> None:
+        """Committet den Upload und raeumt bei Fehlschlag das Objekt ab.
+
+        ``before_commit`` laeuft unmittelbar **vor** dem Commit und darf ihn
+        durch eine Ausnahme verhindern. Der Aufrufer prueft dort Vorbedingungen,
+        die eine Zeilensperre brauchen - etwa dass das Projekt noch nicht
+        archiviert ist. Das gehoert genau hierher und nicht vor den Upload: Eine
+        Datenbanksperre darf nicht ueber eine Uebertragung in den Object Storage
+        hinweg gehalten werden.
+
+        Schlaegt die Pruefung fehl, gilt derselbe Weg wie bei einem
+        fehlgeschlagenen Commit: zurueckrollen und das bereits geladene Objekt
+        entfernen, damit kein verwaistes Objekt zurueckbleibt.
+        """
         storage_key = record.storage_key
         try:
+            if before_commit is not None:
+                before_commit()
             self.session.commit()
         except Exception:
             self.session.rollback()

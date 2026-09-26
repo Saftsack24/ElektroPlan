@@ -20,6 +20,7 @@ Format: Context · Problem · Considered Options · Decision · Consequences
 | [0010](0010-2d-first-editor-with-installation-zones.md) | 2D-First-Editor mit Installationszonen | accepted | 2026-09-18 |
 | [0011](0011-synchronous-sqlalchemy.md) | Synchrones SQLAlchemy statt async | accepted | 2026-09-18 |
 | [0012](0012-event-delivery-guarantee.md) | Event-Zustellung: at most once, keine Outbox | accepted | 2026-09-18 |
+| [0013](0013-room-contour-as-ordered-wall-segments.md) | Raumkontur als geordnete Wandsegmente | accepted | 2026-09-26 |
 
 ## Wann ein ADR nötig ist
 

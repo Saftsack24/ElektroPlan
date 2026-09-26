@@ -155,7 +155,7 @@ subscriptions=(
 |---|---|---|---|
 | `core.project.created` | projects | `project_id`, `customer_id` | Audit |
 | `core.project.archived` | projects | `project_id` | Fachmodule können aufräumen |
-| `electrical.plan.updated` | electrical | `project_id`, `change_kind` | Materialbedarf als veraltet markieren |
+| `electrical.plan.updated` | electrical (**ab Phase 3**) | `project_id`, `floor_id`, `room_id`, `change_kind` | Materialbedarf als veraltet markieren (ab Phase 7) |
 | `electrical.circuit.changed` | electrical | `project_id`, `circuit_id` | dito |
 | `materials.requirements.updated` | materials | `project_id`, `run_id` | Kalkulation prüft `is_stale` |
 | `materials.price.changed` | materials | `material_id`, `valid_from` | Audit; **keine** Änderung an Snapshots |
@@ -169,6 +169,38 @@ subscriptions=(
 
 Events werden erst eingeführt, wenn es einen realen Konsumenten gibt. Ein Event ohne
 Handler ist toter Code mit Wartungskosten.
+
+### `electrical.plan.updated` im Detail (Phase 3)
+
+Das erste tatsächlich erzeugte Fachmodul-Event.
+
+| | |
+|---|---|
+| **Auslöser** | jede wirksame Änderung am Raummodell: Raum angelegt, geändert, gelöscht; Wände angelegt, geändert, umgeordnet, gelöscht; Öffnungen angelegt, geändert, gelöscht |
+| **Kein Auslöser** | der Konturbericht `GET …/rooms/{id}/contour`. Er ändert nichts, und ein Event ist eine Tatsache |
+| **Aggregat** | `project` (`aggregate_id` = Projekt-ID) |
+| **`event_version`** | `1` |
+| **Nutzlast** | `project_id`, `floor_id`, `room_id`, `change_kind` |
+| **`change_kind`** | `room_created`, `room_updated`, `room_deleted`, `walls_changed`, `openings_changed` |
+| **Handler** | **keiner** in Phase 3 — `materials` entsteht erst in Phase 7 |
+
+**Warum ein Eventname und nicht vier.** Ein Name je Tabellenänderung wäre eine
+Namensschwemme ohne zusätzliche Aussage: Der einzige künftige Empfänger — die
+Materialermittlung — reagiert auf alle gleich. `change_kind` trägt die Unterscheidung,
+und der Name steht seit Phase 0 im Katalog.
+
+**Was das Event nicht ist.** Keine Zusage: Die Zustellung ist *at most once*, und
+`domain_events` ist keine transaktionale Outbox (ADR 0012). Solange kein Handler
+existiert, ist der Nutzen die Nachvollziehbarkeit im Ereignisprotokoll — "wer hat wann
+welchen Raum geändert". Der verbindliche Weg zur Neuberechnung bleibt der
+Recompute-Endpunkt des Materialmoduls.
+
+**Keine personenbezogenen Daten:** Nur IDs und ein kurzer Schlüssel. Raumnamen,
+Raumnummern und Kundennamen kommen in der Nutzlast nicht vor; ein Test prüft das.
+
+Erweiterung innerhalb von `v1`: Ein zusätzlicher `change_kind`-Wert ist additiv —
+Konsumenten behandeln Unbekanntes tolerant (docs/api.md, Abschnitt 9). Ein entferntes
+Nutzlastfeld wäre brechend und erzeugt `event_version` 2.
 
 ---
 

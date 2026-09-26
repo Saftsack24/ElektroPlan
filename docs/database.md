@@ -1,6 +1,6 @@
 # Datenbank und ER-Modell
 
-Version: 1.1 (Core und Core-Geschäftsdaten umgesetzt; Migrationen 0001–0003)
+Version: 1.2 (Core-Geschäftsdaten und Electrical Room Model umgesetzt; Migrationen 0001–0004)
 Datenbank: PostgreSQL 17
 ORM: SQLAlchemy 2.0 · Migrationen: Alembic (ein einziger Strang)
 
@@ -64,7 +64,7 @@ Organisation B verweisen. Voraussetzung: jede referenzierte Tabelle hat zusätzl
 | calculation | `calculation_` | `calculation_labor_rates`, `calculations`, `calculation_items`, `calculation_surcharges` |
 | offers | `offer_` | `offers`, `offer_versions`, `offer_items` |
 | work_orders | `work_order_` | `work_orders`, `work_order_items`, `work_order_materials`, `work_order_time_entries`, `work_order_notes` |
-| electrical | `electrical_` | `electrical_device_types`, `electrical_rooms`, `electrical_walls`, `electrical_openings`, `electrical_devices`, `electrical_distribution_boards`, `electrical_circuits`, `electrical_cable_routes`, `electrical_cable_route_points` |
+| electrical | `electrical_` | **umgesetzt (Phase 3):** `electrical_rooms`, `electrical_walls`, `electrical_openings` · *geplant:* `electrical_device_types`, `electrical_devices`, `electrical_distribution_boards`, `electrical_circuits`, `electrical_cable_routes`, `electrical_cable_route_points` |
 
 Anmerkung: `materials`, `material_requirements` und `service_templates` liegen bewusst im
 selben Modul (`materials` = Katalog + Material Engine). Begründung in
@@ -297,6 +297,31 @@ der Verlierer über den Index dieselbe Meldung (`422`). Übersetzt wird ausschli
 diese **namentlich erwartete** Constraint (`uq_floors_building_id_level`) — jeder andere
 Integritätsfehler bleibt ein unerwarteter Fehler und wird nicht als Fachmeldung getarnt.
 
+**Invariante 3: Nach abgeschlossener Archivierung committet keine Änderung mehr.**
+Das Projekt ist die **Sperrwurzel** aller projektbezogenen Schreibvorgänge.
+
+| Vorgang | Ablauf innerhalb einer Transaktion |
+|---|---|
+| Projektstammdaten ändern | `SELECT … FROM projects … FOR UPDATE` → Schreibschutz prüfen → (nur bei Kundenwechsel) Kundenzeile sperren → schreiben |
+| Statuswechsel, auch Archivieren | `SELECT … FROM projects … FOR UPDATE` → Übergang prüfen → schreiben |
+| Gebäude, Geschoss anlegen/ändern/löschen | Unterressource auflösen → `projects … FOR UPDATE` → Schreibschutz prüfen → schreiben |
+| Raum, Wand, Öffnung (Fachmodul) | Raum auflösen → `projects … FOR UPDATE` (über den Planning-Contract) → `electrical_rooms … FOR UPDATE` → schreiben |
+| Datei einem Projekt zuordnen | unverbindliche Vorprüfung ohne Sperre → Upload in den Object Storage → `projects … FOR UPDATE` → Schreibschutz prüfen → committen |
+
+**Immer zuerst die Projektzeile, danach die Unterressource.** Zwei Ausgänge sind möglich:
+
+* Die Fachänderung ist zuerst fertig → sie committet, die Archivierung folgt.
+* Die Archivierung ist zuerst fertig → die Fachänderung erhält `409 project-archived`.
+
+Die Reihenfolge `Kundenzeile → Projekte` aus Invariante 1 bleibt gültig: Sie betrifft das
+Sperren eines **Kunden** vor dem Zählen und Schreiben *seiner* Projekte. Ein Weg, der eine
+Kundenzeile hält und danach auf eine **Projektzeile** wartet, existiert nicht — deshalb
+entsteht kein Zyklus. Beim Umhängen eines Projekts auf einen anderen Kunden gilt
+`Projekt → Kunde`.
+
+Die Sperre wird **nicht** über externe Aufrufe gehalten: Der Datei-Upload sperrt erst
+unmittelbar vor dem Commit, nachdem die Übertragung abgeschlossen ist.
+
 **Verlorene Aktualisierung.** `version_id_col` erkennt beim Schreiben, dass die Zeile
 mit der erwarteten Version nicht mehr existiert. Der resultierende `StaleDataError`
 wird zentral in denselben `409`-Versionskonflikt übersetzt wie ein veraltetes
@@ -324,12 +349,114 @@ ihre Referenz und zeigen den Platzhalternamen.
 
 ## 4. ER-Modell — Electrical (Fachmodul)
 
+### 4.1 Raummodell — **umgesetzt in Phase 3**
+
+Verbindlich festgelegt in
+[ADR 0013](decisions/0013-room-contour-as-ordered-wall-segments.md). Die
+Entwurfsfassung aus Phase 0 (Polygon als JSONB, Wände am Geschoss, gespeicherte Fläche)
+ist damit **überholt**; die Abweichungen sind im ADR einzeln benannt.
+
 ```mermaid
 erDiagram
-    PROJECTS ||--o{ ELECTRICAL_ROOMS : enthaelt
-    FLOORS   ||--o{ ELECTRICAL_ROOMS : liegt_auf
-    FLOORS   ||--o{ ELECTRICAL_WALLS : liegt_auf
+    FLOORS           ||--o{ ELECTRICAL_ROOMS : traegt
+    ELECTRICAL_ROOMS ||--o{ ELECTRICAL_WALLS : begrenzt_durch
     ELECTRICAL_WALLS ||--o{ ELECTRICAL_OPENINGS : hat
+
+    ELECTRICAL_ROOMS {
+        uuid id PK
+        uuid organization_id FK
+        uuid floor_id FK
+        text name
+        text room_number "optional, je Geschoss eindeutig"
+        int height_mm "NULL = Standardhoehe des Geschosses"
+        int version
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    ELECTRICAL_WALLS {
+        uuid id PK
+        uuid organization_id FK
+        uuid room_id FK
+        int sort_order "Konturreihenfolge, ab 0, lueckenlos"
+        int x1_mm
+        int y1_mm
+        int x2_mm
+        int y2_mm
+        int thickness_mm
+        int version
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    ELECTRICAL_OPENINGS {
+        uuid id PK
+        uuid organization_id FK
+        uuid wall_id FK
+        text kind "door | window | passage"
+        int offset_mm "Abstand vom Wandanfang"
+        int width_mm
+        int height_mm
+        int sill_height_mm "0 ausser beim Fenster"
+        int version
+        timestamptz created_at
+        timestamptz updated_at
+    }
+```
+
+**Eigentümer:** Alle drei Tabellen gehören dem Modul `electrical`. Der Core kennt sie
+nicht; er stellt lediglich das Geschoss bereit.
+
+**Was hier absichtlich fehlt** — und warum:
+
+| Nicht vorhanden | Grund |
+|---|---|
+| `project_id` am Raum | ergibt sich aus `floor → building → project`; eine zweite Wahrheit |
+| Polygonfeld am Raum | die Kontur **sind** die geordneten Wände |
+| `area_mm2`, `perimeter_mm`, Konturzustand | berechnet, nicht gespeichert |
+| Wandhöhe, Wandtyp, Raumtyp | erst nötig, wenn eine Funktion sie braucht |
+| `client_txn_id`, `sync_status` | Planungsdaten entstehen nicht offline (`docs/offline-sync.md`, Abschnitt 1) |
+
+**Koordinaten:** kartesisch je Geschoss, Ursprung frei wählbar, `x` nach rechts, `y` in
+der Draufsicht nach oben, positiver Umlaufsinn gegen den Uhrzeigersinn, alles in
+ganzzahligen Millimetern (ADR 0007). Eine Wand ist gerichtet — die Richtung bestimmt,
+wovon `offset_mm` einer Öffnung zählt.
+
+**Kein PostGIS.** Die Geometrie ist geschossbezogen, klein und wird nie geografisch
+abgefragt.
+
+#### Constraints (Migration `0004_electrical_room_model`)
+
+| Tabelle | Constraint | Wirkung |
+|---|---|---|
+| `electrical_rooms` | `uq_electrical_rooms_organization_id_id` | Voraussetzung für zusammengesetzte Verweise |
+| `electrical_rooms` | `fk_… → floors (organization_id, id)`, `ON DELETE RESTRICT` | kein mandantenübergreifender Verweis; ein Geschoss mit Planungsdaten ist nicht löschbar |
+| `electrical_rooms` | `uq_el_rooms_floor_room_number` (**partiell**, `WHERE room_number IS NOT NULL`) | Raumnummer je Geschoss eindeutig; beliebig viele Räume ohne Nummer |
+| `electrical_rooms` | `ck_…_height_plausible` | `height_mm IS NULL OR 1500 ≤ height_mm ≤ 6000` |
+| `electrical_walls` | `fk_… → electrical_rooms`, `ON DELETE CASCADE` | Wände gehören zum Raum |
+| `electrical_walls` | `uq_el_walls_room_sort_order` (**`DEFERRABLE INITIALLY DEFERRED`**) | Reihenfolge je Raum eindeutig; beim Umordnen darf ein Zwischenstand doppelt sein, das Ergebnis nicht |
+| `electrical_walls` | `ck_…_not_degenerate` | `x1 ≠ x2 OR y1 ≠ y2` |
+| `electrical_walls` | `ck_…_coordinates_in_range` | alle vier Koordinaten in ±1 000 000 mm |
+| `electrical_walls` | `ck_…_thickness_plausible` | `20 ≤ thickness_mm ≤ 1000` |
+| `electrical_walls` | `ck_…_sort_order_not_negative` | `sort_order ≥ 0` |
+| `electrical_openings` | `fk_… → electrical_walls`, `ON DELETE CASCADE` | greift nur, wenn der Raum verschwindet; eine einzelne Wand mit Öffnungen lehnt der Service ab (`409`) |
+| `electrical_openings` | `ck_…_kind_known` | `kind IN ('door','window','passage')` |
+| `electrical_openings` | `ck_…_dimensions_positive` | `width_mm > 0 AND height_mm > 0` |
+| `electrical_openings` | `ck_…_offset_not_negative`, `ck_…_sill_not_negative` | keine negativen Abstände |
+
+**Keine Trigger.** Die zeilenlokalen Invarianten stehen als Check-Constraint, die
+konturweiten Regeln — Schluss, Überschneidung, Überlappung von Öffnungen — im Service:
+Sie brauchen die ganze Kontur. Nebenläufigkeit wird über eine Zeilensperre auf dem Raum
+gehalten, nicht über Trigger (ADR 0013).
+
+Die Namen `uq_el_rooms_floor_room_number` und `uq_el_walls_room_sort_order` sind gekürzt,
+weil PostgreSQL Bezeichner bei 63 Zeichen abschneidet.
+
+### 4.2 Geräte, Verteilungen, Stromkreise, Leitungswege — **geplant (Phasen 5/6)**
+
+Entwurf; wird mit der jeweiligen Phase verbindlich und kann sich dabei wie das
+Raummodell ändern.
+
+```mermaid
+erDiagram
     ELECTRICAL_ROOMS ||--o{ ELECTRICAL_DEVICES : enthaelt
     ELECTRICAL_DEVICE_TYPES ||--o{ ELECTRICAL_DEVICES : typisiert
     ELECTRICAL_DISTRIBUTION_BOARDS ||--o{ ELECTRICAL_CIRCUITS : speist
@@ -337,40 +464,6 @@ erDiagram
     ELECTRICAL_CIRCUITS ||--o{ ELECTRICAL_CABLE_ROUTES : fuehrt
     ELECTRICAL_CABLE_ROUTES ||--o{ ELECTRICAL_CABLE_ROUTE_POINTS : besteht_aus
 
-    ELECTRICAL_ROOMS {
-        uuid id PK
-        uuid organization_id FK
-        uuid project_id FK
-        uuid floor_id FK
-        text name
-        text room_type
-        int height_mm
-        jsonb floor_polygon_mm
-        bigint area_mm2
-        int version
-    }
-    ELECTRICAL_WALLS {
-        uuid id PK
-        uuid organization_id FK
-        uuid floor_id FK
-        int start_x_mm
-        int start_y_mm
-        int end_x_mm
-        int end_y_mm
-        int height_mm
-        int thickness_mm
-        text wall_type
-    }
-    ELECTRICAL_OPENINGS {
-        uuid id PK
-        uuid organization_id FK
-        uuid wall_id FK
-        text kind
-        int offset_mm
-        int width_mm
-        int height_mm
-        int sill_height_mm
-    }
     ELECTRICAL_DEVICE_TYPES {
         uuid id PK
         uuid organization_id FK
@@ -385,7 +478,6 @@ erDiagram
     ELECTRICAL_DEVICES {
         uuid id PK
         uuid organization_id FK
-        uuid project_id FK
         uuid room_id FK
         uuid device_type_id FK
         uuid circuit_id FK
@@ -402,7 +494,6 @@ erDiagram
     ELECTRICAL_DISTRIBUTION_BOARDS {
         uuid id PK
         uuid organization_id FK
-        uuid project_id FK
         uuid room_id FK
         text code
         text name
@@ -414,7 +505,6 @@ erDiagram
     ELECTRICAL_CIRCUITS {
         uuid id PK
         uuid organization_id FK
-        uuid project_id FK
         uuid board_id FK
         text number
         text name
@@ -428,7 +518,6 @@ erDiagram
     ELECTRICAL_CABLE_ROUTES {
         uuid id PK
         uuid organization_id FK
-        uuid project_id FK
         uuid circuit_id FK
         text from_ref_type
         uuid from_ref_id
@@ -454,14 +543,13 @@ erDiagram
 
 **Hinweise**
 
-- `floor_polygon_mm` ist ein JSONB-Array `[[x,y], …]` in Millimetern. Es ist ein
-  geschlossener, einfacher Polygonzug; Validierung (keine Selbstüberschneidung, mind. 3
-  Punkte) erfolgt im Service, nicht in der Datenbank.
 - Streckenpunkte sind **normalisiert**, nicht JSONB: Sie werden einzeln bearbeitet und
   müssen deterministisch summierbar sein.
 - `total_length_mm = computed_length_mm + allowance_mm`. Beide Werte werden gespeichert,
-  damit im Angebot nachvollziehbar bleibt, wie viel Zuschlag enthalten ist.
-- Kein PostGIS. Die Geometrie ist projektlokal, klein und wird nie geografisch abgefragt.
+  damit im Angebot nachvollziehbar bleibt, wie viel Zuschlag enthalten ist. Anders als
+  Fläche und Umfang eines Raums ist `allowance_mm` **kein** berechneter Wert, sondern eine
+  fachliche Zugabe — deshalb gespeichert.
+- Kein PostGIS, auch hier nicht.
 
 ---
 
@@ -816,6 +904,9 @@ erDiagram
 | `buildings` | `(organization_id, project_id)` |
 | `floors` | `(organization_id, building_id)`, `(building_id, level)` UNIQUE |
 | `files` | `(organization_id, project_id)` |
+| `electrical_rooms` | `(organization_id)`, `(organization_id, floor_id)`, partiell eindeutig `(organization_id, floor_id, room_number)` |
+| `electrical_walls` | `(organization_id)`, `(organization_id, room_id)`, eindeutig aufgeschoben `(organization_id, room_id, sort_order)` |
+| `electrical_openings` | `(organization_id)`, `(organization_id, wall_id)` |
 | `electrical_devices` | `(organization_id, project_id)`, `(room_id)`, `(circuit_id)` |
 | `electrical_cable_routes` | `(organization_id, project_id)`, `(circuit_id)` |
 | `electrical_cable_route_points` | PK `(route_id, seq)` |

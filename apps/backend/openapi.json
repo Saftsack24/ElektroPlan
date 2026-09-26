@@ -2425,6 +2425,1149 @@
         }
       }
     },
+    "/api/v1/modules/electrical/floors/{floor_id}/rooms": {
+      "get": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Raeume eines Geschosses",
+        "description": "Raeume des Geschosses - nach Raumnummer, dann Name, dann ID sortiert.\n\nKeine Cursor-Pagination: Ein Geschoss hat Raeume in zweistelliger Anzahl.\nEine Seitenmechanik ohne Bedarf waere nur mehr Vertrag zum Pflegen.",
+        "operationId": "listElectricalRooms",
+        "parameters": [
+          {
+            "name": "floor_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Floor Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RoomOut"
+                  },
+                  "title": "Response Listelectricalrooms"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Raum anlegen",
+        "description": "Legt einen Raum auf dem Geschoss an. Die Kontur folgt als Waende.",
+        "operationId": "createElectricalRoom",
+        "parameters": [
+          {
+            "name": "floor_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Floor Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoomCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Projekt ist archiviert",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules/electrical/rooms/{room_id}": {
+      "get": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Raum",
+        "description": "Ein Raum samt berechneter Flaeche, Umfang und Konturzustand.",
+        "operationId": "getElectricalRoom",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Raum bearbeiten",
+        "description": "Aendert Name, Raumnummer oder Raumhoehe.",
+        "operationId": "updateElectricalRoom",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoomUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Raum loeschen",
+        "description": "Entfernt den Raum endgueltig - samt seiner Waende und Oeffnungen.",
+        "operationId": "deleteElectricalRoom",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules/electrical/rooms/{room_id}/contour": {
+      "get": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Raumkontur pruefen",
+        "description": "Vollstaendige Pruefung der Raumkontur.\n\nReine Auskunft: Der Aufruf aendert nichts und ist beliebig wiederholbar.\nDer Konturzustand ist **abgeleitet** und nicht gespeichert (ADR 0013) -\ndeshalb gibt es keinen Abschlussvorgang, der ihn festschreibt. Wer wissen\nwill, warum ein Raum noch im Entwurf steht, liest hier die Einzelfehler.",
+        "operationId": "getElectricalRoomContour",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomContourOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules/electrical/rooms/{room_id}/walls": {
+      "get": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Waende eines Raums",
+        "description": "Waende in Konturreihenfolge, jede mit ihrer gerundeten Laenge.",
+        "operationId": "listElectricalWalls",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WallOut"
+                  },
+                  "title": "Response Listelectricalwalls"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Wand anlegen",
+        "description": "Haengt eine Wand hinten an die Kontur des Raums.",
+        "operationId": "createElectricalWall",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WallCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WallOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Projekt ist archiviert",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules/electrical/walls/{wall_id}": {
+      "patch": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Wand bearbeiten",
+        "description": "Aendert Koordinaten oder Wandstaerke.\n\nWuerde eine vorhandene Oeffnung dadurch ausserhalb der Wand liegen, wird\ndie Aenderung mit ``422`` abgelehnt - eine Tuer wird nicht stillschweigend\nungueltig.",
+        "operationId": "updateElectricalWall",
+        "parameters": [
+          {
+            "name": "wall_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Wall Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WallUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WallOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Wand loeschen",
+        "description": "Entfernt die Wand. Traegt sie noch Oeffnungen, antwortet der Server ``409``.",
+        "operationId": "deleteElectricalWall",
+        "parameters": [
+          {
+            "name": "wall_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Wall Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules/electrical/rooms/{room_id}/walls/reorder": {
+      "post": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Waende umordnen",
+        "description": "Setzt die Konturreihenfolge neu.\n\n``If-Match`` traegt die Version des **Raums**: Die Reihenfolge gehoert der\nKontur als Ganzes, nicht einer einzelnen Wand.",
+        "operationId": "reorderElectricalWalls",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WallOrder"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WallOut"
+                  },
+                  "title": "Response Reorderelectricalwalls"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules/electrical/walls/{wall_id}/openings": {
+      "get": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Oeffnungen einer Wand",
+        "description": "Oeffnungen der Wand, vom Wandanfang aus sortiert.",
+        "operationId": "listElectricalOpenings",
+        "parameters": [
+          {
+            "name": "wall_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Wall Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OpeningOut"
+                  },
+                  "title": "Response Listelectricalopenings"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Oeffnung anlegen",
+        "description": "Legt Tuer, Fenster oder Durchgang in der Wand an.",
+        "operationId": "createElectricalOpening",
+        "parameters": [
+          {
+            "name": "wall_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Wall Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpeningCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpeningOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Projekt ist archiviert",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules/electrical/openings/{opening_id}": {
+      "patch": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Oeffnung bearbeiten",
+        "description": "Aendert Art, Lage oder Abmessungen der Oeffnung.",
+        "operationId": "updateElectricalOpening",
+        "parameters": [
+          {
+            "name": "opening_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Opening Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpeningUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpeningOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Oeffnung loeschen",
+        "description": "Entfernt die Oeffnung endgueltig.",
+        "operationId": "deleteElectricalOpening",
+        "parameters": [
+          {
+            "name": "opening_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Opening Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health/live": {
       "get": {
         "tags": [
@@ -3357,6 +4500,33 @@
         "type": "object",
         "title": "FloorUpdate"
       },
+      "GeometryProblemOut": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "wall_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Wall Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "GeometryProblemOut",
+        "description": "Ein Geometriefehler mit stabilem Code und deutscher Meldung."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -3522,6 +4692,198 @@
         ],
         "title": "ModuleInfo",
         "description": "Beschreibung eines registrierten Moduls."
+      },
+      "OpeningCreate": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "door",
+              "window",
+              "passage"
+            ],
+            "title": "Kind"
+          },
+          "offset_mm": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Offset Mm"
+          },
+          "width_mm": {
+            "type": "integer",
+            "maximum": 20000.0,
+            "minimum": 100.0,
+            "title": "Width Mm"
+          },
+          "height_mm": {
+            "type": "integer",
+            "maximum": 20000.0,
+            "minimum": 100.0,
+            "title": "Height Mm"
+          },
+          "sill_height_mm": {
+            "type": "integer",
+            "maximum": 20000.0,
+            "minimum": 0.0,
+            "title": "Sill Height Mm",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "offset_mm",
+          "width_mm",
+          "height_mm"
+        ],
+        "title": "OpeningCreate",
+        "description": "Neue Oeffnung in einer Wand."
+      },
+      "OpeningOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "wall_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Wall Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "door",
+              "window",
+              "passage"
+            ],
+            "title": "Kind"
+          },
+          "offset_mm": {
+            "type": "integer",
+            "title": "Offset Mm"
+          },
+          "width_mm": {
+            "type": "integer",
+            "title": "Width Mm"
+          },
+          "height_mm": {
+            "type": "integer",
+            "title": "Height Mm"
+          },
+          "sill_height_mm": {
+            "type": "integer",
+            "title": "Sill Height Mm"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "wall_id",
+          "kind",
+          "offset_mm",
+          "width_mm",
+          "height_mm",
+          "sill_height_mm",
+          "version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "OpeningOut",
+        "description": "Eine Oeffnung in ihrer Wand."
+      },
+      "OpeningUpdate": {
+        "properties": {
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "door",
+                  "window",
+                  "passage"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "offset_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1000000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Offset Mm"
+          },
+          "width_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 20000.0,
+                "minimum": 100.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width Mm"
+          },
+          "height_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 20000.0,
+                "minimum": 100.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height Mm"
+          },
+          "sill_height_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 20000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sill Height Mm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "OpeningUpdate",
+        "description": "Teilaenderung einer Oeffnung. Die Wand bleibt unveraendert."
       },
       "OrganizationChoice": {
         "properties": {
@@ -4109,6 +5471,291 @@
         ],
         "title": "RoleSummary"
       },
+      "RoomContourOut": {
+        "properties": {
+          "room_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Room Id"
+          },
+          "contour_status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "valid"
+            ],
+            "title": "Contour Status"
+          },
+          "wall_count": {
+            "type": "integer",
+            "title": "Wall Count"
+          },
+          "area_mm2": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Area Mm2"
+          },
+          "area_m2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Area M2"
+          },
+          "perimeter_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Perimeter Mm"
+          },
+          "problems": {
+            "items": {
+              "$ref": "#/components/schemas/GeometryProblemOut"
+            },
+            "type": "array",
+            "title": "Problems"
+          }
+        },
+        "type": "object",
+        "required": [
+          "room_id",
+          "contour_status",
+          "wall_count",
+          "area_mm2",
+          "area_m2",
+          "perimeter_mm",
+          "problems"
+        ],
+        "title": "RoomContourOut",
+        "description": "Pruefbericht zur Raumkontur.\n\nReine Auskunft: Der Bericht aendert nichts. Der Zustand ``valid`` bedeutet,\ndass die Waende in ihrer Reihenfolge einen geschlossenen,\nueberschneidungsfreien Polygonzug mit Flaeche bilden."
+      },
+      "RoomCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "room_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 30,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room Number"
+          },
+          "height_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 6000.0,
+                "minimum": 1500.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height Mm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "RoomCreate",
+        "description": "Neuer Raum auf einem Geschoss.\n\n``height_mm`` bleibt leer, wenn die Standardhoehe des Geschosses gilt."
+      },
+      "RoomOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "floor_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Floor Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "room_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room Number"
+          },
+          "height_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height Mm"
+          },
+          "effective_height_mm": {
+            "type": "integer",
+            "title": "Effective Height Mm"
+          },
+          "contour_status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "valid"
+            ],
+            "title": "Contour Status"
+          },
+          "wall_count": {
+            "type": "integer",
+            "title": "Wall Count"
+          },
+          "area_mm2": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Area Mm2"
+          },
+          "area_m2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Area M2"
+          },
+          "perimeter_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Perimeter Mm"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "floor_id",
+          "name",
+          "room_number",
+          "height_mm",
+          "effective_height_mm",
+          "contour_status",
+          "wall_count",
+          "area_mm2",
+          "area_m2",
+          "perimeter_mm",
+          "version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "RoomOut",
+        "description": "Ein Raum samt abgeleiteten Konturwerten.\n\nFlaeche, Umfang, Wandzahl und Konturzustand sind **berechnet** und nicht\ngespeichert (ADR 0013). Sie fehlen (``null``), solange die Kontur nicht\ngeschlossen ist."
+      },
+      "RoomUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "room_number": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 30,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room Number"
+          },
+          "height_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 6000.0,
+                "minimum": 1500.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height Mm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "RoomUpdate",
+        "description": "Teilaenderung eines Raums.\n\nDas Geschoss steht nicht hier: Ein Raum wechselt nicht das Geschoss - das\nwaere ein neuer Raum. ``room_number`` und ``height_mm`` sind ausdruecklich\nleerbar (``null``), weil beide optional sind."
+      },
       "SwitchOrganizationRequest": {
         "properties": {
           "organization_id": {
@@ -4193,6 +5840,222 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "WallCreate": {
+        "properties": {
+          "x1_mm": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": -1000000.0,
+            "title": "X1 Mm"
+          },
+          "y1_mm": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": -1000000.0,
+            "title": "Y1 Mm"
+          },
+          "x2_mm": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": -1000000.0,
+            "title": "X2 Mm"
+          },
+          "y2_mm": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": -1000000.0,
+            "title": "Y2 Mm"
+          },
+          "thickness_mm": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 20.0,
+            "title": "Thickness Mm",
+            "default": 115
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "x1_mm",
+          "y1_mm",
+          "x2_mm",
+          "y2_mm"
+        ],
+        "title": "WallCreate",
+        "description": "Neue Wand am Ende der Raumkontur.\n\n``sort_order`` wird **nicht** entgegengenommen: Eine neue Wand haengt sich\nhinten an, Umordnen ist ein eigener Vorgang. Damit kann eine Anfrage keine\nLuecke und keine Dublette in der Reihenfolge erzeugen."
+      },
+      "WallOrder": {
+        "properties": {
+          "wall_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Wall Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "wall_ids"
+        ],
+        "title": "WallOrder",
+        "description": "Neue Reihenfolge der Waende eines Raums.\n\nDie Liste muss **alle** Waende des Raums genau einmal enthalten. Eine\nTeilliste waere mehrdeutig: Sie liesse offen, wohin die uebrigen Waende\ngehoeren."
+      },
+      "WallOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "room_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Room Id"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          },
+          "x1_mm": {
+            "type": "integer",
+            "title": "X1 Mm"
+          },
+          "y1_mm": {
+            "type": "integer",
+            "title": "Y1 Mm"
+          },
+          "x2_mm": {
+            "type": "integer",
+            "title": "X2 Mm"
+          },
+          "y2_mm": {
+            "type": "integer",
+            "title": "Y2 Mm"
+          },
+          "thickness_mm": {
+            "type": "integer",
+            "title": "Thickness Mm"
+          },
+          "length_mm": {
+            "type": "integer",
+            "title": "Length Mm"
+          },
+          "opening_count": {
+            "type": "integer",
+            "title": "Opening Count"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "room_id",
+          "sort_order",
+          "x1_mm",
+          "y1_mm",
+          "x2_mm",
+          "y2_mm",
+          "thickness_mm",
+          "length_mm",
+          "opening_count",
+          "version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "WallOut",
+        "description": "Eine Wand samt ihrer gerundeten Laenge."
+      },
+      "WallUpdate": {
+        "properties": {
+          "x1_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1000000.0,
+                "minimum": -1000000.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X1 Mm"
+          },
+          "y1_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1000000.0,
+                "minimum": -1000000.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y1 Mm"
+          },
+          "x2_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1000000.0,
+                "minimum": -1000000.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X2 Mm"
+          },
+          "y2_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1000000.0,
+                "minimum": -1000000.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y2 Mm"
+          },
+          "thickness_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1000.0,
+                "minimum": 20.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thickness Mm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "WallUpdate",
+        "description": "Teilaenderung einer Wand. Der Raum bleibt unveraendert."
       }
     }
   }

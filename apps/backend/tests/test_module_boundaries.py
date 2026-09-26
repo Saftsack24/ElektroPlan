@@ -11,6 +11,11 @@ zum ``import-linter`` und zur Laufzeitpruefung der Registry:
   ausschliesslich der Contract-Weg ueber ``app.contracts.v1`` erlaubt.
   ``depends_on`` ist **keine Importerlaubnis**, und keine Modultabelle
   darf eine Tabelle eines anderen Moduls referenzieren.
+* Seit Phase 3 gilt zusaetzlich: Aus dem Core darf ein Modul nur die
+  veroeffentlichte Oberflaeche ``CORE_PUBLIC_SURFACE`` importieren. Ein
+  Zugriff auf ``app.core.<bereich>.models``, ``...service`` oder
+  ``...repository`` ist ein Verstoss - auch wenn er technisch
+  funktionieren wuerde.
 
 Die Regelpruefung laeuft rein am Dateisystem: kein ``importlib``, kein
 ``pkgutil.walk_packages``. Ein realistischer Modulbaum wird als
@@ -35,6 +40,7 @@ from sqlalchemy import (
 
 from app.core.module import CORE_TABLES
 from app.core.module_registry.boundaries import (
+    CORE_PUBLIC_SURFACE,
     BoundaryViolation,
     _classify_import,
     build_table_module_map,
@@ -155,8 +161,6 @@ def _shared(module_id: str, **kw: object) -> ModuleDescriptor:
             "app.contracts.v1.material.MaterialRequirementProvider",
             False,
         ),
-        # app.core -> immer erlaubt
-        (_domain("electrical", depends_on=("core",)), "app.core.auth.security.hash", False),
         # app.db -> immer erlaubt
         (_domain("electrical", depends_on=("core",)), "app.db.base.Base", False),
         # externe Pakete -> egal
@@ -172,6 +176,122 @@ def test_klassifizierung_von_imports(
         assert "depends_on" in result
     else:
         assert result is None, (target, descriptor.id, result)
+
+
+# --------------------------------------------- oeffentliche Core-Oberflaeche
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        # genau ein Eintrag der Positivliste
+        "app.errors",
+        # und alles darunter
+        "app.errors.NotFoundError",
+        "app.db.base.Base",
+        "app.db.mixins.utcnow",
+        "app.db.session.get_session",
+        "app.core.events.uow.UnitOfWork",
+        "app.core.events.bus.get_event_bus",
+        "app.core.auth.dependencies.require_permission",
+        "app.core.preconditions.require_if_match",
+        "app.core.persistence.flush",
+        "app.core.pagination.Page",
+        "app.core.validation.reject_explicit_null",
+        "app.core.tenancy.repository.TenantRepository",
+        "app.core.projects.planning.FloorPlanningAccess",
+        "app.core.module_registry.descriptor.ModuleDescriptor",
+        "app.contracts.v1.events.DomainEvent",
+        "app.config.get_settings",
+        "app.logging_config.get_logger",
+    ],
+)
+def test_oeffentliche_core_oberflaeche_ist_erlaubt(target: str) -> None:
+    assert _classify_import(target, _domain("electrical", depends_on=("core",))) is None
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        # Modelle eines Core-Bereichs
+        "app.core.projects.models.Floor",
+        "app.core.customers.models.Customer",
+        # interner Service
+        "app.core.projects.service.ProjectService",
+        "app.core.customers.service.CustomerService",
+        "app.core.auth.service.login",
+        # Sicherheitsinterna
+        "app.core.auth.security.hash_password",
+        # Schemas eines Core-Bereichs
+        "app.core.projects.schemas.FloorOut",
+        # Dateiablage
+        "app.core.files.storage.ObjectStorage",
+        # Registry-Innenleben
+        "app.core.module_registry.registry.ModuleRegistry",
+        # Seed und Sammelimport
+        "app.core.seed.seed_initial_data",
+        "app.model_registry.metadata",
+        # kein Praefix darf zufaellig passen
+        "app.core.eventstore.Something",
+        # Seit Phase 3.1 praezisiert: nicht das ganze Paket ``app.db`` ...
+        "app.db.irgendwas_neues",
+        "app.db.internals.Helper",
+        # ... und nicht das ganze Paket ``app.core.events``. Die Tabelle
+        # ``domain_events`` ist Core-Interna, kein Modulvertrag.
+        "app.core.events.models.DomainEventRecord",
+        "app.core.events.models",
+        # Das Paket-Root selbst gibt nichts frei.
+        "app.db",
+        "app.core.events",
+    ],
+)
+def test_interne_core_dateien_sind_verboten(target: str) -> None:
+    grund = _classify_import(target, _domain("electrical", depends_on=("core",)))
+    assert grund is not None, target
+    assert "CORE_PUBLIC_SURFACE" in grund
+
+
+def test_oberflaeche_gibt_kein_ganzes_paket_frei() -> None:
+    """Die Positivliste nennt Module, nicht Pakete - mit einer Ausnahme.
+
+    Ein Paketpraefix wuerde jede kuenftige Datei darunter mitfreigeben, ohne
+    dass das je entschieden worden waere. Ausgenommen ist ``app.contracts``:
+    Der Ordner **ist** die veroeffentlichte Sprache zwischen Modulen und traegt
+    seine Version im Pfad (ADR 0009).
+    """
+    pakete = {"app.db", "app.core.events", "app.core", "app", "app.modules"}
+
+    ueberbreit = sorted(pakete & set(CORE_PUBLIC_SURFACE))
+
+    assert ueberbreit == [], ueberbreit
+    assert "app.contracts" in CORE_PUBLIC_SURFACE
+
+
+def test_synthetisches_modul_mit_internem_db_import_scheitert(tmp_path: Path) -> None:
+    """Der Scanner - nicht nur die Klassifizierung - lehnt es ab."""
+    source_root = tmp_path / "app"
+    module_dir = source_root / "modules" / "electrical"
+    _write(module_dir / "__init__.py", "")
+    _write(
+        module_dir / "zugriff.py",
+        """
+        from app.db.base import Base  # noqa: F401  -> erlaubt
+        from app.db.internals import Helper  # -> verboten
+        from app.core.events.models import DomainEventRecord  # -> verboten
+        from app.core.events.uow import UnitOfWork  # noqa: F401  -> erlaubt
+        """,
+    )
+
+    violations = scan_directory(
+        module_id="electrical", module_dir=module_dir, source_root=source_root
+    )
+
+    assert sorted(v.imported for v in violations) == [
+        "app.core.events.models.DomainEventRecord",
+        "app.db.internals.Helper",
+    ]
+    for violation in violations:
+        assert "CORE_PUBLIC_SURFACE" in violation.reason
 
 
 # ---------------------------------------------- Datei-Scanner (synthetisch)
@@ -218,7 +338,8 @@ def test_scanner_gegen_realistischen_modulbaum(tmp_path: Path) -> None:
     _write(
         electrical_dir / "services.py",
         """
-        from app.core.auth import security  # noqa: F401  -> erlaubt
+        from app.errors import NotFoundError  # noqa: F401  -> erlaubt (Oberflaeche)
+        from app.core.projects.models import Floor  # -> verboten (Core-Interna)
         from app.modules.pv.services import PvService  # -> verboten (Fachmodul)
         """,
     )
@@ -245,13 +366,19 @@ def test_scanner_gegen_realistischen_modulbaum(tmp_path: Path) -> None:
     ziele = sorted((v.imported, v.line > 0) for v in violations)
     assert ziele == sorted(
         [
+            ("app.core.projects.models.Floor", True),
             ("app.modules.pv.services.PvService", True),
             ("app.modules.pv.PvService", True),
             ("app.modules.pv.contracts.PvContract", True),
         ]
     )
-    for v in violations:
+    fremde_module = [v for v in violations if v.imported.startswith("app.modules.")]
+    assert len(fremde_module) == 3
+    for v in fremde_module:
         assert "depends_on" in v.reason
+    core_interna = [v for v in violations if v.imported.startswith("app.core.")]
+    assert len(core_interna) == 1
+    assert "CORE_PUBLIC_SURFACE" in core_interna[0].reason
 
 
 def test_scanner_meldet_syntaxfehler(tmp_path: Path) -> None:

@@ -38,9 +38,18 @@ Dokumentation und Oberfläche auf Deutsch, Code und API auf Englisch.
 | Deutsch | Englisch | Anmerkung |
 |---|---|---|
 | Raum | `room` | |
-| Wand | `wall` | |
+| Raumnummer | `room_number` | optional, je Geschoss eindeutig |
+| Raumhöhe | `height_mm` | leer = Standardhöhe des Geschosses |
+| Wand | `wall` | gerichtetes Segment `(x1,y1) → (x2,y2)` |
+| Wandstärke | `thickness_mm` | |
+| Wandreihenfolge | `sort_order` | Position in der Raumkontur, ab 0 |
+| Raumkontur | `contour` | die geordneten Wände eines Raums (ADR 0013) |
+| Konturzustand | `contour_status`: `draft` / `valid` | Entwurf / Geschlossen — abgeleitet, nicht gespeichert |
+| Fläche | `area_mm2` / `area_m2` | berechnet; über die API zusätzlich als Dezimalstring in m² |
+| Umfang | `perimeter_mm` | Summe der gerundeten Wandlängen |
 | Öffnung (Tür/Fenster) | `opening` | `kind`: `door`, `window`, `passage` |
-| Brüstungshöhe | `sill_height` | |
+| Abstand vom Wandanfang | `offset_mm` | zählt vom Startpunkt der gerichteten Wand |
+| Brüstungshöhe | `sill_height` | nur beim Fenster > 0 |
 | Elektroelement / Gerät | `device` | |
 | Gerätetyp | `device_type` | Katalog |
 | Montagehöhe | `mount_height` | |

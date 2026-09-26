@@ -599,6 +599,209 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/modules/electrical/floors/{floor_id}/rooms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Raeume eines Geschosses
+         * @description Raeume des Geschosses - nach Raumnummer, dann Name, dann ID sortiert.
+         *
+         *     Keine Cursor-Pagination: Ein Geschoss hat Raeume in zweistelliger Anzahl.
+         *     Eine Seitenmechanik ohne Bedarf waere nur mehr Vertrag zum Pflegen.
+         */
+        get: operations["listElectricalRooms"];
+        put?: never;
+        /**
+         * Raum anlegen
+         * @description Legt einen Raum auf dem Geschoss an. Die Kontur folgt als Waende.
+         */
+        post: operations["createElectricalRoom"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/modules/electrical/rooms/{room_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Raum
+         * @description Ein Raum samt berechneter Flaeche, Umfang und Konturzustand.
+         */
+        get: operations["getElectricalRoom"];
+        put?: never;
+        post?: never;
+        /**
+         * Raum loeschen
+         * @description Entfernt den Raum endgueltig - samt seiner Waende und Oeffnungen.
+         */
+        delete: operations["deleteElectricalRoom"];
+        options?: never;
+        head?: never;
+        /**
+         * Raum bearbeiten
+         * @description Aendert Name, Raumnummer oder Raumhoehe.
+         */
+        patch: operations["updateElectricalRoom"];
+        trace?: never;
+    };
+    "/api/v1/modules/electrical/rooms/{room_id}/contour": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Raumkontur pruefen
+         * @description Vollstaendige Pruefung der Raumkontur.
+         *
+         *     Reine Auskunft: Der Aufruf aendert nichts und ist beliebig wiederholbar.
+         *     Der Konturzustand ist **abgeleitet** und nicht gespeichert (ADR 0013) -
+         *     deshalb gibt es keinen Abschlussvorgang, der ihn festschreibt. Wer wissen
+         *     will, warum ein Raum noch im Entwurf steht, liest hier die Einzelfehler.
+         */
+        get: operations["getElectricalRoomContour"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/modules/electrical/rooms/{room_id}/walls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Waende eines Raums
+         * @description Waende in Konturreihenfolge, jede mit ihrer gerundeten Laenge.
+         */
+        get: operations["listElectricalWalls"];
+        put?: never;
+        /**
+         * Wand anlegen
+         * @description Haengt eine Wand hinten an die Kontur des Raums.
+         */
+        post: operations["createElectricalWall"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/modules/electrical/walls/{wall_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Wand loeschen
+         * @description Entfernt die Wand. Traegt sie noch Oeffnungen, antwortet der Server ``409``.
+         */
+        delete: operations["deleteElectricalWall"];
+        options?: never;
+        head?: never;
+        /**
+         * Wand bearbeiten
+         * @description Aendert Koordinaten oder Wandstaerke.
+         *
+         *     Wuerde eine vorhandene Oeffnung dadurch ausserhalb der Wand liegen, wird
+         *     die Aenderung mit ``422`` abgelehnt - eine Tuer wird nicht stillschweigend
+         *     ungueltig.
+         */
+        patch: operations["updateElectricalWall"];
+        trace?: never;
+    };
+    "/api/v1/modules/electrical/rooms/{room_id}/walls/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Waende umordnen
+         * @description Setzt die Konturreihenfolge neu.
+         *
+         *     ``If-Match`` traegt die Version des **Raums**: Die Reihenfolge gehoert der
+         *     Kontur als Ganzes, nicht einer einzelnen Wand.
+         */
+        post: operations["reorderElectricalWalls"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/modules/electrical/walls/{wall_id}/openings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Oeffnungen einer Wand
+         * @description Oeffnungen der Wand, vom Wandanfang aus sortiert.
+         */
+        get: operations["listElectricalOpenings"];
+        put?: never;
+        /**
+         * Oeffnung anlegen
+         * @description Legt Tuer, Fenster oder Durchgang in der Wand an.
+         */
+        post: operations["createElectricalOpening"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/modules/electrical/openings/{opening_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Oeffnung loeschen
+         * @description Entfernt die Oeffnung endgueltig.
+         */
+        delete: operations["deleteElectricalOpening"];
+        options?: never;
+        head?: never;
+        /**
+         * Oeffnung bearbeiten
+         * @description Aendert Art, Lage oder Abmessungen der Oeffnung.
+         */
+        patch: operations["updateElectricalOpening"];
+        trace?: never;
+    };
     "/health/live": {
         parameters: {
             query?: never;
@@ -946,6 +1149,18 @@ export interface components {
             /** Default Ceiling Height Mm */
             default_ceiling_height_mm?: number | null;
         };
+        /**
+         * GeometryProblemOut
+         * @description Ein Geometriefehler mit stabilem Code und deutscher Meldung.
+         */
+        GeometryProblemOut: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Wall Ids */
+            wall_ids?: string[];
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1021,6 +1236,85 @@ export interface components {
             depends_on: string[];
             /** Permissions */
             permissions: string[];
+        };
+        /**
+         * OpeningCreate
+         * @description Neue Oeffnung in einer Wand.
+         */
+        OpeningCreate: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "door" | "window" | "passage";
+            /** Offset Mm */
+            offset_mm: number;
+            /** Width Mm */
+            width_mm: number;
+            /** Height Mm */
+            height_mm: number;
+            /**
+             * Sill Height Mm
+             * @default 0
+             */
+            sill_height_mm: number;
+        };
+        /**
+         * OpeningOut
+         * @description Eine Oeffnung in ihrer Wand.
+         */
+        OpeningOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Wall Id
+             * Format: uuid
+             */
+            wall_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "door" | "window" | "passage";
+            /** Offset Mm */
+            offset_mm: number;
+            /** Width Mm */
+            width_mm: number;
+            /** Height Mm */
+            height_mm: number;
+            /** Sill Height Mm */
+            sill_height_mm: number;
+            /** Version */
+            version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * OpeningUpdate
+         * @description Teilaenderung einer Oeffnung. Die Wand bleibt unveraendert.
+         */
+        OpeningUpdate: {
+            /** Kind */
+            kind?: ("door" | "window" | "passage") | null;
+            /** Offset Mm */
+            offset_mm?: number | null;
+            /** Width Mm */
+            width_mm?: number | null;
+            /** Height Mm */
+            height_mm?: number | null;
+            /** Sill Height Mm */
+            sill_height_mm?: number | null;
         };
         /**
          * OrganizationChoice
@@ -1249,6 +1543,119 @@ export interface components {
             /** Name */
             name: string;
         };
+        /**
+         * RoomContourOut
+         * @description Pruefbericht zur Raumkontur.
+         *
+         *     Reine Auskunft: Der Bericht aendert nichts. Der Zustand ``valid`` bedeutet,
+         *     dass die Waende in ihrer Reihenfolge einen geschlossenen,
+         *     ueberschneidungsfreien Polygonzug mit Flaeche bilden.
+         */
+        RoomContourOut: {
+            /**
+             * Room Id
+             * Format: uuid
+             */
+            room_id: string;
+            /**
+             * Contour Status
+             * @enum {string}
+             */
+            contour_status: "draft" | "valid";
+            /** Wall Count */
+            wall_count: number;
+            /** Area Mm2 */
+            area_mm2: number | null;
+            /** Area M2 */
+            area_m2: string | null;
+            /** Perimeter Mm */
+            perimeter_mm: number | null;
+            /** Problems */
+            problems: components["schemas"]["GeometryProblemOut"][];
+        };
+        /**
+         * RoomCreate
+         * @description Neuer Raum auf einem Geschoss.
+         *
+         *     ``height_mm`` bleibt leer, wenn die Standardhoehe des Geschosses gilt.
+         */
+        RoomCreate: {
+            /** Name */
+            name: string;
+            /** Room Number */
+            room_number?: string | null;
+            /** Height Mm */
+            height_mm?: number | null;
+        };
+        /**
+         * RoomOut
+         * @description Ein Raum samt abgeleiteten Konturwerten.
+         *
+         *     Flaeche, Umfang, Wandzahl und Konturzustand sind **berechnet** und nicht
+         *     gespeichert (ADR 0013). Sie fehlen (``null``), solange die Kontur nicht
+         *     geschlossen ist.
+         */
+        RoomOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Floor Id
+             * Format: uuid
+             */
+            floor_id: string;
+            /** Name */
+            name: string;
+            /** Room Number */
+            room_number: string | null;
+            /** Height Mm */
+            height_mm: number | null;
+            /** Effective Height Mm */
+            effective_height_mm: number;
+            /**
+             * Contour Status
+             * @enum {string}
+             */
+            contour_status: "draft" | "valid";
+            /** Wall Count */
+            wall_count: number;
+            /** Area Mm2 */
+            area_mm2: number | null;
+            /** Area M2 */
+            area_m2: string | null;
+            /** Perimeter Mm */
+            perimeter_mm: number | null;
+            /** Version */
+            version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * RoomUpdate
+         * @description Teilaenderung eines Raums.
+         *
+         *     Das Geschoss steht nicht hier: Ein Raum wechselt nicht das Geschoss - das
+         *     waere ein neuer Raum. ``room_number`` und ``height_mm`` sind ausdruecklich
+         *     leerbar (``null``), weil beide optional sind.
+         */
+        RoomUpdate: {
+            /** Name */
+            name?: string | null;
+            /** Room Number */
+            room_number?: string | null;
+            /** Height Mm */
+            height_mm?: number | null;
+        };
         /** SwitchOrganizationRequest */
         SwitchOrganizationRequest: {
             /**
@@ -1297,6 +1704,101 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /**
+         * WallCreate
+         * @description Neue Wand am Ende der Raumkontur.
+         *
+         *     ``sort_order`` wird **nicht** entgegengenommen: Eine neue Wand haengt sich
+         *     hinten an, Umordnen ist ein eigener Vorgang. Damit kann eine Anfrage keine
+         *     Luecke und keine Dublette in der Reihenfolge erzeugen.
+         */
+        WallCreate: {
+            /** X1 Mm */
+            x1_mm: number;
+            /** Y1 Mm */
+            y1_mm: number;
+            /** X2 Mm */
+            x2_mm: number;
+            /** Y2 Mm */
+            y2_mm: number;
+            /**
+             * Thickness Mm
+             * @default 115
+             */
+            thickness_mm: number;
+        };
+        /**
+         * WallOrder
+         * @description Neue Reihenfolge der Waende eines Raums.
+         *
+         *     Die Liste muss **alle** Waende des Raums genau einmal enthalten. Eine
+         *     Teilliste waere mehrdeutig: Sie liesse offen, wohin die uebrigen Waende
+         *     gehoeren.
+         */
+        WallOrder: {
+            /** Wall Ids */
+            wall_ids: string[];
+        };
+        /**
+         * WallOut
+         * @description Eine Wand samt ihrer gerundeten Laenge.
+         */
+        WallOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Room Id
+             * Format: uuid
+             */
+            room_id: string;
+            /** Sort Order */
+            sort_order: number;
+            /** X1 Mm */
+            x1_mm: number;
+            /** Y1 Mm */
+            y1_mm: number;
+            /** X2 Mm */
+            x2_mm: number;
+            /** Y2 Mm */
+            y2_mm: number;
+            /** Thickness Mm */
+            thickness_mm: number;
+            /** Length Mm */
+            length_mm: number;
+            /** Opening Count */
+            opening_count: number;
+            /** Version */
+            version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * WallUpdate
+         * @description Teilaenderung einer Wand. Der Raum bleibt unveraendert.
+         */
+        WallUpdate: {
+            /** X1 Mm */
+            x1_mm?: number | null;
+            /** Y1 Mm */
+            y1_mm?: number | null;
+            /** X2 Mm */
+            x2_mm?: number | null;
+            /** Y2 Mm */
+            y2_mm?: number | null;
+            /** Thickness Mm */
+            thickness_mm?: number | null;
         };
     };
     responses: never;
@@ -2908,6 +3410,795 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listElectricalRooms: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                floor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoomOut"][];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    createElectricalRoom: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                floor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoomCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoomOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Projekt ist archiviert */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    getElectricalRoom: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoomOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    deleteElectricalRoom: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    updateElectricalRoom: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoomUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoomOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    getElectricalRoomContour: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoomContourOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listElectricalWalls: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WallOut"][];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    createElectricalWall: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WallCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WallOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Projekt ist archiviert */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    deleteElectricalWall: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                wall_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    updateElectricalWall: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                wall_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WallUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WallOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    reorderElectricalWalls: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WallOrder"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WallOut"][];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    listElectricalOpenings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                wall_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpeningOut"][];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    createElectricalOpening: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                wall_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpeningCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpeningOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Projekt ist archiviert */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    deleteElectricalOpening: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                opening_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    updateElectricalOpening: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                opening_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpeningUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpeningOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
         };

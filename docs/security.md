@@ -105,6 +105,15 @@ Was **heute** existiert und geprüft ist:
   (`app/core/authorization/permissions.py`),
 - serverseitige Prüfung über flache Permission-Schlüssel.
 
+**Berechtigungen von Modulen** (seit Phase 3): Der Administrator erhält **jede**
+registrierte Berechtigung — sonst verliert er mit jedem neuen Modul an Reichweite,
+obwohl seine Rolle „Vollzugriff" heißt. Die übrigen Systemrollen erhalten genau die
+Schlüssel, die das Modul ihnen in `PermissionDef.default_roles` zuschreibt
+(`electrical.plan.read` für Planer, Kalkulator und Monteur, `electrical.plan.write` für
+den Planer). Der Core kennt dabei keine Modulschlüssel; er liest sie aus der Module
+Registry. Eine bestehende Rolle **verliert** beim erneuten Seed nie eine Berechtigung —
+es werden nur fehlende ergänzt.
+
 Was es **noch nicht** gibt — und was deshalb nirgends behauptet wird:
 
 - keine Rollenvererbung,

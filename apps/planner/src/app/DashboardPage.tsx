@@ -25,9 +25,9 @@ export function DashboardPage() {
           ))}
         </ul>
         <p className="muted">
-          Fachmodule folgen ab Phase 3 (Elektroplanung); ihre Projekt-Tabs erscheinen dann
-          automatisch in der Projektansicht. Neue Module tragen sich mit einer Zeile in{" "}
-          <code>src/modules/index.ts</code> ein.
+          Die Projekt-Tabs der Fachmodule erscheinen automatisch in der Projektansicht —
+          die Elektroplanung trägt dort seit Phase 3 „Räume &amp; Grundriss" bei. Neue
+          Module tragen sich mit einer Zeile in <code>src/modules/index.ts</code> ein.
         </p>
       </section>
 

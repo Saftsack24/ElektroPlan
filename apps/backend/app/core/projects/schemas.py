@@ -14,7 +14,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.core.customers.schemas import reject_explicit_null
+from app.core.validation import reject_explicit_null
 
 ProjectStatus = Literal["draft", "active", "completed", "archived"]
 

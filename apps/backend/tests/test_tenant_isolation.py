@@ -26,6 +26,7 @@ from app.core.module_registry.registry import ModuleRegistry
 from app.core.organizations.models import OrganizationMember
 from app.core.projects.models import Building, Floor, Project
 from app.core.seed import seed_initial_data
+from app.modules.electrical.models import ElectricalOpening, ElectricalRoom, ElectricalWall
 from tests.conftest import ADMIN_PASSWORD, auth_headers, login, requires_database
 from tests.routes import all_routes
 
@@ -42,6 +43,12 @@ class Tenant:
     project_id: uuid.UUID
     building_id: uuid.UUID
     floor_id: uuid.UUID
+    #: Planungsdaten des Fachmoduls ``electrical`` (Phase 3). Der Sweep
+    #: braucht sie, weil sonst die neuen Routen ohne Testdaten dastehen -
+    #: und dann meldet er sich als unabgedeckt.
+    room_id: uuid.UUID
+    wall_id: uuid.UUID
+    opening_id: uuid.UUID
 
 
 @pytest.fixture
@@ -94,6 +101,34 @@ def two_tenants(
                 level=0,
             )
             session.add(geschoss)
+            session.flush()
+            raum = ElectricalRoom(
+                organization_id=result.organization_id,
+                floor_id=geschoss.id,
+                name="Wohnzimmer",
+            )
+            session.add(raum)
+            session.flush()
+            wand = ElectricalWall(
+                organization_id=result.organization_id,
+                room_id=raum.id,
+                x1_mm=0,
+                y1_mm=0,
+                x2_mm=5_000,
+                y2_mm=0,
+                sort_order=0,
+            )
+            session.add(wand)
+            session.flush()
+            oeffnung = ElectricalOpening(
+                organization_id=result.organization_id,
+                wall_id=wand.id,
+                kind="door",
+                offset_mm=1_000,
+                width_mm=1_010,
+                height_mm=2_010,
+            )
+            session.add(oeffnung)
             datei = FileRecord(
                 organization_id=result.organization_id,
                 project_id=projekt.id,
@@ -122,6 +157,9 @@ def two_tenants(
                     project_id=projekt.id,
                     building_id=gebaeude.id,
                     floor_id=geschoss.id,
+                    room_id=raum.id,
+                    wall_id=wand.id,
+                    opening_id=oeffnung.id,
                 )
             )
         session.commit()
@@ -220,6 +258,9 @@ def fremde_ids(tenant: Tenant) -> dict[str, str]:
         "project_id": str(tenant.project_id),
         "building_id": str(tenant.building_id),
         "floor_id": str(tenant.floor_id),
+        "room_id": str(tenant.room_id),
+        "wall_id": str(tenant.wall_id),
+        "opening_id": str(tenant.opening_id),
     }
 
 
@@ -418,6 +459,163 @@ def test_projekt_kann_nicht_mandantenuebergreifend_verweisen(
                 customer_id=scholz.customer_id,
                 project_number="PR-2026-9999",
                 name="Verbotener Verweis",
+            )
+        )
+        with pytest.raises(IntegrityError):
+            session.commit()
+        session.rollback()
+    finally:
+        session.close()
+
+
+# ------------------------------------------- Fachmodul electrical (Phase 3)
+
+ELECTRICAL = "/api/v1/modules/electrical"
+
+
+def test_fremder_raum_liefert_404(api: TestClient, two_tenants: tuple[Tenant, Tenant]) -> None:
+    scholz, mueller = two_tenants
+    token = login(api, mueller.admin_email)
+
+    response = api.get(f"{ELECTRICAL}/rooms/{scholz.room_id}", headers=auth_headers(token))
+
+    assert response.status_code == 404
+    assert response.json()["type"].endswith("/not-found")
+
+
+def test_raumliste_eines_fremden_geschosses_liefert_404(
+    api: TestClient, two_tenants: tuple[Tenant, Tenant]
+) -> None:
+    scholz, mueller = two_tenants
+    token = login(api, mueller.admin_email)
+
+    response = api.get(f"{ELECTRICAL}/floors/{scholz.floor_id}/rooms", headers=auth_headers(token))
+
+    assert response.status_code == 404
+
+
+def test_raum_kann_nicht_auf_fremdem_geschoss_entstehen(
+    api: TestClient, two_tenants: tuple[Tenant, Tenant]
+) -> None:
+    scholz, mueller = two_tenants
+    token = login(api, mueller.admin_email)
+
+    response = api.post(
+        f"{ELECTRICAL}/floors/{scholz.floor_id}/rooms",
+        headers=auth_headers(token),
+        json={"name": "Fremdraum"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_wand_kann_nicht_in_fremdem_raum_entstehen(
+    api: TestClient, two_tenants: tuple[Tenant, Tenant]
+) -> None:
+    scholz, mueller = two_tenants
+    token = login(api, mueller.admin_email)
+
+    response = api.post(
+        f"{ELECTRICAL}/rooms/{scholz.room_id}/walls",
+        headers=auth_headers(token),
+        json={"x1_mm": 0, "y1_mm": 0, "x2_mm": 1_000, "y2_mm": 0},
+    )
+
+    assert response.status_code == 404
+
+
+def test_oeffnung_kann_nicht_in_fremder_wand_entstehen(
+    api: TestClient, two_tenants: tuple[Tenant, Tenant]
+) -> None:
+    scholz, mueller = two_tenants
+    token = login(api, mueller.admin_email)
+
+    response = api.post(
+        f"{ELECTRICAL}/walls/{scholz.wall_id}/openings",
+        headers=auth_headers(token),
+        json={"kind": "door", "offset_mm": 100, "width_mm": 1_010, "height_mm": 2_010},
+    )
+
+    assert response.status_code == 404
+
+
+def test_fremde_wand_ist_nicht_aenderbar(
+    api: TestClient, two_tenants: tuple[Tenant, Tenant]
+) -> None:
+    scholz, mueller = two_tenants
+    token = login(api, mueller.admin_email)
+
+    response = api.patch(
+        f"{ELECTRICAL}/walls/{scholz.wall_id}",
+        headers={**auth_headers(token), "If-Match": "1"},
+        json={"thickness_mm": 240},
+    )
+
+    assert response.status_code == 404
+
+
+def test_raum_kann_nicht_mandantenuebergreifend_verweisen(
+    engine: Engine, two_tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Der zusammengesetzte Fremdschluessel greift in PostgreSQL selbst."""
+    scholz, mueller = two_tenants
+    factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    session = factory()
+    try:
+        session.add(
+            ElectricalRoom(
+                organization_id=mueller.organization_id,
+                floor_id=scholz.floor_id,
+                name="Verbotener Verweis",
+            )
+        )
+        with pytest.raises(IntegrityError):
+            session.commit()
+        session.rollback()
+    finally:
+        session.close()
+
+
+def test_wand_kann_nicht_mandantenuebergreifend_verweisen(
+    engine: Engine, two_tenants: tuple[Tenant, Tenant]
+) -> None:
+    scholz, mueller = two_tenants
+    factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    session = factory()
+    try:
+        session.add(
+            ElectricalWall(
+                organization_id=mueller.organization_id,
+                room_id=scholz.room_id,
+                x1_mm=0,
+                y1_mm=0,
+                x2_mm=1_000,
+                y2_mm=0,
+                sort_order=9,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            session.commit()
+        session.rollback()
+    finally:
+        session.close()
+
+
+def test_oeffnung_kann_nicht_mandantenuebergreifend_verweisen(
+    engine: Engine, two_tenants: tuple[Tenant, Tenant]
+) -> None:
+    scholz, mueller = two_tenants
+    factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    session = factory()
+    try:
+        session.add(
+            ElectricalOpening(
+                organization_id=mueller.organization_id,
+                wall_id=scholz.wall_id,
+                kind="door",
+                offset_mm=0,
+                width_mm=1_010,
+                height_mm=2_010,
             )
         )
         with pytest.raises(IntegrityError):
