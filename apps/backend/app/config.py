@@ -77,6 +77,23 @@ class Settings(BaseSettings):
     upload_max_bytes: int = 50 * 1024 * 1024
     download_url_ttl_seconds: int = Field(default=300, ge=30, le=3600)
 
+    # --- Einladungen (Phase 4.2, docs/security.md, Abschnitt 18) ---
+    #: Wie ein Einladungslink den Empfaenger erreicht. ``none``: kein Kanal
+    #: eingerichtet - Einladungen werden dann **abgelehnt**, statt eine
+    #: Zustellung vorzutaeuschen. ``development_link``: Der Link wird einmalig
+    #: in der Antwort an den Einladenden zurueckgegeben. Nur ausserhalb der
+    #: Produktion zulaessig; der Start in Produktion wird sonst verweigert.
+    invitation_delivery: Literal["none", "development_link"] = "none"
+    invitation_valid_hours: int = Field(default=72, ge=1, le=336)
+    #: Fehlgeschlagene Einloeseversuche je IP und Zeitfenster.
+    invitation_attempts_per_window: int = Field(default=20, ge=1)
+    invitation_window_seconds: int = Field(default=900, ge=1)
+    #: Wie lange abgeschlossene oder abgelaufene Einladungen aufbewahrt werden,
+    #: bevor ``python -m app.cli purge-invitations`` sie entfernt.
+    invitation_retention_days: int = Field(default=30, ge=1, le=365)
+    #: Adresse der Weboberflaeche. Grundlage des Aktivierungslinks.
+    public_app_url: str = "http://localhost:5173"
+
     # --- CORS ---
     cors_origins: str = "http://localhost:5173"
 
@@ -114,6 +131,12 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _validate_secrets(self) -> Settings:
         """Unsichere Secrets verhindern den Start - ausser in Entwicklung/Test."""
+        if self.is_production and self.invitation_delivery == "development_link":
+            # Ein Einladungslink in einer API-Antwort ist eine reine
+            # Entwicklungshilfe. In Produktion wuerde er dem Einladenden ein
+            # fremdes Einmal-Token in die Hand geben.
+            msg = "ELEKTROPLAN_INVITATION_DELIVERY=development_link ist in Produktion verboten."
+            raise ValueError(msg)
         if self.environment in ("development", "test"):
             if not self.jwt_secret:
                 # Nur Entwicklung/Test: In Produktion erzwingt die Pruefung unten

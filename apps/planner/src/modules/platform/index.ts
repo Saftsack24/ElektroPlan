@@ -3,7 +3,8 @@ import { lazy } from "react";
 import type { PlannerModule } from "../../core/modules/types";
 
 /**
- * Oberflaeche der Plattform selbst: Kunden, Projekte und Protokoll.
+ * Oberflaeche der Plattform selbst: Startseite, Kunden, Projekte,
+ * Administration und Protokoll.
  *
  * Zugleich das Referenzbeispiel fuer die Frontend-Modulregistrierung: Ein
  * Modul beschreibt sich selbst und wird in `src/modules/index.ts` mit einer
@@ -15,7 +16,7 @@ import type { PlannerModule } from "../../core/modules/types";
 export const platformModule: PlannerModule = {
   id: "core",
   name: "Plattform",
-  version: "1.1.0",
+  version: "1.2.0",
   navigation: [
     {
       id: "projects",
@@ -32,6 +33,13 @@ export const platformModule: PlannerModule = {
       permission: "customer.record.read",
     },
     {
+      id: "administration",
+      label: "Administration",
+      to: "/administration",
+      order: 80,
+      permission: "user.account.read",
+    },
+    {
       id: "audit",
       label: "Protokoll",
       to: "/audit",
@@ -40,6 +48,12 @@ export const platformModule: PlannerModule = {
     },
   ],
   routes: [
+    // Startseite: arbeitsorientiert, ohne eigene Berechtigung. Was sie
+    // zeigt, richtet sich nach den Rechten (Phase 4.2).
+    {
+      path: "/",
+      element: lazy(() => import("./StartPage")),
+    },
     {
       path: "/projects",
       element: lazy(() => import("./ProjectsPage")),
@@ -64,6 +78,34 @@ export const platformModule: PlannerModule = {
       path: "/audit",
       element: lazy(() => import("./AuditPage")),
       permission: "audit.entry.read",
+    },
+    // Administration (Phase 4.2). Jede Route ist an ihr Leserecht gebunden:
+    // Ohne Berechtigung existiert sie fuer die Oberflaeche nicht - auch nicht
+    // beim direkten Aufruf. Abgesichert wird serverseitig.
+    {
+      path: "/administration",
+      element: lazy(() => import("./administration/AdministrationStart")),
+      permission: "user.account.read",
+    },
+    {
+      path: "/administration/users",
+      element: lazy(() => import("./administration/BenutzerPage")),
+      permission: "user.account.read",
+    },
+    {
+      path: "/administration/users/:memberId",
+      element: lazy(() => import("./administration/MitgliedPage")),
+      permission: "user.account.read",
+    },
+    {
+      path: "/administration/roles",
+      element: lazy(() => import("./administration/RollenPage")),
+      permission: "role.assignment.read",
+    },
+    {
+      path: "/administration/system",
+      element: lazy(() => import("./administration/SystemPage")),
+      permission: "user.account.read",
     },
   ],
 };

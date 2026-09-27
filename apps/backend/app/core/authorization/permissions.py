@@ -99,13 +99,19 @@ SYSTEM_ROLES: tuple[SystemRole, ...] = (
     SystemRole(
         key="admin",
         name="Administrator",
-        description="Vollzugriff einschliesslich Benutzer- und Rechteverwaltung",
+        description=(
+            "Für Inhaber und Büroleitung: voller Zugriff auf alle Bereiche, "
+            "einschließlich Benutzer einladen, sperren und Rollen vergeben."
+        ),
         permissions=tuple(permission.key for permission in CORE_PERMISSIONS),
     ),
     SystemRole(
         key="planer",
         name="Planer",
-        description="Technische Planung",
+        description=(
+            "Für die technische Planung: Projekte anlegen und bearbeiten, Pläne "
+            "hochladen, Kunden und Kollegen ansehen."
+        ),
         permissions=(
             *_BASE_READ,
             *_BUSINESS_READ,
@@ -117,7 +123,10 @@ SYSTEM_ROLES: tuple[SystemRole, ...] = (
     SystemRole(
         key="kalkulator",
         name="Kalkulator",
-        description="Kalkulation und Angebote",
+        description=(
+            "Für Kalkulation und Angebote: Kunden anlegen und pflegen, Projekte und "
+            "Kollegen ansehen."
+        ),
         permissions=(
             *_BASE_READ,
             *_BUSINESS_READ,
@@ -128,22 +137,45 @@ SYSTEM_ROLES: tuple[SystemRole, ...] = (
     SystemRole(
         key="monteur",
         name="Monteur",
-        description="Ausfuehrung auf der Baustelle",
+        description=(
+            "Für die Ausführung auf der Baustelle: Projekte und Pläne ansehen, nichts verändern."
+        ),
         permissions=(*_BASE_READ, PROJECT_RECORD_READ),
     ),
     SystemRole(
         key="lager",
         name="Lager",
-        description="Lagerverwaltung",
+        description=(
+            "Für die Lagerverwaltung. Bis zum Lagermodul nur Grundzugriff auf "
+            "Betriebsdaten und Dateien."
+        ),
         permissions=_BASE_READ,
     ),
     SystemRole(
         key="einkauf",
         name="Einkauf",
-        description="Beschaffung",
+        description=(
+            "Für die Beschaffung. Bis zum Materialmodul nur Grundzugriff auf "
+            "Betriebsdaten und Dateien."
+        ),
         permissions=_BASE_READ,
     ),
 )
 
 SYSTEM_ROLE_KEYS = tuple(role.key for role in SYSTEM_ROLES)
 ADMIN_ROLE_KEY = "admin"
+
+#: Verstaendliche Bereichsnamen der Core-Berechtigungen, gebildet aus dem
+#: ersten Teil des Schluessels. Berechtigungen eines Moduls tragen den Namen
+#: ihres Moduls - der Core kennt dafuer keine Modulschluessel, er liest sie
+#: aus der Module Registry.
+CORE_PERMISSION_AREAS: dict[str, str] = {
+    "organization": "Betrieb",
+    "user": "Benutzerverwaltung",
+    "role": "Benutzerverwaltung",
+    "customer": "Kunden",
+    "project": "Projekte",
+    "file": "Dateien",
+    "audit": "Protokoll",
+    "module": "System",
+}

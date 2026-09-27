@@ -160,6 +160,61 @@ class ProjectArchivedError(ConflictError):
     title = "Projekt ist archiviert"
 
 
+class LastAdministratorError(ConflictError):
+    """Die Aenderung liesse den Betrieb ohne aktiven Administrator zurueck.
+
+    Eigener ``type``, damit die Oberflaeche den Fall verstaendlich benennen
+    kann (docs/security.md, Abschnitt 18).
+    """
+
+    error_type = "last-administrator"
+    title = "Letzter Administrator"
+
+
+class SelfLockoutError(ConflictError):
+    """Ein Administrator wuerde sich selbst sperren oder entmachten."""
+
+    error_type = "self-lockout"
+    title = "Eigene Mitgliedschaft"
+
+
+class InvitationInvalidError(AppError):
+    """Einladung unbekannt, abgelaufen, widerrufen oder bereits verwendet.
+
+    Bewusst **ein** Fehler fuer alle Faelle: Wer ein Token vorlegt, erfaehrt
+    nicht, ob es je existiert hat oder weshalb es nicht mehr gilt.
+    """
+
+    error_type = "invitation-invalid"
+    title = "Einladung ungueltig"
+    status_code = status.HTTP_404_NOT_FOUND
+
+
+class InvitationRequiresLoginError(ConflictError):
+    """Zur eingeladenen E-Mail gibt es bereits ein Konto.
+
+    Ein neues Konto wird dann nicht angelegt und das bestehende Passwort nie
+    ueberschrieben. Die Annahme verlangt die Anmeldedaten des bestehenden
+    Kontos. Nur wer das gueltige Einladungs-Token besitzt, erhaelt diese
+    Antwort (ADR 0015).
+    """
+
+    error_type = "invitation-requires-login"
+    title = "Anmeldung erforderlich"
+
+
+class InvitationDeliveryUnavailableError(AppError):
+    """Es ist kein Zustellweg fuer Einladungen eingerichtet.
+
+    Eine Einladung, die niemanden erreicht, wird gar nicht erst angelegt -
+    die Anwendung taeuscht keine Zustellung vor.
+    """
+
+    error_type = "invitation-delivery-unavailable"
+    title = "Einladungen nicht verfuegbar"
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+
+
 class ValidationFailedError(AppError):
     error_type = "validation-failed"
     title = "Ungueltige Eingabe"

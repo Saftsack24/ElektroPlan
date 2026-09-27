@@ -32,6 +32,15 @@ ACTION_PROJECT_CREATED = "project.created"
 ACTION_PROJECT_UPDATED = "project.updated"
 ACTION_PROJECT_DELETED = "project.deleted"
 ACTION_PROJECT_STATUS_CHANGED = "project.status_changed"
+#: Benutzerverwaltung (Phase 4.2). Die Eintraege tragen IDs und
+#: Rollenschluessel - **keine** E-Mail, keinen Namen, nie Token oder Link.
+ACTION_INVITATION_CREATED = "invitation.created"
+ACTION_INVITATION_REVOKED = "invitation.revoked"
+ACTION_INVITATION_REISSUED = "invitation.reissued"
+ACTION_INVITATION_ACCEPTED = "invitation.accepted"
+ACTION_MEMBER_SUSPENDED = "member.suspended"
+ACTION_MEMBER_REACTIVATED = "member.reactivated"
+ACTION_MEMBER_ROLES_CHANGED = "member.roles_changed"
 ACTION_FILE_UPLOADED = "file.uploaded"
 ACTION_FILE_DOWNLOADED = "file.downloaded"
 

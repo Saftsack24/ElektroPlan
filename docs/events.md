@@ -205,6 +205,12 @@ Nutzlastfeld wäre brechend und erzeugt `event_version` 2.
 
 ---
 
+### Benutzerverwaltung erzeugt keine Events (Phase 4.2)
+
+Einladen, Annehmen, Sperren und Rollenvergabe sind synchrone Core-Vorgänge ohne
+Empfänger in anderen Modulen. Sie werden im **Audit-Protokoll** festgehalten, nicht als
+Domain Event. Ein Event entsteht erst, wenn ein Modul tatsächlich reagieren muss.
+
 ## 7. Persistenz
 
 Jedes zugestellte Event wird in `domain_events` geschrieben:

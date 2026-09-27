@@ -100,6 +100,7 @@ class ProjectSummary(BaseModel):
     site_city: str | None
     version: int
     created_at: datetime
+    updated_at: datetime
 
 
 # ------------------------------------------------------------------ Gebaeude

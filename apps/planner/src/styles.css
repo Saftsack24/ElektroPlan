@@ -367,3 +367,93 @@ polyline.grundriss__vorschau { fill: none; }
 .grundriss__seite { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .grundriss__serverfehler { font-size: 0.88rem; }
 .grundriss__serverfehler ul { margin: 4px 0; padding-left: 18px; }
+
+/* ------------------------------------------ Startseite und Verwaltung (4.2) */
+.visuell-versteckt {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.button--gefahr { background: var(--error-text); color: var(--surface); }
+.button--gefahr:disabled { opacity: 0.6; cursor: progress; }
+.button--klein { padding: 4px 8px; font-size: 0.85rem; }
+a.button { display: inline-block; text-decoration: none; }
+a.button--ghost { color: var(--text); }
+
+.marke {
+  display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.8rem;
+  font-weight: 600; border: 1px solid var(--border); white-space: nowrap;
+}
+.marke--neutral { color: var(--muted); }
+.marke--info { color: var(--primary); border-color: var(--primary); }
+.marke--erfolg { color: var(--erfolg); border-color: var(--erfolg); }
+.marke--warnung { color: var(--warnung); border-color: var(--warnung); }
+.marke--gefahr { color: var(--error-text); border-color: var(--error-text); }
+
+.begruessung { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
+.begruessung h1 { margin: 0; font-size: 1.5rem; }
+.begruessung__betrieb { margin: 4px 0 0; }
+.schnellaktionen { display: flex; flex-wrap: wrap; gap: 8px; }
+.hinweisleiste {
+  margin: 0; padding: 10px 14px; border: 1px solid var(--border); border-left: 4px solid var(--primary);
+  border-radius: var(--radius); background: var(--surface);
+}
+.kacheln { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--gap); }
+.kacheln .card h2, .card__header h2 { margin: 0; font-size: 1.1rem; }
+.karte__beschreibung { margin: 4px 0 8px; font-size: 0.88rem; }
+.leer { color: var(--muted); padding: 12px 0; }
+.leer p { margin: 4px 0; }
+.projektliste { list-style: none; margin: 0; padding: 0; }
+.projektliste__eintrag {
+  display: flex; justify-content: space-between; gap: 12px; padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.projektliste__eintrag:last-child { border-bottom: 0; }
+.projektliste__name { font-weight: 600; }
+.projektliste__details { font-size: 0.85rem; }
+.projektliste__rechts { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.projektliste__zeit { font-size: 0.8rem; white-space: nowrap; }
+.einstiege { margin: 8px 0 0; padding-left: 18px; }
+.einstiege li { margin: 4px 0; }
+
+.bereich { margin: 0; color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.unternav { display: flex; flex-wrap: wrap; gap: 4px; margin: 12px 0; border-bottom: 1px solid var(--border); }
+.unternav__link {
+  padding: 6px 12px; color: var(--muted); text-decoration: none;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.unternav__link:hover { color: var(--text); }
+.unternav__link.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+.tabellenrahmen { overflow-x: auto; }
+.table__aktionen { white-space: nowrap; display: flex; gap: 6px; flex-wrap: wrap; }
+.seitennavigation { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.kennwerte { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
+.kennwerte dt { color: var(--muted); }
+.kennwerte dd { margin: 0; }
+.rollenwahl { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.rollenwahl__eintrag { display: flex; gap: 10px; align-items: flex-start; }
+.rollenwahl__eintrag input { margin-top: 4px; }
+.rollenwahl__eintrag label { display: flex; flex-direction: column; }
+.rollenwahl__zweck { font-size: 0.85rem; }
+.rechte { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 8px; }
+.rechte__bereich h3 { margin: 4px 0; font-size: 0.95rem; }
+.rechte__liste { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 0.9rem; }
+.rechte__herkunft { font-size: 0.85rem; }
+.rechte__schluessel { display: block; color: var(--muted); font-size: 0.75rem; }
+.rollenkarten { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--gap); }
+.rollenkarten h2 { margin-top: 0; }
+.bestaetigung { display: flex; flex-direction: column; gap: 8px; }
+.entwicklungslink {
+  margin: 8px 0; padding: 10px; border: 2px dashed var(--warnung); border-radius: var(--radius);
+}
+.entwicklungslink__titel { margin: 0; font-weight: 700; color: var(--warnung); }
+.entwicklungslink__zeile { display: flex; gap: 8px; }
+.entwicklungslink__zeile input { flex: 1; min-width: 0; }
+.einladung { width: min(460px, 100%); }
+
+@media (max-width: 640px) {
+  .projektliste__eintrag { flex-direction: column; }
+  .projektliste__rechts { align-items: flex-start; }
+  .kennwerte { grid-template-columns: 1fr; }
+  .table--benutzer th:nth-child(5), .table--benutzer td:nth-child(5) { display: none; }
+}

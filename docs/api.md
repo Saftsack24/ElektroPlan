@@ -1,6 +1,6 @@
 # API-Richtlinien
 
-Version: 1.2 (Core-Geschäftsdaten und Electrical Room Model umgesetzt)
+Version: 1.3 (Core-Geschäftsdaten, Electrical Room Model, Benutzerverwaltung)
 Basis: FastAPI · OpenAPI 3.1 · JSON
 
 ---
@@ -36,6 +36,7 @@ DELETE /api/v1/customers/{customer_id}                       If-Match  (Soft Del
 POST   /api/v1/customers/{customer_id}/anonymize             If-Match  (DSGVO Art. 17)
 
 GET    /api/v1/projects                       ?q= &status= &customer_id= &sort= &limit= &cursor=
+                                              sort: created_at (Standard) | name | updated_at (seit 4.2)
 POST   /api/v1/projects
 GET    /api/v1/projects/{project_id}
 PATCH  /api/v1/projects/{project_id}                         If-Match
@@ -121,6 +122,63 @@ Einzelbefunde.
 **Keine Cursor-Pagination:** Ein Geschoss hat Räume in zweistelliger, ein Raum Wände in
 einstelliger Anzahl. Die Sortierung ist trotzdem deterministisch — Räume nach Raumnummer,
 dann Name, dann ID; Wände nach `sort_order`, dann ID; Öffnungen nach Abstand, dann ID.
+
+### Benutzerverwaltung (ab Phase 4.2, ADR 0015)
+
+```
+GET    /api/v1/members                        ?q= &status=active|disabled|invited &limit= &cursor=
+GET    /api/v1/members/{member_id}
+POST   /api/v1/members/{member_id}/suspend    If-Match  Zugang zu diesem Betrieb sperren
+POST   /api/v1/members/{member_id}/reactivate If-Match  Zugang wieder freigeben
+GET    /api/v1/members/{member_id}/permissions         Rollen und effektive Rechte samt Herkunft
+PUT    /api/v1/members/{member_id}/roles      If-Match  Systemrollen als Ganzes ersetzen
+GET    /api/v1/roles                                   feste Systemrollen mit Zweck und Rechten
+GET    /api/v1/invitations/policy                      Gültigkeit und Zustellweg
+POST   /api/v1/invitations                             einladen (201)
+GET    /api/v1/invitations/{invitation_id}
+POST   /api/v1/invitations/{invitation_id}/revoke   If-Match
+POST   /api/v1/invitations/{invitation_id}/reissue  If-Match  neues Token, neue Frist
+
+# öffentlich, ohne Anmeldung - das Token steht im Körper
+POST   /api/v1/invitation-acceptance/preview
+POST   /api/v1/invitation-acceptance/new-account        (201)
+POST   /api/v1/invitation-acceptance/existing-account   (201)
+```
+
+**Liste.** `GET /members` liefert Mitgliedschaften **und** offene Einladungen in einer
+Liste (`kind`: `member` | `invitation`), sortiert nach Anzeigename ohne Groß-/Klein-
+schreibung, dann ID; Keyset-Cursor über genau diese Werte. `status=invited` zeigt offene
+Einladungen, auch abgelaufene (`invitation_expired`). Rollen werden je Seite in einer
+Abfrage nachgeladen – kein N+1.
+
+**Berechtigungen:** lesen `user.account.read`; sperren, freigeben, widerrufen, neu
+ausstellen `user.account.write`; Rollen und effektive Rechte lesen
+`role.assignment.read`; Rollen vergeben `role.assignment.write`; **einladen verlangt
+`user.account.write` und `role.assignment.write`**, weil die Einladung Rollen vergibt.
+
+**Versionierung.** `If-Match` trägt die Version der **Mitgliedschaft** bzw. Einladung.
+Eine Rollenänderung zählt die Mitgliedsversion weiter; eine Anmeldung nicht.
+
+| Fall | Antwort |
+|---|---|
+| eigene Mitgliedschaft sperren / eigene Administratorrolle entfernen | `409 self-lockout` |
+| danach bliebe kein aktiver Administrator | `409 last-administrator` |
+| bereits gesperrt / bereits aktiv / Einladung schon angenommen oder widerrufen | `409 conflict` |
+| unbekannte, doppelte oder nicht vergebbare Rolle (nur `is_system`) | `422`, `errors[].code` `unknown_role` / `duplicate_role` |
+| E-Mail gehört dem Betrieb bereits an / offene Einladung existiert | `409 conflict` |
+| kein Zustellweg eingerichtet | `503 invitation-delivery-unavailable`, nichts angelegt |
+| fremde oder unbekannte ID | `404` |
+
+**Einladungsantwort.** `POST /invitations` und `…/reissue` liefern `InvitationIssued`
+mit `delivery` und – nur bei `ELEKTROPLAN_INVITATION_DELIVERY=development_link` –
+`development_activation_url`. Kein anderer Endpunkt liefert Token oder Link.
+
+**Annahme.** Ungültige Tokens (unbekannt, abgelaufen, widerrufen, verwendet) erhalten
+einheitlich `404 invitation-invalid`; Fehlversuche je IP begrenzt (`429`). Der Weg
+`new-account` legt Konto, Mitgliedschaft und Rollen atomar an – existiert zur E-Mail ein
+Konto, `409 invitation-requires-login` ohne Änderung. `existing-account` prüft das
+Passwort des Kontos der eingeladenen E-Mail (`401` wie bei der Anmeldung) und ändert das
+Konto nicht. Keiner der Wege stellt eine Sitzung aus.
 
 ### Zustand des Kunden bei der Projektzuordnung
 
@@ -299,10 +357,11 @@ Regeln:
 | 401 | Nicht angemeldet / Token ungültig |
 | 403 | Angemeldet, aber Permission fehlt |
 | 404 | Nicht vorhanden **oder fremder Mandant** (bewusst nicht unterscheidbar) |
-| 409 | Fachlicher Konflikt (Versionskonflikt, Bestand, Statuswechsel unzulässig) |
+| 409 | Fachlicher Konflikt (Versionskonflikt, Bestand, Statuswechsel unzulässig, letzter Administrator) |
 | 422 | Validierungsfehler im Inhalt |
 | 428 | `If-Match` fehlt bei einer Aenderung an einer versionierten Entität (RFC 6585) |
 | 429 | Rate Limit |
+| 503 | Dienst nicht eingerichtet (z. B. kein Zustellweg für Einladungen) |
 | 500 | Unerwarteter Fehler (generische Meldung) |
 
 ---
@@ -367,6 +426,7 @@ verlangt, dass die Anfrage bedingt gestellt wird.
 
 Versioniert sind in Phase 2: `customers`, `projects`, `buildings`, `floors`.
 Ab Phase 3 zusätzlich: `electrical_rooms`, `electrical_walls`, `electrical_openings`.
+Ab Phase 4.2 zusätzlich: `organization_members`, `member_invitations`.
 
 Beim Umordnen der Wände trägt `If-Match` die Version des **Raums**: Die Reihenfolge gehört
 der Kontur als Ganzes, nicht einer einzelnen Wand. Der Raum zählt dabei seine Version

@@ -20,6 +20,7 @@ export function Feld({
   fehler,
   hinweis,
   disabled = false,
+  autoComplete,
 }: {
   id: string;
   label: string;
@@ -30,8 +31,13 @@ export function Feld({
   fehler?: string | undefined;
   hinweis?: string | undefined;
   disabled?: boolean;
+  autoComplete?: string | undefined;
 }) {
   const fehlerId = `${id}-fehler`;
+  const hinweisId = `${id}-hinweis`;
+  const beschrieben = [fehler ? fehlerId : null, hinweis !== undefined ? hinweisId : null]
+    .filter((teil) => teil !== null)
+    .join(" ");
   return (
     <div className="field">
       <label className="field__label" htmlFor={id}>
@@ -45,8 +51,9 @@ export function Feld({
         value={value}
         required={required}
         disabled={disabled}
+        autoComplete={autoComplete}
         aria-invalid={fehler ? true : undefined}
-        aria-describedby={fehler ? fehlerId : undefined}
+        aria-describedby={beschrieben || undefined}
         onChange={(event) => onChange(event.target.value)}
       />
       {fehler !== undefined && (
@@ -54,7 +61,11 @@ export function Feld({
           {fehler}
         </span>
       )}
-      {hinweis !== undefined && <span className="field__hinweis">{hinweis}</span>}
+      {hinweis !== undefined && (
+        <span id={hinweisId} className="field__hinweis">
+          {hinweis}
+        </span>
+      )}
     </div>
   );
 }

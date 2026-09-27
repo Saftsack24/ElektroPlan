@@ -53,7 +53,10 @@ from app.errors import (
     ValidationFailedError,
 )
 
-ProjectSort = Literal["created_at", "name"]
+#: ``updated_at``: zuletzt geaenderte Projekte zuerst (Startseite, Phase 4.2).
+#: Gemeint ist die Projektzeile selbst - Stammdaten und Status. Aenderungen an
+#: Gebaeuden, Geschossen oder Planungsdaten zaehlen nicht mit.
+ProjectSort = Literal["created_at", "name", "updated_at"]
 
 #: Name des eindeutigen Index aus Migration ``0003_core_business_data``.
 #: Die Namenskonvention in ``app/db/base.py`` erzeugt ihn aus Tabelle und
@@ -180,6 +183,15 @@ class ProjectService:
                 cursor=cursor,
                 parse_key=parse_text_key,
             )
+        elif sort == "updated_at":
+            stmt = apply_keyset(
+                stmt,
+                sort_column=Project.updated_at,
+                id_column=Project.id,
+                descending=True,
+                cursor=cursor,
+                parse_key=parse_datetime_key,
+            )
         else:
             stmt = apply_keyset(
                 stmt,
@@ -197,7 +209,7 @@ class ProjectService:
         return build_keyset_page(
             rows,
             limit=limit,
-            key_of=lambda row: row[0].name if sort == "name" else row[0].created_at.isoformat(),
+            key_of=lambda row: _project_sort_value(row[0], sort),
             id_of=lambda row: row[0].id,
         )
 
@@ -557,3 +569,11 @@ def count_projects_of_customer(
         Project.deleted_at.is_(None),
     )
     return int(session.execute(stmt).scalar_one())
+
+
+def _project_sort_value(project: Project, sort: ProjectSort) -> str:
+    if sort == "name":
+        return project.name
+    if sort == "updated_at":
+        return project.updated_at.isoformat()
+    return project.created_at.isoformat()

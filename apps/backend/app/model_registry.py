@@ -16,6 +16,7 @@ from app.core.authorization.models import MemberRole, Permission, Role, RolePerm
 from app.core.customers.models import Customer
 from app.core.events.models import DomainEventRecord
 from app.core.files.models import FileRecord
+from app.core.invitations.models import MemberInvitation, MemberInvitationRole
 from app.core.numbering.models import NumberSequence
 from app.core.organizations.models import Organization, OrganizationMember, OrganizationModule
 from app.core.projects.models import Building, Floor, Project
@@ -38,6 +39,8 @@ __all__ = [
     "ElectricalWall",
     "FileRecord",
     "Floor",
+    "MemberInvitation",
+    "MemberInvitationRole",
     "MemberRole",
     "NumberSequence",
     "Organization",

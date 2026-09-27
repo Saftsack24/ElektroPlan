@@ -9,7 +9,13 @@ Dokumentation und Oberfläche auf Deutsch, Code und API auf Englisch.
 | Deutsch | Englisch (Code/API) | Anmerkung |
 |---|---|---|
 | Organisation / Mandant | `organization` | Elektrofachbetrieb |
-| Mitgliedschaft | `organization_member` | Verbindung Benutzer ↔ Organisation |
+| Mitgliedschaft | `organization_member` | Verbindung Benutzer ↔ Organisation; trägt Status und Rollen |
+| Zugang zum Betrieb sperren / freigeben | `suspend` / `reactivate`, Status `disabled` / `active` | betrifft nur die Mitgliedschaft, nie das globale Konto (ADR 0015) |
+| Einladung | `member_invitation` | Einladung einer E-Mail-Adresse in einen Betrieb; Token nur als Hash |
+| Einladung erneut ausstellen / widerrufen | `reissue` / `revoke` | neues Token und neue Frist / Token wertlos |
+| Systemrolle | `role` mit `is_system` | feste, ausgelieferte Rolle; in Phase 4.2 die einzigen vergebbaren |
+| Effektive Berechtigungen | `effective permissions` | Vereinigung der Berechtigungen aller Rollen einer Mitgliedschaft, mit Herkunft |
+| Letzter Administrator | `last-administrator` | Regel: ein Betrieb bleibt nie ohne aktiven Administrator |
 | Benutzer | `user` | globale Identität |
 | Rolle | `role` | pro Organisation, enthält Permissions |
 | Berechtigung | `permission` | `<modul>.<objekt>.<aktion>` |

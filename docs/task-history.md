@@ -1714,3 +1714,106 @@ Entwicklungsdatenbank nicht mehr treffen.
 prüfen; menschlicher Bedientest; Touch und weitere Browser; Entscheidung T9 vor Phase 4b.
 
 **Nächster sinnvoller Schritt:** Commit von Phase 4a und 4a.1 nach Freigabe.
+
+---
+
+## Task 0016 – Phase 4.2: Benutzerverwaltung, Rollenvergabe und Startseite
+
+**Datum:** 2026-09-27
+
+**Ziel:**
+Ein Administrator verwaltet die Mitglieder seines Betriebs: sehen, sicher einladen,
+Einladungen widerrufen oder neu ausstellen, feste Systemrollen vergeben, effektive Rechte
+nachvollziehen, den Zugang zum Betrieb sperren und freigeben. Dazu eine
+arbeitsorientierte Startseite statt der technischen Übersicht. Kein Rolleneditor, kein
+E-Mail-Versand, keine Passwortwiederherstellung, kein Beginn von Phase 4b.
+
+**Geprüfter Ausgangsstand:**
+`users` global, `organization_members` mit Status (`invited` ungenutzt) und **ohne**
+Version; sechs Systemrollen statisch im Code; `user.account.*` und `role.assignment.*`
+nur beim Administrator; keine Verwaltungs-API. Rechte und Mitgliedsstatus wurden schon
+pro Anfrage geprüft, ein Refresh bei gesperrter Mitgliedschaft lieferte aber `404` statt
+`401` und widerrief nichts. Roadmap-Tabelle führte 4a noch als `NOT STARTED`,
+`current-status.md` 4a als nicht committet – beides korrigiert.
+
+**Durchgeführte Änderungen:**
+
+1. **Migration `0005_member_administration`:** `organization_members.version` und
+   `last_login_at` (je Betrieb), neue Tabellen `member_invitations` (Token nur als
+   SHA-256-Hash, partieller Unique-Index „eine offene Einladung je Betrieb und E-Mail“)
+   und `member_invitation_roles` (zusammengesetzte FKs). Keine Datenmigration.
+2. **`app/core/invitations`:** Anlegen, Widerrufen, Neu ausstellen (ersetzt Hash und
+   Frist); öffentliche Annahme `preview` / `new-account` / `existing-account`;
+   Zustellung als kleine Funktion (`development_link` nur außerhalb Produktion, sonst
+   `503` ohne Anlage); Token im URL-Fragment; einheitlicher Fehler
+   `invitation-invalid`; Begrenzung je IP; `purge-invitations` nach 30 Tagen.
+3. **`app/core/members`:** Verzeichnis aus Mitgliedschaften und offenen Einladungen in
+   einer datenbankseitig vereinigten, sortierten und begrenzten Keyset-Liste; Detail;
+   Sperren/Freigeben; Rollen atomar ersetzen; effektive Rechte mit Herkunft.
+   **Organisationszeile als Sperrwurzel**, Handelnder wird unter der Sperre erneut
+   geprüft; `self-lockout` und `last-administrator` als eigene Fehlertypen.
+4. **Sitzungen:** Sperre widerruft die Refresh Tokens nur dieser Mitgliedschaft
+   (`membership_disabled`); Refresh einer gesperrten Mitgliedschaft `401` samt
+   Familienwiderruf; `last_login_at` je Betrieb ohne Versionszählung.
+5. **`GET /roles`**, Rollenbeschreibungen mit Einsatzzweck, Bereichsnamen der Rechte
+   (Core nach Namensraum, Module nach Modulname aus der Registry).
+6. **Projektliste:** `sort=updated_at` (Keyset), `ProjectSummary.updated_at`.
+7. **Frontend (Plattformmodul):** Startseite `/`, Administration (Benutzer, Mitglied,
+   Rollen und Rechte, Systeminformationen), Einladungsdialog, Vor-/Zurück-Blättern über
+   einen Cursor-Stapel, Entwicklungslink nur bei Server-Einstellung **und**
+   Vite-Entwicklungsmodus. Core: öffentliche Seite `/einladung` über eine eigene
+   Routenebene vor der Anmeldung, `Bestaetigung`, `Marke`, Dialog mit `data-autofocus`
+   und Fokusrückgabe, `aktualisieren()` lädt Rechte bei Rückkehr ins Fenster neu,
+   `?neu=1` öffnet die Anlagedialoge für Projekt und Kunde.
+8. **ADR 0015**, Dokumentation (Sicherheit inkl. neuem Abschnitt 18 und DSGVO-Feldliste,
+   API, Datenbank, Module, Events, Glossar, README, Roadmap, Status, Changelog).
+
+**Befunde im Browser-Smoke-Test, behoben:**
+- Die Annahmeseite reagierte nicht auf einen neuen Link bei bereits geöffneter Seite
+  (nur das Fragment ändert sich) – jetzt Neustart mit dem neuen Token, Test ergänzt.
+- Rollen-Checkboxen hatten die ganze Beschreibung als zugänglichen Namen – jetzt Name
+  über `aria-labelledby`, Beschreibung über `aria-describedby`.
+- Während der Umsetzung aufgefallen: `useLocation` im Gate hätte die ganze Anwendung bei
+  jeder Navigation neu gerendert (App-Tests liefen in Timeouts) – ersetzt durch eine
+  eigene Routenebene.
+
+**Selbstreview:**
+
+| Frage | Ergebnis |
+|---|---|
+| Betriebsübergreifende Rechteausweitung? | Nein. Jede Abfrage ist auf die Organisation aus dem Token gefiltert, Rollen werden nur im eigenen Betrieb aufgelöst, fremde IDs `404` (Sweep + eigener Test über alle acht Routen). `role.assignment.write` ist faktisch Administratorrecht – dokumentiert, nur in der Rolle `admin`. |
+| Kontoübernahme durch Betriebsadministrator? | Nein. Kein Endpunkt ändert Passwort, E-Mail, Name oder `is_active`; `new-account` lehnt bestehende Adressen ab; `existing-account` verlangt das Passwort genau dieses Kontos. Restrisiko nur im Entwicklungsmodus (Einladender hält das Token) – deshalb in Produktion verboten. |
+| Token aus Logs, Audit, späteren Antworten? | Nein. Nur die Antwort auf Anlage/Neuausstellung enthält den Link; getestet für Audit, Logausgabe (mit Gegenprobe, dass Logs erfasst wurden), Detail und Liste; im Compose-System per `grep` geprüft. |
+| Abgelaufenes, widerrufenes, ersetztes Token nutzbar? | Nein, je eigener Test; im Browser Wiederverwendung abgelehnt. |
+| Paralleles Entfernen des letzten Administrators? | Nein. Drei Paralleltests; Gegenprobe ohne Sperre ergibt nachweislich null Administratoren. |
+| Wirken Sperre und Rollenänderung sofort? | Ja, serverseitig pro Anfrage; getestet mit demselben Access Token; im Browser ohne Neuanmeldung sichtbar. |
+| Direkte Imports Core ↔ Modul-Interna / gelockerte Grenzen? | Nein. `CORE_PUBLIC_SURFACE`, `.importlinter` und Frontend-Grenzregeln unverändert, alle grün. Einzige Erweiterung: drei öffentliche Pfade in der Permission-Ausnahmeliste des Architekturtests, begründet. |
+| Dashboard mit erfundenen oder technischen Inhalten? | Nein. Nur echte Projekt- und Einladungsdaten, keine Kennzahlen, keine Modulversionen, keine Schlüssel (getestet). |
+| Listen über mehrere Seiten? | Ja, Backend (jede Zeile genau einmal) und Frontend (Vor/Zurück) getestet. |
+| Schreiboperationen mandanten- und nebenläufigkeitssicher? | Ja: Sperrwurzel Organisation, `FOR UPDATE` auf Einladung und Mitgliedschaft, `If-Match`, partieller Unique-Index. |
+| Code, OpenAPI, Client, Doku konsistent? | Ja, Drift-Check grün, Doku nachgezogen. |
+
+**Tests:**
+- Backend: **706 bestanden, 0 übersprungen** (vorher 652). Neu: `test_member_administration.py`
+  (24), `test_invitations.py` (22), `test_member_concurrency.py` (7), Projektsortierung (1);
+  Mandanten-Sweep um `member_id`/`invitation_id` erweitert.
+- Frontend: **319 bestanden** in 33 Dateien (vorher 255 laut letztem Stand). Neu u. a.
+  `StartPage`, `BenutzerPage`, `MitgliedPage`, `EinladenDialog`, `Bestaetigung`,
+  `EinladungAnnehmenPage`, App-Routing.
+- `tasks.ps1 check` vollständig grün (Ruff, Format, mypy 93 Dateien, import-linter 4/0,
+  ein Alembic-Head `0005`, Lockfile, Backend, API-Drift, Typecheck, ESLint,
+  Modulgrenzen, Frontend, Build). Modell und Migration stimmen überein
+  (`compare_metadata` in `test_migration_acceptance.py`, inkl. Downgrade/Upgrade).
+
+**Browser-Smoke-Test (Compose-System, synthetische Daten):** Admin angemeldet →
+eingeladen (Serverfehler bei `.test`-Domain korrekt als Feldfehler) → Link einmalig
+übernommen → in eigenem Tab ohne Sitzung angenommen (zu kurzes Passwort abgelehnt) →
+Wiederverwendung abgelehnt → neuer Benutzer angemeldet: nur Übersicht und Projekte,
+direkte Aufrufe von Administration und Kunden gesperrt, API `403` → Rolle als Admin
+ergänzt: Kunden sofort sichtbar ohne Neuanmeldung → Selbstsperre `409 self-lockout` →
+Mitglied gesperrt: alter Access Token `401`, Refresh `401`, Anmeldung abgelehnt, Browser
+fällt auf die Anmeldung → über die Oberfläche freigegeben (Rückfrage, Fokus, Escape) →
+paralleler Versionskonflikt verständlich gemeldet → Dashboard als Admin und Monteur,
+auch auf 375 px Breite → Abmelden und Neuladen.
+
+**Offen:** siehe `docs/current-status.md`.

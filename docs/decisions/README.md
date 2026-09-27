@@ -22,6 +22,7 @@ Format: Context · Problem · Considered Options · Decision · Consequences
 | [0012](0012-event-delivery-guarantee.md) | Event-Zustellung: at most once, keine Outbox | accepted | 2026-09-18 |
 | [0013](0013-room-contour-as-ordered-wall-segments.md) | Raumkontur als geordnete Wandsegmente | accepted | 2026-09-26 |
 | [0014](0014-2d-editor-svg-and-atomic-contour.md) | 2D-Editor: SVG, lokaler Entwurf, atomares Konturspeichern | accepted | 2026-09-26 |
+| [0015](0015-membership-administration-and-invitations.md) | Mitgliedschaftsverwaltung, Einladungen, letzter Administrator | accepted | 2026-09-27 |
 
 ## Wann ein ADR nötig ist
 

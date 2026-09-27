@@ -31,6 +31,18 @@ export type ProjectUpdate = Schemas["ProjectUpdate"];
 export type BuildingOut = Schemas["BuildingOut"];
 export type FloorOut = Schemas["FloorOut"];
 export type ProblemDetail = Schemas["ProblemDetail"];
+// Benutzerverwaltung (Phase 4.2)
+export type DirectoryEntryOut = Schemas["DirectoryEntryOut"];
+export type MemberOut = Schemas["MemberOut"];
+export type MemberPermissionsOut = Schemas["MemberPermissionsOut"];
+export type EffectivePermissionOut = Schemas["EffectivePermissionOut"];
+export type SystemRoleOut = Schemas["SystemRoleOut"];
+export type RoleRef = Schemas["RoleRef"];
+export type PermissionInfo = Schemas["PermissionInfo"];
+export type InvitationOut = Schemas["InvitationOut"];
+export type InvitationIssued = Schemas["InvitationIssued"];
+export type InvitationPolicy = Schemas["InvitationPolicy"];
+export type InvitationPreview = Schemas["InvitationPreview"];
 
 /** Fehlerantwort des Servers im Format RFC 9457. */
 export class ApiError extends Error {

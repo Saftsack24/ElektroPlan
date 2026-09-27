@@ -21,6 +21,9 @@ os.environ.setdefault("ELEKTROPLAN_DATABASE_CONNECT_TIMEOUT", "2")
 # Object Storage der lokalen Compose-Umgebung. Tests, die ihn brauchen,
 # ueberspringen sichtbar, wenn er nicht erreichbar ist.
 os.environ.setdefault("ELEKTROPLAN_S3_SECRET_KEY", "elektroplan-dev-secret")
+# Einladungen brauchen einen Zustellweg; in Tests der Entwicklungslink. Der
+# Fall "kein Zustellweg" wird gezielt per monkeypatch geprueft.
+os.environ.setdefault("ELEKTROPLAN_INVITATION_DELIVERY", "development_link")
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient

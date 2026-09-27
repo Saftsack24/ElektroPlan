@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 import uuid
+from collections import defaultdict
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.core.authorization.models import MemberRole, Permission, Role, RolePermission
-from app.core.authorization.permissions import ADMIN_ROLE_KEY, SYSTEM_ROLES
+from app.core.authorization.permissions import (
+    ADMIN_ROLE_KEY,
+    CORE_PERMISSION_AREAS,
+    SYSTEM_ROLE_KEYS,
+    SYSTEM_ROLES,
+)
 from app.core.module_registry.registry import ModuleRegistry
+from app.errors import ProblemFieldError, ValidationFailedError
 from app.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -173,3 +181,141 @@ def assign_role(
             MemberRole(organization_id=organization_id, member_id=member_id, role_id=role_id)
         )
         session.flush()
+
+
+# ------------------------------------------------- Systemrollen (Phase 4.2)
+
+
+@dataclass(frozen=True, slots=True)
+class PermissionView:
+    """Eine Berechtigung, wie die Verwaltung sie zeigt."""
+
+    key: str
+    description: str
+    area: str
+
+
+def permission_area(permission: Permission, registry: ModuleRegistry) -> str:
+    """Verstaendlicher Bereich einer Berechtigung.
+
+    Core-Berechtigungen nach ihrem Namensraum, Modulberechtigungen nach dem
+    Namen ihres Moduls. Der Core kennt dabei kein Modul (ADR 0001).
+    """
+    if permission.module_id == "core":
+        namespace = permission.key.split(".", 1)[0]
+        return CORE_PERMISSION_AREAS.get(namespace, "Weitere")
+    if permission.module_id in registry:
+        return registry.get(permission.module_id).name
+    # Eine Berechtigung eines nicht mehr registrierten Moduls bleibt in der
+    # Tabelle stehen (siehe :func:`sync_permissions`).
+    return permission.module_id
+
+
+def list_system_roles(session: Session, organization_id: uuid.UUID) -> list[Role]:
+    """Die festen Systemrollen eines Betriebs in ausgelieferter Reihenfolge.
+
+    Frei angelegte Rollen gibt es in dieser Phase nicht; eine Rolle ohne
+    ``is_system`` wird hier bewusst nicht angeboten (ADR 0015).
+    """
+    roles = (
+        session.execute(
+            select(Role).where(Role.organization_id == organization_id, Role.is_system.is_(True))
+        )
+        .scalars()
+        .all()
+    )
+    order = {key: index for index, key in enumerate(SYSTEM_ROLE_KEYS)}
+    return sorted(roles, key=lambda role: (order.get(role.key, len(order)), role.key))
+
+
+def resolve_system_roles(
+    session: Session, organization_id: uuid.UUID, role_keys: Sequence[str]
+) -> list[Role]:
+    """Loest Rollenschluessel gegen die Systemrollen **dieses** Betriebs auf.
+
+    Unbekannte Schluessel, doppelte Angaben und Rollen ohne ``is_system``
+    werden abgelehnt (``422``). Ein Rollenschluessel eines anderen Betriebs
+    kann gar nicht getroffen werden - die Abfrage ist mandantengefiltert.
+    """
+    keys = list(role_keys)
+    if len(set(keys)) != len(keys):
+        raise ValidationFailedError(
+            "Jede Rolle darf nur einmal angegeben werden.",
+            errors=[
+                ProblemFieldError(
+                    field="role_keys", code="duplicate_role", message="Rolle doppelt angegeben."
+                )
+            ],
+        )
+    by_key = {role.key: role for role in list_system_roles(session, organization_id)}
+    unknown = [key for key in keys if key not in by_key]
+    if unknown:
+        raise ValidationFailedError(
+            "Mindestens eine Rolle ist unbekannt oder nicht vergebbar.",
+            errors=[
+                ProblemFieldError(
+                    field="role_keys",
+                    code="unknown_role",
+                    message="Nur die festen Systemrollen sind vergebbar.",
+                )
+            ],
+        )
+    return [by_key[key] for key in keys]
+
+
+def role_permissions(
+    session: Session, role_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, list[Permission]]:
+    """Berechtigungen je Rolle - eine Abfrage fuer alle Rollen."""
+    result: dict[uuid.UUID, list[Permission]] = defaultdict(list)
+    if not role_ids:
+        return result
+    rows = session.execute(
+        select(RolePermission.role_id, Permission)
+        .join(Permission, Permission.id == RolePermission.permission_id)
+        .where(RolePermission.role_id.in_(role_ids))
+        .order_by(Permission.key)
+    ).all()
+    for role_id, permission in rows:
+        result[role_id].append(permission)
+    return result
+
+
+def roles_of_members(
+    session: Session, member_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, list[Role]]:
+    """Rollen mehrerer Mitgliedschaften - eine Abfrage statt N."""
+    result: dict[uuid.UUID, list[Role]] = defaultdict(list)
+    if not member_ids:
+        return result
+    rows = session.execute(
+        select(MemberRole.member_id, Role)
+        .join(Role, Role.id == MemberRole.role_id)
+        .where(MemberRole.member_id.in_(member_ids))
+    ).all()
+    order = {key: index for index, key in enumerate(SYSTEM_ROLE_KEYS)}
+    for member_id, role in rows:
+        result[member_id].append(role)
+    for roles in result.values():
+        roles.sort(key=lambda role: (order.get(role.key, len(order)), role.key))
+    return result
+
+
+def replace_member_roles(
+    session: Session,
+    *,
+    organization_id: uuid.UUID,
+    member_id: uuid.UUID,
+    roles: Sequence[Role],
+) -> None:
+    """Ersetzt die Rollen einer Mitgliedschaft als Ganzes.
+
+    Loeschen und Einfuegen liegen in der Transaktion des Aufrufers; ein
+    Zwischenstand ist fuer andere Transaktionen nie sichtbar.
+    """
+    session.execute(delete(MemberRole).where(MemberRole.member_id == member_id))
+    for role in roles:
+        session.add(
+            MemberRole(organization_id=organization_id, member_id=member_id, role_id=role.id)
+        )
+    session.flush()

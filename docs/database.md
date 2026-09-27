@@ -1,6 +1,6 @@
 # Datenbank und ER-Modell
 
-Version: 1.2 (Core-Geschäftsdaten und Electrical Room Model umgesetzt; Migrationen 0001–0004)
+Version: 1.3 (Core-Geschäftsdaten, Electrical Room Model, Benutzerverwaltung; Migrationen 0001–0005)
 Datenbank: PostgreSQL 17
 ORM: SQLAlchemy 2.0 · Migrationen: Alembic (ein einziger Strang)
 
@@ -58,7 +58,7 @@ Organisation B verweisen. Voraussetzung: jede referenzierte Tabelle hat zusätzl
 
 | Modul | Präfix | Tabellen |
 |---|---|---|
-| Core | — | `organizations`, `users`, `organization_members`, `roles`, `permissions`, `role_permissions`, `member_roles`, `refresh_tokens`, `organization_modules`, `customers`, `projects`, `buildings`, `floors`, `files`, `audit_entries`, `number_sequences`, `domain_events` |
+| Core | — | `organizations`, `users`, `organization_members`, `member_invitations`, `member_invitation_roles`, `roles`, `permissions`, `role_permissions`, `member_roles`, `refresh_tokens`, `organization_modules`, `customers`, `projects`, `buildings`, `floors`, `files`, `audit_entries`, `number_sequences`, `domain_events` |
 | materials | `material_` | `material_categories`, `materials`, `material_prices`, `material_rules`, `service_templates`, `service_template_items`, `material_requirement_runs`, `material_requirements`, `labor_requirements` |
 | inventory | `inventory_` | `inventory_locations`, `inventory_stocks`, `inventory_transactions`, `inventory_reservations` |
 | calculation | `calculation_` | `calculation_labor_rates`, `calculations`, `calculation_items`, `calculation_surcharges` |
@@ -82,6 +82,9 @@ erDiagram
     ROLES         ||--o{ ROLE_PERMISSIONS : gewaehrt
     PERMISSIONS   ||--o{ ROLE_PERMISSIONS : wird_gewaehrt
     ORGANIZATION_MEMBERS ||--o{ MEMBER_ROLES : besitzt
+    ORGANIZATIONS ||--o{ MEMBER_INVITATIONS : laedt_ein
+    MEMBER_INVITATIONS ||--o{ MEMBER_INVITATION_ROLES : sieht_vor
+    ROLES         ||--o{ MEMBER_INVITATION_ROLES : vorgesehen
     ROLES         ||--o{ MEMBER_ROLES : zugewiesen
     ORGANIZATIONS ||--o{ ORGANIZATION_MODULES : aktiviert
     ORGANIZATIONS ||--o{ CUSTOMERS : fuehrt
@@ -116,7 +119,21 @@ erDiagram
         uuid organization_id FK
         uuid user_id FK
         text status
+        int version
+        timestamptz last_login_at
         timestamptz created_at
+    }
+    MEMBER_INVITATIONS {
+        uuid id PK
+        uuid organization_id FK
+        text email
+        text full_name
+        text token_hash UK
+        timestamptz expires_at
+        timestamptz accepted_at
+        timestamptz revoked_at
+        uuid created_by_user_id FK
+        int version
     }
     ROLES {
         uuid id PK
@@ -228,7 +245,15 @@ erDiagram
 
 - `organizations.slug` UNIQUE
 - `users.email` UNIQUE (immer klein geschrieben gespeichert)
-- `organization_members` UNIQUE `(organization_id, user_id)`
+- `organization_members` UNIQUE `(organization_id, user_id)`; `version` für `If-Match`
+  auf Status und Rollen (seit `0005`). `last_login_at` gilt nur für diesen Betrieb und
+  wird ohne Versionszählung geschrieben.
+- `member_invitations`: `token_hash` UNIQUE (nur SHA-256, nie das Token);
+  `uq_member_invitations_open_email` = partieller UNIQUE-Index
+  `(organization_id, email) WHERE accepted_at IS NULL AND revoked_at IS NULL` – je
+  Betrieb und Adresse höchstens eine offene Einladung, auch unter Parallelität.
+- `member_invitation_roles`: zusammengesetzte FKs auf `member_invitations` und `roles`
+  (beide `CASCADE`) – Einladung und Rolle gehören nachweislich zum selben Betrieb.
 - `roles` UNIQUE `(organization_id, key)`
 - `permissions.key` UNIQUE, Format `<modul>.<objekt>.<aktion>`
 - `customers` UNIQUE `(organization_id, customer_number)`
@@ -321,6 +346,23 @@ entsteht kein Zyklus. Beim Umhängen eines Projekts auf einen anderen Kunden gil
 
 Die Sperre wird **nicht** über externe Aufrufe gehalten: Der Datei-Upload sperrt erst
 unmittelbar vor dem Commit, nachdem die Übertragung abgeschlossen ist.
+
+**Invariante 4: Ein Betrieb bleibt nie ohne aktiven Administrator (seit Phase 4.2).**
+Die **Organisationszeile** ist die Sperrwurzel aller Mitgliedschaftsänderungen
+(ADR 0015).
+
+| Vorgang | Ablauf innerhalb einer Transaktion |
+|---|---|
+| Zugang sperren / freigeben | `organizations … FOR UPDATE` → Handelnden erneut prüfen → `organization_members … FOR UPDATE` → Version prüfen → Selbst- und Administratorregel → schreiben → Refresh Tokens der Mitgliedschaft widerrufen |
+| Rollen ersetzen | `organizations … FOR UPDATE` → Handelnden erneut prüfen → Mitgliedschaft sperren → Version prüfen → Rollen prüfen → Administratorregel → `member_roles` ersetzen, Mitgliedsversion + 1 |
+| Einladung annehmen | `member_invitations … FOR UPDATE` (per Token-Hash) → prüfen → Konto / Mitgliedschaft / Rollen anlegen → `accepted_at` |
+| Einladung widerrufen / neu ausstellen | `member_invitations … FOR UPDATE` → Version prüfen → schreiben |
+
+Sperrreihenfolge `Organisation → Mitgliedschaft`. Kein anderer Pfad hält eine
+Mitgliedschaftszeile und wartet danach auf die Organisation; die Anmeldung aktualisiert
+`last_login_at` ohne Organisationssperre. Zwei gleichzeitige Anfragen, die zusammen den
+letzten Administrator entfernen würden, laufen nacheinander – die zweite zählt neu und
+erhält `409 last-administrator` (Paralleltest samt Gegenprobe ohne Sperre).
 
 **Verlorene Aktualisierung.** `version_id_col` erkennt beim Schreiben, dass die Zeile
 mit der erwarteten Version nicht mehr existiert. Der resultierende `StaleDataError`
@@ -940,6 +982,14 @@ Weitere Indizes erst nach Messung (`EXPLAIN ANALYZE`), nicht auf Verdacht.
   Das hält Migrationen und Testdatenbanken erweiterungsfrei.
 - Seeds (Systemrollen, Permissions, Basis-Gerätetypen, Standard-Installationszonen) sind
   idempotente Skripte, keine Migrationen.
+
+| Migration | Inhalt |
+|---|---|
+| `0001_initial_core` | Core-Grundmodell (Phase 1) |
+| `0002_refresh_revocation` | Widerrufsgrund der Refresh Tokens |
+| `0003_core_business_data` | Kunden, Projekte, Gebäude, Geschosse, Dateien |
+| `0004_electrical_room_model` | Räume, Wände, Öffnungen |
+| `0005_member_administration` | `organization_members.version` und `last_login_at`, `member_invitations`, `member_invitation_roles` (Phase 4.2, keine Datenmigration) |
 
 ---
 

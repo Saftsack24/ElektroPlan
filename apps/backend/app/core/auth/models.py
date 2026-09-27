@@ -31,6 +31,10 @@ class RefreshTokenRevocationReason(StrEnum):
     #: Der Token wurde als Teil einer widerrufenen Familie unwirksam
     #: gemacht (Kontosperrung, Sicherheitsereignis, Familienwiderruf).
     FAMILY_REVOKED = "family_revoked"
+    #: Der Zugang zu **diesem** Betrieb wurde gesperrt. Betrifft nur Tokens
+    #: mit dessen ``organization_id``; Sitzungen in anderen Betrieben
+    #: desselben Benutzers bleiben bestehen (ADR 0015).
+    MEMBERSHIP_DISABLED = "membership_disabled"
 
 
 class RefreshToken(UUIDPrimaryKey, Timestamped, Base):

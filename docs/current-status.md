@@ -1,8 +1,8 @@
 # Aktueller Projektstand
 
-**Letzte Aktualisierung:** 2026-09-26
-**Aktualisiert nach:** Task 0015 — Phase 4a.1: Navigationsschutz und
-Testdatenbank-Sicherheit
+**Letzte Aktualisierung:** 2026-09-27
+**Aktualisiert nach:** Task 0016 — Phase 4.2: Benutzerverwaltung, Rollenvergabe und
+Startseite
 
 > Dieses Dokument soll einer neuen Session in wenigen Minuten vermitteln, wo das Projekt
 > steht.
@@ -24,14 +24,36 @@ Testdatenbank-Sicherheit
 (siehe Abschnitt 2)
 **Phase 4a — 2D-Editor: ABGESCHLOSSEN** (Exit-Kriterium gemessen, siehe Abschnitt 3)
 **Phase 4a.1 — Navigationsschutz und Testdatenbank-Sicherheit: ABGESCHLOSSEN**
+**Phase 4.2 — Benutzerverwaltung, Rollenvergabe und Startseite: ABGESCHLOSSEN**
+(noch nicht committet)
 **Phase 4b — 3D-Ansicht: NICHT BEGONNEN**, wartet auf Freigabe
 
-> Phase 3 und 3.1 sind committet (`fd7283f`). Phase 4a und 4a.1 sind **noch nicht
-> committet**. Vor Phase 4b ist die Entscheidung **T9** (deckungsgleiche Wände) zu treffen.
+> Phase 4a und 4a.1 sind committet (`887f254`). Phase 4.2 ist **noch nicht committet**.
+> Vor Phase 4b ist die Entscheidung **T9** (deckungsgleiche Wände) zu treffen.
 
 ---
 
 ## 2. Zuletzt abgeschlossene Aufgabe
+
+**Task 0016 — Phase 4.2: Benutzerverwaltung, Rollenvergabe und Startseite**
+
+1. **Administration** im Plattformmodul: Benutzerliste (Mitglieder und offene
+   Einladungen, Suche, Statusfilter, Vor/Zurück), Mitgliedsdetail (Zugang zum Betrieb
+   sperren/freigeben, feste Systemrollen vergeben, effektive Rechte mit Herkunft),
+   Rollenübersicht, Systeminformationen. Jede Route an ihr Leserecht gebunden.
+2. **Einladungen** (ADR 0015): Token 256 Bit, nur als Hash, befristet, einmalig,
+   widerrufbar, neu ausstellbar; Annahme für neue **und** bestehende Konten, ohne je ein
+   bestehendes Konto zu verändern. Kein E-Mail-Versand: in der Entwicklung einmaliger
+   Link (markiert), in Produktion verboten, ohne Zustellweg `503`.
+3. **Letzter Administrator** unter Parallelität geschützt: Organisationszeile als
+   Sperrwurzel, Handelnder wird unter der Sperre erneut geprüft. Selbstsperre und
+   Entfernen der eigenen Adminrolle ausgeschlossen.
+4. **Sofortige Wirkung:** Sperre widerruft Refresh Tokens nur dieser Mitgliedschaft;
+   Refresh einer gesperrten Mitgliedschaft `401`.
+5. **Startseite** arbeitsorientiert; Modulversionen jetzt unter Systeminformationen.
+6. Migration **`0005_member_administration`**.
+
+Details: `docs/task-history.md`, Task 0016.
 
 **Task 0015 — Phase 4a.1: Navigationsschutz und Testdatenbank-Sicherheit**
 
@@ -446,10 +468,11 @@ Frontend-Tests. Ausgeführt gegen echtes PostgreSQL 17 und echtes MinIO.
 
 ### Nachgewiesen geprüft
 
-Stand nach Task 0014 (Phase 4a), ein Lauf von `tasks.ps1 check` gegen echtes
-PostgreSQL 17 (`elektroplan_test`) und MinIO — alle Schranken grün. Die Tabelle unten
-nennt den Stand nach Phase 3; neu seit Phase 4a: **642 Backendtests, 0 übersprungen**,
-**255 Frontendtests**, weiterhin genau ein Alembic-Head (`0004`), keine Migration.
+Stand nach Task 0016 (Phase 4.2), ein Lauf von `tasks.ps1 check` gegen echtes
+PostgreSQL 17 (`elektroplan_test`) und MinIO — alle Schranken grün: **706
+Backendtests, 0 übersprungen**, **319 Frontendtests**, genau ein Alembic-Head
+(`0005_member_administration`), mypy 93 Dateien, import-linter 4 Contracts / 0 verletzt,
+kein API-Drift, Build grün. Die Tabelle unten nennt den Stand nach Phase 3.
 
 | Bereich | Nachweis |
 |---|---|
@@ -582,7 +605,8 @@ was offen ist, ist eine Schuld.
 | Virenscan für Uploads, MFA | vor kommerziellem Einsatz |
 | Offline-Sync-Umsetzung (Konzept steht) | Phase 13/16 |
 | `packages/ui`, `packages/3d-engine` | erst bei zweitem Consumer |
-| Benutzerverwaltungs-Oberfläche, Rolleneditor | offen, frühestens nach dem Pilot |
+| Freier Rolleneditor, einzelne Berechtigungen vergeben | offen, frühestens nach dem Pilot (Benutzerverwaltung mit festen Rollen seit Phase 4.2) |
+| E-Mail-Versand für Einladungen, Passwortwiederherstellung | vor Produktivbetrieb; bis dahin sind Einladungen in Produktion abgeschaltet |
 | Echte transaktionale Outbox | erst wenn ein Handler eine nicht nachholbare Wirkung erzeugt (ADR 0012) |
 
 ### Technische Schulden
@@ -603,6 +627,11 @@ was offen ist, ist eine Schuld.
 | Öffnungen können nicht an eine andere Wand umziehen | entfernen und neu setzen | bei Bedarf |
 | Performance nur im Entwicklungsbuild und in einem Browser gemessen | Zahlen sind konservativ, aber nicht allgemein | bei Bedarf mit Produktionsbuild wiederholen |
 | Vite im Planner-Container bemerkt Dateiänderungen unter Windows nicht | nach Frontend-Änderungen `docker restart elektroplan-planner` | Polling (`server.watch.usePolling`) prüfen |
+| Anmeldung mit ausschließlich gesperrter Mitgliedschaft antwortet `404` „Keine aktive Mitgliedschaft in diesem Betrieb“ | Bestand seit Phase 1; verrät nach richtigem Passwort, dass das Konto existiert. Kein Sicherheitsverlust gegenüber vorher | bei der Überarbeitung der Anmeldung (Phase 4.2 hat den Refresh, nicht den Login angepasst) |
+| `purge-invitations` ist ein Werkzeug, kein geplanter Job | Abgeschlossene Einladungen bleiben bis zum manuellen Lauf gespeichert | mit dem ersten Betriebs-Scheduler |
+| Benutzerliste sortiert mit Datenbank-Collation `C` | Namen mit Umlaut am Anfang stehen hinter „Z“ | bei Bedarf ICU-Collation |
+| Rechtebeschreibung der Elektroplanung in ASCII („Raeume, Waende") | kosmetisch, Teil der bekannten ASCII-Schuld | mit der Entscheidung zur Schreibweise der Servermeldungen |
+| `organization.member.read`/`write` ohne Verwendung | Planer und Kalkulator haben „Kollegen ansehen“, es gibt dafür noch keine Ansicht | wenn eine Mitarbeiterauswahl (z. B. Monteur für einen Auftrag) gebraucht wird |
 | Die Projektsperre serialisiert **alle** Schreibvorgänge eines Projekts | Im Baualltag (ein bis zwei Bearbeiter je Projekt) unkritisch; nicht gemessen | wenn mehrere Personen gleichzeitig an einem Projekt arbeiten |
 | Ein Datei-Upload kann nach vollständiger Übertragung noch mit `409` scheitern | Bewusster Tausch: Die Sperre wird nicht über die Übertragung gehalten. Das Objekt wird verworfen | keine Absicht, das zu ändern |
 
@@ -650,6 +679,9 @@ sein. Stand nach Phase 2:
 | 12 | TOM-Dokumentation | offen |
 
 **Bis alle zwölf Punkte erfüllt sind gilt: ausschließlich synthetische Testdaten.**
+Das gilt seit Phase 4.2 ausdrücklich auch für **Benutzer und Einladungen** (Mitarbeiter
+sind betroffene Personen). Zweck, Aufbewahrung und offene Punkte: `docs/security.md`,
+Abschnitt 13 „Benutzerverwaltung“ und Abschnitt 18.
 
 Zusätzlich vor Produktivbetrieb: externes Security Review, geprobter Restore, TLS mit
 HSTS, Virenscan, MFA für administrative Konten.
@@ -668,9 +700,9 @@ HSTS, Virenscan, MFA für administrative Konten.
 
 ## 9. Nächste geplante Aufgabe
 
-**Zuerst:** Abnahme und Commit von Phase 4a und 4a.1. Empfohlen vor Phase 4b: ein kurzer
-Bedientest des Editors mit einer echten Person (das 20-Minuten-Kriterium wurde
-automatisiert gemessen).
+**Zuerst:** Abnahme und Commit von Phase 4.2. Empfohlen vor Phase 4b: ein kurzer
+Bedientest des Editors und der Administration mit einer echten Person (das
+20-Minuten-Kriterium wurde automatisiert gemessen).
 
 **Danach Phase 4b — 3D-Ansicht:** extrudierte Räume aus Kontur und Höhe, Öffnungen als
 Aussparungen, Orbit/Zoom/Pan, Auswahl, **keine** Geometriebearbeitung in 3D. Grundlage

@@ -72,6 +72,7 @@ def _summary(project: Project, customer_name: str) -> ProjectSummary:
         site_city=project.site_city,
         version=project.version,
         created_at=project.created_at,
+        updated_at=project.updated_at,
     )
 
 

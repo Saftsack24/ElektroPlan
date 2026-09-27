@@ -1,6 +1,6 @@
 # Roadmap
 
-Stand: 2026-09-26 (nach Task 0012 — Phase 3)
+Stand: 2026-09-27 (nach Task 0016 — Phase 4.2)
 Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 
 ---
@@ -18,7 +18,9 @@ Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 | 2.3 | Workflow- und UX-Nacharbeit | **DONE** | 2.2 |
 | 2.4 | Nachkorrektur zu 2.2 und 2.3 | **DONE** | 2.3 |
 | 3 | Electrical Room Model | **DONE** | 2 |
-| 4a | 2D-Editor | NOT STARTED | 3 |
+| 4a | 2D-Editor | **DONE** | 3 |
+| 4a.1 | Navigationsschutz und Testdatenbank-Sicherheit | **DONE** | 4a |
+| 4.2 | Benutzerverwaltung, Rollenvergabe, Startseite | **DONE** | 4a.1 |
 | 4b | 3D-Ansicht | NOT STARTED | 4a |
 | 5 | Electrical Devices | NOT STARTED | 4a |
 | 6 | Circuits & Cable Routes | NOT STARTED | 5 |
@@ -231,7 +233,7 @@ Materialermittlung, keine Kalkulation, kein Offline-Sync, kein Platzhaltermodul.
 
 ---
 
-## Phase 4a — 2D-Editor · DONE (2026-09-26, noch nicht committet)
+## Phase 4a — 2D-Editor · DONE (2026-09-26, committet als `887f254`)
 
 Grafischer Editor (SVG, ADR 0014): Räume zeichnen (Rechteck und Polygon), Wände,
 Öffnungen, Raster, Fangfunktion, Maßanzeige, Undo/Redo, bewusstes atomares Speichern.
@@ -243,6 +245,23 @@ erfassbar. Dieser Wert wird gemessen, nicht geschätzt.
 letzten Speichern — gemessen in einem **automatisierten** Browserdurchlauf über die
 Oberfläche (`docs/task-history.md`, Task 0014). Ein Usability-Test mit Menschen steht aus.
 „Canvas-Editor" bezeichnete die grafische Autorenfläche, nicht das HTML-Element.
+
+---
+
+## Phase 4.2 — Benutzerverwaltung, Rollenvergabe und Startseite · DONE (2026-09-27)
+
+Eingeschobene Plattformphase vor 4b: Administration im Betrieb (Benutzerliste,
+Einladungen, Zugang sperren, feste Systemrollen vergeben, effektive Rechte), Schutz des
+letzten Administrators unter Parallelität und eine arbeitsorientierte Startseite.
+**Kein** freier Rollen- oder Permission-Editor, **kein** E-Mail-Versand, **keine**
+Passwortwiederherstellung.
+
+Entscheidung: [ADR 0015](decisions/0015-membership-administration-and-invitations.md).
+Ergebnis: [`docs/task-history.md`](task-history.md), Task 0016. Migration `0005`.
+
+**Exit — erfüllt:** Ein Administrator lädt eine synthetische Person ein, sie nimmt in
+einer eigenen Sitzung an, Rollenänderung und Sperre wirken ohne neue Anmeldung, der
+letzte Administrator ist auch parallel geschützt – automatisiert und im Browser geprüft.
 
 ---
 
@@ -376,7 +395,7 @@ AR-Code.
 | Meilenstein | Bedeutung |
 |---|---|
 | **M1 — Anmeldung und Mandantentrennung** (Ende Phase 1) | **erreicht** — Fundament steht und ist abgenommen |
-| **M2 — Projekt mit Grundriss** (Ende Phase 4a) | Erster sichtbarer Nutzen |
+| **M2 — Projekt mit Grundriss** (Ende Phase 4a) | **erreicht** — erster sichtbarer Nutzen |
 | **M3 — Berechnete Leitungslängen** (Ende Phase 6) | Kern der Fachlichkeit steht |
 | **M4 — Materialliste aus der Planung** (Ende Phase 8) | Plattform-Mechanik nachgewiesen |
 | **M5 — Angebot aus dem System** (Ende Phase 10) | **MVP erreicht** |

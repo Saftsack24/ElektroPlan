@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 import uuid
 from dataclasses import dataclass
+from datetime import timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,13 +20,17 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from app.core.audit import service as audit
+from app.core.auth.security import hash_password
 from app.core.authorization.models import MemberRole, Role
 from app.core.customers.models import Customer
 from app.core.files.models import FileRecord
+from app.core.invitations.models import MemberInvitation
 from app.core.module_registry.registry import ModuleRegistry
 from app.core.organizations.models import OrganizationMember
 from app.core.projects.models import Building, Floor, Project
 from app.core.seed import seed_initial_data
+from app.core.users.models import User
+from app.db.mixins import utcnow
 from app.modules.electrical.models import ElectricalOpening, ElectricalRoom, ElectricalWall
 from tests.conftest import ADMIN_PASSWORD, auth_headers, login, requires_database
 from tests.routes import all_routes
@@ -49,6 +54,10 @@ class Tenant:
     room_id: uuid.UUID
     wall_id: uuid.UUID
     opening_id: uuid.UUID
+    #: Benutzerverwaltung (Phase 4.2): ein weiteres Mitglied und eine offene
+    #: Einladung je Betrieb.
+    member_id: uuid.UUID
+    invitation_id: uuid.UUID
 
 
 @pytest.fixture
@@ -146,6 +155,24 @@ def two_tenants(
                 entity_type="test",
                 summary=f"Eintrag {name}",
             )
+            kollege = User(
+                email=f"kollege@{email.split('@')[1]}",
+                password_hash=hash_password(ADMIN_PASSWORD),
+                full_name=f"Kollege von {name}",
+            )
+            session.add(kollege)
+            session.flush()
+            mitglied = OrganizationMember(
+                organization_id=result.organization_id, user_id=kollege.id, status="active"
+            )
+            session.add(mitglied)
+            einladung = MemberInvitation(
+                organization_id=result.organization_id,
+                email=f"neu@{email.split('@')[1]}",
+                token_hash=uuid.uuid4().hex + uuid.uuid4().hex,
+                expires_at=utcnow() + timedelta(days=1),
+            )
+            session.add(einladung)
             session.flush()
             tenants.append(
                 Tenant(
@@ -160,6 +187,8 @@ def two_tenants(
                     room_id=raum.id,
                     wall_id=wand.id,
                     opening_id=oeffnung.id,
+                    member_id=mitglied.id,
+                    invitation_id=einladung.id,
                 )
             )
         session.commit()
@@ -261,6 +290,8 @@ def fremde_ids(tenant: Tenant) -> dict[str, str]:
         "room_id": str(tenant.room_id),
         "wall_id": str(tenant.wall_id),
         "opening_id": str(tenant.opening_id),
+        "member_id": str(tenant.member_id),
+        "invitation_id": str(tenant.invitation_id),
     }
 
 

@@ -143,4 +143,21 @@ describe("Anwendungswurzel", () => {
     expect(abmelden).toHaveBeenCalledTimes(1);
     expect(frage).toHaveBeenCalledTimes(2);
   });
+
+  it("öffnet die Einladungsseite ohne Anwendungshülle - auch bei bestehender Sitzung", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ type: "x/invitation-invalid", title: "x", status: 404 }), {
+        status: 404,
+      }),
+    );
+    zeigen(["/einladung#t=abc"]);
+    expect(await screen.findByRole("heading", { name: "Einladung annehmen" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Abmelden" })).toBeNull();
+    expect(routerErzeugt).not.toHaveBeenCalled();
+  });
+
+  it("zeigt für nicht freigegebene Routen nur einen Hinweis", async () => {
+    zeigen(["/administration/users"]);
+    expect(await screen.findByText(/fehlt die Berechtigung/)).toBeInTheDocument();
+  });
 });

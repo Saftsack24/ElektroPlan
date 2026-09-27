@@ -31,6 +31,10 @@ class SlidingWindowLimiter:
         """Setzt den Zaehler zurueck, z. B. nach erfolgreicher Anmeldung."""
         self._events.pop(key, None)
 
+    def clear(self) -> None:
+        """Vergisst alle Zaehler. Fuer Tests, die unabhaengig starten muessen."""
+        self._events.clear()
+
     def _prune(self, key: str) -> deque[float]:
         now = time.monotonic()
         events = self._events[key]

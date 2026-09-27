@@ -4,11 +4,11 @@ import { Route, RouterProvider, Routes, createBrowserRouter } from "react-router
 import type { RouteObject } from "react-router-dom";
 
 import { AuthProvider, useAuth } from "../core/auth/AuthProvider";
+import { EINLADUNG_PFAD, EinladungAnnehmenPage } from "../core/auth/EinladungAnnehmenPage";
 import { LoginPage } from "../core/auth/LoginPage";
 import { ProjectTabsProvider } from "../core/modules/ProjectTabs";
 import { Navigationsschutz } from "../core/ui/Navigationsschutz";
 import { moduleRegistry } from "../modules";
-import { DashboardPage } from "./DashboardPage";
 import { Layout } from "./Layout";
 
 function AuthenticatedApp() {
@@ -29,12 +29,20 @@ function AuthenticatedApp() {
     <ProjectTabsProvider tabs={projectTabs}>
       <Routes>
         <Route element={<Layout />}>
-          <Route index element={<DashboardPage />} />
+          {/* Auch die Startseite ("/") kommt aus der Registry: Sie gehört zur
+              Plattform-Oberfläche, nicht zur Anwendungshülle. */}
           {routes.map((route) => {
             const Element = route.element;
             return <Route key={route.path} path={route.path} element={<Element />} />;
           })}
-          <Route path="*" element={<p className="muted">Diese Seite gibt es nicht.</p>} />
+          <Route
+            path="*"
+            element={
+              <p className="muted">
+                Diese Seite gibt es nicht, oder Ihnen fehlt die Berechtigung dafür.
+              </p>
+            }
+          />
         </Route>
       </Routes>
     </ProjectTabsProvider>
@@ -66,7 +74,14 @@ export function Anwendung() {
   return (
     <AuthProvider>
       <Navigationsschutz />
-      <Gate />
+      {/* Die Annahme einer Einladung braucht keine Anmeldung - und landet
+          auch bei einer bestehenden Sitzung im selben Browser nicht in deren
+          Anwendung. Eine eigene Routenebene statt einer Pfadabfrage im Gate:
+          So rendert eine Navigation nicht die ganze Anwendung neu. */}
+      <Routes>
+        <Route path={EINLADUNG_PFAD} element={<EinladungAnnehmenPage />} />
+        <Route path="*" element={<Gate />} />
+      </Routes>
     </AuthProvider>
   );
 }

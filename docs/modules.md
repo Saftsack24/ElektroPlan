@@ -144,6 +144,12 @@ Organisationen, Benutzer, Mitgliedschaften, Rollen/Permissions, Kunden, Projekte
 Geschosse, Dateien, Audit, Nummernkreise, Event-Bus, Module Registry.
 Der Core ist der einzige Ort mit Wissen über Mandanten und Identität.
 
+**Seit Phase 4.2** zusätzlich `app/core/members` (Verwaltung der Mitgliedschaften) und
+`app/core/invitations` (Einladungen, öffentliche Annahme, Zustellung). Beide sind
+Core-intern: Kein Fachmodul erhält Zugang, `CORE_PUBLIC_SURFACE` ist unverändert.
+Richtung innerhalb des Core: `members → invitations → auth/authorization/organizations`,
+nie umgekehrt. Die Benutzerverwaltung erzeugt **keine** Domain Events.
+
 Der Core ist selbst geschichtet: `app/core/projects` kennt `app/core/customers`
 (ein Projekt braucht einen Auftraggeber), **nicht umgekehrt**. Die Prüfung, ob an einem
 Kunden noch Projekte hängen, liegt deshalb in `projects/service.py` und wird vom
@@ -386,6 +392,23 @@ Ein Beitrag (Tab, Route, Navigationseintrag) wird nur gerendert, wenn
 
 Das ist reine Bequemlichkeit für die Bedienung — die eigentliche Absicherung passiert
 serverseitig. Ein ausgeblendeter Tab ist **kein** Zugriffsschutz.
+
+### Plattform-Oberfläche: Startseite und Administration (Phase 4.2)
+
+Die Startseite (`/`) und der Bereich **Administration** gehören zum Plattformmodul
+(`src/modules/platform`, Unterordner `administration/`) – nicht zur Anwendungshülle und
+nicht zu einem neuen Fachmodul. Die Hülle (`src/app`) kennt keine Seite mehr; auch „/"
+kommt aus der Registry. Jede Administrationsroute trägt ihre Leseberechtigung
+(`user.account.read`, Rollenübersicht `role.assignment.read`): Ohne sie existiert die
+Route nicht, auch nicht beim direkten Aufruf. Abgesichert wird serverseitig.
+
+Die öffentliche Annahmeseite `/einladung` liegt im Core (`core/auth`), neben der
+Anmeldung: Sie braucht keine Sitzung und wird in `App.tsx` über eine eigene Routenebene
+vor der Anmeldeprüfung eingehängt.
+
+Neue Core-UI-Bausteine: `Bestaetigung` (Rückfrage mit Fokus auf „Abbrechen“), `Marke`
+(Statusmarke); `Dialog` setzt den Anfangsfokus über `data-autofocus` und gibt den Fokus
+beim Schließen zurück.
 
 ### Contribution Points im MVP
 

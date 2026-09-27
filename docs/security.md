@@ -81,6 +81,13 @@ Die beiden kritischsten Anforderungen des Systems sind:
   wird erst mit Phase 13 gebaut und teilt sich **nicht** das Response-Schema des
   Webflows — andernfalls bekäme der Webclient den Refresh Token wieder lesbar zurück.
 - **Logout:** widerruft die Token-Familie serverseitig, nicht nur clientseitig.
+- **Gesperrte Mitgliedschaft (seit Phase 4.2):** Jede Anfrage prüft den Status der
+  Mitgliedschaft aus dem Access Token; ein gesperrter Zugang erhält sofort `401`. Die
+  Sperre widerruft zusätzlich alle offenen Refresh Tokens **dieser** Mitgliedschaft
+  (Grund `membership_disabled`); Sitzungen desselben Kontos in anderen Betrieben bleiben
+  unberührt. Ein Refresh mit gesperrter Mitgliedschaft liefert `401` und widerruft die
+  Familie. Nach der Freigabe meldet sich die Person neu an. Rollenänderungen brauchen
+  keinen Widerruf: Rechte werden ohnehin pro Anfrage geladen.
 - MFA ist im MVP nicht enthalten, aber im Datenmodell nicht ausgeschlossen.
 
 ---
@@ -118,10 +125,31 @@ Was es **noch nicht** gibt — und was deshalb nirgends behauptet wird:
 
 - keine Rollenvererbung,
 - keine bedingten oder datenabhängigen Policies,
-- kein Rolleneditor in der Oberfläche; Rollen lassen sich in Phase 1 **nicht** anpassen
-  oder kopieren,
-- keine Benutzerverwaltungs-Oberfläche (Anlage erfolgt über den Seed),
+- kein Rolleneditor in der Oberfläche; Rollen lassen sich **nicht** anpassen oder
+  kopieren, und einzelne Berechtigungen lassen sich nicht vergeben,
+- keine Passwortwiederherstellung (siehe Abschnitt 18),
 - keine Lizenz-, Abrechnungs- oder Trial-Logik.
+
+**Benutzerverwaltung (seit Phase 4.2, Abschnitt 18):** Ein Administrator vergibt die
+**festen Systemrollen** an Mitgliedschaften seines Betriebs, lädt ein und sperrt den
+Zugang. Verwendete Berechtigungen – keine neuen Schlüssel:
+
+| Berechtigung | erlaubt |
+|---|---|
+| `user.account.read` | Benutzerliste, Mitglied, Einladung, Systeminformationen lesen |
+| `user.account.write` | Einladung widerrufen/neu ausstellen, Zugang sperren/freigeben |
+| `role.assignment.read` | Systemrollen, Rollen und effektive Rechte eines Mitglieds lesen |
+| `role.assignment.write` | Rollen vergeben; zusammen mit `user.account.write` einladen |
+
+**`role.assignment.write` ist gleichbedeutend mit Administratorrechten:** Wer Rollen
+vergibt, kann auch die Rolle `admin` vergeben – sich selbst eingeschlossen. Die
+Berechtigung steckt deshalb ausschließlich in der Administratorrolle und darf keiner
+Fachrolle zugeordnet werden.
+
+`organization.member.read`/`write` bleiben unverändert und werden von der Verwaltung
+nicht verwendet: Planer und Kalkulator besitzen `organization.member.read` („Kollegen
+ansehen“) – sie sollen dadurch **nicht** E-Mail-Adressen, Status und Rollen aller
+Mitglieder sehen.
 
 Das Datenmodell (`roles`, `role_permissions`, `member_roles` je Organisation) lässt
 spätere Anpassbarkeit zu. Bis eine geprüfte Funktion dafür existiert, gilt der Umfang
@@ -197,7 +225,11 @@ Vorbereitet, aber im MVP nicht aktiviert: PostgreSQL Row Level Security
 Explizit protokolliert werden mindestens:
 
 - Anmeldung, fehlgeschlagene Anmeldung, Logout
-- Änderung von Rollen und Berechtigungen
+- Änderung von Rollen und Berechtigungen (`member.roles_changed` mit hinzugefügten und
+  entfernten Rollenschlüsseln)
+- Benutzerverwaltung: `invitation.created`, `invitation.revoked`, `invitation.reissued`,
+  `invitation.accepted`, `member.suspended`, `member.reactivated` – mit IDs und
+  Rollenschlüsseln, **ohne** E-Mail, Namen, Token, Link oder Passwort
 - Anlegen/Ändern/Löschen von Kunden und Projekten
   (`customer.created`, `customer.updated`, `customer.deleted`, `customer.anonymized`,
   `project.created`, `project.updated`, `project.deleted`, `project.status_changed`)
@@ -231,6 +263,7 @@ nicht generisch über ORM-Hooks, und sind nicht änderbar.
 |---|---|
 | `POST /auth/login` | 10 Versuche / 15 min / IP **und** / Konto |
 | `POST /auth/refresh` | 60 / Stunde / Konto |
+| `POST /invitation-acceptance/*` | 20 ungültige Tokens / 15 min / IP; die Annahme mit bestehendem Konto zusätzlich über die Login-Grenze (Konto **und** IP) |
 | Datei-Upload | 100 / Stunde / Organisation |
 | Schreibende API allgemein | 600 / min / Organisation |
 | PDF-Erzeugung | 30 / min / Organisation |
@@ -353,6 +386,9 @@ einen Zweck; Felder „für später" gibt es nicht.
 | `customers` | `billing_street`, `billing_postal_code`, `billing_city`, `billing_country_code` | Rechnungsanschrift | Art. 6 Abs. 1 lit. b, §14 UStG |
 | `projects` | `site_street`, `site_postal_code`, `site_city` | Baustelle auffinden, Anfahrt und Aufmaß | Art. 6 Abs. 1 lit. b |
 | `users` | `email`, `full_name` | Anmeldung und Zuordnung von Handlungen | Art. 6 Abs. 1 lit. b/f |
+| `organization_members` | `status`, `last_login_at` | Zugang zum Betrieb steuern; ungenutzte Zugänge erkennen (letzte Anmeldung **nur in diesem Betrieb**) | Art. 6 Abs. 1 lit. b/f |
+| `member_invitations` | `email`, `full_name` | Einladung zustellen und der richtigen Person zuordnen; der Name ist nur ein Vorschlag | Art. 6 Abs. 1 lit. b |
+| `member_invitations` | `token_hash`, `expires_at`, `accepted_at`, `revoked_at`, `created_by_user_id` | Einmaligkeit, Frist und Nachvollziehbarkeit der Einladung – kein Personenbezug im Hash | Art. 6 Abs. 1 lit. f |
 | `audit_entries` | `actor_user_id` | Nachvollziehbarkeit kritischer Aktionen | Art. 6 Abs. 1 lit. f |
 
 Bewusst **nicht** erhoben: Geburtsdatum, Bankverbindung, Steuernummer, Freitextnotizen
@@ -416,6 +452,28 @@ Phase 2 implementiert und getestet (siehe oben) — `deleted_at` blendet ledigli
 
 ---
 
+### Benutzerverwaltung (Phase 4.2)
+
+* **Konto und Mitgliedschaft sind getrennt.** Das Konto (`users`) ist global; ein
+  Betrieb speichert nur die Mitgliedschaft. Ein Administrator sieht vom Konto Name und
+  E-Mail seiner Mitglieder – nicht deren andere Betriebe, nicht deren globale letzte
+  Anmeldung.
+* **Sperrung** betrifft nur die Mitgliedschaft; Daten bleiben erhalten, damit Protokoll
+  und Belege zuordenbar bleiben. Ein **Austritt** (Löschen der Mitgliedschaft) und die
+  Löschung eines Kontos sind noch nicht umgesetzt – beides gehört zu den offenen
+  Punkten 3 und 5, angewandt auf Mitarbeiterdaten.
+* **Einladungen** leben höchstens bis zur Aufbewahrungsfrist: angenommene, widerrufene
+  oder abgelaufene Einladungen entfernt `python -m app.cli purge-invitations` nach
+  `ELEKTROPLAN_INVITATION_RETENTION_DAYS` (Standard 30 Tage). Das ist ein Werkzeug,
+  noch **kein** geplanter Job. Das Protokoll behält nur die ID.
+* **Token-Hashes** sind SHA-256 über 256 Bit Zufall; aus ihnen lässt sich weder Token
+  noch Person ableiten.
+* **Offen** bleiben für Mitarbeiterdaten dieselben Voraussetzungen wie oben (Auskunft,
+  Löschkonzept für Konten, Verarbeitungsverzeichnis, TOM, AV-Verträge – zusätzlich mit
+  einem künftigen E-Mail-Dienst). **Bis dahin: nur synthetische Benutzer.**
+
+---
+
 ## 14. Backup und Wiederherstellung
 
 - PostgreSQL: tägliches Vollbackup + WAL-Archivierung.
@@ -458,3 +516,55 @@ ElektroPlan trifft keine sicherheitsrelevanten elektrotechnischen Entscheidungen
 dokumentiert und schlägt vor — die verantwortliche Elektrofachkraft entscheidet und gibt
 frei. Diese Grenze ist bewusst gesetzt und darf nur über einen neuen ADR mit fachlicher
 Freigabe verschoben werden.
+
+---
+
+## 18. Benutzerverwaltung und Einladungen (Phase 4.2)
+
+Entscheidung: [ADR 0015](decisions/0015-membership-administration-and-invitations.md).
+
+**Grenze der Verwaltung.** Ein Betriebsadministrator verwaltet ausschließlich
+Mitgliedschaften seines Betriebs: Status und feste Systemrollen. Passwort, E-Mail, Name
+und die globale Aktivierung eines Kontos sind über keine Verwaltungsfunktion erreichbar.
+Damit kann er kein Konto übernehmen oder aussperren, das auch einem anderen Betrieb
+gehört.
+
+**Einladungstoken.**
+
+| Eigenschaft | Umsetzung |
+|---|---|
+| Zufall | `secrets.token_urlsafe(32)` (256 Bit) |
+| Speicherung | nur SHA-256-Hash, eindeutig |
+| Gültigkeit | `ELEKTROPLAN_INVITATION_VALID_HOURS` (Standard 72 h) |
+| Einmalig | Annahme sperrt die Einladungszeile und setzt `accepted_at` in derselben Transaktion wie Konto und Mitgliedschaft |
+| Neu ausstellen | ersetzt den Hash – das alte Token ist sofort wertlos |
+| Ungültig | unbekannt, abgelaufen, widerrufen, verwendet: **eine** Antwort (`404 invitation-invalid`) |
+| Transport | im Anfragekörper, nie in Pfad oder Query; im Link hinter `#` (Fragment) – kein Server-Log, kein `Referer`; die Annahmeseite entfernt es sofort aus der Adresszeile |
+| Protokoll und Logs | weder Token noch Link noch Passwort; getestet für Audit **und** Logausgabe |
+
+**Bestehende Konten.** Eine Einladung verändert nie ein bestehendes Konto. Der Weg
+„neues Konto“ lehnt eine vorhandene E-Mail ab (`409 invitation-requires-login`). Der
+Weg „bestehendes Konto“ verlangt das Passwort **des Kontos der eingeladenen E-Mail** und
+unterliegt derselben Begrenzung wie die Anmeldung. Ob zur Adresse ein Konto existiert,
+erfährt nur, wer ein gültiges Token vorlegt.
+
+**Zustellung.** `ELEKTROPLAN_INVITATION_DELIVERY`:
+
+| Wert | Verhalten |
+|---|---|
+| `none` (Standard) | kein Zustellweg – Einladungen werden mit `503` abgelehnt, nichts wird angelegt |
+| `development_link` | Link einmalig in der Antwort an den Einladenden, in der Oberfläche als Entwicklungsfunktion markiert und nur im Vite-Entwicklungsmodus angezeigt. **In Produktion verweigert die Konfiguration den Start.** |
+
+**Letzter Administrator.** Die Organisationszeile ist die Sperrwurzel aller Status- und
+Rollenänderungen. Unter der Sperre werden der Handelnde erneut geprüft und die aktiven
+Administratoren gezählt (aktive Mitgliedschaft, aktives Konto, Rolle `admin`).
+Selbstsperre und Entfernen der eigenen Administratorrolle sind ausgeschlossen. Nachweis:
+Paralleltests gegen PostgreSQL samt Gegenprobe ohne Sperre.
+
+**Öffentliche Annahme.** Die drei Endpunkte unter `/invitation-acceptance/` verlangen
+keine Anmeldung, prüfen aber `Origin`/`Referer` wie die Sitzungsendpunkte, sind je IP
+begrenzt und stellen keine Sitzung aus.
+
+**Passwortwiederherstellung** ist **nicht** Teil dieser Phase. Sie wird als eigener,
+vom Kontoinhaber ausgelöster Ablauf mit E-Mail-Versand eingeführt – nie als Funktion
+eines Betriebsadministrators.

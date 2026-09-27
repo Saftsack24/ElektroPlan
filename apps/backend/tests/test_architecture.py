@@ -10,6 +10,7 @@ from __future__ import annotations
 from sqlalchemy import Float, Numeric, Table
 
 from app.core.auth.dependencies import PermissionRequirement
+from app.core.authorization.permissions import ROLE_ASSIGNMENT_WRITE, SYSTEM_ROLES
 from app.core.module import CORE_TABLES
 from app.core.module_registry.registry import ModuleRegistry
 from app.main import create_app
@@ -26,6 +27,12 @@ PERMISSION_EXEMPT_PATHS = frozenset(
         "/api/v1/auth/refresh",
         "/api/v1/auth/logout",
         "/api/v1/auth/switch-organization",
+        # Annahme einer Einladung: Das Token ist der Nachweis, eine Anmeldung
+        # gibt es noch nicht (ADR 0015). Rate-Limit und Herkunftspruefung
+        # ersetzen hier die Permission.
+        "/api/v1/invitation-acceptance/preview",
+        "/api/v1/invitation-acceptance/new-account",
+        "/api/v1/invitation-acceptance/existing-account",
     }
 )
 
@@ -136,14 +143,14 @@ def test_tabellenpraefixe_entsprechen_den_modulen(registry: ModuleRegistry) -> N
 def test_tabellenbestand_ist_vollstaendig_erfasst() -> None:
     """Warnt, wenn eine neue Tabelle hinzukommt, ohne die Liste zu pflegen.
 
-    17 Core-Tabellen (Phase 1 und 2) plus die drei des Fachmoduls
-    ``electrical`` aus Phase 3.
+    17 Core-Tabellen (Phase 1 und 2), zwei fuer Einladungen (Phase 4.2) plus
+    die drei des Fachmoduls ``electrical`` aus Phase 3.
     """
-    assert len(metadata.sorted_tables) == 20, (
+    assert len(metadata.sorted_tables) == 22, (
         "Anzahl der Tabellen hat sich geaendert - test_architecture.py und "
         "docs/database.md pruefen."
     )
-    assert len(CORE_TABLES) == 17
+    assert len(CORE_TABLES) == 19
 
 
 # ----------------------------------------------------------------- Permissions
@@ -167,6 +174,25 @@ def test_jede_schreibende_route_deklariert_eine_permission() -> None:
             problems.append(f"{sorted(route.methods)} {path}")
 
     assert not problems, f"Schreibende Routen ohne Permission: {problems}"
+
+
+def test_nur_der_administrator_vergibt_rollen(registry: ModuleRegistry) -> None:
+    """``role.assignment.write`` ist faktisch Administratorrecht (ADR 0015).
+
+    Wer Rollen vergibt, kann auch die Rolle ``admin`` vergeben - sich selbst
+    eingeschlossen. Keine andere ausgelieferte Systemrolle darf die Berechtigung
+    tragen, weder ueber ihre Vorlage noch ueber ``default_roles`` eines Moduls.
+    """
+    ueber_vorlage = {role.key for role in SYSTEM_ROLES if ROLE_ASSIGNMENT_WRITE in role.permissions}
+    ueber_module = {
+        role_key
+        for module in registry.modules
+        for permission in module.permissions
+        if permission.key == ROLE_ASSIGNMENT_WRITE
+        for role_key in permission.default_roles
+    }
+    assert ueber_vorlage == {"admin"}
+    assert ueber_module <= {"admin"}
 
 
 def test_deklarierte_permissions_sind_registriert(registry: ModuleRegistry) -> None:

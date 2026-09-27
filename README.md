@@ -95,6 +95,21 @@ Projektdateien gegen MinIO; Anonymisierungspfad nach Art. 17 DSGVO; Oberfläche 
 Kunden- und Projektverwaltung und einer Projektansicht, in die sich Fachmodule ab
 Phase 3 mit eigenen Tabs einhängen.
 
+**Phase 3 bis 4a.1** — Raummodell der Elektroplanung und grafischer 2D-Editor, siehe
+[`docs/current-status.md`](docs/current-status.md).
+
+**Phase 4.2 — Benutzerverwaltung und Startseite — abgeschlossen.**
+Administration mit Benutzerliste, Einladungen (Token nur als Hash, einmalig, befristet),
+Sperren des Zugangs je Betrieb, Vergabe fester Systemrollen mit nachvollziehbaren
+effektiven Rechten und Schutz des letzten Administrators; arbeitsorientierte Startseite.
+Entscheidung: [ADR 0015](docs/decisions/0015-membership-administration-and-invitations.md).
+
+> **Einladungen in der Entwicklung:** Es gibt noch keinen E-Mail-Versand. Mit
+> `ELEKTROPLAN_INVITATION_DELIVERY=development_link` (in `docker-compose.yml` gesetzt)
+> erscheint der Einladungslink einmalig in der Oberfläche, deutlich als
+> Entwicklungsfunktion markiert. In Produktion ist diese Einstellung verboten; ohne
+> Zustellweg werden Einladungen abgelehnt.
+
 Geprüft gegen echtes PostgreSQL 17 und MinIO: Ruff, mypy `--strict`, `import-linter`,
 Modul- und Datenbankgrenzen, ein Alembic-Head, der vollständige Backend-Testlauf ohne
 übersprungene Tests, Frontend-Typecheck, ESLint, Frontend-Tests und Build.
@@ -196,6 +211,7 @@ bewusst nicht ersatzweise gegen SQLite.
 | `.\tasks.ps1 boundaries` | Modulgrenzen prüfen |
 | `.\tasks.ps1 migrate` | Alembic upgrade head |
 | `.\tasks.ps1 openapi` | OpenAPI exportieren und API-Client neu erzeugen |
+| `docker exec elektroplan-backend python -m app.cli purge-invitations` | abgeschlossene und abgelaufene Einladungen nach der Aufbewahrungsfrist (30 Tage) löschen |
 
 ---
 

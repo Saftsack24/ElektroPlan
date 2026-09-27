@@ -3,18 +3,30 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Boolean, ForeignKey, Numeric, String, UniqueConstraint, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, String, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
-from app.db.mixins import SoftDeletable, TenantScoped, Timestamped, UUIDPrimaryKey, tenant_identity
+from app.db.mixins import (
+    SoftDeletable,
+    TenantScoped,
+    Timestamped,
+    UUIDPrimaryKey,
+    Versioned,
+    tenant_identity,
+)
 
 MEMBER_STATUS_ACTIVE = "active"
+#: Historisch vorgesehen, seit Phase 4.2 ungenutzt: Eine offene Einladung ist
+#: keine Mitgliedschaft, sondern ein eigener Datensatz
+#: (``organization_invitations``, ADR 0015).
 MEMBER_STATUS_INVITED = "invited"
+#: Zugang zu **diesem** Betrieb gesperrt. Das globale Konto bleibt unberuehrt.
 MEMBER_STATUS_DISABLED = "disabled"
 MEMBER_STATUSES = (MEMBER_STATUS_ACTIVE, MEMBER_STATUS_INVITED, MEMBER_STATUS_DISABLED)
 
@@ -38,11 +50,18 @@ class Organization(UUIDPrimaryKey, Timestamped, SoftDeletable, Base):
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="EUR")
 
 
-class OrganizationMember(UUIDPrimaryKey, TenantScoped, Timestamped, Base):
+class OrganizationMember(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, Base):
     """Zugehoerigkeit einer Person zu einem Betrieb (ADR 0006).
 
     Benutzer sind global; Rollen haengen an dieser Mitgliedschaft, nicht am
     Benutzer. Damit ist Mehrfachmitgliedschaft ohne Migration moeglich.
+
+    ``version`` ist die Version der **verwaltbaren** Mitgliedschaft: Status
+    und Rollen. Eine Rollenaenderung zaehlt sie ebenfalls weiter, damit zwei
+    Verwaltungsansichten sich nicht still ueberschreiben (ADR 0015).
+    ``last_login_at`` gehoert bewusst nicht dazu und wird ohne
+    Versionszaehlung geschrieben - sonst machte jede Anmeldung die geoeffnete
+    Verwaltungsansicht eines Administrators ungueltig.
     """
 
     __tablename__ = "organization_members"
@@ -55,6 +74,11 @@ class OrganizationMember(UUIDPrimaryKey, TenantScoped, Timestamped, Base):
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     status: Mapped[str] = mapped_column(String(16), nullable=False, default=MEMBER_STATUS_ACTIVE)
+    #: Letzte Anmeldung **in diesem Betrieb**. Nicht ``users.last_login_at``:
+    #: Das waere eine Auskunft ueber die Taetigkeit in anderen Betrieben.
+    last_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
 
     @property
     def is_active(self) -> bool:

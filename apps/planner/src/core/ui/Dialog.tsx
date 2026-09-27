@@ -12,7 +12,12 @@ import type { ReactNode } from "react";
  *
  * * Escape und Klick auf den Backdrop melden an `onClose`, damit der
  *   aufrufende Zustand mitgeführt wird.
- * * Der Fokus wandert beim Öffnen auf das erste Eingabefeld.
+ * * Der Fokus wandert beim Öffnen auf ein Element mit `data-autofocus`,
+ *   sonst auf das erste Eingabefeld. Bestätigungsdialoge setzen
+ *   `data-autofocus` auf „Abbrechen": Enter löst dann nichts Folgenreiches aus.
+ * * Beim Schließen kehrt der Fokus auf das Element zurück, das ihn vorher
+ *   hatte - meist der auslösende Knopf. Der Dialog wird ausgehängt, deshalb
+ *   übernimmt das nicht der Browser.
  * * `aria-labelledby` verweist auf die Überschrift.
  *
  * Auf schmalen Bildschirmen füllt der Dialog per CSS nahezu die ganze
@@ -34,6 +39,16 @@ export function Dialog({
   const element = useRef<HTMLDialogElement>(null);
   const titelId = useRef(`dialog-titel-${Math.random().toString(36).slice(2, 10)}`);
 
+  // Vor dem Öffnen-Effekt deklariert: Er muss das fokussierte Element
+  // festhalten, bevor der Dialog den Fokus übernimmt.
+  useEffect(() => {
+    if (!offen) return;
+    const vorher = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    return () => {
+      if (vorher !== null && vorher.isConnected) vorher.focus();
+    };
+  }, [offen]);
+
   useEffect(() => {
     const dialog = element.current;
     if (dialog === null) return;
@@ -49,6 +64,7 @@ export function Dialog({
       // Schliessen-Knopf steht im Markup vor den Feldern - auf ihm zu landen
       // waere unangenehm, weil Enter dann den Dialog schliesst.
       const erstes =
+        dialog.querySelector<HTMLElement>("[data-autofocus]") ??
         dialog.querySelector<HTMLElement>("input:not([type=hidden]), select, textarea") ??
         dialog.querySelector<HTMLElement>("button");
       erstes?.focus();

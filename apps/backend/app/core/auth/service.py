@@ -13,7 +13,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -130,6 +130,29 @@ class AuthService:
         logger.info("login_succeeded", user_id=str(user.id))
         return tokens
 
+    def verify_credentials(
+        self, *, email: str, password: str, client_ip: str | None = None
+    ) -> User:
+        """Prueft Anmeldedaten, **ohne** eine Sitzung auszustellen.
+
+        Gebraucht bei der Annahme einer Einladung mit einem bestehenden Konto
+        (ADR 0015). Es gelten dieselben Regeln wie bei der Anmeldung: dieselbe
+        Begrenzung je Konto und IP, dieselbe Meldung fuer unbekanntes Konto
+        und falsches Passwort. Das Passwort wird nie geaendert.
+        """
+        normalized = normalize_email(email)
+        self._check_rate_limit(normalized, client_ip)
+        user = self.session.execute(
+            select(User).where(User.email == normalized)
+        ).scalar_one_or_none()
+        if user is None or not verify_password(user.password_hash, password):
+            self._register_failed_attempt(normalized, client_ip)
+            raise AuthenticationError("E-Mail oder Passwort ist falsch.")
+        if not user.is_active:
+            raise AuthenticationError("Dieses Konto ist deaktiviert.")
+        _login_limiter.reset(f"user:{normalized}")
+        return user
+
     # ------------------------------------------------------------ Erneuerung
 
     def refresh(self, raw_token: str, *, user_agent: str | None = None) -> IssuedTokens:
@@ -206,9 +229,25 @@ class AuthService:
         if user is None or not user.is_active:
             raise AuthenticationError("Dieses Konto ist deaktiviert.")
 
-        member = self._select_member(user.id, stored.organization_id)
+        try:
+            member = self._select_member(user.id, stored.organization_id)
+        except NotFoundError as exc:
+            # Der Zugang zu diesem Betrieb ist gesperrt (oder die
+            # Mitgliedschaft existiert nicht mehr). Keine neue Sitzung - und
+            # die Familie wird endgueltig widerrufen, damit auch ein spaeteres
+            # Reaktivieren keine alte Sitzung wiederbelebt. Committet wird vor
+            # dem Fehler, sonst rollte die Dependency den Widerruf zurueck.
+            self._revoke_family(
+                stored.family_id, reason=RefreshTokenRevocationReason.MEMBERSHIP_DISABLED
+            )
+            self.session.commit()
+            raise AuthenticationError("Die Mitgliedschaft ist nicht mehr gueltig.") from exc
         new_tokens = self._issue(
-            user=user, member=member, user_agent=user_agent, family_id=stored.family_id
+            user=user,
+            member=member,
+            user_agent=user_agent,
+            family_id=stored.family_id,
+            record_login=False,
         )
         # Atomar mit dem neuen Datensatz koppeln: Nachfolger-ID und
         # Widerrufsgrund gemeinsam setzen, damit spaeter erkennbar bleibt,
@@ -359,7 +398,20 @@ class AuthService:
         member: OrganizationMember,
         user_agent: str | None,
         family_id: uuid.UUID | None,
+        record_login: bool = True,
     ) -> IssuedTokens:
+        if record_login:
+            # Letzte Anmeldung in **diesem** Betrieb. Als Core-UPDATE statt
+            # ueber das ORM: Die Spalte gehoert nicht zur verwaltbaren
+            # Mitgliedschaft und darf deren Version nicht weiterzaehlen - sonst
+            # machte jede Anmeldung die geoeffnete Verwaltungsansicht eines
+            # Administrators ungueltig (ADR 0015).
+            self.session.execute(
+                update(OrganizationMember)
+                .where(OrganizationMember.id == member.id)
+                .values(last_login_at=datetime.now(tz=UTC))
+                .execution_options(synchronize_session=False)
+            )
         access_token, expires_in = create_access_token(
             user_id=user.id,
             organization_id=member.organization_id,
@@ -444,3 +496,32 @@ class AuthService:
             summary="Fehlgeschlagene Anmeldung",
         )
         self.session.commit()
+
+
+def revoke_membership_sessions(
+    session: Session, *, user_id: uuid.UUID, organization_id: uuid.UUID
+) -> int:
+    """Widerruft alle offenen Refresh Tokens **einer** Mitgliedschaft.
+
+    Gezielt: nur Tokens dieses Benutzers **in diesem Betrieb**. Sitzungen
+    desselben Benutzers in anderen Betrieben bleiben unberuehrt. Ausgestellte
+    Access Tokens laufen noch bis zu ihrem Ablauf, werden aber bei jeder
+    Anfrage gegen den Mitgliedsstatus geprueft und ab sofort abgelehnt
+    (:func:`app.core.auth.dependencies.get_current_user`).
+    """
+    tokens = (
+        session.execute(
+            select(RefreshToken).where(
+                RefreshToken.user_id == user_id,
+                RefreshToken.organization_id == organization_id,
+                RefreshToken.revoked_at.is_(None),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    now = datetime.now(tz=UTC)
+    for token in tokens:
+        token.revoked_at = now
+        token.revoked_reason = RefreshTokenRevocationReason.MEMBERSHIP_DISABLED.value
+    return len(tokens)

@@ -5,6 +5,47 @@ Einträge entstehen nach relevanten Änderungen, nicht nach jedem Commit.
 
 ---
 
+## 2026-09-27 — Phase 4.2: Benutzerverwaltung, Rollenvergabe und Startseite
+
+Migration `0005_member_administration`. Entscheidung: ADR 0015.
+
+### Added
+
+- **Administration** in der Plattform-Oberfläche: Benutzerliste (Mitglieder und offene
+  Einladungen, Suche, Statusfilter, Vor-/Zurück-Blättern), Mitgliedsdetail (Zugang
+  sperren/freigeben, Rollen vergeben, effektive Rechte samt Herkunft), Rollenübersicht,
+  Systeminformationen. Sicherheitsrelevante Aktionen nur nach Rückfrage.
+- **Einladungen**: Dialog „Benutzer einladen“ mit festen Systemrollen; Token 256 Bit,
+  nur als SHA-256-Hash gespeichert, befristet, einmalig, widerrufbar, neu ausstellbar.
+  Öffentliche Annahmeseite `/einladung` für neue und bestehende Konten.
+- API: `/members…`, `/roles`, `/invitations…`, `/invitation-acceptance/…`;
+  `GET /projects?sort=updated_at`, `ProjectSummary.updated_at`.
+- Konfiguration `ELEKTROPLAN_INVITATION_DELIVERY` (`none` | `development_link`,
+  letzteres in Produktion verboten), `…_INVITATION_VALID_HOURS`,
+  `…_INVITATION_RETENTION_DAYS`, `…_PUBLIC_APP_URL`.
+- CLI `python -m app.cli purge-invitations`.
+- Fehlertypen `last-administrator`, `self-lockout`, `invitation-invalid`,
+  `invitation-requires-login`, `invitation-delivery-unavailable`.
+- Core-UI: `Bestaetigung`, `Marke`; `Dialog` mit `data-autofocus` und Fokusrückgabe.
+
+### Changed
+
+- **Startseite** arbeitsorientiert: Begrüßung, Betrieb, Schnellaktionen nach Rechten,
+  zuletzt geänderte und aktive Projekte, Hinweis auf offene Einladungen. Modulversionen
+  und Berechtigungsschlüssel sind von der Startseite verschwunden (Systeminformationen).
+  Die Startseite gehört jetzt zum Plattformmodul, nicht mehr zur Anwendungshülle.
+- `organization_members` ist versioniert (`If-Match`), `last_login_at` je Betrieb.
+- Beschreibungen der Systemrollen erklären den Einsatzzweck (per Seed aktualisiert).
+
+### Security
+
+- Refresh bei gesperrter Mitgliedschaft liefert `401` statt `404` und widerruft die
+  Token-Familie; eine Sperre widerruft alle Refresh Tokens **dieser** Mitgliedschaft.
+- Letzter Administrator unter Parallelität geschützt (Organisationszeile als
+  Sperrwurzel, erneute Prüfung des Handelnden unter der Sperre).
+
+---
+
 ## 2026-09-27 — Phase 4a.1: Navigationsschutz und Testdatenbank-Sicherheit
 
 Keine Migration, keine API-Änderung, kein Backend-Produktivcode.

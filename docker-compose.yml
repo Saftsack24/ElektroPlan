@@ -95,6 +95,11 @@ services:
       ELEKTROPLAN_S3_BUCKET: elektroplan
       ELEKTROPLAN_CORS_ORIGINS: http://localhost:5173
       ELEKTROPLAN_SEED_ADMIN_PASSWORD: entwicklung-bitte-aendern
+      # Einladungen (Phase 4.2): Es gibt noch keinen E-Mail-Versand. In der
+      # Entwicklung erscheint der Einladungslink einmalig in der Oberflaeche.
+      # In Produktion ist dieser Wert verboten - die Anwendung startet dann nicht.
+      ELEKTROPLAN_INVITATION_DELIVERY: development_link
+      ELEKTROPLAN_PUBLIC_APP_URL: http://localhost:5173
     ports:
       - "8000:8000"
     volumes:

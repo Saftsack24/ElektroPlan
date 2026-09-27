@@ -935,7 +935,8 @@
             "schema": {
               "enum": [
                 "created_at",
-                "name"
+                "name",
+                "updated_at"
               ],
               "type": "string",
               "default": "created_at",
@@ -2425,6 +2426,1086 @@
         }
       }
     },
+    "/api/v1/roles": {
+      "get": {
+        "tags": [
+          "administration"
+        ],
+        "summary": "Feste Systemrollen",
+        "description": "Die ausgelieferten Systemrollen mit Einsatzzweck und Berechtigungen.\n\nNur lesend: Rollen und die zentrale Permission-Registry sind in dieser\nPhase nicht bearbeitbar.",
+        "operationId": "listSystemRoles",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SystemRoleOut"
+                  },
+                  "type": "array",
+                  "title": "Response Listsystemroles"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/members": {
+      "get": {
+        "tags": [
+          "administration"
+        ],
+        "summary": "Benutzer des Betriebs",
+        "description": "Mitgliedschaften und offene Einladungen, nach Name sortiert, seitenweise.\n\n``status=invited`` zeigt nur offene (auch abgelaufene) Einladungen.",
+        "operationId": "listMembers",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 120
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Name oder E-Mail",
+              "title": "Q"
+            },
+            "description": "Name oder E-Mail"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "active",
+                    "disabled",
+                    "invited"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_DirectoryEntryOut_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/members/{member_id}": {
+      "get": {
+        "tags": [
+          "administration"
+        ],
+        "summary": "Mitglied",
+        "description": "Eine Mitgliedschaft im aktuellen Betrieb.",
+        "operationId": "getMember",
+        "parameters": [
+          {
+            "name": "member_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Member Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/members/{member_id}/suspend": {
+      "post": {
+        "tags": [
+          "administration"
+        ],
+        "summary": "Zugang zu diesem Betrieb sperren",
+        "description": "Sperrt den Zugang des Mitglieds zu **diesem** Betrieb.\n\nDas globale Konto und Mitgliedschaften in anderen Betrieben bleiben\nunberuehrt. Offene Sitzungen in diesem Betrieb enden sofort.",
+        "operationId": "suspendMember",
+        "parameters": [
+          {
+            "name": "member_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Member Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, letzter Administrator (last-administrator), eigene Mitgliedschaft (self-lockout) oder unzulaessiger Zustand",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unbekannte oder nicht vergebbare Rolle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/members/{member_id}/reactivate": {
+      "post": {
+        "tags": [
+          "administration"
+        ],
+        "summary": "Zugang zu diesem Betrieb wieder freigeben",
+        "description": "Gibt den Zugang zu diesem Betrieb wieder frei.",
+        "operationId": "reactivateMember",
+        "parameters": [
+          {
+            "name": "member_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Member Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, letzter Administrator (last-administrator), eigene Mitgliedschaft (self-lockout) oder unzulaessiger Zustand",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unbekannte oder nicht vergebbare Rolle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/members/{member_id}/permissions": {
+      "get": {
+        "tags": [
+          "administration"
+        ],
+        "summary": "Rollen und effektive Berechtigungen eines Mitglieds",
+        "description": "Zugewiesene Rollen und daraus folgende Berechtigungen samt Herkunft.",
+        "operationId": "getMemberPermissions",
+        "parameters": [
+          {
+            "name": "member_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Member Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberPermissionsOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/members/{member_id}/roles": {
+      "put": {
+        "tags": [
+          "administration"
+        ],
+        "summary": "Rollen eines Mitglieds ersetzen",
+        "description": "Ersetzt die Systemrollen eines Mitglieds als Ganzes - atomar.\n\n``If-Match`` traegt die Version der Mitgliedschaft. Die Aenderung wirkt ab\nder naechsten Anfrage des Mitglieds, ohne erneute Anmeldung.",
+        "operationId": "replaceMemberRoles",
+        "parameters": [
+          {
+            "name": "member_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Member Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberRolesUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, letzter Administrator (last-administrator), eigene Mitgliedschaft (self-lockout) oder unzulaessiger Zustand",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unbekannte oder nicht vergebbare Rolle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/invitations/policy": {
+      "get": {
+        "tags": [
+          "administration"
+        ],
+        "summary": "Rahmen fuer Einladungen",
+        "description": "Gueltigkeit und eingerichteter Zustellweg - fuer Hinweise im Dialog.",
+        "operationId": "getInvitationPolicy",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationPolicy"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/invitations": {
+      "post": {
+        "tags": [
+          "administration"
+        ],
+        "summary": "Benutzer einladen",
+        "description": "Laedt eine E-Mail-Adresse mit festen Systemrollen in diesen Betrieb ein.\n\nVerlangt zusaetzlich ``role.assignment.write``: Die Einladung vergibt\nRollen. Ohne eingerichteten Zustellweg wird nichts angelegt (``503``).",
+        "operationId": "createInvitation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvitationCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationIssued"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, letzter Administrator (last-administrator), eigene Mitgliedschaft (self-lockout) oder unzulaessiger Zustand",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unbekannte oder nicht vergebbare Rolle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Kein Zustellweg eingerichtet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/invitations/{invitation_id}": {
+      "get": {
+        "tags": [
+          "administration"
+        ],
+        "summary": "Einladung",
+        "description": "Eine Einladung dieses Betriebs - ohne Token und ohne Link.",
+        "operationId": "getInvitation",
+        "parameters": [
+          {
+            "name": "invitation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Invitation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/invitations/{invitation_id}/revoke": {
+      "post": {
+        "tags": [
+          "administration"
+        ],
+        "summary": "Einladung widerrufen",
+        "description": "Widerruft eine offene oder abgelaufene Einladung. Das Token wird wertlos.",
+        "operationId": "revokeInvitation",
+        "parameters": [
+          {
+            "name": "invitation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Invitation Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, letzter Administrator (last-administrator), eigene Mitgliedschaft (self-lockout) oder unzulaessiger Zustand",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unbekannte oder nicht vergebbare Rolle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/invitations/{invitation_id}/reissue": {
+      "post": {
+        "tags": [
+          "administration"
+        ],
+        "summary": "Einladung erneut ausstellen",
+        "description": "Stellt eine Einladung mit neuem Token und neuer Frist aus.\n\nDas bisherige Token ist danach ungueltig.",
+        "operationId": "reissueInvitation",
+        "parameters": [
+          {
+            "name": "invitation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Invitation Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationIssued"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, letzter Administrator (last-administrator), eigene Mitgliedschaft (self-lockout) oder unzulaessiger Zustand",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unbekannte oder nicht vergebbare Rolle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Kein Zustellweg eingerichtet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/invitation-acceptance/preview": {
+      "post": {
+        "tags": [
+          "invitation-acceptance"
+        ],
+        "summary": "Einladung pruefen",
+        "description": "Zeigt dem Inhaber eines gueltigen Tokens Betrieb und E-Mail der Einladung.\n\n``account_exists`` sagt, welcher Annahmeweg gilt. Aendert nichts.",
+        "operationId": "previewInvitation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvitationTokenIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationPreview"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Einladung ungueltig (invitation-invalid)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Versuche",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/invitation-acceptance/new-account": {
+      "post": {
+        "tags": [
+          "invitation-acceptance"
+        ],
+        "summary": "Einladung mit neuem Konto annehmen",
+        "description": "Legt Konto und Mitgliedschaft in **einer** Transaktion an.\n\nNur fuer eine E-Mail ohne bestehendes Konto. Es gelten die Passwortregeln\nder Anmeldung.",
+        "operationId": "acceptInvitationWithNewAccount",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptWithNewAccount"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationAccepted"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Einladung ungueltig (invitation-invalid)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Versuche",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Konto existiert bereits (invitation-requires-login)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Passwortregeln nicht erfuellt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/invitation-acceptance/existing-account": {
+      "post": {
+        "tags": [
+          "invitation-acceptance"
+        ],
+        "summary": "Einladung mit bestehendem Konto annehmen",
+        "description": "Nimmt die Einladung mit dem Passwort des bestehenden Kontos an.\n\nGeprueft wird das Konto **der eingeladenen E-Mail**. Das Konto selbst wird\nnicht veraendert.",
+        "operationId": "acceptInvitationWithExistingAccount",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptWithExistingAccount"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationAccepted"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Einladung ungueltig (invitation-invalid)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Versuche",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Anmeldedaten falsch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Bereits Mitglied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/modules/electrical/floors/{floor_id}/rooms": {
       "get": {
         "tags": [
@@ -3767,6 +4848,59 @@
   },
   "components": {
     "schemas": {
+      "AcceptWithExistingAccount": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Token"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Password"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "token",
+          "password"
+        ],
+        "title": "AcceptWithExistingAccount"
+      },
+      "AcceptWithNewAccount": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Token"
+          },
+          "full_name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Full Name"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Password"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "token",
+          "full_name",
+          "password"
+        ],
+        "title": "AcceptWithNewAccount"
+      },
       "ActiveModuleInfo": {
         "properties": {
           "id": {
@@ -4522,6 +5656,132 @@
         "title": "CustomerUpdate",
         "description": "Teilaenderung. Nicht gesetzte Felder bleiben unveraendert.\n\nDie Kundennummer ist nicht aenderbar: Sie ist der Bezug bestehender\nBelege (docs/security.md, Abschnitt 13, Punkt 4)."
       },
+      "DirectoryEntryOut": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "member",
+              "invitation"
+            ],
+            "title": "Kind"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled",
+              "invited"
+            ],
+            "title": "Status"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/RoleRef"
+            },
+            "type": "array",
+            "title": "Roles"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          },
+          "invitation_expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invitation Expires At"
+          },
+          "invitation_expired": {
+            "type": "boolean",
+            "title": "Invitation Expired"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "id",
+          "full_name",
+          "email",
+          "status",
+          "roles",
+          "last_login_at",
+          "invitation_expires_at",
+          "invitation_expired",
+          "version"
+        ],
+        "title": "DirectoryEntryOut",
+        "description": "Eintrag der Benutzerliste: Mitgliedschaft **oder** offene Einladung.\n\n``kind`` unterscheidet beides. ``id`` ist je nach Art die ID der\nMitgliedschaft oder der Einladung."
+      },
+      "EffectivePermissionOut": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "area": {
+            "type": "string",
+            "title": "Area"
+          },
+          "granted_by": {
+            "items": {
+              "$ref": "#/components/schemas/RoleRef"
+            },
+            "type": "array",
+            "title": "Granted By"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "description",
+          "area",
+          "granted_by"
+        ],
+        "title": "EffectivePermissionOut"
+      },
       "FileDownloadUrl": {
         "properties": {
           "url": {
@@ -4868,6 +6128,238 @@
         ],
         "title": "HealthStatus"
       },
+      "InvitationAccepted": {
+        "properties": {
+          "organization_name": {
+            "type": "string",
+            "title": "Organization Name"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "required": [
+          "organization_name",
+          "email"
+        ],
+        "title": "InvitationAccepted"
+      },
+      "InvitationCreate": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "role_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Role Keys"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "email",
+          "role_keys"
+        ],
+        "title": "InvitationCreate"
+      },
+      "InvitationIssued": {
+        "properties": {
+          "invitation": {
+            "$ref": "#/components/schemas/InvitationOut"
+          },
+          "delivery": {
+            "type": "string",
+            "const": "development_link",
+            "title": "Delivery"
+          },
+          "development_activation_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Development Activation Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "invitation",
+          "delivery"
+        ],
+        "title": "InvitationIssued",
+        "description": "Ergebnis von Anlage und erneuter Ausstellung.\n\n``development_activation_url`` ist nur gesetzt, wenn der Server mit\n``ELEKTROPLAN_INVITATION_DELIVERY=development_link`` laeuft - nie in\nProduktion. Der Link steht **nur in dieser Antwort**; er wird nicht\ngespeichert und ist spaeter nicht erneut abrufbar."
+      },
+      "InvitationOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "expired",
+              "accepted",
+              "revoked"
+            ],
+            "title": "Status"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/RoleRef"
+            },
+            "type": "array",
+            "title": "Roles"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "full_name",
+          "status",
+          "roles",
+          "expires_at",
+          "created_at",
+          "version"
+        ],
+        "title": "InvitationOut"
+      },
+      "InvitationPolicy": {
+        "properties": {
+          "valid_hours": {
+            "type": "integer",
+            "title": "Valid Hours"
+          },
+          "delivery": {
+            "type": "string",
+            "enum": [
+              "none",
+              "development_link"
+            ],
+            "title": "Delivery"
+          }
+        },
+        "type": "object",
+        "required": [
+          "valid_hours",
+          "delivery"
+        ],
+        "title": "InvitationPolicy",
+        "description": "Was die Oberflaeche vor dem Einladen wissen muss."
+      },
+      "InvitationPreview": {
+        "properties": {
+          "organization_name": {
+            "type": "string",
+            "title": "Organization Name"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "account_exists": {
+            "type": "boolean",
+            "title": "Account Exists"
+          }
+        },
+        "type": "object",
+        "required": [
+          "organization_name",
+          "email",
+          "full_name",
+          "expires_at",
+          "account_exists"
+        ],
+        "title": "InvitationPreview"
+      },
+      "InvitationTokenIn": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Token"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "title": "InvitationTokenIn"
+      },
       "LoginRequest": {
         "properties": {
           "email": {
@@ -4953,6 +6445,137 @@
         ],
         "title": "MeResponse",
         "description": "Benutzer, aktiver Mandant, Rollen und Berechtigungen."
+      },
+      "MemberOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "full_name": {
+            "type": "string",
+            "title": "Full Name"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "disabled"
+            ],
+            "title": "Status"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/RoleRef"
+            },
+            "type": "array",
+            "title": "Roles"
+          },
+          "is_administrator": {
+            "type": "boolean",
+            "title": "Is Administrator"
+          },
+          "is_self": {
+            "type": "boolean",
+            "title": "Is Self"
+          },
+          "joined_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Joined At"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "full_name",
+          "email",
+          "status",
+          "roles",
+          "is_administrator",
+          "is_self",
+          "joined_at",
+          "last_login_at",
+          "version"
+        ],
+        "title": "MemberOut",
+        "description": "Eine Mitgliedschaft im aktuellen Betrieb.\n\nEnthaelt vom globalen Konto nur Name und E-Mail - beide sind hier nicht\naenderbar (ADR 0015)."
+      },
+      "MemberPermissionsOut": {
+        "properties": {
+          "member_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Member Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/RoleRef"
+            },
+            "type": "array",
+            "title": "Roles"
+          },
+          "permissions": {
+            "items": {
+              "$ref": "#/components/schemas/EffectivePermissionOut"
+            },
+            "type": "array",
+            "title": "Permissions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "member_id",
+          "version",
+          "roles",
+          "permissions"
+        ],
+        "title": "MemberPermissionsOut"
+      },
+      "MemberRolesUpdate": {
+        "properties": {
+          "role_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Role Keys"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "role_keys"
+        ],
+        "title": "MemberRolesUpdate",
+        "description": "Vollstaendige Liste der Systemrollen - ersetzt die bisherigen als Ganzes."
       },
       "ModuleInfo": {
         "properties": {
@@ -5298,6 +6921,38 @@
         ],
         "title": "Page[CustomerOut]"
       },
+      "Page_DirectoryEntryOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DirectoryEntryOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "Page[DirectoryEntryOut]"
+      },
       "Page_ProjectSummary_": {
         "properties": {
           "items": {
@@ -5329,6 +6984,29 @@
           "items"
         ],
         "title": "Page[ProjectSummary]"
+      },
+      "PermissionInfo": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "area": {
+            "type": "string",
+            "title": "Area"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "description",
+          "area"
+        ],
+        "title": "PermissionInfo"
       },
       "ProblemDetail": {
         "properties": {
@@ -5674,6 +7352,11 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
           }
         },
         "type": "object",
@@ -5686,7 +7369,8 @@
           "customer_name",
           "site_city",
           "version",
-          "created_at"
+          "created_at",
+          "updated_at"
         ],
         "title": "ProjectSummary",
         "description": "Listeneintrag - mit dem Kundennamen, damit die Liste ohne\nFolgeabfragen lesbar ist."
@@ -5772,6 +7456,25 @@
         "type": "object",
         "title": "ProjectUpdate",
         "description": "Teilaenderung.\n\nWeder Projektnummer noch Status stehen hier: Die Nummer ist der Bezug\nbestehender Belege, und ein Statuswechsel hat Vorbedingungen und laeuft\nueber eigene Endpunkte (docs/api.md, Abschnitt 5)."
+      },
+      "RoleRef": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "name"
+        ],
+        "title": "RoleRef",
+        "description": "Verweis auf eine Systemrolle."
       },
       "RoleSummary": {
         "properties": {
@@ -6264,6 +7967,38 @@
           "organization_id"
         ],
         "title": "SwitchOrganizationRequest"
+      },
+      "SystemRoleOut": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "permissions": {
+            "items": {
+              "$ref": "#/components/schemas/PermissionInfo"
+            },
+            "type": "array",
+            "title": "Permissions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "name",
+          "description",
+          "permissions"
+        ],
+        "title": "SystemRoleOut",
+        "description": "Eine feste Systemrolle mit Einsatzzweck und Berechtigungen."
       },
       "TokenResponse": {
         "properties": {

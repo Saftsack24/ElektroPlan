@@ -599,6 +599,330 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Feste Systemrollen
+         * @description Die ausgelieferten Systemrollen mit Einsatzzweck und Berechtigungen.
+         *
+         *     Nur lesend: Rollen und die zentrale Permission-Registry sind in dieser
+         *     Phase nicht bearbeitbar.
+         */
+        get: operations["listSystemRoles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Benutzer des Betriebs
+         * @description Mitgliedschaften und offene Einladungen, nach Name sortiert, seitenweise.
+         *
+         *     ``status=invited`` zeigt nur offene (auch abgelaufene) Einladungen.
+         */
+        get: operations["listMembers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/members/{member_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Mitglied
+         * @description Eine Mitgliedschaft im aktuellen Betrieb.
+         */
+        get: operations["getMember"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/members/{member_id}/suspend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Zugang zu diesem Betrieb sperren
+         * @description Sperrt den Zugang des Mitglieds zu **diesem** Betrieb.
+         *
+         *     Das globale Konto und Mitgliedschaften in anderen Betrieben bleiben
+         *     unberuehrt. Offene Sitzungen in diesem Betrieb enden sofort.
+         */
+        post: operations["suspendMember"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/members/{member_id}/reactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Zugang zu diesem Betrieb wieder freigeben
+         * @description Gibt den Zugang zu diesem Betrieb wieder frei.
+         */
+        post: operations["reactivateMember"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/members/{member_id}/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rollen und effektive Berechtigungen eines Mitglieds
+         * @description Zugewiesene Rollen und daraus folgende Berechtigungen samt Herkunft.
+         */
+        get: operations["getMemberPermissions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/members/{member_id}/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Rollen eines Mitglieds ersetzen
+         * @description Ersetzt die Systemrollen eines Mitglieds als Ganzes - atomar.
+         *
+         *     ``If-Match`` traegt die Version der Mitgliedschaft. Die Aenderung wirkt ab
+         *     der naechsten Anfrage des Mitglieds, ohne erneute Anmeldung.
+         */
+        put: operations["replaceMemberRoles"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invitations/policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rahmen fuer Einladungen
+         * @description Gueltigkeit und eingerichteter Zustellweg - fuer Hinweise im Dialog.
+         */
+        get: operations["getInvitationPolicy"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Benutzer einladen
+         * @description Laedt eine E-Mail-Adresse mit festen Systemrollen in diesen Betrieb ein.
+         *
+         *     Verlangt zusaetzlich ``role.assignment.write``: Die Einladung vergibt
+         *     Rollen. Ohne eingerichteten Zustellweg wird nichts angelegt (``503``).
+         */
+        post: operations["createInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invitations/{invitation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Einladung
+         * @description Eine Einladung dieses Betriebs - ohne Token und ohne Link.
+         */
+        get: operations["getInvitation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invitations/{invitation_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Einladung widerrufen
+         * @description Widerruft eine offene oder abgelaufene Einladung. Das Token wird wertlos.
+         */
+        post: operations["revokeInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invitations/{invitation_id}/reissue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Einladung erneut ausstellen
+         * @description Stellt eine Einladung mit neuem Token und neuer Frist aus.
+         *
+         *     Das bisherige Token ist danach ungueltig.
+         */
+        post: operations["reissueInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invitation-acceptance/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Einladung pruefen
+         * @description Zeigt dem Inhaber eines gueltigen Tokens Betrieb und E-Mail der Einladung.
+         *
+         *     ``account_exists`` sagt, welcher Annahmeweg gilt. Aendert nichts.
+         */
+        post: operations["previewInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invitation-acceptance/new-account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Einladung mit neuem Konto annehmen
+         * @description Legt Konto und Mitgliedschaft in **einer** Transaktion an.
+         *
+         *     Nur fuer eine E-Mail ohne bestehendes Konto. Es gelten die Passwortregeln
+         *     der Anmeldung.
+         */
+        post: operations["acceptInvitationWithNewAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invitation-acceptance/existing-account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Einladung mit bestehendem Konto annehmen
+         * @description Nimmt die Einladung mit dem Passwort des bestehenden Kontos an.
+         *
+         *     Geprueft wird das Konto **der eingeladenen E-Mail**. Das Konto selbst wird
+         *     nicht veraendert.
+         */
+        post: operations["acceptInvitationWithExistingAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/modules/electrical/floors/{floor_id}/rooms": {
         parameters: {
             query?: never;
@@ -886,6 +1210,22 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AcceptWithExistingAccount */
+        AcceptWithExistingAccount: {
+            /** Token */
+            token: string;
+            /** Password */
+            password: string;
+        };
+        /** AcceptWithNewAccount */
+        AcceptWithNewAccount: {
+            /** Token */
+            token: string;
+            /** Full Name */
+            full_name: string;
+            /** Password */
+            password: string;
+        };
         /**
          * ActiveModuleInfo
          * @description Modul im Kontext der aktuellen Organisation und des Benutzers.
@@ -1147,6 +1487,55 @@ export interface components {
             billing_country_code?: string | null;
         };
         /**
+         * DirectoryEntryOut
+         * @description Eintrag der Benutzerliste: Mitgliedschaft **oder** offene Einladung.
+         *
+         *     ``kind`` unterscheidet beides. ``id`` ist je nach Art die ID der
+         *     Mitgliedschaft oder der Einladung.
+         */
+        DirectoryEntryOut: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "member" | "invitation";
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Full Name */
+            full_name: string | null;
+            /** Email */
+            email: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "disabled" | "invited";
+            /** Roles */
+            roles: components["schemas"]["RoleRef"][];
+            /** Last Login At */
+            last_login_at: string | null;
+            /** Invitation Expires At */
+            invitation_expires_at: string | null;
+            /** Invitation Expired */
+            invitation_expired: boolean;
+            /** Version */
+            version: number;
+        };
+        /** EffectivePermissionOut */
+        EffectivePermissionOut: {
+            /** Key */
+            key: string;
+            /** Description */
+            description: string;
+            /** Area */
+            area: string;
+            /** Granted By */
+            granted_by: components["schemas"]["RoleRef"][];
+        };
+        /**
          * FileDownloadUrl
          * @description Kurzlebige Download-Adresse fuer den Browser.
          */
@@ -1298,6 +1687,109 @@ export interface components {
              */
             database: boolean;
         };
+        /** InvitationAccepted */
+        InvitationAccepted: {
+            /** Organization Name */
+            organization_name: string;
+            /** Email */
+            email: string;
+        };
+        /** InvitationCreate */
+        InvitationCreate: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /** Full Name */
+            full_name?: string | null;
+            /** Role Keys */
+            role_keys: string[];
+        };
+        /**
+         * InvitationIssued
+         * @description Ergebnis von Anlage und erneuter Ausstellung.
+         *
+         *     ``development_activation_url`` ist nur gesetzt, wenn der Server mit
+         *     ``ELEKTROPLAN_INVITATION_DELIVERY=development_link`` laeuft - nie in
+         *     Produktion. Der Link steht **nur in dieser Antwort**; er wird nicht
+         *     gespeichert und ist spaeter nicht erneut abrufbar.
+         */
+        InvitationIssued: {
+            invitation: components["schemas"]["InvitationOut"];
+            /**
+             * Delivery
+             * @constant
+             */
+            delivery: "development_link";
+            /** Development Activation Url */
+            development_activation_url?: string | null;
+        };
+        /** InvitationOut */
+        InvitationOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Email */
+            email: string;
+            /** Full Name */
+            full_name: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "expired" | "accepted" | "revoked";
+            /** Roles */
+            roles: components["schemas"]["RoleRef"][];
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Version */
+            version: number;
+        };
+        /**
+         * InvitationPolicy
+         * @description Was die Oberflaeche vor dem Einladen wissen muss.
+         */
+        InvitationPolicy: {
+            /** Valid Hours */
+            valid_hours: number;
+            /**
+             * Delivery
+             * @enum {string}
+             */
+            delivery: "none" | "development_link";
+        };
+        /** InvitationPreview */
+        InvitationPreview: {
+            /** Organization Name */
+            organization_name: string;
+            /** Email */
+            email: string;
+            /** Full Name */
+            full_name: string | null;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Account Exists */
+            account_exists: boolean;
+        };
+        /** InvitationTokenIn */
+        InvitationTokenIn: {
+            /** Token */
+            token: string;
+        };
         /** LoginRequest */
         LoginRequest: {
             /**
@@ -1337,6 +1829,66 @@ export interface components {
             roles: components["schemas"]["RoleSummary"][];
             /** Permissions */
             permissions: string[];
+        };
+        /**
+         * MemberOut
+         * @description Eine Mitgliedschaft im aktuellen Betrieb.
+         *
+         *     Enthaelt vom globalen Konto nur Name und E-Mail - beide sind hier nicht
+         *     aenderbar (ADR 0015).
+         */
+        MemberOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Full Name */
+            full_name: string;
+            /** Email */
+            email: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "disabled";
+            /** Roles */
+            roles: components["schemas"]["RoleRef"][];
+            /** Is Administrator */
+            is_administrator: boolean;
+            /** Is Self */
+            is_self: boolean;
+            /**
+             * Joined At
+             * Format: date-time
+             */
+            joined_at: string;
+            /** Last Login At */
+            last_login_at: string | null;
+            /** Version */
+            version: number;
+        };
+        /** MemberPermissionsOut */
+        MemberPermissionsOut: {
+            /**
+             * Member Id
+             * Format: uuid
+             */
+            member_id: string;
+            /** Version */
+            version: number;
+            /** Roles */
+            roles: components["schemas"]["RoleRef"][];
+            /** Permissions */
+            permissions: components["schemas"]["EffectivePermissionOut"][];
+        };
+        /**
+         * MemberRolesUpdate
+         * @description Vollstaendige Liste der Systemrollen - ersetzt die bisherigen als Ganzes.
+         */
+        MemberRolesUpdate: {
+            /** Role Keys */
+            role_keys: string[];
         };
         /**
          * ModuleInfo
@@ -1481,6 +2033,18 @@ export interface components {
              */
             has_more: boolean;
         };
+        /** Page[DirectoryEntryOut] */
+        Page_DirectoryEntryOut_: {
+            /** Items */
+            items: components["schemas"]["DirectoryEntryOut"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /**
+             * Has More
+             * @default false
+             */
+            has_more: boolean;
+        };
         /** Page[ProjectSummary] */
         Page_ProjectSummary_: {
             /** Items */
@@ -1492,6 +2056,15 @@ export interface components {
              * @default false
              */
             has_more: boolean;
+        };
+        /** PermissionInfo */
+        PermissionInfo: {
+            /** Key */
+            key: string;
+            /** Description */
+            description: string;
+            /** Area */
+            area: string;
         };
         /**
          * ProblemDetail
@@ -1634,6 +2207,11 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /**
          * ProjectUpdate
@@ -1656,6 +2234,16 @@ export interface components {
             site_city?: string | null;
             /** Site Country Code */
             site_country_code?: string | null;
+        };
+        /**
+         * RoleRef
+         * @description Verweis auf eine Systemrolle.
+         */
+        RoleRef: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
         };
         /** RoleSummary */
         RoleSummary: {
@@ -1865,6 +2453,20 @@ export interface components {
              * Format: uuid
              */
             organization_id: string;
+        };
+        /**
+         * SystemRoleOut
+         * @description Eine feste Systemrolle mit Einsatzzweck und Berechtigungen.
+         */
+        SystemRoleOut: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Permissions */
+            permissions: components["schemas"]["PermissionInfo"][];
         };
         /**
          * TokenResponse
@@ -2627,7 +3229,7 @@ export interface operations {
                 q?: string | null;
                 status?: ("draft" | "active" | "completed" | "archived") | null;
                 customer_id?: string | null;
-                sort?: "created_at" | "name";
+                sort?: "created_at" | "name" | "updated_at";
                 limit?: number;
                 cursor?: string | null;
             };
@@ -3658,6 +4260,763 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listSystemRoles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemRoleOut"][];
+                };
+            };
+        };
+    };
+    listMembers: {
+        parameters: {
+            query?: {
+                /** @description Name oder E-Mail */
+                q?: string | null;
+                status?: ("active" | "disabled" | "invited") | null;
+                limit?: number;
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_DirectoryEntryOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    getMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                member_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suspendMember: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                member_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, letzter Administrator (last-administrator), eigene Mitgliedschaft (self-lockout) oder unzulaessiger Zustand */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Unbekannte oder nicht vergebbare Rolle */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    reactivateMember: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                member_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, letzter Administrator (last-administrator), eigene Mitgliedschaft (self-lockout) oder unzulaessiger Zustand */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Unbekannte oder nicht vergebbare Rolle */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    getMemberPermissions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                member_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberPermissionsOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    replaceMemberRoles: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                member_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemberRolesUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, letzter Administrator (last-administrator), eigene Mitgliedschaft (self-lockout) oder unzulaessiger Zustand */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Unbekannte oder nicht vergebbare Rolle */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    getInvitationPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationPolicy"];
+                };
+            };
+        };
+    };
+    createInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationIssued"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, letzter Administrator (last-administrator), eigene Mitgliedschaft (self-lockout) oder unzulaessiger Zustand */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Unbekannte oder nicht vergebbare Rolle */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Kein Zustellweg eingerichtet */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    getInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revokeInvitation: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                invitation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, letzter Administrator (last-administrator), eigene Mitgliedschaft (self-lockout) oder unzulaessiger Zustand */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Unbekannte oder nicht vergebbare Rolle */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    reissueInvitation: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                invitation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationIssued"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, letzter Administrator (last-administrator), eigene Mitgliedschaft (self-lockout) oder unzulaessiger Zustand */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Unbekannte oder nicht vergebbare Rolle */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Kein Zustellweg eingerichtet */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    previewInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationTokenIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationPreview"];
+                };
+            };
+            /** @description Einladung ungueltig (invitation-invalid) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Zu viele Versuche */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    acceptInvitationWithNewAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptWithNewAccount"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationAccepted"];
+                };
+            };
+            /** @description Einladung ungueltig (invitation-invalid) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Konto existiert bereits (invitation-requires-login) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Passwortregeln nicht erfuellt */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Zu viele Versuche */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    acceptInvitationWithExistingAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptWithExistingAccount"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationAccepted"];
+                };
+            };
+            /** @description Anmeldedaten falsch */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Einladung ungueltig (invitation-invalid) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Bereits Mitglied */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Zu viele Versuche */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
         };

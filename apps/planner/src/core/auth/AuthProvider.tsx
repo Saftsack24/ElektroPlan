@@ -17,6 +17,13 @@ interface AuthContextValue extends AuthState {
   login: (email: string, password: string, organizationId?: string) => Promise<void>;
   logout: () => Promise<void>;
   switchOrganization: (organizationId: string) => Promise<void>;
+  /**
+   * Lädt Benutzer, Rollen und Rechte neu. Rechte gelten serverseitig ab der
+   * nächsten Anfrage; die Oberfläche zieht damit nach - etwa nach einer
+   * eigenen Rollenänderung oder wenn das Fenster wieder in den Vordergrund
+   * kommt.
+   */
+  aktualisieren: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -107,6 +114,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [api]);
 
+  const aktualisieren = useCallback(async () => {
+    try {
+      const me = await api.get("/api/v1/me");
+      const modules = await api.get("/api/v1/me/modules");
+      setState({
+        status: "authenticated",
+        me,
+        activeModuleIds: new Set(modules.map((module) => module.id)),
+        permissions: new Set(me.permissions),
+      });
+    } catch {
+      // Ein 401 hat der Client bereits behandelt (Erneuerung oder Abmeldung).
+      // Andere Fehler - etwa ein kurzer Netzausfall - melden niemanden ab.
+    }
+  }, [api]);
+
+  // Kommt das Fenster zurück, werden Rollen und Rechte neu gelesen. Eine
+  // Sperre oder Rollenänderung durch einen Administrator wird so auch in der
+  // Oberfläche sichtbar - serverseitig gilt sie ohnehin sofort.
+  const angemeldet = state.status === "authenticated";
+  useEffect(() => {
+    if (!angemeldet) return;
+    const beiRueckkehr = () => {
+      if (document.visibilityState === "visible") void aktualisieren();
+    };
+    document.addEventListener("visibilitychange", beiRueckkehr);
+    window.addEventListener("focus", beiRueckkehr);
+    return () => {
+      document.removeEventListener("visibilitychange", beiRueckkehr);
+      window.removeEventListener("focus", beiRueckkehr);
+    };
+  }, [angemeldet, aktualisieren]);
+
   useEffect(() => {
     // Beim Start einmal versuchen, aus dem Cookie eine Sitzung herzustellen.
     void (async () => {
@@ -149,8 +189,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo<AuthContextValue>(
-    () => ({ ...state, api, login, logout, switchOrganization }),
-    [state, api, login, logout, switchOrganization],
+    () => ({ ...state, api, login, logout, switchOrganization, aktualisieren }),
+    [state, api, login, logout, switchOrganization, aktualisieren],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

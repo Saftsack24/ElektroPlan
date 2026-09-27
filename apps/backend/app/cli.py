@@ -3,6 +3,7 @@
 python -m app.cli seed
 python -m app.cli check-modules
 python -m app.cli export-openapi [pfad]
+python -m app.cli purge-invitations
 """
 
 from __future__ import annotations
@@ -11,7 +12,10 @@ import json
 import sys
 from pathlib import Path
 
+from app.config import get_settings
+from app.core.invitations.service import purge_invitations
 from app.core.seed import seed_initial_data
+from app.db.mixins import utcnow
 from app.db.session import session_scope
 from app.main import build_registry, create_app
 
@@ -49,10 +53,20 @@ def cmd_export_openapi(args: list[str]) -> int:
     return 0
 
 
+def cmd_purge_invitations(_: list[str]) -> int:
+    """Loescht abgeschlossene und abgelaufene Einladungen nach der Aufbewahrungsfrist."""
+    days = get_settings().invitation_retention_days
+    with session_scope() as session:
+        removed = purge_invitations(session, now=utcnow(), retention_days=days)
+    print(f"Entfernte Einladungen: {removed} (aelter als {days} Tage abgeschlossen)")
+    return 0
+
+
 COMMANDS = {
     "seed": cmd_seed,
     "check-modules": cmd_check_modules,
     "export-openapi": cmd_export_openapi,
+    "purge-invitations": cmd_purge_invitations,
 }
 
 

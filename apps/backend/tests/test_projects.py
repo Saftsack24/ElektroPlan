@@ -232,6 +232,35 @@ def test_filter_nach_status_und_kunde(
     assert {item["id"] for item in nach_kunde["items"]} == {entwurf["id"], laufend["id"]}
 
 
+def test_sortierung_nach_letzter_aenderung_blaettert_vollstaendig(
+    api: TestClient, token: str, kunde: dict[str, object]
+) -> None:
+    """``sort=updated_at`` (Startseite, Phase 4.2): zuletzt geaenderte zuerst."""
+    projekte = [_projekt(api, token, kunde["id"], name=f"Projekt {n}") for n in range(5)]
+    # Das aelteste Projekt wird zuletzt geaendert und muss nach vorn.
+    geaendert = api.patch(
+        f"/api/v1/projects/{projekte[0]['id']}",
+        headers={**auth_headers(token), "If-Match": "1"},
+        json={"name": "Projekt 0 geaendert"},
+    )
+    assert geaendert.status_code == 200
+
+    gesehen: list[dict[str, object]] = []
+    cursor: str | None = None
+    while True:
+        params = {"sort": "updated_at", "limit": "2", **({"cursor": cursor} if cursor else {})}
+        seite = api.get("/api/v1/projects", headers=auth_headers(token), params=params).json()
+        gesehen.extend(seite["items"])
+        if not seite["has_more"]:
+            break
+        cursor = seite["next_cursor"]
+
+    assert gesehen[0]["id"] == projekte[0]["id"]
+    assert len({item["id"] for item in gesehen}) == 5 == len(gesehen)
+    zeiten = [str(item["updated_at"]) for item in gesehen]
+    assert zeiten == sorted(zeiten, reverse=True)
+
+
 def test_suche_findet_ueber_den_kundennamen(
     api: TestClient, token: str, kunde: dict[str, object]
 ) -> None:

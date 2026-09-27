@@ -1,7 +1,7 @@
 import type { CustomerOut } from "@elektroplan/api-client";
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 
 import { useCursorListe } from "../../core/api/useCursorListe";
 import { useAuth, usePermission } from "../../core/auth/AuthProvider";
@@ -35,6 +35,17 @@ export default function CustomersPage() {
 
   const [suche, setSuche] = useState("");
   const [dialogOffen, setDialogOffen] = useState(false);
+  const [parameter, setParameter] = useSearchParams();
+
+  // Schnellaktion der Startseite: "?neu=1" oeffnet den Anlagedialog einmal
+  // und verschwindet danach aus der Adresse.
+  useEffect(() => {
+    if (parameter.get("neu") !== "1") return;
+    if (darfSchreiben) setDialogOffen(true);
+    const rest = new URLSearchParams(parameter);
+    rest.delete("neu");
+    setParameter(rest, { replace: true });
+  }, [parameter, setParameter, darfSchreiben]);
   const [erfolg, setErfolg] = useState<string | null>(null);
   const [zuletztAngelegt, setZuletztAngelegt] = useState<string | null>(null);
 

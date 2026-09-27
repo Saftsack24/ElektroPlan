@@ -13,6 +13,8 @@ from app.core.auth.api import router as auth_router
 from app.core.authorization.permissions import CORE_PERMISSION_NAMESPACES, CORE_PERMISSIONS
 from app.core.customers.api import router as customers_router
 from app.core.files.api import router as files_router
+from app.core.invitations.api import router as invitation_acceptance_router
+from app.core.members.api import router as members_router
 from app.core.module_registry.api import router as modules_router
 from app.core.module_registry.descriptor import ModuleDescriptor, ModuleKind
 from app.core.projects.api import router as projects_router
@@ -24,6 +26,8 @@ core_router.include_router(audit_router)
 core_router.include_router(customers_router)
 core_router.include_router(projects_router)
 core_router.include_router(files_router)
+core_router.include_router(members_router)
+core_router.include_router(invitation_acceptance_router)
 
 #: Tabellen des Core. Als Positivliste gefuehrt, weil der Core kein
 #: Tabellenpraefix hat und ein Praefix wie ``core_`` in der Praxis nur
@@ -34,6 +38,8 @@ CORE_TABLES: tuple[str, ...] = (
     "organizations",
     "users",
     "organization_members",
+    "member_invitations",
+    "member_invitation_roles",
     "organization_modules",
     "roles",
     "permissions",

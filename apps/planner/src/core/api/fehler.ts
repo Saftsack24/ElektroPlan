@@ -25,9 +25,21 @@ const CODE_TEXTE: Record<string, string> = {
   greater_than_equal: "Der Wert ist zu klein.",
   less_than_equal: "Der Wert ist zu groß.",
   extra_forbidden: "Dieses Feld kann hier nicht gesetzt werden.",
+  value_error_email: "Bitte eine gültige E-Mail-Adresse angeben.",
+  too_short: "Bitte mindestens einen Eintrag wählen.",
+  unknown_role: "Nur die festen Rollen des Betriebs sind wählbar.",
+  duplicate_role: "Jede Rolle nur einmal wählen.",
 };
 
-export function feldtext(code: string): string {
+/**
+ * Codes, deren Servermeldung schon die konkrete Regel nennt (etwa die
+ * Mindestlänge eines Passworts). Die Meldung wird dann übernommen statt
+ * durch einen allgemeinen Satz ersetzt.
+ */
+const SERVERTEXT_CODES = new Set(["password_policy"]);
+
+export function feldtext(code: string, servertext?: string): string {
+  if (SERVERTEXT_CODES.has(code) && servertext) return servertext;
   return CODE_TEXTE[code] ?? "Diese Eingabe ist ungültig.";
 }
 
@@ -43,7 +55,7 @@ export function alsFormularfehler<FeldT extends string>(
   for (const eintrag of error.problem?.errors ?? []) {
     const name = eintrag.field as FeldT;
     if (bekannteFelder.includes(name)) {
-      felder[name] = feldtext(eintrag.code);
+      felder[name] = feldtext(eintrag.code, eintrag.message);
     }
   }
 
