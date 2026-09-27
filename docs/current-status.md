@@ -25,11 +25,12 @@ Startseite
 **Phase 4a — 2D-Editor: ABGESCHLOSSEN** (Exit-Kriterium gemessen, siehe Abschnitt 3)
 **Phase 4a.1 — Navigationsschutz und Testdatenbank-Sicherheit: ABGESCHLOSSEN**
 **Phase 4.2 — Benutzerverwaltung, Rollenvergabe und Startseite: ABGESCHLOSSEN**
-(noch nicht committet)
+(committet als `66cbff3`)
 **Phase 4b — 3D-Ansicht: NICHT BEGONNEN**, wartet auf Freigabe
 
-> Phase 4a und 4a.1 sind committet (`887f254`). Phase 4.2 ist **noch nicht committet**.
-> Vor Phase 4b ist die Entscheidung **T9** (deckungsgleiche Wände) zu treffen.
+> Alle abgeschlossenen Phasen sind committet: Phase 4a und 4a.1 als `887f254`,
+> Phase 4.2 als `66cbff3`. Vor Phase 4b sind die Entscheidungen **T8** (Wandhöhe und
+> Wandtyp) und **T9** (deckungsgleiche Wände) verbindlich zu treffen.
 
 ---
 
@@ -700,11 +701,16 @@ HSTS, Virenscan, MFA für administrative Konten.
 
 ## 9. Nächste geplante Aufgabe
 
-**Zuerst:** Abnahme und Commit von Phase 4.2. Empfohlen vor Phase 4b: ein kurzer
-Bedientest des Editors und der Administration mit einer echten Person (das
-20-Minuten-Kriterium wurde automatisiert gemessen).
+Phase 4.2 ist abgeschlossen und als `66cbff3` committet. Weiteres Vorgehen:
 
-**Danach Phase 4b — 3D-Ansicht:** extrudierte Räume aus Kontur und Höhe, Öffnungen als
+1. **Optional:** ein kurzer Bedientest des Editors und der Administration mit einer
+   echten Person (das 20-Minuten-Kriterium wurde automatisiert gemessen).
+2. **Verbindlich:** die Entscheidungen **T8** (Wandhöhe und Wandtyp) und **T9**
+   (deckungsgleiche Wände), siehe Abschnitt 7 „Offene fachliche Entscheidungen“. Sie
+   werden fachlich getroffen, nicht von der Umsetzung vorweggenommen.
+3. **Phase 4b** erst nach ausdrücklicher Freigabe.
+
+**Phase 4b — 3D-Ansicht (zur Einordnung):** extrudierte Räume aus Kontur und Höhe, Öffnungen als
 Aussparungen, Orbit/Zoom/Pan, Auswahl, **keine** Geometriebearbeitung in 3D. Grundlage
 ist derselbe Plan-Endpunkt; offene Entscheidungen **T9** (deckungsgleiche Wände) und
 T8 (Wandhöhe/-typ) vorher klären.
