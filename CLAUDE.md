@@ -205,11 +205,20 @@ das `Makefile` bietet dieselben Ziele.
 Alembic-Head, Backend-Tests, OpenAPI-Drift-Check, Frontend-Typecheck, ESLint,
 Frontend-Tests und Build.
 
-Datenbanktests brauchen PostgreSQL:
+Datenbanktests brauchen PostgreSQL - und zwar eine **eigene Testdatenbank**. Die Tests
+leeren und erzeugen das Schema (`drop_all`); gegen die Entwicklungsdatenbank
+`elektroplan` gerichtet, wären deren Daten verloren.
 
 ```powershell
-$env:ELEKTROPLAN_TEST_DATABASE_URL = 'postgresql+psycopg://elektroplan:elektroplan@localhost:5432/elektroplan'
+# einmalig: docker compose exec postgres createdb -U elektroplan elektroplan_test
+$env:ELEKTROPLAN_TEST_DATABASE_URL = 'postgresql+psycopg://elektroplan:elektroplan@localhost:5432/elektroplan_test'
 ```
+
+Technisch abgesichert (`apps/backend/tests/datenbankschutz.py`): Der Testlauf bricht vor
+jeder Schemaänderung ab, wenn die Test-URL auf die Entwicklungsdatenbank
+(`ELEKTROPLAN_DATABASE_URL`) zeigt oder der Datenbankname nicht `test` als eigenen
+Namensteil trägt (`elektroplan_test`, `test_elektroplan`, `ci_test_42` …). CI verwendet
+dieselbe Regel mit eigener Testdatenbank.
 
 ---
 

@@ -32,8 +32,33 @@ from app.core.seed import seed_initial_data
 from app.db.session import get_session
 from app.main import build_registry, create_app
 from app.model_registry import metadata
+from tests.datenbankschutz import UnsichereTestdatenbankError, pruefe_testdatenbank
 
 TEST_DATABASE_URL = os.environ.get("ELEKTROPLAN_TEST_DATABASE_URL", "")
+
+
+def entwicklungsdatenbank_url() -> str:
+    """URL der normalen Entwicklungsdatenbank - aus derselben Konfiguration wie die App."""
+    from app.config import get_settings
+
+    return get_settings().database_url
+
+
+def pytest_sessionstart(session: pytest.Session) -> None:
+    """Bricht den **gesamten** Lauf ab, bevor irgendein Test das Schema anfasst.
+
+    Ist keine Test-URL gesetzt, laufen die Datenbanktests nicht (sichtbar
+    übersprungen) - dann gibt es auch keine destruktive Operation. Ist eine
+    gesetzt, muss sie sicher sein (``tests/datenbankschutz.py``).
+    """
+    if not TEST_DATABASE_URL:
+        return
+    try:
+        pruefe_testdatenbank(TEST_DATABASE_URL, entwicklungsdatenbank_url())
+    except UnsichereTestdatenbankError as fehler:
+        pytest.exit(f"Testlauf abgebrochen: {fehler}", returncode=2)
+
+
 ADMIN_PASSWORD = "test-passwort-1234"
 
 requires_database = pytest.mark.skipif(
@@ -92,6 +117,9 @@ def engine() -> Iterator[Engine]:
     """Engine auf die Testdatenbank; Schema wird einmal je Lauf erzeugt."""
     if not TEST_DATABASE_URL:
         pytest.skip("Keine Testdatenbank konfiguriert.")
+    # Zweite Sicherung direkt vor der destruktiven Operation - falls jemand die
+    # Fixture außerhalb einer normalen Sitzung benutzt.
+    pruefe_testdatenbank(TEST_DATABASE_URL, entwicklungsdatenbank_url())
     test_engine = create_engine(TEST_DATABASE_URL, future=True)
     metadata.drop_all(test_engine)
     metadata.create_all(test_engine)

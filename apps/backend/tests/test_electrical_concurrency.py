@@ -292,6 +292,8 @@ def test_gleichzeitige_hoehenaenderung_und_oeffnung_bleiben_konsistent(
         )
         session.commit()
         room_id, wall_id = view.room.id, detail.wall.id
+        # Die Wand hat die Raumversion bereits weitergezaehlt (ADR 0014).
+        raumversion = service.get_room(room_id).room.version
     finally:
         session.close()
 
@@ -301,7 +303,7 @@ def test_gleichzeitige_hoehenaenderung_und_oeffnung_bleiben_konsistent(
         service = ElectricalRoomService(session, organization_id)
         barriere.wait()
         if name == "A":
-            service.update_room(room_id, RoomUpdate(height_mm=2_000), expected_version=1)
+            service.update_room(room_id, RoomUpdate(height_mm=2_000), expected_version=raumversion)
         else:
             service.create_opening(
                 wall_id,
@@ -317,9 +319,16 @@ def test_gleichzeitige_hoehenaenderung_und_oeffnung_bleiben_konsistent(
 
     lauf = gleichzeitig(factory, arbeiten)
 
-    # Genau eine Seite gewinnt; die andere scheitert an der Hoehenpruefung.
+    # Genau eine Seite gewinnt. Seit Phase 4a (ADR 0014) gibt es zwei
+    # zulaessige Verlierer: Kommt das Fenster zuerst, zaehlt es die
+    # Raumversion weiter, und die Hoehenaenderung scheitert schon an ``If-Match``
+    # (``409``). Kommt die Hoehenaenderung zuerst, scheitert das Fenster an der
+    # Hoehenpruefung (``422``). In keinem Fall gewinnen beide.
     assert len(lauf.erfolge) == 1, lauf.fehlerklassen
-    assert lauf.fehlerklassen == [ValidationFailedError]
+    if lauf.erfolge == ["A"]:
+        assert lauf.fehlerklassen == [ValidationFailedError]
+    else:
+        assert lauf.fehlerklassen == [VersionConflictError]
 
     # Der Endzustand ist in jedem Fall in sich stimmig.
     session = factory()

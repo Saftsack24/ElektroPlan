@@ -1,4 +1,4 @@
-"""Endpunkte des Fachmoduls ``electrical`` (Phase 3).
+"""Endpunkte des Fachmoduls ``electrical`` (Phase 3, erweitert in Phase 4a).
 
 Eingehaengt unter ``/api/v1/modules/electrical`` - Fachmodulrouten liegen
 bewusst unter ihrem Modul (docs/modules.md, Abschnitt 5).
@@ -27,25 +27,30 @@ from app.core.preconditions import require_if_match
 from app.db.session import get_session
 from app.errors import ProblemDetail
 from app.modules.electrical.events import PlanChangeKind, plan_updated
-from app.modules.electrical.geometry import Point, segment_length_mm
+from app.modules.electrical.geometry import GeometryProblem, Point, segment_length_mm
 from app.modules.electrical.models import ElectricalOpening
 from app.modules.electrical.permissions import PLAN_READ, PLAN_WRITE
 from app.modules.electrical.schemas import (
+    FloorPlanOut,
     GeometryProblemOut,
     OpeningCreate,
     OpeningOut,
     OpeningUpdate,
     RoomContourOut,
+    RoomContourUpdate,
     RoomCreate,
     RoomOut,
+    RoomPlanOut,
     RoomUpdate,
     WallCreate,
     WallOrder,
     WallOut,
+    WallPlanOut,
     WallUpdate,
 )
 from app.modules.electrical.service import (
     ElectricalRoomService,
+    RoomPlan,
     RoomView,
     WallDetail,
     WriteResult,
@@ -123,6 +128,31 @@ def _wall_out(detail: WallDetail) -> WallOut:
 
 def _opening_out(opening: ElectricalOpening) -> OpeningOut:
     return OpeningOut.model_validate(opening)
+
+
+def _problem_out(problem: GeometryProblem) -> GeometryProblemOut:
+    return GeometryProblemOut(
+        code=problem.code,
+        message=problem.message,
+        wall_ids=[uuid.UUID(key) for key in problem.keys],
+    )
+
+
+def _room_plan_out(plan: RoomPlan) -> RoomPlanOut:
+    """Raum samt Waenden und Oeffnungen - ein Objekt je Raum im Planungsstand."""
+    return RoomPlanOut(
+        **_room_out(plan.view).model_dump(),
+        walls=[
+            WallPlanOut(
+                **_wall_out(
+                    WallDetail(wall=item.wall, opening_count=len(item.openings))
+                ).model_dump(),
+                openings=[_opening_out(opening) for opening in item.openings],
+            )
+            for item in plan.walls
+        ],
+        contour_problems=[_problem_out(problem) for problem in plan.view.contour.problems],
+    )
 
 
 def _commit(
@@ -304,15 +334,79 @@ def get_contour(
         area_mm2=report.area_mm2,
         area_m2=area_m2(report.area_mm2),
         perimeter_mm=report.perimeter_mm,
-        problems=[
-            GeometryProblemOut(
-                code=problem.code,
-                message=problem.message,
-                wall_ids=[uuid.UUID(key) for key in problem.keys],
-            )
-            for problem in report.problems
-        ],
+        problems=[_problem_out(problem) for problem in report.problems],
     )
+
+
+# ------------------------------------------------------ Planungsstand (4a)
+
+
+@router.get(
+    "/floors/{floor_id}/plan",
+    response_model=FloorPlanOut,
+    operation_id="getElectricalFloorPlan",
+    summary="Planungsstand eines Geschosses",
+    responses=_READ_RESPONSES,
+)
+def get_floor_plan(
+    floor_id: uuid.UUID,
+    current_user: CurrentUser = Depends(require_permission(PLAN_READ)),
+    session: Session = Depends(get_session),
+) -> FloorPlanOut:
+    """Raeume, Waende und Oeffnungen eines Geschosses in **einer** Antwort.
+
+    Fuer den grafischen Editor, der den Stand ohnehin vollstaendig braucht.
+    Geschossbezogen statt projektweit: Der Editor zeigt genau ein Geschoss,
+    und die Antwort bleibt damit begrenzt. Die Anzahl der Datenbankabfragen
+    haengt nicht von der Zahl der Raeume ab. Archivierte Projekte bleiben
+    lesbar.
+    """
+    service = ElectricalRoomService(session, current_user.organization_id)
+    plan = service.floor_plan(floor_id)
+    return FloorPlanOut(
+        floor_id=plan.context.floor_id,
+        project_id=plan.context.project_id,
+        rooms=[_room_plan_out(room) for room in plan.rooms],
+    )
+
+
+@router.put(
+    "/rooms/{room_id}/contour",
+    response_model=RoomPlanOut,
+    operation_id="replaceElectricalRoomContour",
+    summary="Raumkontur als Ganzes speichern",
+    responses=_WRITE_RESPONSES,
+)
+def replace_contour(
+    room_id: uuid.UUID,
+    payload: RoomContourUpdate,
+    current_user: CurrentUser = Depends(require_permission(PLAN_WRITE)),
+    session: Session = Depends(get_session),
+    bus: EventBus = Depends(get_event_bus),
+    expected_version: int = Depends(require_if_match),
+) -> RoomPlanOut:
+    """Ersetzt Waende und Oeffnungen eines Raums **atomar** durch den Zielzustand.
+
+    ``If-Match`` traegt die Version des **Raums** - sie ist die Version der
+    gesamten Raumgeometrie. Die Reihenfolge der Waende ist die Reihenfolge in
+    der Liste. Bekannte IDs werden geaendert, neue angelegt, fehlende Waende
+    entfernt. Oeffnungen verschwinden nur, wenn sie in
+    ``removed_opening_ids`` stehen. Jeder Fehler laesst den Raum
+    unveraendert; bei Erfolg entsteht genau ein ``electrical.plan.updated``
+    (``walls_changed``).
+
+    Der ``GET`` auf derselben Adresse liefert den Pruefbericht dieser Kontur.
+    """
+    service = ElectricalRoomService(session, current_user.organization_id)
+    plan, result = service.replace_contour(room_id, payload, expected_version=expected_version)
+    _commit(
+        session=session,
+        bus=bus,
+        current_user=current_user,
+        result=result,
+        change_kind=PlanChangeKind.WALLS_CHANGED,
+    )
+    return _room_plan_out(plan)
 
 
 # ----------------------------------------------------------------------- Wand

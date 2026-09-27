@@ -60,7 +60,7 @@ export class ApiError extends Error {
 
 // --------------------------------------------------------------- Typableitung
 
-type HttpMethod = "get" | "post" | "patch" | "delete";
+type HttpMethod = "get" | "post" | "put" | "patch" | "delete";
 
 /** Alle Pfade, die diese Methode anbieten. */
 export type PathsWithMethod<M extends HttpMethod> = {
@@ -173,6 +173,15 @@ export interface ApiClient {
     options: RequestOptions<Operation<P, "patch">>,
   ): Promise<SuccessResponse<Operation<P, "patch">>>;
 
+  /**
+   * Ersetzt eine Ressource als Ganzes. Nur dort verwendet, wo die API einen
+   * vollstaendigen Zielzustand erwartet (etwa die Kontur eines Raums).
+   */
+  put<P extends PathsWithMethod<"put">>(
+    path: P,
+    options: RequestOptions<Operation<P, "put">>,
+  ): Promise<SuccessResponse<Operation<P, "put">>>;
+
   delete<P extends PathsWithMethod<"delete">>(
     path: P,
     options: RequestOptions<Operation<P, "delete">>,
@@ -280,6 +289,7 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
   return {
     get: call("get"),
     post: call("post"),
+    put: call("put"),
     patch: call("patch"),
     delete: call("delete"),
     upload,

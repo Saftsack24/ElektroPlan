@@ -231,13 +231,18 @@ Materialermittlung, keine Kalkulation, kein Offline-Sync, kein Platzhaltermodul.
 
 ---
 
-## Phase 4a — 2D-Editor · NOT STARTED
+## Phase 4a — 2D-Editor · DONE (2026-09-26, noch nicht committet)
 
-Canvas-Editor: Räume zeichnen (Rechteck und Polygon), Wände, Öffnungen, Raster,
-Fangfunktion, Maßanzeige, Undo/Redo, Speichern.
+Grafischer Editor (SVG, ADR 0014): Räume zeichnen (Rechteck und Polygon), Wände,
+Öffnungen, Raster, Fangfunktion, Maßanzeige, Undo/Redo, bewusstes atomares Speichern.
 
 **Exit:** Ein realistischer Grundriss (Einfamilienhaus, 6–8 Räume) ist in unter 20 Minuten
 erfassbar. Dieser Wert wird gemessen, nicht geschätzt.
+
+**Nachweis:** 7 Räume, 30 Wände, 15 Öffnungen in **126,7 s** vom leeren Geschoss bis zum
+letzten Speichern — gemessen in einem **automatisierten** Browserdurchlauf über die
+Oberfläche (`docs/task-history.md`, Task 0014). Ein Usability-Test mit Menschen steht aus.
+„Canvas-Editor" bezeichnete die grafische Autorenfläche, nicht das HTML-Element.
 
 ---
 

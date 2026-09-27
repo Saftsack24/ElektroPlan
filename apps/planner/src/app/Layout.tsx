@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 
 import { useAuth } from "../core/auth/AuthProvider";
+import { verlassenBestaetigen } from "../core/ui/ungespeichert";
 import { moduleRegistry } from "../modules";
 
 export function Layout() {
@@ -25,7 +26,9 @@ export function Layout() {
         <div className="shell__user">
           <span className="shell__org">{me?.organization.name}</span>
           <span className="shell__email">{me?.email}</span>
-          <button className="button button--ghost" type="button" onClick={() => void logout()}>
+          <button className="button button--ghost" type="button" onClick={() => {
+              if (verlassenBestaetigen()) void logout();
+            }}>
             Abmelden
           </button>
         </div>

@@ -24,8 +24,10 @@ from app.modules.electrical.geometry import (
     DEFAULT_WALL_THICKNESS_MM,
     MAX_COORDINATE_MM,
     MAX_OPENING_SIZE_MM,
+    MAX_OPENINGS_PER_WALL,
     MAX_ROOM_HEIGHT_MM,
     MAX_WALL_THICKNESS_MM,
+    MAX_WALLS_PER_ROOM,
     MIN_COORDINATE_MM,
     MIN_OPENING_SIZE_MM,
     MIN_ROOM_HEIGHT_MM,
@@ -53,6 +55,64 @@ class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+# ------------------------------------------------------- Kontur (Phase 4a)
+
+
+class ContourOpeningIn(_Strict):
+    """Oeffnung als Teil einer vollstaendigen Raumkontur.
+
+    ``id`` fehlt oder ist neu: Die Oeffnung wird angelegt - mit genau dieser
+    ID, wenn sie angegeben ist (clientseitig erzeugte UUID, ADR 0007). Ist die
+    ID bereits eine Oeffnung **dieser** Wand, wird sie geaendert. Eine
+    Oeffnung wechselt ihre Wand nicht.
+    """
+
+    id: uuid.UUID | None = None
+    kind: OpeningKindValue
+    offset_mm: int = Field(ge=0, le=MAX_COORDINATE_MM)
+    width_mm: int = Field(ge=MIN_OPENING_SIZE_MM, le=MAX_OPENING_SIZE_MM)
+    height_mm: int = Field(ge=MIN_OPENING_SIZE_MM, le=MAX_OPENING_SIZE_MM)
+    sill_height_mm: int = Field(default=0, ge=0, le=MAX_OPENING_SIZE_MM)
+
+
+class ContourWallIn(_Strict):
+    """Wand als Teil einer vollstaendigen Raumkontur.
+
+    Die **Position in der Liste** ist die Konturreihenfolge. ``id`` wie bei
+    :class:`ContourOpeningIn`: bekannt heisst aendern, fehlend oder neu heisst
+    anlegen. ``openings`` ist die vollstaendige Liste der Oeffnungen dieser
+    Wand.
+    """
+
+    id: uuid.UUID | None = None
+    x1_mm: int = _coordinate(required=True)
+    y1_mm: int = _coordinate(required=True)
+    x2_mm: int = _coordinate(required=True)
+    y2_mm: int = _coordinate(required=True)
+    thickness_mm: int = Field(
+        default=DEFAULT_WALL_THICKNESS_MM,
+        ge=MIN_WALL_THICKNESS_MM,
+        le=MAX_WALL_THICKNESS_MM,
+    )
+    openings: list[ContourOpeningIn] = Field(default_factory=list, max_length=MAX_OPENINGS_PER_WALL)
+
+
+class RoomContourUpdate(_Strict):
+    """Vollstaendiger Zielzustand der Raumgeometrie (``PUT /rooms/{id}/contour``).
+
+    Ein Vorgang, eine Transaktion: Entweder gilt danach genau diese Kontur,
+    oder es hat sich nichts geaendert. Waende, die in ``walls`` fehlen, werden
+    entfernt. Oeffnungen verschwinden dagegen **nie** stillschweigend: Eine
+    vorhandene Oeffnung muss entweder in ``walls`` stehen oder ausdruecklich
+    in ``removed_opening_ids``. Sonst lehnt der Server ab.
+    """
+
+    walls: list[ContourWallIn] = Field(max_length=MAX_WALLS_PER_ROOM)
+    removed_opening_ids: list[uuid.UUID] = Field(
+        default_factory=list, max_length=MAX_WALLS_PER_ROOM * MAX_OPENINGS_PER_WALL
+    )
+
+
 # ---------------------------------------------------------------------- Raum
 
 
@@ -60,11 +120,18 @@ class RoomCreate(_Strict):
     """Neuer Raum auf einem Geschoss.
 
     ``height_mm`` bleibt leer, wenn die Standardhoehe des Geschosses gilt.
+
+    ``walls`` ist optional (Phase 4a): Der grafische Editor legt einen
+    gezeichneten Raum **samt** Kontur in einem Vorgang an. Ohne diese Angabe
+    entstuende ein Raum ohne Waende, wenn die zweite Anfrage scheitert. Die
+    Liste folgt denselben Regeln wie ``PUT /rooms/{id}/contour``; eine leere
+    Liste ist der bisherige Fall "Raum zuerst, Waende spaeter".
     """
 
     name: str = Field(min_length=1, max_length=120)
     room_number: str | None = Field(default=None, min_length=1, max_length=30)
     height_mm: int | None = Field(default=None, ge=MIN_ROOM_HEIGHT_MM, le=MAX_ROOM_HEIGHT_MM)
+    walls: list[ContourWallIn] = Field(default_factory=list, max_length=MAX_WALLS_PER_ROOM)
 
 
 class RoomUpdate(_Strict):
@@ -247,3 +314,37 @@ class OpeningOut(BaseModel):
     version: int
     created_at: datetime
     updated_at: datetime
+
+
+# -------------------------------------------------------- Planungsstand (4a)
+
+
+class WallPlanOut(WallOut):
+    """Wand im Planungsstand - mit ihren Oeffnungen, vom Wandanfang aus."""
+
+    openings: list[OpeningOut]
+
+
+class RoomPlanOut(RoomOut):
+    """Raum im Planungsstand: gespeicherte Werte, berechnete Kontur, Waende.
+
+    ``contour_problems`` ist derselbe Befund wie im Pruefbericht
+    ``GET /rooms/{id}/contour`` - hier gleich mitgeliefert, damit der Editor
+    die betroffenen Waende markieren kann, ohne je Raum nachzufragen.
+    """
+
+    walls: list[WallPlanOut]
+    contour_problems: list[GeometryProblemOut]
+
+
+class FloorPlanOut(BaseModel):
+    """Vollstaendiger Planungsstand eines Geschosses in **einer** Antwort.
+
+    Bewusst ohne Stammdaten des Geschosses oder Projekts: Die liefert der
+    Core. Hier steht nur, was das Fachmodul besitzt - und die beiden IDs,
+    an denen es haengt.
+    """
+
+    floor_id: uuid.UUID
+    project_id: uuid.UUID
+    rooms: list[RoomPlanOut]

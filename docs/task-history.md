@@ -1407,3 +1407,310 @@ Versionskonfliktregeln sind unverändert.
 **Nächster sinnvoller Schritt:**
 Commit von Phase 3 samt dieser Korrektur, danach Phase 4a — 2D-Editor.
 **Nicht ohne ausdrückliche Freigabe beginnen.**
+
+---
+
+## Task 0014 – Phase 4a: Grafischer 2D-Editor
+
+**Datum:** 2026-09-26
+
+**Ziel:**
+Aus dem formularbasierten Raummodell (Phase 3) einen alltagstauglichen grafischen
+Grundrisseditor machen: Räume als Rechteck oder Polygon zeichnen, Konturen und Wände
+bearbeiten, Türen, Fenster und Durchgänge platzieren, Raster und Fang, Maße, Zoom und
+Pan, Undo/Redo, bewusstes und konfliktgeschütztes Speichern, verständliche
+Validierungsrückmeldung. Exit-Kriterium: ein Einfamilienhausgeschoss mit 6–8 Räumen in
+unter 20 Minuten, gemessen.
+
+**Durchgeführte Änderungen:**
+
+1. **Darstellungsentscheidung SVG** ohne Zusatzbibliothek, dokumentiert in
+   [ADR 0014](decisions/0014-2d-editor-svg-and-atomic-contour.md). Kein Spike für Canvas
+   nötig: Die Messung mit 200 Segmenten zeigt keinen Engpass.
+2. **Backend, Fachmodul `electrical`:**
+   * `GET /floors/{floor_id}/plan` — Planungsstand eines Geschosses in konstant sechs
+     Abfragen; geschossbezogen statt projektweit (Begründung im ADR).
+   * `PUT /rooms/{room_id}/contour` — atomares Ersetzen der Raumgeometrie (Wände samt
+     Öffnungen, `removed_opening_ids`), Zielzustand als Ganzes geprüft, Projekt- vor
+     Raumsperre, `If-Match` auf die Raumversion, genau ein Event `walls_changed`.
+   * `POST /floors/{floor_id}/rooms` nimmt optional `walls` — Raum und Kontur in einer
+     Transaktion (Rechteck- und Polygonwerkzeug).
+   * **Raumversion = Version der Raumgeometrie**: Wand- und Öffnungsänderungen über die
+     Einzelendpunkte zählen die Raumversion jetzt ebenfalls weiter. Ohne das hätte ein
+     Editor mit altem Stand eine zwischenzeitliche Formularänderung überschreiben können.
+   * **Neulesen nach der Sperre** bei Wand- und Öffnungsendpunkten (Befund des neuen
+     Parallelitätstests Editor gegen Formular: vorher prüfte der Wartende gegen den
+     veralteten Stand und meldete `422 walls-intersect` statt `409 version-conflict`;
+     gespeichert wurde nie Falsches, aber die Begründung war irreführend).
+3. **Core, fachneutral:** `ProblemFieldError.keys` (optionale Kennungen der betroffenen
+   Objekte in `errors[]`); CORS erlaubt `PUT`; der API-Client-Wrapper kennt `put`.
+   Frontend: `core/ui/ungespeichert.ts` (Warnung bei ungespeicherten Änderungen für
+   `beforeunload`, interne Links, Projekt-Tabwechsel, Abmelden).
+4. **Frontend, Modul `electrical/editor/`:** reine Funktionen für Geometrie-Spiegel,
+   Viewport, Fang, Zeichen- und Bearbeitungswerkzeuge, Entwurf/API-Umwandlung,
+   Fehlerauswertung; ein Reducer für den Editorzustand; SVG-Zeichenfläche,
+   Werkzeugleiste, Eigenschaften-Seitenleiste, Steuerkomponente. Der Tab „Räume &
+   Grundriss" hat zwei Ansichten — „Grafischer Editor" und „Tabellen & Details" — auf
+   demselben Serverstand.
+5. **Geometrieparität:** versionierte Fixture `testdata/geometry/raumgeometrie.v1.json`
+   (Längen, Rechteck, L-Form, Halb-mm², offene Kontur, Lücke, Schleife, zurücklaufende
+   Wand, zu kurze Wand, Öffnungen innen/außen/berührend/überlappend), geprüft von
+   Backend **und** Frontend.
+6. **Im Browser gefundene und behobene Bedienfehler** (vor dem Messlauf):
+   * Hinweise und Fehlerboxen oberhalb der Zeichenfläche verschoben diese — Zeiger
+     trafen danach andere Stellen. Hinweise liegen jetzt als klickdurchlässige
+     Überlagerung in der Fläche, Serverrückmeldungen in der Seitenleiste, die
+     Speicherleiste hat eine feste Höhe.
+   * Der Namensdialog öffnete schon bei `pointerdown`; der `click` desselben Klicks traf
+     den Dialog bzw. dessen Hintergrund und schloss ihn oder nahm dem Feld den Fokus.
+     Zeichenwerkzeuge reagieren jetzt auf den abgeschlossenen Klick.
+   * Tastenkürzel wurden bei fokussierter Checkbox („Fang") unterdrückt; die Ausnahme
+     gilt jetzt nur für Text- und Auswahlfelder. `Strg+S` speichert auch aus Feldern.
+   * Raumwechsel mit ungespeichertem Entwurf bot nur „verwerfen oder bleiben"; jetzt
+     „speichern und wechseln" oder bleiben — nie stilles Verwerfen.
+   * Eine veraltete Fehlermeldung blieb stehen, nachdem der Entwurf per Undo zum
+     Serverstand zurückgekehrt war.
+
+**Betroffene Module:**
+`electrical` (Backend und Frontend), fachneutrale Ergänzungen im Core (Fehlerformat,
+CORS, API-Client, Warnbaustein), Plattform-Projektseite (Tabwechsel fragt nach). Keine
+Migration, keine neue Abhängigkeit, keine neue Berechtigung, kein neues Event.
+
+**Betroffene wichtige Dateien:**
+
+- `apps/backend/app/modules/electrical/service.py` — `floor_plan`, `replace_contour`,
+  `_apply_contour`, Raumversion, Neulesen nach der Sperre
+- `apps/backend/app/modules/electrical/api.py`, `schemas.py`, `geometry.py`
+- `apps/backend/app/errors.py`, `app/main.py`
+- `apps/planner/src/modules/electrical/editor/*` (neu), `RoomsTab.tsx`
+- `apps/planner/src/core/ui/ungespeichert.ts` (neu), `modules/platform/ProjectDetailPage.tsx`,
+  `app/Layout.tsx`, `styles.css`
+- `packages/api-client/src/index.ts`, `generated.ts`
+- `testdata/geometry/raumgeometrie.v1.json` (neu)
+- `docs/decisions/0014-2d-editor-svg-and-atomic-contour.md` (neu)
+
+**Tests:**
+
+* **Neu Backend:** `test_electrical_editor_api.py` (29: Plan vollständig, Konturbefunde
+  mit Wand-IDs, keine N+1-Abfragen bei 1 vs. 7 Räumen, 403 ohne Leserecht, 404;
+  Konturspeichern mit Client-IDs, Ändern mit ID-Erhalt und Versionsverhalten je Wand,
+  Reihenfolge, Hinzufügen/Entfernen, Zielzustand als Ganzes (Umlaufsinn umkehren),
+  Öffnungen anlegen/ändern/ausdrücklich entfernen, Raum samt Kontur anlegen, ungültige
+  Kontur legt keinen Raum an; Rollback bei Selbstüberschneidung, ungültig gewordener Tür,
+  Überlappung, doppelter ID, Wand aus anderem Raum, Wandwechsel einer Öffnung, stiller
+  Öffnungsverlust (409), fehlender Öffnung (422), veralteter Version, ungültigem
+  `If-Match`; Formularänderung wird nicht überschrieben; 403 ohne Schreibrecht; genau ein
+  Event bzw. keines),
+  `test_electrical_editor_concurrency.py` (2: zwei gleichzeitige Editor-Speichervorgänge,
+  Editor gegen Formular), `test_geometry_parity.py` (25), Tenant-Tests für Plan und
+  fremde IDs (3), `kontur-speichern` als achter Schreibweg in beiden Richtungen der
+  Archiv-Parallelitätstests, Sperrreihenfolge Projekt → Raum für das Konturspeichern,
+  `PUT` in `428`-, Archiv- und Lesbarkeitslisten sowie im Tenant-Sweep.
+* **Angepasst (nicht abgeschwächt):** Sechs Tests sendeten nach Wandänderungen fest
+  Raumversion 1; sie lesen jetzt die aktuelle Version. Der Paralleltest „Höhenänderung
+  gegen Fenster" akzeptiert zwei Verlierer-Klassen — `422` (Höhe zuerst) oder `409`
+  (Fenster zuerst, weil es die Raumversion weiterzählt); die Invariante „genau ein
+  Gewinner, stimmiger Endzustand" bleibt geprüft.
+* **Neu Frontend (92):** Parität gegen die Fixture (27), Viewport (10), Fang (7),
+  Werkzeuge (16), Editorzustand (15), Editor-Integration im Tab (14: Plan in einer
+  Anfrage, Auswahl, Rechteckraum mit Client-UUIDs, Polygon mit Escape/Rücktaste,
+  Kontur bearbeiten und atomar speichern ohne Anfrage beim Ziehen, Tabellenansicht zieht
+  nach, Undo/Redo und Feldausnahme, 409, 422 mit Markierung, Tür setzen, Geschosswechsel-
+  und Raumwechselwarnung, `beforeunload`, Archiv- und Lesemodus), Core-Warnbaustein (3).
+* **Gesamtabnahme `tasks.ps1 check`, genau ein Lauf, alles grün:** Ruff und Format,
+  mypy `--strict` (84 Dateien), import-linter (4 Contracts), Modul- und Datenbankgrenzen,
+  genau ein Alembic-Head (`0004_electrical_room_model`), `uv lock --check`,
+  **642 Backendtests, 0 übersprungen** (vorher 579) gegen PostgreSQL 17
+  (`elektroplan_test`), OpenAPI-/Client-Drift, Frontend-Typecheck, ESLint,
+  Frontend-Modulgrenzen, **255 Frontendtests** (vorher 163), Produktionsbuild.
+
+**Browser-Smoke-Test** (laufendes Compose-System, synthetische Daten, Built-in-Browser
+der Desktop-App; Fenster verdeckt, deshalb ohne Screenshots — geprüft über DOM-Text,
+Zugänglichkeitsbaum und die API):
+
+| # | Schritt | Bedienweg | Ergebnis |
+|---|---|---|---|
+| 1 | Anmelden | Formularfelder + Taste Enter | ok |
+| 2–4 | Projekt, Tab, Geschoss | Klick | Editor Standardansicht, Geschoss sichtbar |
+| 5–7 | Rechteckraum, Name, Maße | Taste R, 2 Zeigerklicks, Tastatur | 5,000/4,000 m, 20,00 m², geschlossen |
+| 8 | Polygonraum (L, 6 Punkte) | Taste P, 7 Klicks (Schließen am Start) | 9,00 m², 6 Wände |
+| 9 | Eckpunkt verschieben | Zeiger ziehen | beide Nachbarwände folgen, gefangen |
+| 10 | Undo / Redo | Strg+Z, Strg+Y, Strg+Umschalt+Z | exakt ein Schritt je Ziehen |
+| 11 | Fang aus/ein | Checkbox | 7136/1370 mm frei ↔ 7100/1400 mm Raster |
+| 12 | Zoom, Pan, Einpassen | Mausrad, Knöpfe, Taste H + Ziehen, Taste F | Zoom am Zeiger verankert, Pan exakt, Einpassen ok |
+| 13 | Tür platzieren | Taste O, Klick auf Wand | Wand 2, 2600 mm (Raster) |
+| 14 | Fenster, Maße ändern | Auswahlfeld, Klick, Formular (Tastatur) | 1500 mm breit bei 1750 mm |
+| 15 | ungültiger Zustand | Ecke quer ziehen, Strg+S | lokal orange, Server 422, 2 Wände rot, deutsche Meldung |
+| 16 | korrigieren, speichern | Strg+Z, gültig ziehen, Strg+S | gespeichert, 21,25 m² |
+| 17 | neu laden | Navigation | Stand vollständig da; Tabellenansicht identisch |
+| 18 | Konflikt | Wand per zweitem API-Zugriff ändern, dann im Editor speichern | „zwischenzeitlich geändert", Entwurf bleibt; „behalten" und „Serverstand laden" geprüft |
+| 19 | archiviertes Projekt | Archivierung per API, Tab öffnen | Plan sichtbar, „Nur Ansicht", keine Griffe, kein Speichern |
+| 20 | Abmelden, neu laden | Knopf, Navigation | Anmeldeseite |
+
+Einschränkungen: Native `confirm`-Dialoge wurden an einer Stelle per JavaScript
+beantwortet (Serverstand laden), weil ein nativer Dialog die Automatisierung blockiert.
+Die Öffnungsart wurde einmal per `form_input`, im Messlauf per Wertsetzung mit
+`change`-Ereignis gewählt. Das Mausrad scrollt im Automatisierungswerkzeug zusätzlich die
+Seite; das Ereignis selbst wird nachweislich abgefangen (`defaultPrevented`). Vier
+Klicks mussten wiederholt werden, weil das verdeckte Fenster „nicht bereit" meldete —
+ohne Auswirkung auf die Anwendung.
+
+**Performance-Smoke-Test:** synthetisches Geschoss mit 25 Räumen × 8 Wänden = **200
+Segmenten** und 25 Türen (per API angelegt — nur Testdaten, nicht Teil des
+20-Minuten-Kriteriums). Umgebung: Windows 11 Pro, 16 logische Kerne, Chromium 152
+(Built-in-Browser der Claude-Desktop-App), **Vite-Entwicklungsbuild** (React-Dev-Modus,
+langsamer als der Produktionsbuild), Fenster verdeckt. Messung per `performance.now()`
+um das Ereignis bis nach dem nächsten Task (React-Commit):
+
+| Vorgang | Median | p95 | Max |
+|---|---|---|---|
+| Plan-Anfrage (Netzwerk) | 62 ms | — | — |
+| Eckpunkt ziehen, je Zeigerbewegung (100×) | 5,2 ms | 17,4 ms | 19,1 ms |
+| Zoomschritt Mausrad (60×) | 23,4 ms | 41,1 ms | 48,6 ms |
+| Zeigerbewegung ohne Ziehen (100×) | 1,7 ms | 3,1 ms | 5,1 ms |
+
+Während des Ziehens keine Netzanfrage; die Ziehbewegung ergibt einen Undo-Schritt. Der
+Zoomschritt ist der teuerste Vorgang (Beschriftungen, Raster und Seitenleiste werden neu
+berechnet); bei dieser Größe unkritisch, nicht weiter optimiert. Ein einzelner Lauf —
+keine allgemeine Zusage.
+
+**Messung des Exit-Kriteriums (automatisierter, entwicklungsnaher Durchlauf — kein
+Usability-Test mit Menschen):**
+
+Szenario: Einfamilienhaus-Erdgeschoss 11 × 9 m, leeres Geschoss im Projekt `PR-2026-0006`.
+
+| Raum | Werkzeug | Fläche | Öffnungen |
+|---|---|---|---|
+| 0.01 Wohnen | Rechteck | 25,00 m² | 2 Fenster |
+| 0.02 Küche | Rechteck | 16,00 m² | 2 Fenster |
+| 0.03 Flur (L-Form) | Polygon, 6 Punkte | 17,50 m² | 3 Türen (Haustür, zu Wohnen, zu Küche) |
+| 0.04 Bad | Rechteck | 7,50 m² | 1 Tür, 1 Fenster |
+| 0.05 HWR | Rechteck | 6,00 m² | 1 Tür, 1 Fenster |
+| 0.06 Schlafen | Rechteck | 15,75 m² | 1 Tür, 1 Fenster |
+| 0.07 Kind | Rechteck | 11,25 m² | 1 Tür, 1 Fenster |
+
+**7 Räume, 30 Wände, 15 Öffnungen (7 Türen, 8 Fenster), 103,25 m².**
+Start 2026-09-26T20:25:57.590Z (Editor mit leerem Geschoss geladen), Ende
+20:28:04.278Z (letztes erfolgreiches Speichern) — **126,7 s**. Alle Räume nach Abschluss
+über die API geprüft: Kontur `valid`, erwartete Flächen und Öffnungen. Bedienwege:
+Tasten R/P/O/V, Zeigerklicks auf die Zeichenfläche (Fang auf Raster und vorhandene
+Eckpunkte), Tastatureingabe der Namen im Dialog, Strg+S je Raum nach dem Setzen der
+Öffnungen, zweimal „Verkleinern" zu Beginn. Die Klickkoordinaten wurden vorab aus der
+Viewport-Transformation berechnet — ein Mensch braucht deutlich länger zum Zielen. Die
+gemessene Zeit belegt die **technische** Erfassbarkeit in wenigen Aktionen (2 Klicks +
+Name je Rechteckraum, 1 Klick je Öffnung, 1 Tastendruck je Speichern), nicht die Dauer
+für einen ungeübten Benutzer.
+Beobachtete Bremse: Der Erfolgshinweis „Raum angelegt" lag über dem oberen Rand der
+Zeichenfläche und hätte Klicks dort abgefangen; im Lauf jeweils geschlossen, danach
+behoben (klickdurchlässig, rechts oben).
+
+**Ergebnis:**
+Phase 4a ist umgesetzt; das Exit-Kriterium ist gemessen erfüllt (126,7 s ≪ 20 min, im
+automatisierten Durchlauf). Keine Migration.
+
+**Offene Punkte:**
+Zurück-Taste des Browsers wird nicht abgefangen; Entwurf umfasst genau einen Raum;
+Öffnungen wechseln ihre Wand nicht; Performance nur im Entwicklungsbuild gemessen;
+Usability mit echten Benutzern ungeprüft; Vite im Planner-Container bemerkt
+Dateiänderungen unter Windows nicht (Neustart nötig); `CLAUDE.md` nennt als
+Testdatenbank-URL die Entwicklungsdatenbank, obwohl die Tests `drop_all` ausführen.
+
+**Nächster sinnvoller Schritt:**
+Abnahme und Commit von Phase 4a; danach Phase 4b (3D-Ansicht) erst nach Freigabe.
+
+---
+
+## Task 0015 – Phase 4a.1: Navigationsschutz und Testdatenbank-Sicherheit
+
+**Datum:** 2026-09-27
+
+**Ziel:**
+Vor dem Commit von Phase 4a zwei Lücken schließen: Browser-Zurück und -Vorwärts
+verwarfen ungespeicherte Editoränderungen ohne Rückfrage, und `CLAUDE.md` nannte als
+Testdatenbank die Entwicklungsdatenbank, obwohl die Tests `drop_all` ausführen. Außerdem
+die offene Entscheidung zu deckungsgleichen Wänden vor Phase 4b festhalten.
+
+**Durchgeführte Änderungen:**
+
+1. **Data Router.** `App.tsx` exportiert die Routen und die Factory `erzeugeRouter()`;
+   `main.tsx` erzeugt den Browserrouter **genau einmal vor** `createRoot(...).render(...)`
+   und übergibt ihn `App` als Property. Keine Erzeugung in `useState`/`useMemo` oder im
+   Render: Unter `StrictMode` könnte ein doppelt ausgeführter Initializer sonst einen
+   verworfenen Router mit registrierten History-Listenern zurücklassen (Nachkorrektur vor
+   dem Commit; Test: kein Router entsteht beim Rendern oder erneuten Rendern). Eine
+   Splat-Route; darunter `AuthProvider`, `Navigationsschutz` und `Gate` mit den
+   dynamischen `<Routes>` aus der Modul-Registry — unverändert.
+   `QueryClientProvider` bleibt außen, `ProjectTabsProvider` in `AuthenticatedApp`.
+2. **`core/ui/Navigationsschutz.tsx`** (neu, fachneutral): `useBlocker` blockiert, wenn
+   die Meldestelle ungespeicherte Änderungen kennt und sich Pfad, Suche oder Hash ändern;
+   Rückfrage per `window.confirm`, dann `proceed()` oder `reset()`. Der Router stellt bei
+   Zurück/Vorwärts den Verlaufseintrag selbst wieder her — kein eigener
+   `popstate`-/`history.go()`-Umweg.
+3. **`core/ui/ungespeichert.ts`:** globaler Link-Klick-Handler entfernt (sonst zwei
+   Rückfragen je Link); `beforeunload` und `verlassenBestaetigen` (Tabwechsel, Abmelden)
+   bleiben.
+4. **Testumgebung:** `test-setup.ts` gleicht eine jsdom-Grenze aus (Node-`Request` lehnt
+   das jsdom-`AbortSignal` des Data Routers ab) — nur in Tests.
+5. **Testdatenbank-Schutz** `apps/backend/tests/datenbankschutz.py`: Test-URL muss
+   gesetzt sein, einen Datenbanknamen mit `test` als eigenem Namensteil tragen und darf
+   nicht dieselbe Datenbank wie `ELEKTROPLAN_DATABASE_URL` sein (Host-Aliase
+   `localhost`/`127.0.0.1`/`::1`, Standardport, Treiber ohne Belang). Eingebunden in
+   `pytest_sessionstart` (Abbruch des ganzen Laufs mit Code 2 vor jedem Test), zusätzlich
+   direkt vor `drop_all` in der `engine`-Fixture und vor dem Anlegen/Löschen der
+   Migrationsdatenbank. Meldungen nennen nur Host, Port und Datenbankname. Ohne Test-URL
+   bleiben die Datenbanktests wie bisher sichtbar übersprungen — dann gibt es keine
+   destruktive Operation.
+6. **Doku:** `CLAUDE.md` (Testdatenbank, Schutz), offene Entscheidung **T9**
+   (deckungsgleiche Wände) verbindlich vor Phase 4b.
+
+**Betroffene Module:** Frontend-App-Wurzel und Core-UI (fachneutral), Backend-Testinfrastruktur.
+Kein Backend-Produktivcode, keine API-Änderung, keine Migration.
+
+**Betroffene wichtige Dateien:**
+`apps/planner/src/app/App.tsx`, `src/core/ui/Navigationsschutz.tsx` (neu),
+`src/core/ui/ungespeichert.ts`, `src/test-setup.ts`,
+`apps/backend/tests/datenbankschutz.py` (neu), `tests/conftest.py`,
+`tests/test_migration_acceptance.py`, `CLAUDE.md`.
+
+**Tests:**
+
+* Neu Frontend (12): `Navigationsschutz.test.tsx` (7: ohne Änderungen keine Frage;
+  Zurück blockiert, „bleiben" erhält URL und Entwurf; „verlassen" genau einmal;
+  Vorwärts beides; interner Link genau eine Frage; abgelehnter Link bleibt;
+  `beforeunload`), `App.test.tsx` (3: dynamische Modulroute erreichbar, Hauptnavigation
+  fragt genau einmal, Abmelden über den Core-Mechanismus), `ProjectDetailPage.test.tsx`
+  (2: Tabwechsel fragt und bleibt, ohne Änderungen keine Frage); `ungespeichert.test.tsx`
+  angepasst (kein eigener Link-Handler mehr).
+* Neu Backend (10, ohne Datenbank): identische URLs → Abbruch; gleiche Datenbank unter
+  anderer Schreibweise → Abbruch; getrennte Testdatenbank → erlaubt; fehlende URL →
+  verständlicher Abbruch; nicht als Test benannte Datenbank → Abbruch; ungültige URL;
+  keine Zugangsdaten in Meldungen (3 Fälle); echter pytest-Unterlauf mit gefährlicher URL
+  endet mit Code 2 vor jedem Test, ohne Passwort in der Ausgabe.
+* Gegenprobe mit korrekter URL: Tenancy- und Migrationsabnahme laufen; die
+  Entwicklungsdatenbank blieb unberührt (38 Räume vorher und nachher).
+* Gezielter Lauf: Frontend-Typecheck, ESLint, Modulgrenzen, **267 Frontendtests**,
+  Produktionsbuild, API-Client-Drift („aktuell"), Ruff für die Backend-Tests. Kein
+  vollständiger Backendlauf — Backend-Produktivcode und Verträge sind unverändert.
+
+**Browser-Smoke-Test** (laufendes Compose-System, Built-in-Browser; `window.confirm`
+im Seitenkontext durch eine Aufzeichnung ersetzt, weil native Dialoge die Automatisierung
+blockieren):
+
+| Schritt | Ergebnis |
+|---|---|
+| Editor öffnen (Projekt per In-App-Link aus der Liste), Raum Wohnen lokal ändern | 25,50 m², „Ungespeicherte Änderungen" |
+| Browser-Zurück, „bleiben" | 1 Rückfrage; URL, Entwurf und Undo-Historie erhalten |
+| Browser-Zurück, „verlassen" | genau 1 weitere Rückfrage, Projektliste, keine Schleife |
+| Browser-Vorwärts ohne Änderungen | ohne Rückfrage zurück im Projekt |
+| Browser-Vorwärts mit Änderungen, „bleiben" / „verlassen" | 1 Rückfrage, Entwurf erhalten / genau 1 weitere, Navigation ausgeführt |
+| Interner Link „← Alle Projekte" mit Änderungen | je Klick genau 1 Rückfrage; ohne Änderungen keine |
+| Neuladen mit Änderungen | `beforeunload`-Handler registriert und hält das Ereignis an; **der native Dialog selbst war in dieser Automatisierung nicht beobachtbar**: Die Werkzeug-Navigation umgeht ihn, F5 ist im eingebetteten Browser kein Reload-Kürzel (Gegenprobe: auch ohne Änderungen kein Reload) |
+
+**Ergebnis:** Alle Navigationswege innerhalb der Anwendung sind geschützt;
+Neuladen/Schließen über `beforeunload`. Destruktive Tests können die
+Entwicklungsdatenbank nicht mehr treffen.
+
+**Offene Punkte:** nativer `beforeunload`-Dialog in einem normalen Browser manuell
+prüfen; menschlicher Bedientest; Touch und weitere Browser; Entscheidung T9 vor Phase 4b.
+
+**Nächster sinnvoller Schritt:** Commit von Phase 4a und 4a.1 nach Freigabe.

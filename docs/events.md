@@ -182,6 +182,7 @@ Das erste tatsächlich erzeugte Fachmodul-Event.
 | **`event_version`** | `1` |
 | **Nutzlast** | `project_id`, `floor_id`, `room_id`, `change_kind` |
 | **`change_kind`** | `room_created`, `room_updated`, `room_deleted`, `walls_changed`, `openings_changed` |
+| **Phase 4a** | `PUT …/rooms/{id}/contour` erzeugt **genau ein** Event `walls_changed`, auch wenn dabei Öffnungen geändert werden; ein abgelehnter Vorgang erzeugt keines. `POST …/rooms` mit Wänden erzeugt nur `room_created`. Keine neuen Werte, keine neue `event_version` |
 | **Handler** | **keiner** in Phase 3 — `materials` entsteht erst in Phase 7 |
 
 **Warum ein Eventname und nicht vier.** Ein Name je Tabellenänderung wäre eine

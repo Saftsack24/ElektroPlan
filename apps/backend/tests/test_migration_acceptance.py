@@ -37,9 +37,11 @@ from tests.conftest import (
     ADMIN_PASSWORD,
     TEST_DATABASE_URL,
     auth_headers,
+    entwicklungsdatenbank_url,
     login,
     requires_database,
 )
+from tests.datenbankschutz import pruefe_testdatenbank
 
 pytestmark = [requires_database, pytest.mark.database]
 
@@ -61,6 +63,8 @@ def _maintenance_url() -> str:
 @pytest.fixture(scope="module")
 def migrated_engine() -> Iterator[Engine]:
     """Leere Datenbank, ausschliesslich per ``alembic upgrade head`` aufgebaut."""
+    # Diese Fixture löscht und erzeugt eine eigene Datenbank - dieselbe Sicherung.
+    pruefe_testdatenbank(_migration_database_url(), entwicklungsdatenbank_url())
     maintenance = create_engine(_maintenance_url(), isolation_level="AUTOCOMMIT", future=True)
     with maintenance.connect() as connection:
         connection.execute(text(f'DROP DATABASE IF EXISTS "{MIGRATION_DB_NAME}" WITH (FORCE)'))

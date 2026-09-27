@@ -50,6 +50,13 @@ Dokumentation und Oberfläche auf Deutsch, Code und API auf Englisch.
 | Öffnung (Tür/Fenster) | `opening` | `kind`: `door`, `window`, `passage` |
 | Abstand vom Wandanfang | `offset_mm` | zählt vom Startpunkt der gerichteten Wand |
 | Brüstungshöhe | `sill_height` | nur beim Fenster > 0 |
+| Planungsstand (eines Geschosses) | `floor plan` (`GET …/floors/{id}/plan`) | Räume, Wände, Öffnungen in einer Antwort (Phase 4a) |
+| Kontur speichern | `replace contour` (`PUT …/rooms/{id}/contour`) | vollständiger Zielzustand eines Raums, atomar (ADR 0014) |
+| Grundrisseditor / grafischer Editor | `editor` (Frontend `modules/electrical/editor`) | SVG-Zeichenfläche (Phase 4a) |
+| Entwurf (des Editors) | — (nur Frontend: `Raumentwurf`) | ungespeicherter lokaler Stand **eines** Raums; nicht zu verwechseln mit dem Konturzustand `draft` |
+| Fang | `snap` (Frontend: `fangen`) | Einrasten auf Raster oder Wandendpunkt |
+| Raster | `grid` (Frontend: `rasterMm`) | 10/50/100/250/500 mm |
+| Ansicht / Viewport | `viewport` | Maßstab und Lage der Zeichenfläche - nie gespeichert |
 | Elektroelement / Gerät | `device` | |
 | Gerätetyp | `device_type` | Katalog |
 | Montagehöhe | `mount_height` | |

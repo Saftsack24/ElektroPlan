@@ -5,6 +5,68 @@ Einträge entstehen nach relevanten Änderungen, nicht nach jedem Commit.
 
 ---
 
+## 2026-09-27 — Phase 4a.1: Navigationsschutz und Testdatenbank-Sicherheit
+
+Keine Migration, keine API-Änderung, kein Backend-Produktivcode.
+
+### Changed
+
+- **Frontend auf Data Router umgestellt** (`createBrowserRouter`, eine Splat-Route); die
+  Modulrouten entstehen weiter dynamisch aus der Registry.
+- `core/ui/ungespeichert.ts` fängt keine Link-Klicks mehr selbst ab — das übernimmt der
+  Router, sonst würde doppelt gefragt.
+
+### Added
+
+- `core/ui/Navigationsschutz.tsx`: blockiert bei ungespeicherten Änderungen interne
+  Navigation, Browser-Zurück und Browser-Vorwärts (`useBlocker`) mit genau einer
+  Rückfrage.
+- Testinfrastruktur: `tests/datenbankschutz.py` bricht jeden Testlauf vor
+  Schemaänderungen ab, wenn die Test-URL auf die Entwicklungsdatenbank zeigt oder die
+  Datenbank nicht ausdrücklich als Testdatenbank benannt ist.
+
+### Fixed
+
+- `CLAUDE.md` nannte als Testdatenbank-URL die Entwicklungsdatenbank; ein Testlauf hätte
+  deren Daten gelöscht. Jetzt `elektroplan_test`.
+
+---
+
+## 2026-09-26 — Phase 4a: Grafischer 2D-Editor
+
+Keine Migration, keine neue Abhängigkeit. Entscheidung: ADR 0014.
+
+### Added
+
+- **Grafischer Grundrisseditor** im Projekt-Tab „Räume & Grundriss" (SVG): Rechteck- und
+  Polygonräume, Eckpunkte ziehen, Wände teilen/entfernen, Umlaufrichtung umkehren,
+  Türen, Fenster und Durchgänge platzieren und verschieben, präzise Werte in der
+  Seitenleiste, Raster (10–500 mm) und Fang auf Raster und Eckpunkte, Maßanzeige,
+  Zoom/Pan/Einpassen, Undo/Redo, bewusstes Speichern mit Konflikt- und
+  Validierungsrückmeldung. Die Tabellenansicht aus Phase 3 bleibt als zweite Ansicht.
+- `GET /api/v1/modules/electrical/floors/{floor_id}/plan` — Planungsstand eines Geschosses
+  in einer Antwort, ohne N+1.
+- `PUT /api/v1/modules/electrical/rooms/{room_id}/contour` — Raumgeometrie atomar ersetzen.
+- `POST …/floors/{floor_id}/rooms` nimmt optional `walls` (Raum samt Kontur atomar).
+- `errors[].keys` im Fehlerformat: IDs der betroffenen Objekte (optional, fachneutral).
+- Warnung bei ungespeicherten Änderungen (Browser, interne Links, Projekt-Tabs, Abmelden).
+- Versionierte Geometrie-Paritätsfixture `testdata/geometry/raumgeometrie.v1.json`.
+
+### Changed
+
+- **Die Raumversion ist die Version der Raumgeometrie:** Jede Wand- oder
+  Öffnungsänderung zählt auch sie weiter. Clients senden danach beim Ändern oder
+  Umordnen des Raums die aktuelle Raumversion.
+- CORS erlaubt `PUT`; der API-Client bietet `put`.
+
+### Fixed
+
+- Wand- und Öffnungsendpunkte lesen ihre Zeile nach der Sperre neu: Wer auf eine
+  gleichzeitige Änderung gewartet hat, erhält `409 version-conflict` statt eines
+  irreführenden Geometriefehlers.
+
+---
+
 ## 2026-09-26 — Phase 3.1: Projektweiter Schreibschutz unter Nebenläufigkeit
 
 Korrektur einer Nebenläufigkeitslücke aus Phase 3. Keine Migration, keine API-Änderung,

@@ -217,6 +217,9 @@ function problem(status: number, typ: string, detail: string, errors?: unknown[]
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Diese Tests prüfen die Tabellenansicht aus Phase 3. Seit Phase 4a startet
+  // der Tab im grafischen Editor; die gemerkte Wahl führt direkt hierher.
+  window.localStorage.setItem("elektroplan.electrical.ansicht", "tabelle");
   darfSchreiben = true;
   projekt = PROJEKT;
   raeume = [WOHNZIMMER, BAD];

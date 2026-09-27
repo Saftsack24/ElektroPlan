@@ -156,6 +156,16 @@ def rechteck_anlegen(
     return waende
 
 
+def raumversion(api: TestClient, token: str, room_id: str) -> str:
+    """Aktuelle Raumversion.
+
+    Seit Phase 4a ist sie die Version der gesamten Raumgeometrie (ADR 0014):
+    Jede Wand- oder Oeffnungsaenderung zaehlt sie weiter. Wer danach den Raum
+    aendert, muss den aktuellen Stand senden - wie ein echter Client.
+    """
+    return str(api.get(f"{BASIS}/rooms/{room_id}", headers=auth_headers(token)).json()["version"])
+
+
 def fehlercodes(response: Any) -> set[str]:
     return {eintrag["code"] for eintrag in response.json().get("errors") or []}
 
@@ -413,20 +423,19 @@ def test_waende_umordnen(api: TestClient, token: str, geschoss: dict[str, Any]) 
     raum = raum_anlegen(api, token, geschoss["floor"]["id"])
     waende = rechteck_anlegen(api, token, raum["id"])
     gedreht = [waende[3]["id"], waende[0]["id"], waende[1]["id"], waende[2]["id"]]
+    vorher = raumversion(api, token, raum["id"])
 
     response = api.post(
         f"{BASIS}/rooms/{raum['id']}/walls/reorder",
-        headers={**auth_headers(token), "If-Match": "1"},
+        headers={**auth_headers(token), "If-Match": vorher},
         json={"wall_ids": gedreht},
     )
 
     assert response.status_code == 200, response.text
     assert [wand["id"] for wand in response.json()] == gedreht
     assert [wand["sort_order"] for wand in response.json()] == [0, 1, 2, 3]
-    # Der Raum traegt die Reihenfolge - seine Version zaehlt weiter.
-    assert (
-        api.get(f"{BASIS}/rooms/{raum['id']}", headers=auth_headers(token)).json()["version"] == 2
-    )
+    # Der Raum traegt die Reihenfolge - seine Version zaehlt genau einmal weiter.
+    assert int(raumversion(api, token, raum["id"])) == int(vorher) + 1
     # Und die Kontur bleibt gueltig, nur anders herum aufgezaehlt.
     bericht = api.get(f"{BASIS}/rooms/{raum['id']}/contour", headers=auth_headers(token))
     assert bericht.json()["contour_status"] == "valid"
@@ -440,7 +449,7 @@ def test_unvollstaendige_reihenfolge_wird_abgelehnt(
 
     response = api.post(
         f"{BASIS}/rooms/{raum['id']}/walls/reorder",
-        headers={**auth_headers(token), "If-Match": "1"},
+        headers={**auth_headers(token), "If-Match": raumversion(api, token, raum["id"])},
         json={"wall_ids": [waende[0]["id"], waende[1]["id"]]},
     )
 
@@ -457,7 +466,7 @@ def test_doppelte_wand_in_der_reihenfolge_wird_abgelehnt(
 
     response = api.post(
         f"{BASIS}/rooms/{raum['id']}/walls/reorder",
-        headers={**auth_headers(token), "If-Match": "1"},
+        headers={**auth_headers(token), "If-Match": raumversion(api, token, raum["id"])},
         json={"wall_ids": ids},
     )
 
@@ -798,7 +807,7 @@ def test_raumhoehe_darf_eine_oeffnung_nicht_ungueltig_machen(
 
     response = api.patch(
         f"{BASIS}/rooms/{raum['id']}",
-        headers={**auth_headers(token), "If-Match": "1"},
+        headers={**auth_headers(token), "If-Match": raumversion(api, token, raum["id"])},
         json={"height_mm": 2_500},
     )
 
@@ -846,7 +855,8 @@ def test_raum_loeschen_nimmt_waende_und_oeffnungen_mit(
     )
 
     geloescht = api.delete(
-        f"{BASIS}/rooms/{raum['id']}", headers={**auth_headers(token), "If-Match": "1"}
+        f"{BASIS}/rooms/{raum['id']}",
+        headers={**auth_headers(token), "If-Match": raumversion(api, token, raum["id"])},
     )
 
     assert geloescht.status_code == 204
@@ -870,6 +880,7 @@ def test_raum_loeschen_nimmt_waende_und_oeffnungen_mit(
         ("PATCH", "{basis}/walls/{wall_id}", {"x2_mm": 4_000}),
         ("DELETE", "{basis}/walls/{wall_id}", None),
         ("POST", "{basis}/rooms/{room_id}/walls/reorder", {"wall_ids": []}),
+        ("PUT", "{basis}/rooms/{room_id}/contour", {"walls": []}),
     ],
 )
 def test_fehlender_if_match_header_liefert_428(
@@ -983,12 +994,16 @@ def test_archiviertes_projekt_bleibt_lesbar(
         api.get(f"{BASIS}/walls/{archiviert['walls'][0]['id']}/openings", headers=kopf).status_code
         == 200
     )
+    # Phase 4a: Der Planungsstand fuer den Editor bleibt ebenso lesbar.
+    plan = api.get(f"{BASIS}/floors/{archiviert['floor']['id']}/plan", headers=kopf)
+    assert plan.status_code == 200
+    assert [raum["id"] for raum in plan.json()["rooms"]] == [raum_id]
 
 
 def test_archiviertes_projekt_ist_vollstaendig_schreibgeschuetzt(
     api: TestClient, token: str, archiviert: dict[str, Any]
 ) -> None:
-    """Alle acht schreibenden Endpunkte liefern ``409 project-archived``."""
+    """Alle schreibenden Endpunkte liefern ``409 project-archived``."""
     kopf = auth_headers(token)
     mit_version = {**kopf, "If-Match": "1"}
     raum_id = archiviert["room"]["id"]
@@ -1036,6 +1051,13 @@ def test_archiviertes_projekt_ist_vollstaendig_schreibgeschuetzt(
             {"offset_mm": 2_000},
         ),
         ("Oeffnung loeschen", "DELETE", f"{BASIS}/openings/{oeffnung_id}", mit_version, None),
+        (
+            "Kontur speichern",
+            "PUT",
+            f"{BASIS}/rooms/{raum_id}/contour",
+            mit_version,
+            {"walls": [], "removed_opening_ids": [oeffnung_id]},
+        ),
     ]
 
     for bezeichnung, methode, pfad, kopfzeilen, koerper in versuche:

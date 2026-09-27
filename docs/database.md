@@ -423,6 +423,12 @@ wovon `offset_mm` einer Öffnung zählt.
 **Kein PostGIS.** Die Geometrie ist geschossbezogen, klein und wird nie geografisch
 abgefragt.
 
+**Raumversion (seit Phase 4a, ADR 0014):** `electrical_rooms.version` ist die Version der
+gesamten Raumgeometrie. Jede wirksame Änderung an Wänden oder Öffnungen zählt sie weiter
+(über `updated_at`, `version_id_col`). Keine Schemaänderung und keine Migration dafür;
+Phase 4a legt keine neuen persistenten Daten an — Viewport, Auswahl, Entwurf und
+Undo-Historie leben nur im Browser.
+
 #### Constraints (Migration `0004_electrical_room_model`)
 
 | Tabelle | Constraint | Wirkung |

@@ -1,8 +1,8 @@
 # Aktueller Projektstand
 
 **Letzte Aktualisierung:** 2026-09-26
-**Aktualisiert nach:** Task 0013 — Phase 3.1: Projektweiter Schreibschutz unter
-Nebenläufigkeit
+**Aktualisiert nach:** Task 0015 — Phase 4a.1: Navigationsschutz und
+Testdatenbank-Sicherheit
 
 > Dieses Dokument soll einer neuen Session in wenigen Minuten vermitteln, wo das Projekt
 > steht.
@@ -22,13 +22,54 @@ Nebenläufigkeit
 **Phase 3 — Electrical Room Model: ABGESCHLOSSEN** (siehe Abschnitt 3)
 **Phase 3.1 — Projektweiter Schreibschutz unter Nebenläufigkeit: ABGESCHLOSSEN**
 (siehe Abschnitt 2)
-**Phase 4a — 2D-Editor: NICHT BEGONNEN**, wartet auf Freigabe
+**Phase 4a — 2D-Editor: ABGESCHLOSSEN** (Exit-Kriterium gemessen, siehe Abschnitt 3)
+**Phase 4a.1 — Navigationsschutz und Testdatenbank-Sicherheit: ABGESCHLOSSEN**
+**Phase 4b — 3D-Ansicht: NICHT BEGONNEN**, wartet auf Freigabe
 
-> Phase 3 ist noch **nicht committet**; Phase 3.1 gehört fachlich dazu.
+> Phase 3 und 3.1 sind committet (`fd7283f`). Phase 4a und 4a.1 sind **noch nicht
+> committet**. Vor Phase 4b ist die Entscheidung **T9** (deckungsgleiche Wände) zu treffen.
 
 ---
 
 ## 2. Zuletzt abgeschlossene Aufgabe
+
+**Task 0015 — Phase 4a.1: Navigationsschutz und Testdatenbank-Sicherheit**
+
+1. **Browser-Zurück und -Vorwärts sind geschützt.** Die Anwendung läuft auf dem Data
+   Router (`createBrowserRouter`, eine Splat-Route, darunter weiter die dynamischen
+   Modulrouten). Der fachneutrale `Navigationsschutz` (`useBlocker`) hält jede
+   Navigation innerhalb der Anwendung an, solange ein Modul ungespeicherte Änderungen
+   meldet, und fragt genau einmal. Der frühere globale Link-Klick-Handler ist entfernt.
+   Neuladen und Schließen: weiter `beforeunload`. Projekt-Tabs und Abmelden: weiter
+   `verlassenBestaetigen`.
+2. **Testdatenbank technisch abgesichert** (`tests/datenbankschutz.py`): Abbruch vor
+   jeder Schemaänderung, wenn die Test-URL auf die Entwicklungsdatenbank zeigt oder
+   die Datenbank nicht ausdrücklich als Testdatenbank benannt ist; Meldungen ohne
+   Zugangsdaten. `CLAUDE.md` korrigiert.
+3. **Offene Entscheidung T9** (deckungsgleiche Wände benachbarter Räume) verbindlich vor
+   Phase 4b festgehalten. Keine Datenmodelländerung, keine Migration.
+
+Details: `docs/task-history.md`, Task 0015.
+
+**Task 0014 — Phase 4a: Grafischer 2D-Editor**
+
+1. **Grafischer Grundrisseditor** im Tab „Räume & Grundriss" (SVG, ohne neue
+   Abhängigkeit, ADR 0014): Rechteck- und Polygonräume, Eckpunkte ziehen, Wände
+   bearbeiten, Türen/Fenster/Durchgänge platzieren und verschieben, Raster und Fang,
+   Maße, Zoom/Pan/Einpassen, Undo/Redo, bewusstes Speichern. Die Tabellenansicht aus
+   Phase 3 bleibt als zweite Ansicht auf demselben Serverstand.
+2. **Zwei neue Endpunkte**: `GET /floors/{id}/plan` (ohne N+1) und
+   `PUT /rooms/{id}/contour` (Raumgeometrie atomar, Zielzustand als Ganzes geprüft,
+   genau ein Event). `POST …/rooms` nimmt optional die Wände.
+3. **Raumversion = Version der Raumgeometrie** — Formular und Editor können sich nicht
+   mehr still überschreiben.
+4. **Nie stilles Verwerfen**: Raumwechsel bietet „speichern und wechseln", Geschoss- und
+   Ansichtswechsel fragen, Browser warnt beim Verlassen.
+5. **Exit-Kriterium gemessen**: 7 Räume, 30 Wände, 15 Öffnungen in 126,7 s
+   (automatisierter Durchlauf). 200 Segmente bleiben bedienbar.
+6. Keine Migration.
+
+Details: `docs/task-history.md`, Task 0014.
 
 **Task 0013 — Phase 3.1: Projektweiter Schreibschutz unter Nebenläufigkeit**
 
@@ -333,7 +374,21 @@ Details: `docs/task-history.md`, Task 0003.
 
 ---
 
-## 3. Abnahme von Phase 3 — Ergebnis
+## 3. Abnahme von Phase 4a — Ergebnis
+
+| Kriterium | Nachweis |
+|---|---|
+| Einfamilienhausgeschoss mit 6–8 Räumen in unter 20 Minuten | 7 Räume (davon ein Polygon-Flur in L-Form), 30 Wände, 7 Türen, 8 Fenster, 103,25 m² in **126,7 s** über die Oberfläche; danach über die API geprüft: alle Konturen `valid` |
+| Browser-Smoke-Test (20 Schritte) | vollständig durchlaufen, inklusive 422 mit Markierung, Versionskonflikt über zweiten Zugriff, archiviertes Projekt, Abmelden |
+| 200 Segmente | Eckpunkt ziehen Median 5 ms, Zoom Median 23 ms je Schritt (Entwicklungsbuild) |
+
+**Ehrliche Einordnung:** Der Messlauf war **automatisiert** — Klickpunkte wurden aus der
+Viewport-Transformation berechnet. Er belegt die technische Erfassbarkeit mit wenigen
+Aktionen, nicht die Dauer für einen Menschen. Ein Usability-Test steht aus.
+
+---
+
+## 3a. Abnahme von Phase 3 — Ergebnis
 
 | # | Exit-Kriterium | Nachweis |
 |---|---|---|
@@ -391,7 +446,10 @@ Frontend-Tests. Ausgeführt gegen echtes PostgreSQL 17 und echtes MinIO.
 
 ### Nachgewiesen geprüft
 
-Stand nach Task 0012 (Phase 3), gegen echtes PostgreSQL 17 und MinIO:
+Stand nach Task 0014 (Phase 4a), ein Lauf von `tasks.ps1 check` gegen echtes
+PostgreSQL 17 (`elektroplan_test`) und MinIO — alle Schranken grün. Die Tabelle unten
+nennt den Stand nach Phase 3; neu seit Phase 4a: **642 Backendtests, 0 übersprungen**,
+**255 Frontendtests**, weiterhin genau ein Alembic-Head (`0004`), keine Migration.
 
 | Bereich | Nachweis |
 |---|---|
@@ -541,6 +599,10 @@ was offen ist, ist eine Schuld.
 | Fachliche Fehlermeldungen des Backends sind in ASCII geschrieben (`schreibgeschuetzt`, `Aenderung`) | Im Browser erscheinen Umlaute als Umschrift; die Oberfläche selbst schreibt korrekt. Bestand seit Phase 2 | wenn eine Entscheidung zur Schreibweise der Servermeldungen getroffen wird |
 | Fläche, Umfang und Konturzustand werden bei jedem Lesen berechnet | Bei den erwarteten Datenmengen nicht messbar; ein gespeicherter Wert bleibt ausgeschlossen (ADR 0013) | erst, wenn ein Profiling es verlangt |
 | Die Überschneidungsprüfung ist quadratisch in der Wandzahl | Deshalb die Grenze von 200 Wänden je Raum | erst, wenn ein realer Grundriss daran scheitert |
+| Editor-Entwurf umfasst genau einen Raum | Raumwechsel verlangt Speichern; kein geschossweites Speichern | wenn der Messlauf mit Menschen es als Bremse zeigt |
+| Öffnungen können nicht an eine andere Wand umziehen | entfernen und neu setzen | bei Bedarf |
+| Performance nur im Entwicklungsbuild und in einem Browser gemessen | Zahlen sind konservativ, aber nicht allgemein | bei Bedarf mit Produktionsbuild wiederholen |
+| Vite im Planner-Container bemerkt Dateiänderungen unter Windows nicht | nach Frontend-Änderungen `docker restart elektroplan-planner` | Polling (`server.watch.usePolling`) prüfen |
 | Die Projektsperre serialisiert **alle** Schreibvorgänge eines Projekts | Im Baualltag (ein bis zwei Bearbeiter je Projekt) unkritisch; nicht gemessen | wenn mehrere Personen gleichzeitig an einem Projekt arbeiten |
 | Ein Datei-Upload kann nach vollständiger Übertragung noch mit `409` scheitern | Bewusster Tausch: Die Sperre wird nicht über die Übertragung gehalten. Das Objekt wird verworfen | keine Absicht, das zu ändern |
 
@@ -549,8 +611,9 @@ was offen ist, ist eine Schuld.
 | # | Frage | Spätestens vor |
 |---|---|---|
 | T6 | **Projektarten** (Neubau, Sanierung, Service): Braucht es sie, und was unterscheidet sie? Bis dahin deckt die abwählbare Startstruktur den Serviceauftrag ab | vor Phase 8 |
-| T1 | Symbolbibliothek: eigene SVGs oder DIN EN 60617 | Phase 4a |
+| T1 | Symbolbibliothek: eigene SVGs oder DIN EN 60617 (Phase 4a platziert keine Geräte) | Phase 5 |
 | T7 | **Raumtyp** (`living`, `kitchen`, …): Wird er für Ausstattungsvorlagen gebraucht, und mit welcher Werteliste? In Phase 3 bewusst nicht angelegt | vor Phase 5 |
+| T9 | **Deckungsgleiche Wände benachbarter Räume in 3D.** Jeder Raum hat seine eigene gerichtete Kontur; zwei Nachbarräume beschreiben dieselbe physische Wand deshalb doppelt. Eine naive Extrusion erzeugte deckungsgleiche Wandkörper, und eine Tür zwischen zwei Räumen kann auf beiden Seiten unterschiedlich (oder nur einseitig) erfasst sein. Zu entscheiden: Führt der Renderer deckungsgleiche Wände zusammen, braucht es eine zusätzliche physische Wandidentität, oder ein anderes ausdrückliches Modell? Bis dahin keine Datenmodelländerung | **verbindlich vor Phase 4b** |
 | T8 | **Wandhöhe und Wandtyp** je Wand: Braucht es sie neben der Raumhöhe (Kniestock, Außen- gegen Innenwand)? | vor Phase 4b |
 | T2 | PDF-Erzeugung: WeasyPrint (Empfehlung) oder ReportLab | Phase 10 |
 | T3 | Kleinmaterial: eigenes Material oder prozentualer Zuschlag | Phase 8 |
@@ -605,21 +668,16 @@ HSTS, Virenscan, MFA für administrative Konten.
 
 ## 9. Nächste geplante Aufgabe
 
-**Phase 4a — 2D-Editor:** Canvas-Editor für Räume, Wände und Öffnungen mit Raster,
-Fangfunktion, Maßanzeige und Undo/Redo.
+**Zuerst:** Abnahme und Commit von Phase 4a und 4a.1. Empfohlen vor Phase 4b: ein kurzer
+Bedientest des Editors mit einer echten Person (das 20-Minuten-Kriterium wurde
+automatisiert gemessen).
 
-Für die Umsetzung wichtig:
+**Danach Phase 4b — 3D-Ansicht:** extrudierte Räume aus Kontur und Höhe, Öffnungen als
+Aussparungen, Orbit/Zoom/Pan, Auswahl, **keine** Geometriebearbeitung in 3D. Grundlage
+ist derselbe Plan-Endpunkt; offene Entscheidungen **T9** (deckungsgleiche Wände) und
+T8 (Wandhöhe/-typ) vorher klären.
 
-- Das Datenmodell aus Phase 3 bleibt: Der Editor verschiebt Wandpunkte und ordnet Wände
-  um — beides gibt es schon. Es entsteht **kein** zweites Geometriemodell (ADR 0013).
-- Die Geometrieregeln liegen in `app/modules/electrical/geometry.py` und sind ohne
-  Datenbank aufrufbar. Der Editor sollte dieselben Regeln spiegeln, aber die verbindliche
-  Prüfung bleibt serverseitig.
-- Die Rundungsregel für schräge Wände ist verbindlich und darf im Editor nicht abweichen.
-- Offen vor Phase 4a: **Symbolbibliothek** (offene Entscheidung T1) — betrifft erst
-  Phase 5, sollte aber vor dem Editor geklärt sein.
-
-> Phase 4a wird erst nach ausdrücklicher Freigabe begonnen.
+> Phase 4b wird erst nach ausdrücklicher Freigabe begonnen.
 
 ---
 
@@ -629,7 +687,12 @@ Für die Umsetzung wichtig:
 2. Umgebung: `.\tasks.ps1 install` (installiert aus `uv.lock` und `package-lock.json`),
    dann `docker compose up -d` und `.\tasks.ps1 check`.
 3. Für Datenbanktests `ELEKTROPLAN_TEST_DATABASE_URL` setzen — sonst überspringen sie
-   sichtbar.
+   sichtbar. **Auf `…/elektroplan_test` zeigen lassen**, nie auf die
+   Entwicklungsdatenbank: Die Tests führen `drop_all` aus. Seit Phase 4a.1 bricht der
+   Lauf in diesem Fall selbst ab (`tests/datenbankschutz.py`).
+3a. Nach Frontend-Änderungen den Planner-Container neu starten
+   (`docker restart elektroplan-planner`); Vite bemerkt die Änderungen über den
+   Windows-Mount nicht.
 4. Das Backend ist **synchron** (ADR 0011): Endpunkte sind `def`, nicht `async def`.
 5. `electrical` hängt in den Phasen 3–6 **nur** von `core` ab; `materials` kommt erst in
    Phase 7 (siehe `docs/modules.md`).

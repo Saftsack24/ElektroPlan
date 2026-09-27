@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine
+from sqlalchemy import Engine, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
@@ -293,7 +293,7 @@ def test_sweep_ueber_alle_routen_mit_id_parameter(
         for name in parameter:
             konkreter_pfad = konkreter_pfad.replace(f"{{{name}}}", ids[name])
 
-        for methode in sorted(route.methods & {"GET", "POST", "PATCH", "DELETE"}):
+        for methode in sorted(route.methods & {"GET", "POST", "PUT", "PATCH", "DELETE"}):
             response = api.request(
                 methode, konkreter_pfad, headers=auth_headers(token), follow_redirects=False
             )
@@ -621,5 +621,122 @@ def test_oeffnung_kann_nicht_mandantenuebergreifend_verweisen(
         with pytest.raises(IntegrityError):
             session.commit()
         session.rollback()
+    finally:
+        session.close()
+
+
+# ------------------------------------------- Grafischer Editor (Phase 4a)
+
+
+def test_plan_eines_fremden_geschosses_liefert_404(
+    api: TestClient, two_tenants: tuple[Tenant, Tenant]
+) -> None:
+    scholz, mueller = two_tenants
+    token = login(api, mueller.admin_email)
+
+    response = api.get(f"{ELECTRICAL}/floors/{scholz.floor_id}/plan", headers=auth_headers(token))
+
+    assert response.status_code == 404
+
+
+def test_plan_zeigt_nur_eigene_raeume(api: TestClient, two_tenants: tuple[Tenant, Tenant]) -> None:
+    _, mueller = two_tenants
+    token = login(api, mueller.admin_email)
+
+    response = api.get(f"{ELECTRICAL}/floors/{mueller.floor_id}/plan", headers=auth_headers(token))
+
+    assert response.status_code == 200
+    assert [raum["id"] for raum in response.json()["rooms"]] == [str(mueller.room_id)]
+    assert response.json()["rooms"][0]["walls"][0]["id"] == str(mueller.wall_id)
+
+
+def test_kontur_kann_keine_fremde_wand_oder_oeffnung_uebernehmen(
+    api: TestClient, engine: Engine, two_tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Fremde IDs im eigenen Konturspeichern: ``422``, der fremde Datensatz bleibt.
+
+    Die fremde Wand-ID ist fuer den Mandanten unsichtbar; sie scheitert am
+    Primaerschluessel und wird als vergebene ID abgelehnt - ohne zu verraten,
+    wem sie gehoert.
+    """
+    scholz, mueller = two_tenants
+    token = login(api, mueller.admin_email)
+    kopf = auth_headers(token)
+    raum = api.get(f"{ELECTRICAL}/rooms/{mueller.room_id}", headers=kopf).json()
+
+    fremde_wand = api.put(
+        f"{ELECTRICAL}/rooms/{mueller.room_id}/contour",
+        headers={**kopf, "If-Match": str(raum["version"])},
+        json={
+            "walls": [
+                {
+                    "id": str(mueller.wall_id),
+                    "x1_mm": 0,
+                    "y1_mm": 0,
+                    "x2_mm": 5_000,
+                    "y2_mm": 0,
+                    "openings": [
+                        {
+                            "id": str(mueller.opening_id),
+                            "kind": "door",
+                            "offset_mm": 1_000,
+                            "width_mm": 1_010,
+                            "height_mm": 2_010,
+                        }
+                    ],
+                },
+                {
+                    "id": str(scholz.wall_id),
+                    "x1_mm": 5_000,
+                    "y1_mm": 0,
+                    "x2_mm": 5_000,
+                    "y2_mm": 4_000,
+                },
+            ]
+        },
+    )
+    assert fremde_wand.status_code == 422, fremde_wand.text
+
+    fremde_oeffnung = api.put(
+        f"{ELECTRICAL}/rooms/{mueller.room_id}/contour",
+        headers={**kopf, "If-Match": str(raum["version"])},
+        json={
+            "walls": [
+                {
+                    "id": str(mueller.wall_id),
+                    "x1_mm": 0,
+                    "y1_mm": 0,
+                    "x2_mm": 5_000,
+                    "y2_mm": 0,
+                    "openings": [
+                        {
+                            "id": str(mueller.opening_id),
+                            "kind": "door",
+                            "offset_mm": 1_000,
+                            "width_mm": 1_010,
+                            "height_mm": 2_010,
+                        }
+                    ],
+                },
+            ],
+            "removed_opening_ids": [str(scholz.opening_id)],
+        },
+    )
+    assert fremde_oeffnung.status_code == 422, fremde_oeffnung.text
+    assert "opening-foreign" in {e["code"] for e in fremde_oeffnung.json()["errors"]}
+
+    factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    session = factory()
+    try:
+        wand = session.get(ElectricalWall, scholz.wall_id)
+        assert wand is not None and wand.room_id == scholz.room_id
+        assert wand.organization_id == scholz.organization_id
+        assert session.get(ElectricalOpening, scholz.opening_id) is not None
+        eigene = (
+            session.execute(select(ElectricalWall).where(ElectricalWall.room_id == mueller.room_id))
+            .scalars()
+            .all()
+        )
+        assert [w.id for w in eigene] == [mueller.wall_id]
     finally:
         session.close()

@@ -53,7 +53,15 @@ from app.core.projects.service import ProjectService
 from app.core.users.models import User
 from app.errors import ProjectArchivedError
 from app.modules.electrical.models import ElectricalOpening, ElectricalRoom
-from app.modules.electrical.schemas import OpeningCreate, RoomCreate, WallCreate, WallUpdate
+from app.modules.electrical.schemas import (
+    ContourOpeningIn,
+    ContourWallIn,
+    OpeningCreate,
+    RoomContourUpdate,
+    RoomCreate,
+    WallCreate,
+    WallUpdate,
+)
 from app.modules.electrical.service import ElectricalRoomService
 from tests.conftest import requires_database
 from tests.test_concurrency import ACTOR, gleichzeitig
@@ -151,6 +159,37 @@ def oeffnung_anlegen(session: Session, welt: Welt) -> None:
     )
 
 
+def kontur_speichern(session: Session, welt: Welt) -> None:
+    """Der atomare Speichervorgang des grafischen Editors (Phase 4a).
+
+    Die Wand bleibt, eine Tuer kommt hinzu - gezaehlt in ``_bestand``. Die
+    Raumversion wird **vor** der Sperre gelesen, wie ein Editor, der seinen
+    Stand frueher geladen hat.
+    """
+    service = ElectricalRoomService(session, welt.organization_id)
+    version = service.get_room(welt.room_id).room.version
+    service.replace_contour(
+        welt.room_id,
+        RoomContourUpdate(
+            walls=[
+                ContourWallIn(
+                    id=welt.wall_id,
+                    x1_mm=0,
+                    y1_mm=0,
+                    x2_mm=5_000,
+                    y2_mm=0,
+                    openings=[
+                        ContourOpeningIn(
+                            kind="door", offset_mm=1_000, width_mm=1_010, height_mm=2_010
+                        )
+                    ],
+                )
+            ]
+        ),
+        expected_version=version,
+    )
+
+
 def gebaeude_anlegen(session: Session, welt: Welt) -> None:
     ProjectService(session, welt.organization_id).create_building(
         welt.project_id, BuildingCreate(name="Garage")
@@ -203,6 +242,7 @@ SCHREIBWEGE: tuple[tuple[str, Fachaenderung], ...] = (
     ("raum-anlegen", raum_anlegen),
     ("wand-aendern", wand_aendern),
     ("oeffnung-anlegen", oeffnung_anlegen),
+    ("kontur-speichern", kontur_speichern),
     ("gebaeude-anlegen", gebaeude_anlegen),
     ("geschoss-anlegen", geschoss_anlegen),
     ("projekt-aendern", projekt_aendern),
@@ -394,6 +434,38 @@ def test_electrical_sperrt_das_projekt_vor_dem_raum(
         ElectricalRoomService(session, welt.organization_id).update_wall(
             welt.wall_id, WallUpdate(thickness_mm=200), expected_version=1
         )
+        session.commit()
+    finally:
+        session.close()
+        event.remove(engine, "before_cursor_execute", mitschreiben)
+
+    sperren = [sql for sql in anweisungen if sql.endswith("FOR UPDATE")]
+    ziele = [
+        "projects"
+        if "FROM projects" in sql
+        else "electrical_rooms"
+        if "FROM electrical_rooms" in sql
+        else "?"
+        for sql in sperren
+    ]
+    assert ziele[:2] == ["projects", "electrical_rooms"], (ziele, sperren)
+
+
+def test_konturspeichern_sperrt_das_projekt_vor_dem_raum(
+    factory: sessionmaker[Session], welt: Welt, engine: Engine
+) -> None:
+    """Auch der atomare Editor-Speichervorgang haelt die Reihenfolge Projekt -> Raum."""
+    anweisungen: list[str] = []
+
+    def mitschreiben(
+        conn: Any, cursor: Any, statement: str, parameters: Any, context: Any, executemany: bool
+    ) -> None:
+        anweisungen.append(" ".join(statement.split()))
+
+    event.listen(engine, "before_cursor_execute", mitschreiben)
+    session = factory()
+    try:
+        kontur_speichern(session, welt)
         session.commit()
     finally:
         session.close()

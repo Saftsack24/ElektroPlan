@@ -271,7 +271,8 @@ Einzelbetrieb; bei Mehrinstanzbetrieb auf einen gemeinsamen Zähler umstellen.
 ### CORS
 
 Enge Whitelist aus `ELEKTROPLAN_CORS_ORIGINS`, `allow_credentials=true`, **keine**
-Wildcards. Erlaubte Methoden: `GET, POST, PATCH, DELETE, OPTIONS`. Erlaubte
+Wildcards. Erlaubte Methoden: `GET, POST, PUT, PATCH, DELETE, OPTIONS` (`PUT` seit Phase 4a für
+das atomare Konturspeichern). Erlaubte
 Header: `Authorization`, `Content-Type`, `X-Request-Id`, `If-Match`.
 
 ### CSRF

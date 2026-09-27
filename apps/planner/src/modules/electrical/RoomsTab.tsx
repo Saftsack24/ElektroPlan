@@ -1,12 +1,13 @@
 import { ApiError } from "@elektroplan/api-client";
 import type { components } from "@elektroplan/api-client";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { alsFormularfehler } from "../../core/api/fehler";
 import { useAuth, usePermission } from "../../core/auth/AuthProvider";
 import { Auswahl } from "../../core/ui/Feld";
+import { GrundrissEditor, planSchluessel } from "./editor/GrundrissEditor";
 import { RaumDetail } from "./RaumDetail";
 import { RaumDialog } from "./RaumDialog";
 import type { Raumwerte } from "./RaumDialog";
@@ -22,6 +23,30 @@ type Geschosswahl = {
   default_ceiling_height_mm: number;
 };
 
+type Ansicht = "editor" | "tabelle";
+
+/** Zuletzt gewählte Ansicht - eine reine Bequemlichkeit je Browser. */
+const ANSICHT_SCHLUESSEL = "elektroplan.electrical.ansicht";
+
+function gemerkteAnsicht(): Ansicht {
+  try {
+    return window.localStorage.getItem(ANSICHT_SCHLUESSEL) === "tabelle" ? "tabelle" : "editor";
+  } catch {
+    return "editor";
+  }
+}
+
+function ansichtMerken(ansicht: Ansicht) {
+  try {
+    window.localStorage.setItem(ANSICHT_SCHLUESSEL, ansicht);
+  } catch {
+    // Ohne Speicher gilt beim nächsten Mal wieder der Editor - kein Fehler.
+  }
+}
+
+const VERWERFEN_FRAGE =
+  "Im Grundrisseditor gibt es ungespeicherte Änderungen. Wenn Sie fortfahren, gehen sie verloren. Trotzdem fortfahren?";
+
 /**
  * Projekt-Tab „Räume & Grundriss" (Phase 3).
  *
@@ -30,8 +55,15 @@ type Geschosswahl = {
  * Modul nicht (docs/modules.md, Abschnitt 6). Die Projekt-ID kommt aus der
  * Route, in der der Tab gerendert wird.
  *
- * Bewusst formular- und listenbasiert: Phase 3 erfasst das Raummodell, der
- * 2D-Editor kommt in Phase 4a (ADR 0010). Es gibt hier kein Canvas.
+ * Zwei Ansichten auf **denselben** Serverstand (Phase 4a):
+ *
+ * * „Grafischer Editor" - Zeichnen und Bearbeiten auf dem Grundriss.
+ * * „Tabellen & Details" - die formularbasierte Erfassung aus Phase 3. Sie
+ *   bleibt präzise Alternative, barriereärmerer Weg und Diagnosehilfe.
+ *
+ * Beide lesen über React Query vom Server; nach jedem Schreibvorgang wird die
+ * jeweils andere Ansicht neu geladen. Einen zweiten, unabhängigen Datenstand
+ * gibt es nicht.
  */
 export default function RoomsTab() {
   const { projectId = "" } = useParams();
@@ -43,6 +75,12 @@ export default function RoomsTab() {
   const [raumdialog, setRaumdialog] = useState<{ raum: RoomOut | null } | null>(null);
   const [offenerRaum, setOffenerRaum] = useState<string | null>(null);
   const [fehler, setFehler] = useState<string | null>(null);
+  const [ansicht, setAnsicht] = useState<Ansicht>(gemerkteAnsicht);
+  // Ungespeicherte Änderungen im Editor - für Geschoss- und Ansichtswechsel.
+  const editorOffen = useRef(false);
+  const ungespeichertMelden = useCallback((offen: boolean) => {
+    editorOffen.current = offen;
+  }, []);
 
   const projekt = useQuery({
     queryKey: ["project", projectId],
@@ -93,6 +131,29 @@ export default function RoomsTab() {
     await queryClient.invalidateQueries({
       queryKey: ["electrical", "rooms", aktivesGeschoss?.id],
     });
+    // Die grafische Ansicht liest denselben Stand über den Plan-Endpunkt.
+    await queryClient.invalidateQueries({ queryKey: planSchluessel(aktivesGeschoss?.id ?? "") });
+  };
+
+  /** Nach dem Speichern im Editor: Tabellen und Details ziehen nach. */
+  const nachEditorSpeichern = useCallback(
+    async (roomId: string | null) => {
+      await queryClient.invalidateQueries({ queryKey: ["electrical", "rooms", aktivesGeschoss?.id] });
+      if (roomId !== null) {
+        await queryClient.invalidateQueries({ queryKey: ["electrical", "walls", roomId] });
+        await queryClient.invalidateQueries({ queryKey: ["electrical", "contour", roomId] });
+      }
+      await queryClient.invalidateQueries({ queryKey: ["electrical", "openings"] });
+    },
+    [queryClient, aktivesGeschoss?.id],
+  );
+
+  const ansichtWechseln = (neu: Ansicht) => {
+    if (neu === ansicht) return;
+    if (ansicht === "editor" && editorOffen.current && !window.confirm(VERWERFEN_FRAGE)) return;
+    editorOffen.current = false;
+    ansichtMerken(neu);
+    setAnsicht(neu);
   };
 
   const raumSpeichern = async (werte: Raumwerte) => {
@@ -172,7 +233,7 @@ export default function RoomsTab() {
       <section className="card">
         <div className="card__header">
           <h2>Räume &amp; Grundriss</h2>
-          {darfSchreiben && (
+          {darfSchreiben && ansicht === "tabelle" && (
             <button
               className="button button--primary"
               type="button"
@@ -195,6 +256,8 @@ export default function RoomsTab() {
           label="Geschoss"
           value={aktivesGeschoss?.id ?? ""}
           onChange={(id) => {
+            if (editorOffen.current && !window.confirm(VERWERFEN_FRAGE)) return;
+            editorOffen.current = false;
             setGeschossId(id);
             setOffenerRaum(null);
           }}
@@ -206,13 +269,32 @@ export default function RoomsTab() {
           ))}
         </Auswahl>
 
+        <div className="ansichtswahl" role="group" aria-label="Ansicht">
+          <button
+            type="button"
+            className={ansicht === "editor" ? "tabs__tab tabs__tab--active" : "tabs__tab"}
+            aria-pressed={ansicht === "editor"}
+            onClick={() => ansichtWechseln("editor")}
+          >
+            Grafischer Editor
+          </button>
+          <button
+            type="button"
+            className={ansicht === "tabelle" ? "tabs__tab tabs__tab--active" : "tabs__tab"}
+            aria-pressed={ansicht === "tabelle"}
+            onClick={() => ansichtWechseln("tabelle")}
+          >
+            Tabellen &amp; Details
+          </button>
+        </div>
+
         {fehler !== null && (
           <p className="alert alert--error" role="alert">
             {fehler}
           </p>
         )}
 
-        {raeume.isPending ? (
+        {ansicht === "editor" ? null : raeume.isPending ? (
           <p className="muted">Räume werden geladen ...</p>
         ) : raeume.isError ? (
           <p className="alert alert--error" role="alert">
@@ -287,7 +369,21 @@ export default function RoomsTab() {
         )}
       </section>
 
-      {geoeffnet !== null && (
+      {ansicht === "editor" && aktivesGeschoss !== undefined && (
+        <section className="card card--editor">
+          <GrundrissEditor
+            key={aktivesGeschoss.id}
+            floorId={aktivesGeschoss.id}
+            geschossLabel={aktivesGeschoss.label}
+            standardhoehe_mm={aktivesGeschoss.default_ceiling_height_mm}
+            darfSchreiben={darfSchreiben}
+            onUngespeichert={ungespeichertMelden}
+            onGespeichert={nachEditorSpeichern}
+          />
+        </section>
+      )}
+
+      {ansicht === "tabelle" && geoeffnet !== null && (
         <RaumDetail
           key={geoeffnet.id}
           raum={geoeffnet}

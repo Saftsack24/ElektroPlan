@@ -21,6 +21,7 @@ Format: Context · Problem · Considered Options · Decision · Consequences
 | [0011](0011-synchronous-sqlalchemy.md) | Synchrones SQLAlchemy statt async | accepted | 2026-09-18 |
 | [0012](0012-event-delivery-guarantee.md) | Event-Zustellung: at most once, keine Outbox | accepted | 2026-09-18 |
 | [0013](0013-room-contour-as-ordered-wall-segments.md) | Raumkontur als geordnete Wandsegmente | accepted | 2026-09-26 |
+| [0014](0014-2d-editor-svg-and-atomic-contour.md) | 2D-Editor: SVG, lokaler Entwurf, atomares Konturspeichern | accepted | 2026-09-26 |
 
 ## Wann ein ADR nötig ist
 

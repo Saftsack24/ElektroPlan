@@ -431,9 +431,28 @@ apps/planner/src/
   core/           Auth, API-Client-Wrapper, Registry, gemeinsame UI
   modules/
     electrical/   index.ts exportiert PlannerModule-Descriptor
+      editor/     grafischer 2D-Editor (Phase 4a): reine Geometrie-, Viewport-,
+                  Fang- und Werkzeugfunktionen, Reducer, SVG-Zeichenfläche
     materials/ calculation/ offers/ work-orders/
   modules/index.ts  statische Registrierung aller Module
 ```
+
+**Router und Navigationsschutz (seit Phase 4a.1).** Die Anwendung läuft auf dem Data
+Router (`createBrowserRouter`) mit einer einzigen Splat-Route; darunter entstehen die
+Routen weiter dynamisch aus der Modul-Registry (`<Routes>` in `AuthenticatedApp`). Der
+Data Router ist nötig, weil nur er Navigation — auch Browser-Zurück und -Vorwärts —
+blockieren kann. `core/ui/Navigationsschutz.tsx` ist genau einmal unterhalb des
+`RouterProvider` eingehängt und fachneutral: Er fragt nur die Meldestelle
+`core/ui/ungespeichert.ts`, ob irgendwo ungespeicherte Änderungen bestehen.
+
+**Grafischer Editor (Phase 4a, ADR 0014).** Der Editor gehört vollständig zum
+Fachmodul `electrical`; der Core enthält davon nichts. Neue Core-Bausteine sind
+fachneutral: `core/ui/ungespeichert.ts` meldet „es gibt ungespeicherte Änderungen" an
+Browser (`beforeunload`), Projekt-Tabwechsel und Abmelden, `core/ui/Navigationsschutz.tsx`
+an den Router — ohne zu wissen, was ungespeichert ist. Der Editor liest den Planungsstand über
+`GET /floors/{id}/plan` und schreibt eine Raumgeometrie über den atomaren Befehl
+`PUT /rooms/{id}/contour`. Der lokale Entwurf ist keine zweite Datenhaltung: Er entsteht
+aus dem Serverstand und wird nach dem Speichern durch die Serverantwort ersetzt.
 
 ---
 

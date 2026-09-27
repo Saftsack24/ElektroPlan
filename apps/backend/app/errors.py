@@ -32,6 +32,11 @@ class ProblemFieldError(BaseModel):
     field: str
     code: str
     message: str
+    #: Kennungen der betroffenen Objekte, sofern der Fehler sich einzelnen
+    #: Datensaetzen zuordnen laesst (etwa die IDs zweier sich schneidender
+    #: Waende). Fachneutral: Der Core kennt die Objektart nicht, er reicht die
+    #: Kennungen nur durch. Fehlt die Angabe, entfaellt das Feld in der Antwort.
+    keys: list[str] | None = None
 
 
 class OrganizationChoice(BaseModel):

@@ -2840,6 +2840,158 @@
             }
           }
         }
+      },
+      "put": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Raumkontur als Ganzes speichern",
+        "description": "Ersetzt Waende und Oeffnungen eines Raums **atomar** durch den Zielzustand.\n\n``If-Match`` traegt die Version des **Raums** - sie ist die Version der\ngesamten Raumgeometrie. Die Reihenfolge der Waende ist die Reihenfolge in\nder Liste. Bekannte IDs werden geaendert, neue angelegt, fehlende Waende\nentfernt. Oeffnungen verschwinden nur, wenn sie in\n``removed_opening_ids`` stehen. Jeder Fehler laesst den Raum\nunveraendert; bei Erfolg entsteht genau ein ``electrical.plan.updated``\n(``walls_changed``).\n\nDer ``GET`` auf derselben Adresse liefert den Pruefbericht dieser Kontur.",
+        "operationId": "replaceElectricalRoomContour",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoomContourUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomPlanOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules/electrical/floors/{floor_id}/plan": {
+      "get": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Planungsstand eines Geschosses",
+        "description": "Raeume, Waende und Oeffnungen eines Geschosses in **einer** Antwort.\n\nFuer den grafischen Editor, der den Stand ohnehin vollstaendig braucht.\nGeschossbezogen statt projektweit: Der Editor zeigt genau ein Geschoss,\nund die Antwort bleibt damit begrenzt. Die Anzahl der Datenbankabfragen\nhaengt nicht von der Zahl der Raeume ab. Archivierte Projekte bleiben\nlesbar.",
+        "operationId": "getElectricalFloorPlan",
+        "parameters": [
+          {
+            "name": "floor_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Floor Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FloorPlanOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/modules/electrical/rooms/{room_id}/walls": {
@@ -3879,6 +4031,131 @@
         "type": "object",
         "title": "BuildingUpdate"
       },
+      "ContourOpeningIn": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "door",
+              "window",
+              "passage"
+            ],
+            "title": "Kind"
+          },
+          "offset_mm": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Offset Mm"
+          },
+          "width_mm": {
+            "type": "integer",
+            "maximum": 20000.0,
+            "minimum": 100.0,
+            "title": "Width Mm"
+          },
+          "height_mm": {
+            "type": "integer",
+            "maximum": 20000.0,
+            "minimum": 100.0,
+            "title": "Height Mm"
+          },
+          "sill_height_mm": {
+            "type": "integer",
+            "maximum": 20000.0,
+            "minimum": 0.0,
+            "title": "Sill Height Mm",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "offset_mm",
+          "width_mm",
+          "height_mm"
+        ],
+        "title": "ContourOpeningIn",
+        "description": "Oeffnung als Teil einer vollstaendigen Raumkontur.\n\n``id`` fehlt oder ist neu: Die Oeffnung wird angelegt - mit genau dieser\nID, wenn sie angegeben ist (clientseitig erzeugte UUID, ADR 0007). Ist die\nID bereits eine Oeffnung **dieser** Wand, wird sie geaendert. Eine\nOeffnung wechselt ihre Wand nicht."
+      },
+      "ContourWallIn": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "x1_mm": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": -1000000.0,
+            "title": "X1 Mm"
+          },
+          "y1_mm": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": -1000000.0,
+            "title": "Y1 Mm"
+          },
+          "x2_mm": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": -1000000.0,
+            "title": "X2 Mm"
+          },
+          "y2_mm": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": -1000000.0,
+            "title": "Y2 Mm"
+          },
+          "thickness_mm": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 20.0,
+            "title": "Thickness Mm",
+            "default": 115
+          },
+          "openings": {
+            "items": {
+              "$ref": "#/components/schemas/ContourOpeningIn"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "title": "Openings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "x1_mm",
+          "y1_mm",
+          "x2_mm",
+          "y2_mm"
+        ],
+        "title": "ContourWallIn",
+        "description": "Wand als Teil einer vollstaendigen Raumkontur.\n\nDie **Position in der Liste** ist die Konturreihenfolge. ``id`` wie bei\n:class:`ContourOpeningIn`: bekannt heisst aendern, fehlend oder neu heisst\nanlegen. ``openings`` ist die vollstaendige Liste der Oeffnungen dieser\nWand."
+      },
       "CustomerCreate": {
         "properties": {
           "kind": {
@@ -4440,6 +4717,35 @@
           "updated_at"
         ],
         "title": "FloorOut"
+      },
+      "FloorPlanOut": {
+        "properties": {
+          "floor_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Floor Id"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "rooms": {
+            "items": {
+              "$ref": "#/components/schemas/RoomPlanOut"
+            },
+            "type": "array",
+            "title": "Rooms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "floor_id",
+          "project_id",
+          "rooms"
+        ],
+        "title": "FloorPlanOut",
+        "description": "Vollstaendiger Planungsstand eines Geschosses in **einer** Antwort.\n\nBewusst ohne Stammdaten des Geschosses oder Projekts: Die liefert der\nCore. Hier steht nur, was das Fachmodul besitzt - und die beiden IDs,\nan denen es haengt."
       },
       "FloorUpdate": {
         "properties": {
@@ -5125,6 +5431,20 @@
           "message": {
             "type": "string",
             "title": "Message"
+          },
+          "keys": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Keys"
           }
         },
         "type": "object",
@@ -5544,6 +5864,34 @@
         "title": "RoomContourOut",
         "description": "Pruefbericht zur Raumkontur.\n\nReine Auskunft: Der Bericht aendert nichts. Der Zustand ``valid`` bedeutet,\ndass die Waende in ihrer Reihenfolge einen geschlossenen,\nueberschneidungsfreien Polygonzug mit Flaeche bilden."
       },
+      "RoomContourUpdate": {
+        "properties": {
+          "walls": {
+            "items": {
+              "$ref": "#/components/schemas/ContourWallIn"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Walls"
+          },
+          "removed_opening_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 10000,
+            "title": "Removed Opening Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "walls"
+        ],
+        "title": "RoomContourUpdate",
+        "description": "Vollstaendiger Zielzustand der Raumgeometrie (``PUT /rooms/{id}/contour``).\n\nEin Vorgang, eine Transaktion: Entweder gilt danach genau diese Kontur,\noder es hat sich nichts geaendert. Waende, die in ``walls`` fehlen, werden\nentfernt. Oeffnungen verschwinden dagegen **nie** stillschweigend: Eine\nvorhandene Oeffnung muss entweder in ``walls`` stehen oder ausdruecklich\nin ``removed_opening_ids``. Sonst lehnt der Server ab."
+      },
       "RoomCreate": {
         "properties": {
           "name": {
@@ -5577,6 +5925,14 @@
               }
             ],
             "title": "Height Mm"
+          },
+          "walls": {
+            "items": {
+              "$ref": "#/components/schemas/ContourWallIn"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Walls"
           }
         },
         "additionalProperties": false,
@@ -5585,7 +5941,7 @@
           "name"
         ],
         "title": "RoomCreate",
-        "description": "Neuer Raum auf einem Geschoss.\n\n``height_mm`` bleibt leer, wenn die Standardhoehe des Geschosses gilt."
+        "description": "Neuer Raum auf einem Geschoss.\n\n``height_mm`` bleibt leer, wenn die Standardhoehe des Geschosses gilt.\n\n``walls`` ist optional (Phase 4a): Der grafische Editor legt einen\ngezeichneten Raum **samt** Kontur in einem Vorgang an. Ohne diese Angabe\nentstuende ein Raum ohne Waende, wenn die zweite Anfrage scheitert. Die\nListe folgt denselben Regeln wie ``PUT /rooms/{id}/contour``; eine leere\nListe ist der bisherige Fall \"Raum zuerst, Waende spaeter\"."
       },
       "RoomOut": {
         "properties": {
@@ -5708,6 +6064,144 @@
         ],
         "title": "RoomOut",
         "description": "Ein Raum samt abgeleiteten Konturwerten.\n\nFlaeche, Umfang, Wandzahl und Konturzustand sind **berechnet** und nicht\ngespeichert (ADR 0013). Sie fehlen (``null``), solange die Kontur nicht\ngeschlossen ist."
+      },
+      "RoomPlanOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "floor_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Floor Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "room_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room Number"
+          },
+          "height_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height Mm"
+          },
+          "effective_height_mm": {
+            "type": "integer",
+            "title": "Effective Height Mm"
+          },
+          "contour_status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "valid"
+            ],
+            "title": "Contour Status"
+          },
+          "wall_count": {
+            "type": "integer",
+            "title": "Wall Count"
+          },
+          "area_mm2": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Area Mm2"
+          },
+          "area_m2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Area M2"
+          },
+          "perimeter_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Perimeter Mm"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "walls": {
+            "items": {
+              "$ref": "#/components/schemas/WallPlanOut"
+            },
+            "type": "array",
+            "title": "Walls"
+          },
+          "contour_problems": {
+            "items": {
+              "$ref": "#/components/schemas/GeometryProblemOut"
+            },
+            "type": "array",
+            "title": "Contour Problems"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "floor_id",
+          "name",
+          "room_number",
+          "height_mm",
+          "effective_height_mm",
+          "contour_status",
+          "wall_count",
+          "area_mm2",
+          "area_m2",
+          "perimeter_mm",
+          "version",
+          "created_at",
+          "updated_at",
+          "walls",
+          "contour_problems"
+        ],
+        "title": "RoomPlanOut",
+        "description": "Raum im Planungsstand: gespeicherte Werte, berechnete Kontur, Waende.\n\n``contour_problems`` ist derselbe Befund wie im Pruefbericht\n``GET /rooms/{id}/contour`` - hier gleich mitgeliefert, damit der Editor\ndie betroffenen Waende markieren kann, ohne je Raum nachzufragen."
       },
       "RoomUpdate": {
         "properties": {
@@ -5983,6 +6477,92 @@
         ],
         "title": "WallOut",
         "description": "Eine Wand samt ihrer gerundeten Laenge."
+      },
+      "WallPlanOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "room_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Room Id"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          },
+          "x1_mm": {
+            "type": "integer",
+            "title": "X1 Mm"
+          },
+          "y1_mm": {
+            "type": "integer",
+            "title": "Y1 Mm"
+          },
+          "x2_mm": {
+            "type": "integer",
+            "title": "X2 Mm"
+          },
+          "y2_mm": {
+            "type": "integer",
+            "title": "Y2 Mm"
+          },
+          "thickness_mm": {
+            "type": "integer",
+            "title": "Thickness Mm"
+          },
+          "length_mm": {
+            "type": "integer",
+            "title": "Length Mm"
+          },
+          "opening_count": {
+            "type": "integer",
+            "title": "Opening Count"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "openings": {
+            "items": {
+              "$ref": "#/components/schemas/OpeningOut"
+            },
+            "type": "array",
+            "title": "Openings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "room_id",
+          "sort_order",
+          "x1_mm",
+          "y1_mm",
+          "x2_mm",
+          "y2_mm",
+          "thickness_mm",
+          "length_mm",
+          "opening_count",
+          "version",
+          "created_at",
+          "updated_at",
+          "openings"
+        ],
+        "title": "WallPlanOut",
+        "description": "Wand im Planungsstand - mit ihren Oeffnungen, vom Wandanfang aus."
       },
       "WallUpdate": {
         "properties": {

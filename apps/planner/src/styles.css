@@ -11,6 +11,13 @@
   --error-text: #8c1d1d;
   --radius: 8px;
   --gap: 16px;
+  /* Grundrisseditor (Phase 4a) */
+  --wand: #6b7482;
+  --wand-aktiv: #1c2430;
+  --tuer: #b35c00;
+  --fenster: #1f7ab8;
+  --warnung: #c77d00;
+  --erfolg: #2f7a3e;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -24,6 +31,12 @@
     --primary-contrast: #0d1216;
     --error-bg: #3a1f1f;
     --error-text: #ffb4b4;
+    --wand: #7d8896;
+    --wand-aktiv: #dfe5ec;
+    --tuer: #f0a35a;
+    --fenster: #6cb8ea;
+    --warnung: #f0b44a;
+    --erfolg: #7cc98a;
   }
 }
 
@@ -256,3 +269,101 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .auswahl__eintrag:hover { background: var(--bg); }
 .auswahl__eintrag:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 .auswahl__gewaehlt { margin: 4px 0 8px; font-weight: 600; }
+
+/* ------------------------------------------------ Grundrisseditor (Phase 4a) */
+.card--editor { padding: 12px; }
+.ansichtswahl { display: flex; gap: 4px; margin: 8px 0; border-bottom: 1px solid var(--border); }
+.grundriss { display: flex; flex-direction: column; gap: 10px; }
+.werkzeugleiste { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+.werkzeugleiste__gruppe { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.werkzeug { padding: 5px 10px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.werkzeug--aktiv { background: var(--primary); border-color: var(--primary); color: var(--primary-contrast); }
+.werkzeug:disabled { opacity: 0.45; cursor: not-allowed; }
+.werkzeugleiste__schalter { display: flex; gap: 6px; align-items: center; font-size: 0.9rem; }
+.werkzeugleiste__auswahl { width: auto; padding: 4px 6px; }
+.grundriss__speicherleiste { min-height: 40px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.grundriss__speicheraktionen { margin-top: 0; }
+.grundriss__status { font-weight: 600; }
+.grundriss__status--geaendert { color: var(--warnung); }
+.grundriss__status--gespeichert { color: var(--erfolg); }
+.grundriss__status--konflikt, .grundriss__status--validierung, .grundriss__status--fehler { color: var(--error-text); }
+.grundriss__arbeitsbereich { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 12px; }
+@media (max-width: 960px) { .grundriss__arbeitsbereich { grid-template-columns: 1fr; } }
+.grundriss__flaeche {
+  position: relative; height: 62vh; min-height: 420px; overflow: hidden;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+  touch-action: none;
+}
+.grundriss__svg { display: block; user-select: none; touch-action: none; }
+.grundriss__statuszeile {
+  position: absolute; left: 0; right: 0; bottom: 0; margin: 0; padding: 3px 8px;
+  display: flex; justify-content: space-between; gap: 12px; font-size: 0.78rem;
+  color: var(--muted); background: var(--bg); border-top: 1px solid var(--border);
+}
+.grundriss__hilfe { font-size: 0.88rem; color: var(--muted); }
+.grundriss__hilfe summary { cursor: pointer; }
+
+.grundriss__raster { fill: none; stroke: var(--border); stroke-width: 0.5; shape-rendering: crispEdges; }
+.grundriss__raster--haupt { stroke-width: 1; }
+.grundriss__raumflaeche { fill: var(--primary); fill-opacity: 0.035; stroke: none; cursor: pointer; }
+.grundriss__raum--aktiv .grundriss__raumflaeche { fill-opacity: 0.09; }
+.grundriss__raum--ausgewaehlt .grundriss__raumflaeche { fill-opacity: 0.14; }
+.grundriss__wand { fill: none; stroke: var(--wand); stroke-linecap: square; }
+.grundriss__raum--aktiv .grundriss__wand { stroke: var(--wand-aktiv); }
+.grundriss__raum .grundriss__wand--warnung { stroke: var(--warnung); }
+.grundriss__raum .grundriss__wand--fehler { stroke: var(--error-text); }
+.grundriss__raum .grundriss__wand--ausgewaehlt { stroke: var(--primary); }
+.grundriss__treffer {
+  fill: none; stroke: transparent; stroke-width: 14px; vector-effect: non-scaling-stroke;
+  pointer-events: stroke; cursor: pointer;
+}
+.grundriss__treffer--oeffnung { stroke-width: 16px; cursor: ew-resize; }
+.grundriss__oeffnung-luecke { stroke: var(--surface); stroke-linecap: butt; }
+.grundriss__oeffnung-symbol { fill: none; stroke-width: 3px; vector-effect: non-scaling-stroke; stroke-linecap: butt; }
+.grundriss__oeffnung--door .grundriss__oeffnung-symbol { stroke: var(--tuer); }
+.grundriss__oeffnung--window .grundriss__oeffnung-symbol { stroke: var(--fenster); stroke-width: 5px; stroke-dasharray: 2 2; }
+.grundriss__oeffnung--passage .grundriss__oeffnung-symbol { stroke: var(--muted); stroke-dasharray: 6 4; }
+.grundriss__oeffnung--warnung .grundriss__oeffnung-symbol { stroke: var(--warnung); }
+.grundriss__oeffnung--fehler .grundriss__oeffnung-symbol { stroke: var(--error-text); stroke-width: 5px; }
+.grundriss__oeffnung--ausgewaehlt .grundriss__oeffnung-symbol { stroke: var(--primary); stroke-width: 6px; }
+.grundriss__ecke { fill: var(--surface); stroke: var(--primary); stroke-width: 1.5; cursor: move; }
+.grundriss__ecke--ausgewaehlt { fill: var(--primary); }
+.grundriss__beschriftung text, .grundriss__mass, .grundriss__raumname { pointer-events: none; }
+.grundriss__mass {
+  font-size: 11px; fill: var(--muted); paint-order: stroke; stroke: var(--surface); stroke-width: 3px;
+  font-variant-numeric: tabular-nums;
+}
+.grundriss__raumname { font-size: 13px; font-weight: 600; fill: var(--text); paint-order: stroke; stroke: var(--surface); stroke-width: 3px; }
+.grundriss__raumflaeche-text { font-weight: 400; fill: var(--muted); }
+.grundriss__vorschau { fill: var(--primary); fill-opacity: 0.06; stroke: var(--primary); stroke-width: 1.5; stroke-dasharray: 6 4; }
+polyline.grundriss__vorschau { fill: none; }
+.grundriss__vorschau--fehler { stroke: var(--error-text); }
+.grundriss__startpunkt { fill: none; stroke: var(--primary); stroke-width: 2; }
+.grundriss__fangziel { fill: none; stroke: var(--warnung); stroke-width: 2; }
+
+.eigenschaften { display: flex; flex-direction: column; gap: 8px; font-size: 0.9rem; max-height: 62vh; overflow-y: auto; }
+.eigenschaften h3, .eigenschaften h4 { margin: 4px 0; }
+.eigenschaften__kopf { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.eigenschaften__kennzahlen { margin: 0; }
+.eigenschaften__befunde { margin: 0; padding-left: 18px; color: var(--warnung); }
+.eigenschaften__abschnitt { border-top: 1px solid var(--border); padding-top: 8px; }
+.eigenschaften__felder { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.eigenschaften__formular { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.eigenschaften__liste { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.eigenschaften__liste .button { width: 100%; text-align: left; }
+.eigenschaften__gewaehlt { border-color: var(--primary); }
+.grundriss__buehne { position: relative; min-width: 0; }
+/* Klicks gehen durch den Hinweis hindurch auf die Zeichenfläche - nur das
+   Schließen-Kreuz fängt sie ab. Sonst verdeckte er den oberen Zeichenrand. */
+.grundriss__hinweis {
+  pointer-events: none;
+  position: absolute; z-index: 1; top: 8px; right: 8px; max-width: min(420px, calc(100% - 16px)); margin: 0;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 4px 4px 4px 10px; font-size: 0.88rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+.grundriss__hinweis button { pointer-events: auto; }
+.grundriss__seite { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.grundriss__serverfehler { font-size: 0.88rem; }
+.grundriss__serverfehler ul { margin: 4px 0; padding-left: 18px; }

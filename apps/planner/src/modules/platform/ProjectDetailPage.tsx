@@ -6,6 +6,7 @@ import { Link, useParams } from "react-router-dom";
 
 import { useAuth, usePermission } from "../../core/auth/AuthProvider";
 import { useProjectTabs } from "../../core/modules/ProjectTabs";
+import { verlassenBestaetigen } from "../../core/ui/ungespeichert";
 import { ProjectFilesTab } from "./ProjectFilesTab";
 import { ProjectMasterDataTab } from "./ProjectMasterDataTab";
 import { ProjectStructureTab } from "./ProjectStructureTab";
@@ -32,7 +33,12 @@ export default function ProjectDetailPage() {
   // Beitraege der Fachmodule - ab Phase 3 erscheint hier die Elektroplanung.
   const modulTabs = useProjectTabs();
 
-  const [aktiv, setAktiv] = useState<string>(EIGENE_TABS[0].id);
+  const [aktiv, setAktivRoh] = useState<string>(EIGENE_TABS[0].id);
+  // Ein Tabwechsel entlaedt den bisherigen Tab. Haelt er ungespeicherte
+  // Aenderungen, wird vorher gefragt (fachneutraler Core-Baustein).
+  const setAktiv = (id: string) => {
+    if (id !== aktiv && verlassenBestaetigen()) setAktivRoh(id);
+  };
   const [fehler, setFehler] = useState<string | null>(null);
 
   const projekt = useQuery({

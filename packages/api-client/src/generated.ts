@@ -671,6 +671,46 @@ export interface paths {
          *     will, warum ein Raum noch im Entwurf steht, liest hier die Einzelfehler.
          */
         get: operations["getElectricalRoomContour"];
+        /**
+         * Raumkontur als Ganzes speichern
+         * @description Ersetzt Waende und Oeffnungen eines Raums **atomar** durch den Zielzustand.
+         *
+         *     ``If-Match`` traegt die Version des **Raums** - sie ist die Version der
+         *     gesamten Raumgeometrie. Die Reihenfolge der Waende ist die Reihenfolge in
+         *     der Liste. Bekannte IDs werden geaendert, neue angelegt, fehlende Waende
+         *     entfernt. Oeffnungen verschwinden nur, wenn sie in
+         *     ``removed_opening_ids`` stehen. Jeder Fehler laesst den Raum
+         *     unveraendert; bei Erfolg entsteht genau ein ``electrical.plan.updated``
+         *     (``walls_changed``).
+         *
+         *     Der ``GET`` auf derselben Adresse liefert den Pruefbericht dieser Kontur.
+         */
+        put: operations["replaceElectricalRoomContour"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/modules/electrical/floors/{floor_id}/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Planungsstand eines Geschosses
+         * @description Raeume, Waende und Oeffnungen eines Geschosses in **einer** Antwort.
+         *
+         *     Fuer den grafischen Editor, der den Stand ohnehin vollstaendig braucht.
+         *     Geschossbezogen statt projektweit: Der Editor zeigt genau ein Geschoss,
+         *     und die Antwort bleibt damit begrenzt. Die Anzahl der Datenbankabfragen
+         *     haengt nicht von der Zahl der Raeume ab. Archivierte Projekte bleiben
+         *     lesbar.
+         */
+        get: operations["getElectricalFloorPlan"];
         put?: never;
         post?: never;
         delete?: never;
@@ -947,6 +987,63 @@ export interface components {
             sort_order?: number | null;
         };
         /**
+         * ContourOpeningIn
+         * @description Oeffnung als Teil einer vollstaendigen Raumkontur.
+         *
+         *     ``id`` fehlt oder ist neu: Die Oeffnung wird angelegt - mit genau dieser
+         *     ID, wenn sie angegeben ist (clientseitig erzeugte UUID, ADR 0007). Ist die
+         *     ID bereits eine Oeffnung **dieser** Wand, wird sie geaendert. Eine
+         *     Oeffnung wechselt ihre Wand nicht.
+         */
+        ContourOpeningIn: {
+            /** Id */
+            id?: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "door" | "window" | "passage";
+            /** Offset Mm */
+            offset_mm: number;
+            /** Width Mm */
+            width_mm: number;
+            /** Height Mm */
+            height_mm: number;
+            /**
+             * Sill Height Mm
+             * @default 0
+             */
+            sill_height_mm: number;
+        };
+        /**
+         * ContourWallIn
+         * @description Wand als Teil einer vollstaendigen Raumkontur.
+         *
+         *     Die **Position in der Liste** ist die Konturreihenfolge. ``id`` wie bei
+         *     :class:`ContourOpeningIn`: bekannt heisst aendern, fehlend oder neu heisst
+         *     anlegen. ``openings`` ist die vollstaendige Liste der Oeffnungen dieser
+         *     Wand.
+         */
+        ContourWallIn: {
+            /** Id */
+            id?: string | null;
+            /** X1 Mm */
+            x1_mm: number;
+            /** Y1 Mm */
+            y1_mm: number;
+            /** X2 Mm */
+            x2_mm: number;
+            /** Y2 Mm */
+            y2_mm: number;
+            /**
+             * Thickness Mm
+             * @default 115
+             */
+            thickness_mm: number;
+            /** Openings */
+            openings?: components["schemas"]["ContourOpeningIn"][];
+        };
+        /**
          * CustomerCreate
          * @description Neuer Kunde. Die Kundennummer vergibt der Nummernkreis.
          */
@@ -1137,6 +1234,28 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /**
+         * FloorPlanOut
+         * @description Vollstaendiger Planungsstand eines Geschosses in **einer** Antwort.
+         *
+         *     Bewusst ohne Stammdaten des Geschosses oder Projekts: Die liefert der
+         *     Core. Hier steht nur, was das Fachmodul besitzt - und die beiden IDs,
+         *     an denen es haengt.
+         */
+        FloorPlanOut: {
+            /**
+             * Floor Id
+             * Format: uuid
+             */
+            floor_id: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Rooms */
+            rooms: components["schemas"]["RoomPlanOut"][];
         };
         /** FloorUpdate */
         FloorUpdate: {
@@ -1410,6 +1529,8 @@ export interface components {
             code: string;
             /** Message */
             message: string;
+            /** Keys */
+            keys?: string[] | null;
         };
         /**
          * ProjectCreate
@@ -1574,10 +1695,32 @@ export interface components {
             problems: components["schemas"]["GeometryProblemOut"][];
         };
         /**
+         * RoomContourUpdate
+         * @description Vollstaendiger Zielzustand der Raumgeometrie (``PUT /rooms/{id}/contour``).
+         *
+         *     Ein Vorgang, eine Transaktion: Entweder gilt danach genau diese Kontur,
+         *     oder es hat sich nichts geaendert. Waende, die in ``walls`` fehlen, werden
+         *     entfernt. Oeffnungen verschwinden dagegen **nie** stillschweigend: Eine
+         *     vorhandene Oeffnung muss entweder in ``walls`` stehen oder ausdruecklich
+         *     in ``removed_opening_ids``. Sonst lehnt der Server ab.
+         */
+        RoomContourUpdate: {
+            /** Walls */
+            walls: components["schemas"]["ContourWallIn"][];
+            /** Removed Opening Ids */
+            removed_opening_ids?: string[];
+        };
+        /**
          * RoomCreate
          * @description Neuer Raum auf einem Geschoss.
          *
          *     ``height_mm`` bleibt leer, wenn die Standardhoehe des Geschosses gilt.
+         *
+         *     ``walls`` ist optional (Phase 4a): Der grafische Editor legt einen
+         *     gezeichneten Raum **samt** Kontur in einem Vorgang an. Ohne diese Angabe
+         *     entstuende ein Raum ohne Waende, wenn die zweite Anfrage scheitert. Die
+         *     Liste folgt denselben Regeln wie ``PUT /rooms/{id}/contour``; eine leere
+         *     Liste ist der bisherige Fall "Raum zuerst, Waende spaeter".
          */
         RoomCreate: {
             /** Name */
@@ -1586,6 +1729,8 @@ export interface components {
             room_number?: string | null;
             /** Height Mm */
             height_mm?: number | null;
+            /** Walls */
+            walls?: components["schemas"]["ContourWallIn"][];
         };
         /**
          * RoomOut
@@ -1639,6 +1784,63 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /**
+         * RoomPlanOut
+         * @description Raum im Planungsstand: gespeicherte Werte, berechnete Kontur, Waende.
+         *
+         *     ``contour_problems`` ist derselbe Befund wie im Pruefbericht
+         *     ``GET /rooms/{id}/contour`` - hier gleich mitgeliefert, damit der Editor
+         *     die betroffenen Waende markieren kann, ohne je Raum nachzufragen.
+         */
+        RoomPlanOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Floor Id
+             * Format: uuid
+             */
+            floor_id: string;
+            /** Name */
+            name: string;
+            /** Room Number */
+            room_number: string | null;
+            /** Height Mm */
+            height_mm: number | null;
+            /** Effective Height Mm */
+            effective_height_mm: number;
+            /**
+             * Contour Status
+             * @enum {string}
+             */
+            contour_status: "draft" | "valid";
+            /** Wall Count */
+            wall_count: number;
+            /** Area Mm2 */
+            area_mm2: number | null;
+            /** Area M2 */
+            area_m2: string | null;
+            /** Perimeter Mm */
+            perimeter_mm: number | null;
+            /** Version */
+            version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Walls */
+            walls: components["schemas"]["WallPlanOut"][];
+            /** Contour Problems */
+            contour_problems: components["schemas"]["GeometryProblemOut"][];
         };
         /**
          * RoomUpdate
@@ -1783,6 +1985,52 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /**
+         * WallPlanOut
+         * @description Wand im Planungsstand - mit ihren Oeffnungen, vom Wandanfang aus.
+         */
+        WallPlanOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Room Id
+             * Format: uuid
+             */
+            room_id: string;
+            /** Sort Order */
+            sort_order: number;
+            /** X1 Mm */
+            x1_mm: number;
+            /** Y1 Mm */
+            y1_mm: number;
+            /** X2 Mm */
+            x2_mm: number;
+            /** Y2 Mm */
+            y2_mm: number;
+            /** Thickness Mm */
+            thickness_mm: number;
+            /** Length Mm */
+            length_mm: number;
+            /** Opening Count */
+            opening_count: number;
+            /** Version */
+            version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Openings */
+            openings: components["schemas"]["OpeningOut"][];
         };
         /**
          * WallUpdate
@@ -3687,6 +3935,110 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RoomContourOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    replaceElectricalRoomContour: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoomContourUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoomPlanOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    getElectricalFloorPlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                floor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FloorPlanOut"];
                 };
             };
             /** @description Nicht gefunden */

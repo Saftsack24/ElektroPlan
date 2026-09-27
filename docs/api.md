@@ -82,7 +82,17 @@ GET    /walls/{wall_id}/openings
 POST   /walls/{wall_id}/openings
 PATCH  /openings/{opening_id}              If-Match
 DELETE /openings/{opening_id}              If-Match
+
+# Phase 4a (grafischer Editor, ADR 0014)
+GET    /floors/{floor_id}/plan             Planungsstand eines Geschosses in einer Antwort
+PUT    /rooms/{room_id}/contour            If-Match (Raumversion) - Raumgeometrie atomar ersetzen
+POST   /floors/{floor_id}/rooms            optional mit `walls` - Raum samt Kontur atomar
 ```
+
+**Raumversion = Version der Raumgeometrie (seit Phase 4a).** Jede wirksame Änderung an
+Wänden oder Öffnungen eines Raums zählt auch die Raumversion weiter. Wer danach den Raum
+ändert, umordnet oder die Kontur speichert, sendet die aktuelle Raumversion. Vertrag des
+Konturspeicherns mit allen Fehlercodes: `docs/modules/electrical.md`, Abschnitt 9.
 
 **Geometrie geht als Integer in Millimetern** über die Leitung, Flächen zusätzlich als
 Dezimalstring in Quadratmetern (`area_m2`, drei Nachkommastellen). Die Regeln stehen in
@@ -93,6 +103,7 @@ Dezimalstring in Quadratmetern (`area_m2`, drei Nachkommastellen). Die Regeln st
 | Geometrie unzulässig (entartete Wand, Überschneidung, Dublette, Öffnung außerhalb, Überlappung) | `422 validation-failed`; `errors[]` nennt je Befund einen stabilen `code` und eine deutsche Meldung |
 | Raumnummer im Geschoss bereits vergeben | `422 validation-failed` |
 | Wand mit Öffnungen löschen | `409 conflict` |
+| Kontur speichern entfernt eine Wand, deren Öffnungen nicht ausdrücklich entfernt sind | `409 conflict`, Code `wall-has-openings` |
 | Geschoss oder Gebäude mit Planungsdaten löschen | `409 conflict` (Fremdschlüssel `RESTRICT`) |
 | Änderung würde eine vorhandene Öffnung ungültig machen | `422 validation-failed`, Änderung wird **nicht** ausgeführt |
 | Projekt archiviert | `409 project-archived` — derselbe Fehlervertrag wie bei den Core-Unterressourcen |
@@ -270,6 +281,11 @@ Geldfelder tragen immer eine Währung im umgebenden Objekt (`"currency": "EUR"`)
 }
 ```
 
+`errors[].keys` (optional, seit Phase 4a): Kennungen der betroffenen Objekte, wenn sich
+ein Befund einzelnen Datensätzen zuordnen lässt — etwa die IDs zweier sich schneidender
+Wände. Fachneutral: Der Core reicht die Kennungen nur durch. Fehlt die Angabe, entfällt
+das Feld.
+
 Regeln:
 
 - `Content-Type: application/problem+json`
@@ -315,7 +331,11 @@ GET /api/v1/materials?limit=50&cursor=eyJ…&q=NYM&category_id=…&sort=name
 ## 5. Schreibende Operationen
 
 - `POST` legt an und liefert `201` mit dem vollständigen Objekt.
-- `PATCH` ändert teilweise; `PUT` wird nicht verwendet.
+- `PATCH` ändert teilweise.
+- `PUT` ersetzt ausschließlich eine **vollständige Liste als Ganzes**, wo eine
+  Teiländerung mehrdeutig oder nicht atomar wäre. Einziger Fall bisher:
+  `PUT /modules/electrical/rooms/{room_id}/contour` (Phase 4a, ADR 0014). Vorgesehen war
+  das Muster schon für die Punktlisten der Leitungswege.
 - `DELETE` ist Soft Delete, wo fachlich vorgesehen, und liefert `204`.
 - Zustandswechsel sind eigene Endpunkte, keine Statusfelder im `PATCH`:
 

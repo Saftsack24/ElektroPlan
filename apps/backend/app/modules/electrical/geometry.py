@@ -45,6 +45,11 @@ MIN_OPENING_SIZE_MM = 100
 MAX_OPENING_SIZE_MM = 20_000
 #: Eine geschlossene Kontur braucht mindestens drei Segmente.
 MIN_CONTOUR_WALLS = 3
+#: Eine Raumkontur mit mehr Waenden als das ist ein Erfassungsfehler. Die
+#: Lagepruefung ist quadratisch; die Grenze haelt sie berechenbar.
+MAX_WALLS_PER_ROOM = 200
+#: Mehr Oeffnungen in einer Wand sind ebenfalls kein Grundriss mehr.
+MAX_OPENINGS_PER_WALL = 50
 
 
 class ContourStatus(StrEnum):
