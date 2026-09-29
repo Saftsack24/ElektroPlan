@@ -19,7 +19,7 @@ from app.core.authorization.permissions import (
     PROJECT_RECORD_READ,
     PROJECT_RECORD_WRITE,
 )
-from app.core.pagination import DEFAULT_LIMIT, Page, clamp_limit
+from app.core.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, NumberedPage
 from app.core.preconditions import require_if_match
 from app.core.projects.models import (
     PROJECT_STATUS_ACTIVE,
@@ -37,6 +37,7 @@ from app.core.projects.schemas import (
     ProjectCreate,
     ProjectOut,
     ProjectStatus,
+    ProjectStatusGroup,
     ProjectSummary,
     ProjectUpdate,
 )
@@ -81,34 +82,50 @@ def _summary(project: Project, customer_name: str) -> ProjectSummary:
 
 @router.get(
     "/projects",
-    response_model=Page[ProjectSummary],
+    response_model=NumberedPage[ProjectSummary],
     operation_id="listProjects",
     summary="Projekte auflisten",
 )
 def list_projects(
     current_user: CurrentUser = Depends(require_permission(PROJECT_RECORD_READ)),
     session: Session = Depends(get_session),
-    q: str | None = Query(default=None, max_length=120, description="Name, Nummer, Ort, Kunde"),
+    q: str | None = Query(
+        default=None, max_length=120, description="Bezeichnung, Projektnummer oder Baustellenort"
+    ),
     project_status: ProjectStatus | None = Query(default=None, alias="status"),
+    status_group: ProjectStatusGroup | None = Query(
+        default=None,
+        description=(
+            "current = draft + active, closed = completed + archived. "
+            "Schliesst sich mit status aus."
+        ),
+    ),
     customer_id: uuid.UUID | None = Query(default=None),
     sort: ProjectSort = Query(default="created_at"),
-    limit: int = Query(default=DEFAULT_LIMIT, ge=1, le=200),
-    cursor: str | None = Query(default=None),
-) -> Page[ProjectSummary]:
-    """Projekte der eigenen Organisation - gefiltert, sortiert, seitenweise."""
+    page: int = Query(default=1, ge=1, le=1_000_000, description="Seite, beginnend bei 1"),
+    page_size: int = Query(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+) -> NumberedPage[ProjectSummary]:
+    """Projekte der eigenen Organisation - gefiltert, sortiert, nummerierte Seiten.
+
+    Eine Seite hinter der letzten liefert die letzte vorhandene Seite; das
+    Feld ``page`` der Antwort nennt sie (ADR 0017).
+    """
     service = ProjectService(session, current_user.organization_id)
-    page = service.list_projects(
-        limit=clamp_limit(limit),
-        cursor=cursor,
+    seite = service.list_projects(
+        page=page,
+        page_size=page_size,
         search=q,
         status=project_status,
+        status_group=status_group,
         customer_id=customer_id,
         sort=sort,
     )
-    return Page[ProjectSummary](
-        items=[_summary(project, customer_name) for project, customer_name in page.items],
-        next_cursor=page.next_cursor,
-        has_more=page.has_more,
+    return NumberedPage[ProjectSummary](
+        items=[_summary(project, customer_name) for project, customer_name in seite.items],
+        page=seite.page,
+        page_size=seite.page_size,
+        total_items=seite.total_items,
+        total_pages=seite.total_pages,
     )
 
 

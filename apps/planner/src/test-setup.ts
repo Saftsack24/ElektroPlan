@@ -1,4 +1,23 @@
 import "@testing-library/jest-dom/vitest";
+import { afterEach } from "vitest";
+
+import { MASSEINHEIT_SCHLUESSEL_ALT, masseinheitZuruecksetzen } from "./core/ui/masseinheit";
+
+// Jeder Test beginnt mit der Standard-Maßeinheit (cm) und ohne angemeldeten
+// Benutzer: Die persönliche Wahl liegt im localStorage (je Benutzer) und
+// würde sonst in den nächsten Test durchschlagen.
+afterEach(() => {
+  try {
+    for (const schluessel of Object.keys(window.localStorage)) {
+      if (schluessel === MASSEINHEIT_SCHLUESSEL_ALT || schluessel.startsWith(`${MASSEINHEIT_SCHLUESSEL_ALT}.`)) {
+        window.localStorage.removeItem(schluessel);
+      }
+    }
+  } catch {
+    // ohne Speicher gibt es nichts zurückzusetzen
+  }
+  masseinheitZuruecksetzen();
+});
 
 /**
  * Data Router in jsdom (seit Phase 4a.1).

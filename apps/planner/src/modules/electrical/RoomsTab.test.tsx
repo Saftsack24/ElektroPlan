@@ -1,7 +1,10 @@
 import { ApiError } from "@elektroplan/api-client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { masseinheitSetzen } from "../../core/ui/masseinheit";
+import { RueckfrageProvider } from "../../core/ui/Rueckfrage";
 
 /**
  * Oberfläche des Raummodells (Phase 3).
@@ -175,9 +178,9 @@ let kontur: unknown = KONTUR_GUELTIG;
 function zeigen() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   render(
-    <QueryClientProvider client={client}>
+    <QueryClientProvider client={client}><RueckfrageProvider>
       <RoomsTab />
-    </QueryClientProvider>,
+    </RueckfrageProvider></QueryClientProvider>,
   );
 }
 
@@ -457,8 +460,9 @@ describe("Raum öffnen", () => {
     await screen.findByText("Raumkontur");
 
     klicken("Wand hinzufügen");
-    tippen(/Endpunkt X/, "5000");
-    tippen(/Wandstärke/, "240");
+    // Standard ist Zentimeter; gesendet werden ganze Millimeter.
+    tippen(/Endpunkt X/, "500");
+    tippen(/Wandstärke/, "24");
     klicken("Speichern");
 
     await waitFor(() =>
@@ -469,6 +473,83 @@ describe("Raum öffnen", () => {
           body: { x1_mm: 0, y1_mm: 0, x2_mm: 5000, y2_mm: 0, thickness_mm: 240 },
         },
       ),
+    );
+  });
+
+  it("liest Zentimeter mit Komma exakt als ganze Millimeter", async () => {
+    api.post.mockResolvedValue(WAND);
+    zeigen();
+    await screen.findByText("Wohnzimmer");
+    klicken("Raum Wohnzimmer öffnen");
+    await screen.findByText("Raumkontur");
+
+    klicken("Wand hinzufügen");
+    expect(screen.getByLabelText(/^Wandstärke \(cm\)/)).toHaveValue("11,5");
+    tippen(/Startpunkt X/, "-12,5");
+    tippen(/Endpunkt X/, "487.5");
+    klicken("Speichern");
+
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith("/api/v1/modules/electrical/rooms/{room_id}/walls", {
+        path: { room_id: "raum-1" },
+        body: { x1_mm: -125, y1_mm: 0, x2_mm: 4875, y2_mm: 0, thickness_mm: 115 },
+      }),
+    );
+  });
+
+  it("lehnt Zentimeter mit zwei Nachkommastellen verständlich ab", async () => {
+    zeigen();
+    await screen.findByText("Wohnzimmer");
+    klicken("Raum Wohnzimmer öffnen");
+    await screen.findByText("Raumkontur");
+
+    klicken("Wand hinzufügen");
+    tippen(/Endpunkt X/, "500,25");
+    klicken("Speichern");
+
+    expect(await screen.findByText(/Höchstens eine Nachkommastelle/)).toBeInTheDocument();
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  it("nimmt mit Einstellung Millimeter ganze Millimeter entgegen", async () => {
+    masseinheitSetzen("mm");
+    api.post.mockResolvedValue(WAND);
+    zeigen();
+    await screen.findByText("Wohnzimmer");
+    klicken("Raum Wohnzimmer öffnen");
+    await screen.findByText("Raumkontur");
+
+    klicken("Wand hinzufügen");
+    expect(screen.getByLabelText(/^Wandstärke \(mm\)/)).toHaveValue("115");
+    tippen(/Endpunkt X/, "5000");
+    klicken("Speichern");
+
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith("/api/v1/modules/electrical/rooms/{room_id}/walls", {
+        path: { room_id: "raum-1" },
+        body: { x1_mm: 0, y1_mm: 0, x2_mm: 5000, y2_mm: 0, thickness_mm: 115 },
+      }),
+    );
+  });
+
+  it("rechnet offene Eingaben beim Einheitenwechsel um, statt sie umzudeuten", async () => {
+    api.post.mockResolvedValue(WAND);
+    zeigen();
+    await screen.findByText("Wohnzimmer");
+    klicken("Raum Wohnzimmer öffnen");
+    await screen.findByText("Raumkontur");
+
+    klicken("Wand hinzufügen");
+    tippen(/Endpunkt X/, "500");
+    act(() => masseinheitSetzen("mm"));
+    expect(screen.getByLabelText(/^Endpunkt X \(mm\)/)).toHaveValue("5000");
+    klicken("Speichern");
+
+    await waitFor(() =>
+      expect(api.post).toHaveBeenCalledWith("/api/v1/modules/electrical/rooms/{room_id}/walls", {
+        path: { room_id: "raum-1" },
+        body: { x1_mm: 0, y1_mm: 0, x2_mm: 5000, y2_mm: 0, thickness_mm: 115 },
+      }),
     );
   });
 
@@ -508,14 +589,14 @@ describe("Raum öffnen", () => {
     await screen.findByText("Raumkontur");
 
     klicken("Wand hinzufügen");
-    tippen(/Endpunkt X/, "5000");
+    tippen(/Endpunkt X/, "500");
     klicken("Speichern");
 
     expect(
       await screen.findByText(/Die Wand passt nicht zu den bereits erfassten/),
     ).toBeInTheDocument();
-    // Die Eingaben bleiben stehen.
-    expect(screen.getByLabelText(/Endpunkt X/)).toHaveValue(5000);
+    // Die Eingaben bleiben stehen - in der Anzeigeeinheit.
+    expect(screen.getByLabelText(/Endpunkt X/)).toHaveValue("500");
   });
 
   it("ordnet die Waende ueber die vollstaendige Reihenfolge um", async () => {
@@ -560,7 +641,7 @@ describe("Raum öffnen", () => {
     await screen.findByText("Tür");
 
     erstenKlicken("Bearbeiten");
-    tippen(/Abstand vom Wandanfang/, "2000");
+    tippen(/Abstand vom Wandanfang/, "200");
     klicken("Speichern");
 
     await waitFor(() =>
@@ -588,10 +669,10 @@ describe("Raum öffnen", () => {
     await screen.findByText(/Öffnungen in Wand 1/);
 
     erstenKlicken("Öffnung hinzufügen");
-    tippen(/Abstand vom Wandanfang/, "4500");
+    tippen(/Abstand vom Wandanfang/, "450");
     klicken("Speichern");
 
-    expect(await screen.findByText(/in die 5000 mm lange Wand passen/)).toBeInTheDocument();
+    expect(await screen.findByText(/in die 500 cm lange Wand passen/)).toBeInTheDocument();
     expect(api.post).not.toHaveBeenCalled();
   });
 

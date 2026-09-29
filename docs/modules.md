@@ -58,7 +58,7 @@ Ein Fachmodul darf Core-Code benutzen — aber nicht jeden. Erlaubt ist ausschli
 | `app.core.auth.dependencies` | angemeldeter Benutzer, Permission-Dependency |
 | `app.core.events.bus`, `app.core.events.uow` | Event Bus und Unit of Work |
 | `app.core.module_registry.descriptor` | Modulbeschreibung und Ports |
-| `app.core.pagination`, `app.core.persistence`, `app.core.preconditions`, `app.core.validation` | Cursor-Auflistung, Konfliktübersetzung, `If-Match`, gemeinsame Validatoren |
+| `app.core.pagination`, `app.core.persistence`, `app.core.preconditions`, `app.core.validation` | Cursor-Auflistung und nummerierte Seiten (ADR 0017), Konfliktübersetzung, `If-Match`, gemeinsame Validatoren |
 | `app.core.tenancy.repository` | mandantengefilterter Datenzugriff |
 | `app.core.projects.planning` | Erweiterungspunkt: Planungsdaten an einem Geschoss |
 
@@ -354,9 +354,25 @@ export const MODULES: PlannerModule[] = [
 
 ### Gemeinsame UI-Bausteine
 
-Wiederverwendbare Bausteine liegen in `src/core/ui/` (`Feld`, `Auswahl`, `Schalter`,
-`Dialog`, `WeitereLaden`) und `src/core/api/` (`useCursorListe`, `eintraegeAus`).
-Sie sind Core und dürfen von jedem Modul importiert werden.
+Wiederverwendbare Bausteine liegen in `src/core/ui/`, `src/core/api/` und `src/core/`.
+Sie sind Core, fachneutral und dürfen von jedem Modul importiert werden:
+
+| Baustein | Aufgabe |
+|---|---|
+| `Feld`, `Auswahl`, `Schalter` | beschriftete Formularfelder mit Fehler und Hinweis |
+| `Dialog` | natives `<dialog>`; genau ein Scrollbereich (`.dialog__inhalt`), fester Kopf, angeheftete `.dialog__aktionen`, referenzgezählte Seiten-Sperre (`scrollsperre.ts`) |
+| `.feldzeile` (CSS) | Felder nebeneinander, oben bündig; Hinweise und Fehler verschieben das Nachbarfeld nicht |
+| `Combobox` | Suchfeld mit schwebender, `position: fixed` verankerter Vorschlagsliste (WAI-ARIA Combobox/Listbox); sucht nicht selbst |
+| `Seitennavigation`, `seitenfolge` | nummerierte Seiten mit erster/letzter, voriger/nächster Seite und Ellipsen |
+| `useNummerierteListe` | Liste mit echten Serverseiten (ADR 0017); Filterwechsel → Seite 1, ungültige Seite → letzte gültige |
+| `RueckfrageProvider`, `useRueckfrage`, `useVerlassenBestaetigen` | eigene Rückfrage statt `window.confirm`; eine Frage zur Zeit, Antwort genau einmal |
+| `Navigationsschutz`, `useUngespeicherteAenderungen` | Router-Blocker und Meldestelle für ungespeicherte Änderungen; `beforeunload` bleibt browsernativ |
+| `core/masse.ts`, `masseinheit.ts` (`useMasse`) | persönliche Anzeigeeinheit für Längen (cm/mm); einzige Stelle der Umrechnung, gespeichert wird in Millimetern |
+| `EinstellungenDialog` | persönliche Anzeigeeinstellungen (Maßeinheit), lokal im Browser |
+
+Die Cursor-Bausteine `useCursorListe`, `WeitereLaden` und `eintraegeAus` sind mit der
+Umstellung von Kunden- und Projektliste entfallen; die Benutzerverwaltung blättert
+weiter per Cursor über ihren eigenen Hook `useSeitenweise`.
 
 **Eine Seite exportiert keine Bausteine für andere Seiten.** Vorher holte sich
 `ProjectsPage` das Feld aus `CustomersPage` und `ProjectDetailPage` die Statusnamen aus

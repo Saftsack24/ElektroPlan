@@ -7,7 +7,11 @@ import { useParams } from "react-router-dom";
 import { alsFormularfehler } from "../../core/api/fehler";
 import { useAuth, usePermission } from "../../core/auth/AuthProvider";
 import { Auswahl } from "../../core/ui/Feld";
-import { GrundrissEditor, planSchluessel } from "./editor/GrundrissEditor";
+import { useMasse } from "../../core/ui/masseinheit";
+import { useRueckfrage, verwerfenOptionen } from "../../core/ui/Rueckfrage";
+import { Ansicht3dLaden } from "./ansicht3d/Ansicht3dLaden";
+import { GrundrissEditor } from "./editor/GrundrissEditor";
+import { planSchluessel } from "./plan";
 import { RaumDetail } from "./RaumDetail";
 import { RaumDialog } from "./RaumDialog";
 import type { Raumwerte } from "./RaumDialog";
@@ -23,14 +27,22 @@ type Geschosswahl = {
   default_ceiling_height_mm: number;
 };
 
-type Ansicht = "editor" | "tabelle";
+type Ansicht = "editor" | "3d" | "tabelle";
+
+const ANSICHTEN: readonly { wert: Ansicht; label: string }[] = [
+  { wert: "editor", label: "2D-Editor" },
+  { wert: "3d", label: "3D-Ansicht" },
+  { wert: "tabelle", label: "Tabellen & Details" },
+];
 
 /** Zuletzt gewählte Ansicht - eine reine Bequemlichkeit je Browser. */
 const ANSICHT_SCHLUESSEL = "elektroplan.electrical.ansicht";
 
+/** Unbekannte oder alte Werte fallen sicher auf den 2D-Editor. */
 function gemerkteAnsicht(): Ansicht {
   try {
-    return window.localStorage.getItem(ANSICHT_SCHLUESSEL) === "tabelle" ? "tabelle" : "editor";
+    const wert = window.localStorage.getItem(ANSICHT_SCHLUESSEL);
+    return ANSICHTEN.find((a) => a.wert === wert)?.wert ?? "editor";
   } catch {
     return "editor";
   }
@@ -44,8 +56,8 @@ function ansichtMerken(ansicht: Ansicht) {
   }
 }
 
-const VERWERFEN_FRAGE =
-  "Im Grundrisseditor gibt es ungespeicherte Änderungen. Wenn Sie fortfahren, gehen sie verloren. Trotzdem fortfahren?";
+const EDITOR_MELDUNG =
+  "Im Grundrisseditor gibt es ungespeicherte Änderungen. Wenn Sie fortfahren, gehen sie verloren.";
 
 /**
  * Projekt-Tab „Räume & Grundriss" (Phase 3).
@@ -55,14 +67,16 @@ const VERWERFEN_FRAGE =
  * Modul nicht (docs/modules.md, Abschnitt 6). Die Projekt-ID kommt aus der
  * Route, in der der Tab gerendert wird.
  *
- * Zwei Ansichten auf **denselben** Serverstand (Phase 4a):
+ * Drei Ansichten auf **denselben** Serverstand:
  *
- * * „Grafischer Editor" - Zeichnen und Bearbeiten auf dem Grundriss.
+ * * „2D-Editor" (Phase 4a) - die einzige grafische Autorenfläche.
+ * * „3D-Ansicht" (Phase 4b, ADR 0016) - abgeleitet und schreibgeschützt;
+ *   liest denselben Plan-Eintrag wie der Editor und wird lazy geladen.
  * * „Tabellen & Details" - die formularbasierte Erfassung aus Phase 3. Sie
  *   bleibt präzise Alternative, barriereärmerer Weg und Diagnosehilfe.
  *
- * Beide lesen über React Query vom Server; nach jedem Schreibvorgang wird die
- * jeweils andere Ansicht neu geladen. Einen zweiten, unabhängigen Datenstand
+ * Alle lesen über React Query vom Server; nach jedem Schreibvorgang werden
+ * die anderen Ansichten neu geladen. Einen zweiten, unabhängigen Datenstand
  * gibt es nicht.
  */
 export default function RoomsTab() {
@@ -70,6 +84,8 @@ export default function RoomsTab() {
   const { api } = useAuth();
   const queryClient = useQueryClient();
   const darfSchreibenGrundsaetzlich = usePermission("electrical.plan.write");
+  const masse = useMasse();
+  const fragen = useRueckfrage();
 
   const [geschossId, setGeschossId] = useState<string>("");
   const [raumdialog, setRaumdialog] = useState<{ raum: RoomOut | null } | null>(null);
@@ -148,10 +164,24 @@ export default function RoomsTab() {
     [queryClient, aktivesGeschoss?.id],
   );
 
-  const ansichtWechseln = (neu: Ansicht) => {
-    if (neu === ansicht) return;
-    if (ansicht === "editor" && editorOffen.current && !window.confirm(VERWERFEN_FRAGE)) return;
+  /**
+   * Vor dem Entladen des Editors: ungespeicherte Änderungen nie still
+   * verwerfen, sondern über die eigene Rückfrage (`Rueckfrage.tsx`).
+   */
+  const editorVerlassen = async (titel: string, situation: string): Promise<boolean> => {
+    if (!editorOffen.current) return true;
+    const antwort = await fragen(verwerfenOptionen(titel, situation, EDITOR_MELDUNG));
+    if (antwort !== "bestaetigt") return false;
     editorOffen.current = false;
+    return true;
+  };
+
+  const ansichtWechseln = async (neu: Ansicht) => {
+    if (neu === ansicht) return;
+    const ziel = ANSICHTEN.find((a) => a.wert === neu)?.label ?? neu;
+    if (ansicht === "editor" && !(await editorVerlassen("Ansicht wechseln?", `Sie wollen zur Ansicht „${ziel}“ wechseln.`))) {
+      return;
+    }
     ansichtMerken(neu);
     setAnsicht(neu);
   };
@@ -256,10 +286,12 @@ export default function RoomsTab() {
           label="Geschoss"
           value={aktivesGeschoss?.id ?? ""}
           onChange={(id) => {
-            if (editorOffen.current && !window.confirm(VERWERFEN_FRAGE)) return;
-            editorOffen.current = false;
-            setGeschossId(id);
-            setOffenerRaum(null);
+            const ziel = auswahl.find((eintrag) => eintrag.id === id)?.label ?? "";
+            void editorVerlassen("Geschoss wechseln?", `Sie wollen zum Geschoss „${ziel}“ wechseln.`).then((weiter) => {
+              if (!weiter) return;
+              setGeschossId(id);
+              setOffenerRaum(null);
+            });
           }}
         >
           {auswahl.map((eintrag) => (
@@ -270,22 +302,17 @@ export default function RoomsTab() {
         </Auswahl>
 
         <div className="ansichtswahl" role="group" aria-label="Ansicht">
-          <button
-            type="button"
-            className={ansicht === "editor" ? "tabs__tab tabs__tab--active" : "tabs__tab"}
-            aria-pressed={ansicht === "editor"}
-            onClick={() => ansichtWechseln("editor")}
-          >
-            Grafischer Editor
-          </button>
-          <button
-            type="button"
-            className={ansicht === "tabelle" ? "tabs__tab tabs__tab--active" : "tabs__tab"}
-            aria-pressed={ansicht === "tabelle"}
-            onClick={() => ansichtWechseln("tabelle")}
-          >
-            Tabellen &amp; Details
-          </button>
+          {ANSICHTEN.map(({ wert, label }) => (
+            <button
+              key={wert}
+              type="button"
+              className={ansicht === wert ? "tabs__tab tabs__tab--active" : "tabs__tab"}
+              aria-pressed={ansicht === wert}
+              onClick={() => void ansichtWechseln(wert)}
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
         {fehler !== null && (
@@ -294,7 +321,7 @@ export default function RoomsTab() {
           </p>
         )}
 
-        {ansicht === "editor" ? null : raeume.isPending ? (
+        {ansicht !== "tabelle" ? null : raeume.isPending ? (
           <p className="muted">Räume werden geladen ...</p>
         ) : raeume.isError ? (
           <p className="alert alert--error" role="alert">
@@ -311,7 +338,7 @@ export default function RoomsTab() {
               <tr>
                 <th>Nummer</th>
                 <th>Bezeichnung</th>
-                <th>Höhe (mm)</th>
+                <th>Höhe</th>
                 <th>Kontur</th>
                 <th>Wände</th>
                 <th>Fläche</th>
@@ -323,7 +350,7 @@ export default function RoomsTab() {
                 <tr key={raum.id}>
                   <td>{raum.room_number ?? "—"}</td>
                   <td>{raum.name}</td>
-                  <td>{raum.effective_height_mm}</td>
+                  <td>{masse.anzeigen(raum.effective_height_mm)}</td>
                   <td>{KONTURZUSTAND_LABEL[raum.contour_status]}</td>
                   <td>{raum.wall_count}</td>
                   <td>{flaecheAnzeigen(raum.area_m2)}</td>
@@ -379,6 +406,16 @@ export default function RoomsTab() {
             darfSchreiben={darfSchreiben}
             onUngespeichert={ungespeichertMelden}
             onGespeichert={nachEditorSpeichern}
+          />
+        </section>
+      )}
+
+      {ansicht === "3d" && aktivesGeschoss !== undefined && (
+        <section className="card card--editor">
+          <Ansicht3dLaden
+            floorId={aktivesGeschoss.id}
+            geschossLabel={aktivesGeschoss.label}
+            onAnsicht={(ziel) => void ansichtWechseln(ziel)}
           />
         </section>
       )}

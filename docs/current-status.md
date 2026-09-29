@@ -1,8 +1,7 @@
 # Aktueller Projektstand
 
-**Letzte Aktualisierung:** 2026-09-27
-**Aktualisiert nach:** Task 0016 — Phase 4.2: Benutzerverwaltung, Rollenvergabe und
-Startseite
+**Letzte Aktualisierung:** 2026-09-28
+**Aktualisiert nach:** Task 0019 — Bedienungsnacharbeit 2 / Phase 4b.2 (gemeinsame Wandabschnitte, Tür per Maus)
 
 > Dieses Dokument soll einer neuen Session in wenigen Minuten vermitteln, wo das Projekt
 > steht.
@@ -26,15 +25,111 @@ Startseite
 **Phase 4a.1 — Navigationsschutz und Testdatenbank-Sicherheit: ABGESCHLOSSEN**
 **Phase 4.2 — Benutzerverwaltung, Rollenvergabe und Startseite: ABGESCHLOSSEN**
 (committet als `66cbff3`)
-**Phase 4b — 3D-Ansicht: NICHT BEGONNEN**, wartet auf Freigabe
+**Phase 4b — 3D-Ansicht: ABGESCHLOSSEN** (automatisiert und im Browser mit echtem WebGL
+abgenommen, siehe Abschnitt 2a) — mit dem gemeinsamen Checkpoint 4b/4b.1/4b.2 committet
+**Phase 4b.1 — Bedienungsnacharbeit 1: ABGESCHLOSSEN** (automatisiert und im Browser
+geprüft) — mit dem gemeinsamen Checkpoint 4b/4b.1/4b.2 committet
+**Phase 4b.2 — Bedienungsnacharbeit 2: ABGESCHLOSSEN** (automatisiert und im Browser
+funktional geprüft, siehe Abschnitt 2) — mit dem gemeinsamen Checkpoint 4b/4b.1/4b.2
+committet
 
-> Alle abgeschlossenen Phasen sind committet: Phase 4a und 4a.1 als `887f254`,
-> Phase 4.2 als `66cbff3`. Vor Phase 4b sind die Entscheidungen **T8** (Wandhöhe und
-> Wandtyp) und **T9** (deckungsgleiche Wände) verbindlich zu treffen.
+> Phase 4a und 4a.1 sind als `887f254`, Phase 4.2 als `66cbff3` committet. Die
+> Entscheidungen **T8** (Wandhöhe und Wandtyp) und **T9** (deckungsgleiche Wände) sind
+> getroffen: [ADR 0016](decisions/0016-derived-3d-view-wall-height-and-coincident-walls.md),
+> in Phase 4b.2 präzisiert (exakte Teilwände, eine Öffnung als Quelle).
 
 ---
 
 ## 2. Zuletzt abgeschlossene Aufgabe
+
+**Task 0019 — Bedienungsnacharbeit 2 / Phase 4b.2** (Punkt 9 der Abnahme nach 4b)
+
+1. **Exakte Teilwandtopologie** als reine, gemeinsame Schicht für 2D und 3D
+   (`modules/electrical/topologie/`): exakt kollineare Wände verschiedener Räume werden an
+   allen Endpunkten in atomare Abschnitte zerlegt – ganzzahlig, ohne Toleranz, auch schräg.
+   Warum: Im realen Grundriss aus 4a waren nur 4 Paare deckungsgleich, 7 nur teilweise.
+2. **Eine Öffnung, keine Dublette** (ADR 0016 präzisiert): genau eine Zeile an der
+   Eigentümerwand; liegt sie ganz in einem gemeinsamen Abschnitt, verbindet sie
+   **abgeleitet** beide Räume. Keine Paar-ID, keine Migration, keine Backendänderung.
+   Mehrdeutige Lagen (Grenze zweier Nachbarn, nur teilweise, > 2 Räume, Widerspruch) werden
+   als Konflikt gezeigt, nie geraten. Vorhandene beidseitige Dubletten bleiben unverändert
+   und werden gemeldet.
+3. **3D:** ein Körper je Abschnitt, keine doppelten Wandkörper mehr (realer Grundriss:
+   23 Körper, 0 Hinweise), stumpfe Stöße ohne Flimmern, eine gespeicherte Tür schneidet den
+   gemeinsamen Körper.
+4. **2D:** Tür per Maus setzen (Vorschau mit verbundenen Räumen, 5-cm-Fang, im Abschnitt
+   unter dem Zeiger, Kollisionen inkl. Gegenseite) und entlang der Wand ziehen (Escape,
+   Pointer Capture); gemeinsame Öffnungen einmal gezeichnet, im Nachbarraum abgeleitet.
+   Numerische Bearbeitung unverändert.
+5. **Maßeinheit je Benutzer** statt je Browser (einmalige Übernahme des alten Schlüssels).
+6. **`.claude/launch.json`** als Werkzeugartefakt entfernt.
+
+Details, Messwerte und Browserabnahme: `docs/task-history.md`, Task 0019.
+
+**Task 0018 — Bedienungsnacharbeit 1** (Punkte 1–8 und 10–11 der Abnahme nach 4b)
+
+1. **Nummerierte Seiten** für Kunden- und Projektlisten (`page`, `page_size`,
+   `total_items`, `total_pages`; [ADR 0017](decisions/0017-numbered-pages-for-customer-and-project-lists.md)).
+   Zählung über dieselbe gefilterte, mandantenbeschränkte Abfrage; Seite außerhalb →
+   letzte Seite. Offset-Verschiebung bei gleichzeitigen Änderungen ist akzeptiert.
+   Audit und Benutzerverwaltung bleiben beim Cursor. „Weitere laden" entfernt.
+2. **Kundenfilter** in der Projektübersicht, getrennt von der Projektsuche (die den
+   Kundennamen nicht mehr durchsucht); **Projekte dieses Kunden** auf der Kundenseite mit
+   `status_group=current|closed`.
+3. **Projektformular:** Adressvorschlag aus der Kundenadresse (gekennzeichnet, manuelle
+   Eingaben geschützt, „Kundenadresse übernehmen"), sichtbarer **Ländercode**, schwebende
+   Kundenvorschläge ohne Höhensprung, **genau ein Dialog-Scrollbereich**, Gebäude/Geschoss
+   oben bündig (`.feldzeile`).
+4. **Persönliche Maßeinheit:** Standard cm, wahlweise mm, unter „Einstellungen", lokal im
+   Browser, sofort wirksam in Formularen, Tabellen, 2D und 3D. Gespeichert, übertragen
+   und gerechnet wird **unverändert in ganzen Millimetern**; umgerechnet wird nur in
+   `core/masse.ts`.
+5. **Eigener Bestätigungsdialog** (`core/ui/Rueckfrage.tsx`) für alle anwendungsinternen
+   Wechsel mit ungespeicherten Änderungen, auch mit dem Router-Blocker. **Ausnahme:**
+   `beforeunload` (Neuladen, Tab schließen, Website verlassen) bleibt browsernativ –
+   Browser lassen dort keinen eigenen Dialog zu.
+6. „Ansicht einpassen" heißt in 2D und 3D **„Ansicht zurücksetzen"**.
+7. Keine Migration; Phase-4b-Dateien erhalten (Abweichungen nur an den beauftragten
+   Stellen). Punkt 9 (Tür/Teilwand) **nicht begonnen**.
+
+Details und Browserabnahme: `docs/task-history.md`, Task 0018.
+
+**Task 0017 — Phase 4b: abgeleitete 3D-Ansicht des Grundrisses**
+
+1. **Drei Ansichten** im Tab „Räume & Grundriss": „2D-Editor", „3D-Ansicht", „Tabellen &
+   Details" auf demselben Serverstand. Die 2D-Ansicht bleibt die einzige Autorenfläche;
+   die 3D-Ansicht ist abgeleitet und schreibgeschützt.
+2. **T8/T9 entschieden (ADR 0016):** Wandhöhe = effektive Raumhöhe, kein Wandtyp,
+   „gemeinsam/außen" nur abgeleitet; deckungsgleiche Wände werden nur in der Darstellung
+   gruppiert, nur bei exakt gleichen ganzzahligen Endpunkten. Keine Migration.
+3. **Three.js 0.186.1** direkt, gekapselt in `modules/electrical/ansicht3d/`, lazy
+   nachgeladen (eigener Chunk); kein React Three Fiber, keine CSG, kein
+   `packages/3d-engine`.
+4. **Reine Aufbereitung** (Transformation, Gruppierung, Wandzerlegung, Szenenmodell) ohne
+   DOM/WebGL/React; **imperative Szenenschicht** mit injizierbarer Umgebung und
+   vollständigem `entsorgen()`; Rendern nur auf Anforderung.
+5. **Konflikte sichtbar:** einseitige oder widersprüchliche Öffnungen, abweichende Art,
+   Stärke oder Höhe, Mehrfachwände, teilweise Überlagerungen — als verständliche Hinweise
+   mit Darstellungsregel.
+6. Backend, API, OpenAPI und Datenmodell **unverändert**.
+
+Details: `docs/task-history.md`, Task 0017.
+
+## 2a. Abnahme von Phase 4b — Ergebnis
+
+| Bereich | Nachweis |
+|---|---|
+| Exit „Grundriss aus 4a in 3D navigierbar" | EFH aus dem Messlauf 4a (`PR-2026-0006`, 7 Räume, 30 Wände, 15 Öffnungen) im Browser mit echtem WebGL 2 dargestellt, gedreht, gezoomt |
+| Exit „Szene und React-State entkoppelt" | Test: 40 Bilder Kamerabewegung, 0 React-Commits; Szene einmal je Mount; im Browser nach 10 Wechseln 2D ↔ 3D stets genau 1 Canvas und 0 Bildanforderungen im Ruhezustand |
+| Automatisiert | 441 Frontendtests (vorher 319), davon 122 neu für 4b; 707 Backendtests unverändert grün |
+| Browser (25 Punkte) | alle durchlaufen, siehe `docs/task-history.md`, Task 0017 |
+
+**Ehrliche Einordnung:** Mit echtem WebGL geprüft wurde in einem einzigen Browser
+(Chromium 152 im Browserbereich der Claude-Desktop-App, ANGLE/D3D11, NVIDIA RTX 3060).
+Kein Touchgerät, kein Firefox/Safari, kein Mensch am Gerät. Der WebGL-Fallback und der
+Kontextverlust sind nur automatisiert geprüft (im Browser nicht auslösbar). Maus-Pan
+wurde über ein erzeugtes Umschalt+Ziehen (`PointerEvent`) und über die Pfeiltasten
+geprüft; das Werkzeug überträgt beim Ziehen keine Modifier.
 
 **Task 0016 — Phase 4.2: Benutzerverwaltung, Rollenvergabe und Startseite**
 
@@ -469,11 +564,15 @@ Frontend-Tests. Ausgeführt gegen echtes PostgreSQL 17 und echtes MinIO.
 
 ### Nachgewiesen geprüft
 
-Stand nach Task 0016 (Phase 4.2), ein Lauf von `tasks.ps1 check` gegen echtes
-PostgreSQL 17 (`elektroplan_test`) und MinIO — alle Schranken grün: **706
-Backendtests, 0 übersprungen**, **319 Frontendtests**, genau ein Alembic-Head
-(`0005_member_administration`), mypy 93 Dateien, import-linter 4 Contracts / 0 verletzt,
-kein API-Drift, Build grün. Die Tabelle unten nennt den Stand nach Phase 3.
+Stand nach Task 0019 (Phase 4b.2): **736 Backendtests, 0 übersprungen** (unverändert, keine
+Backendänderung), **622 Frontendtests** (vorher 536), weiterhin nur Alembic-Head `0005`,
+keine neue Migration, kein API-Drift. Stand nach Task 0018 (Bedienungsnacharbeit 1): 736
+Backendtests (vorher 707), 536 Frontendtests (vorher 441). Davor, nach Task 0017 (Phase 4b), ein Lauf von `tasks.ps1 check` gegen echtes
+PostgreSQL 17 (`elektroplan_test`) und MinIO — alle Schranken grün: **707
+Backendtests, 0 übersprungen**, **441 Frontendtests** (Phase 4.2: 319), genau ein
+Alembic-Head (`0005_member_administration`, keine neue Migration), mypy 93 Dateien,
+import-linter 4 Contracts / 0 verletzt, kein API-Drift, Build grün. Die Tabelle unten
+nennt den Stand nach Phase 3.
 
 | Bereich | Nachweis |
 |---|---|
@@ -605,7 +704,7 @@ was offen ist, ist eine Schuld.
 | Row Level Security als fünfte Isolationsebene | vor externen Mandanten |
 | Virenscan für Uploads, MFA | vor kommerziellem Einsatz |
 | Offline-Sync-Umsetzung (Konzept steht) | Phase 13/16 |
-| `packages/ui`, `packages/3d-engine` | erst bei zweitem Consumer |
+| `packages/ui`, `packages/3d-engine` | erst bei zweitem Consumer (Three.js hat seit Phase 4b genau einen: `electrical/ansicht3d`) |
 | Freier Rolleneditor, einzelne Berechtigungen vergeben | offen, frühestens nach dem Pilot (Benutzerverwaltung mit festen Rollen seit Phase 4.2) |
 | E-Mail-Versand für Einladungen, Passwortwiederherstellung | vor Produktivbetrieb; bis dahin sind Einladungen in Produktion abgeschaltet |
 | Echte transaktionale Outbox | erst wenn ein Handler eine nicht nachholbare Wirkung erzeugt (ADR 0012) |
@@ -626,7 +725,13 @@ was offen ist, ist eine Schuld.
 | Die Überschneidungsprüfung ist quadratisch in der Wandzahl | Deshalb die Grenze von 200 Wänden je Raum | erst, wenn ein realer Grundriss daran scheitert |
 | Editor-Entwurf umfasst genau einen Raum | Raumwechsel verlangt Speichern; kein geschossweites Speichern | wenn der Messlauf mit Menschen es als Bremse zeigt |
 | Öffnungen können nicht an eine andere Wand umziehen | entfernen und neu setzen | bei Bedarf |
-| Performance nur im Entwicklungsbuild und in einem Browser gemessen | Zahlen sind konservativ, aber nicht allgemein | bei Bedarf mit Produktionsbuild wiederholen |
+| Performance nur im Entwicklungsbuild und in einem Browser gemessen | Zahlen sind konservativ, aber nicht allgemein | bei Bedarf mit Produktionsbuild wiederholen (die 3D-Ansicht ist seit Phase 4b auch im Produktionsbuild gemessen, ein Rechner, ein Browser) |
+| ~~3D: teilweise überlappende Wände werden nicht zusammengeführt~~ | **Behoben in 4b.2:** exakte atomare Abschnitte, realer Grundriss ohne doppelte Körper | — |
+| Nachbarschaft von Öffnungen ist nur abgeleitet (4b.2) | Leitungsrouting und Materialermittlung dürfen sich nicht darauf stützen; vorhandene beidseitige Dubletten werden nur gemeldet, kein Bereinigungswerkzeug | mit T10 vor Phase 6 |
+| 3D-Abnahme 4b.2 nicht visuell | Browserbereich war verborgen – WebGL-Bild und 3D-Auswahl der gemeinsamen Tür nur automatisiert und über Texte/Zahlen geprüft | bei der Abnahme durch den Auftraggeber |
+| 3D: Ecken bei nicht rechtwinkligen Wänden | Eckschluss über Verlängerung um halbe Stärke; bei spitzen/stumpfen Winkeln kleine Überstände | nur bei Bedarf (reine Darstellung) |
+| 3D: WebGL-Fallback und Kontextverlust nur automatisiert geprüft | im verwendeten Browser nicht auslösbar | bei einem Browser ohne WebGL nachprüfen |
+| 3D: Chunk der 3D-Ansicht ≈ 588 kB (≈ 152 kB gzip) | lazy geladen, Haupt-Bundle unberührt; `chunkSizeWarningLimit` auf 650 kB gesetzt | bei Bedarf Three.js-Teilimporte prüfen |
 | Vite im Planner-Container bemerkt Dateiänderungen unter Windows nicht | nach Frontend-Änderungen `docker restart elektroplan-planner` | Polling (`server.watch.usePolling`) prüfen |
 | Anmeldung mit ausschließlich gesperrter Mitgliedschaft antwortet `404` „Keine aktive Mitgliedschaft in diesem Betrieb“ | Bestand seit Phase 1; verrät nach richtigem Passwort, dass das Konto existiert. Kein Sicherheitsverlust gegenüber vorher | bei der Überarbeitung der Anmeldung (Phase 4.2 hat den Refresh, nicht den Login angepasst) |
 | `purge-invitations` ist ein Werkzeug, kein geplanter Job | Abgeschlossene Einladungen bleiben bis zum manuellen Lauf gespeichert | mit dem ersten Betriebs-Scheduler |
@@ -634,6 +739,9 @@ was offen ist, ist eine Schuld.
 | Rechtebeschreibung der Elektroplanung in ASCII („Raeume, Waende") | kosmetisch, Teil der bekannten ASCII-Schuld | mit der Entscheidung zur Schreibweise der Servermeldungen |
 | `organization.member.read`/`write` ohne Verwendung | Planer und Kalkulator haben „Kollegen ansehen“, es gibt dafür noch keine Ansicht | wenn eine Mitarbeiterauswahl (z. B. Monteur für einen Auftrag) gebraucht wird |
 | Die Projektsperre serialisiert **alle** Schreibvorgänge eines Projekts | Im Baualltag (ein bis zwei Bearbeiter je Projekt) unkritisch; nicht gemessen | wenn mehrere Personen gleichzeitig an einem Projekt arbeiten |
+| Offset-Seiten bei Kunden und Projekten (ADR 0017) | Ändert sich die Liste zwischen zwei Seitenaufrufen, verschiebt sich ein Eintrag um eine Position; `COUNT` je Seite nicht gemessen | bei Bedarf (Export/Sync bleiben Cursor-Sache) |
+| Nativer `beforeunload`-Dialog im Browser nicht visuell bestätigt | Handler nachweislich aktiv (Test, Konsole: Chromium blockiert ihn ohne Benutzergeste); der Browserdialog erscheint nicht im Screenshot | bei einer Abnahme mit Mensch am Gerät |
+| Anonymisieren fragt noch per `window.confirm` | keine ungespeicherten Änderungen betroffen, deshalb außerhalb des Auftrags | bei Gelegenheit auf `Rueckfrage` umstellen |
 | Ein Datei-Upload kann nach vollständiger Übertragung noch mit `409` scheitern | Bewusster Tausch: Die Sperre wird nicht über die Übertragung gehalten. Das Objekt wird verworfen | keine Absicht, das zu ändern |
 
 ### Offene fachliche Entscheidungen
@@ -643,8 +751,12 @@ was offen ist, ist eine Schuld.
 | T6 | **Projektarten** (Neubau, Sanierung, Service): Braucht es sie, und was unterscheidet sie? Bis dahin deckt die abwählbare Startstruktur den Serviceauftrag ab | vor Phase 8 |
 | T1 | Symbolbibliothek: eigene SVGs oder DIN EN 60617 (Phase 4a platziert keine Geräte) | Phase 5 |
 | T7 | **Raumtyp** (`living`, `kitchen`, …): Wird er für Ausstattungsvorlagen gebraucht, und mit welcher Werteliste? In Phase 3 bewusst nicht angelegt | vor Phase 5 |
-| T9 | **Deckungsgleiche Wände benachbarter Räume in 3D.** Jeder Raum hat seine eigene gerichtete Kontur; zwei Nachbarräume beschreiben dieselbe physische Wand deshalb doppelt. Eine naive Extrusion erzeugte deckungsgleiche Wandkörper, und eine Tür zwischen zwei Räumen kann auf beiden Seiten unterschiedlich (oder nur einseitig) erfasst sein. Zu entscheiden: Führt der Renderer deckungsgleiche Wände zusammen, braucht es eine zusätzliche physische Wandidentität, oder ein anderes ausdrückliches Modell? Bis dahin keine Datenmodelländerung | **verbindlich vor Phase 4b** |
-| T8 | **Wandhöhe und Wandtyp** je Wand: Braucht es sie neben der Raumhöhe (Kniestock, Außen- gegen Innenwand)? | vor Phase 4b |
+| T10 | **Physische Wandidentität** (Neubewertung aus ADR 0016): Brauchen Leitungsrouting und Materialermittlung eine persistente Wand, auf die sich beide Raumseiten beziehen (Querungen, keine Doppelzählung, einseitig erfasste Öffnungen, teilweise überlappende Wände)? | vor Phase 6 |
+
+**Entschieden in Phase 4b** ([ADR 0016](decisions/0016-derived-3d-view-wall-height-and-coincident-walls.md)):
+~~T8 Wandhöhe und Wandtyp~~ — effektive Raumhöhe gilt für alle Wände, kein Wandtyp,
+„gemeinsam/außen" nur abgeleitet. ~~T9 Deckungsgleiche Wände~~ — nur in der Darstellung
+gruppiert, nur bei exakt gleichen Endpunkten, keine Migration.
 | T2 | PDF-Erzeugung: WeasyPrint (Empfehlung) oder ReportLab | Phase 10 |
 | T3 | Kleinmaterial: eigenes Material oder prozentualer Zuschlag | Phase 8 |
 | T4 | Mehrgeschossige Steigezonen für Leitungswege | Phase 6 |
@@ -701,21 +813,18 @@ HSTS, Virenscan, MFA für administrative Konten.
 
 ## 9. Nächste geplante Aufgabe
 
-Phase 4.2 ist abgeschlossen und als `66cbff3` committet. Weiteres Vorgehen:
+Phase 4b, 4b.1 (Bedienungsnacharbeit 1) und 4b.2 (Bedienungsnacharbeit 2) sind umgesetzt und
+mit einem gemeinsamen Checkpoint-Commit committet (nicht gepusht). Phase 5 ist **nicht begonnen**.
+Weiteres Vorgehen:
 
-1. **Optional:** ein kurzer Bedientest des Editors und der Administration mit einer
-   echten Person (das 20-Minuten-Kriterium wurde automatisiert gemessen).
-2. **Verbindlich:** die Entscheidungen **T8** (Wandhöhe und Wandtyp) und **T9**
-   (deckungsgleiche Wände), siehe Abschnitt 7 „Offene fachliche Entscheidungen“. Sie
-   werden fachlich getroffen, nicht von der Umsetzung vorweggenommen.
-3. **Phase 4b** erst nach ausdrücklicher Freigabe.
+1. **Visuelle Abnahme** der 3D-Ansicht mit sichtbarem Browserfenster (gemeinsame Türen in
+   Teilwänden) durch den Auftraggeber – funktional und automatisiert bereits geprüft.
+2. ~~Wände an gemeinsamen Eckpunkten teilen~~ – mit 4b.2 nicht mehr nötig: Teilüberlappungen
+   werden exakt erkannt.
+3. **Phase 5** (Electrical Devices) erst nach ausdrücklicher Freigabe; offen davor T1
+   (Symbolbibliothek) und T7 (Raumtyp). T10 (physische Wandidentität) vor Phase 6.
 
-**Phase 4b — 3D-Ansicht (zur Einordnung):** extrudierte Räume aus Kontur und Höhe, Öffnungen als
-Aussparungen, Orbit/Zoom/Pan, Auswahl, **keine** Geometriebearbeitung in 3D. Grundlage
-ist derselbe Plan-Endpunkt; offene Entscheidungen **T9** (deckungsgleiche Wände) und
-T8 (Wandhöhe/-typ) vorher klären.
-
-> Phase 4b wird erst nach ausdrücklicher Freigabe begonnen.
+> Phase 5 wird erst nach ausdrücklicher Freigabe begonnen.
 
 ---
 

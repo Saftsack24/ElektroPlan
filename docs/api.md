@@ -1,6 +1,6 @@
 # API-Richtlinien
 
-Version: 1.3 (Core-Geschäftsdaten, Electrical Room Model, Benutzerverwaltung)
+Version: 1.4 (Core-Geschäftsdaten, Electrical Room Model, Benutzerverwaltung, nummerierte Seiten)
 Basis: FastAPI · OpenAPI 3.1 · JSON
 
 ---
@@ -28,14 +28,17 @@ POST   /api/v1/modules/electrical/cable-routes/{route_id}/points
 ### Core-Geschäftsdaten (ab Phase 2)
 
 ```
-GET    /api/v1/customers                      ?q= &kind= &sort= &limit= &cursor=
+GET    /api/v1/customers                      ?q= &kind= &sort= &page= &page_size=   (nummerierte Seiten, ADR 0017)
 POST   /api/v1/customers
 GET    /api/v1/customers/{customer_id}
 PATCH  /api/v1/customers/{customer_id}                       If-Match
 DELETE /api/v1/customers/{customer_id}                       If-Match  (Soft Delete)
 POST   /api/v1/customers/{customer_id}/anonymize             If-Match  (DSGVO Art. 17)
 
-GET    /api/v1/projects                       ?q= &status= &customer_id= &sort= &limit= &cursor=
+GET    /api/v1/projects                       ?q= &status= &status_group= &customer_id= &sort= &page= &page_size=
+                                              q: Bezeichnung, Projektnummer, Baustellenort (nicht Kunde)
+                                              status_group: current (draft+active) | closed (completed+archived)
+                                              status und status_group zusammen: 422
                                               sort: created_at (Standard) | name | updated_at (seit 4.2)
 POST   /api/v1/projects
 GET    /api/v1/projects/{project_id}
@@ -275,9 +278,18 @@ Bestehende Projekte werden davon nicht berührt; es gibt keine nachträgliche au
 Strukturanlage.
 
 **Kundenauswahl im Dialog.** Die Oberfläche sucht über `GET /api/v1/customers?q=…` mit
-kleinem `limit` und wertet `has_more` aus. Sie lädt also nicht den ganzen Kundenstamm in
-den Browser und weist darauf hin, wenn es mehr Treffer gibt als angezeigt. Anonymisierte
-Kunden werden ausgefiltert — der Server lehnt sie für neue Zuordnungen ohnehin ab.
+kleiner `page_size` und vergleicht `total_items` mit der Trefferzahl. Sie lädt also nicht
+den ganzen Kundenstamm in den Browser und weist darauf hin, wenn es mehr Treffer gibt als
+angezeigt. Anonymisierte Kunden werden ausgefiltert — der Server lehnt sie für neue
+Zuordnungen ohnehin ab. Im **Kundenfilter der Projektliste** bleiben sie dagegen
+auffindbar: Bestehende Projekte an ihnen sollen weiter filterbar sein.
+
+**Baustellenadresse als Vorschlag.** Nach der Kundenwahl schlägt die Oberfläche die
+Rechnungsadresse des Kunden (Straße, PLZ, Ort, Ländercode) als Baustellenadresse vor.
+Gesendet wird, was im Formular steht; die Projektadresse ist danach eine unabhängige
+Momentaufnahme. Es gibt **keine** Verknüpfung zwischen Kunden- und Projektadresse,
+spätere Änderungen am Kunden wirken nicht auf bestehende Projekte. `site_country_code`
+ist ein sichtbares Formularfeld und nicht mehr fest `DE`.
 
 ### Doppelte Geschossebene
 
@@ -368,6 +380,11 @@ Regeln:
 
 ## 4. Auflistungen und Pagination
 
+Zwei Muster, bewusst getrennt ([ADR 0017](decisions/0017-numbered-pages-for-customer-and-project-lists.md)):
+
+**Keyset-Cursor** – Standard für Listen, die vollständig und stabil durchlaufen werden
+(Protokoll, Benutzerverwaltung, künftige Stammdatenlisten):
+
 ```
 GET /api/v1/materials?limit=50&cursor=eyJ…&q=NYM&category_id=…&sort=name
 ```
@@ -380,8 +397,34 @@ GET /api/v1/materials?limit=50&cursor=eyJ…&q=NYM&category_id=…&sort=name
 }
 ```
 
-- Cursor-basiert, kein `offset` (stabil bei gleichzeitigen Änderungen).
+- Kein `offset` (stabil bei gleichzeitigen Änderungen).
 - `limit` Standard 50, Maximum 200.
+
+**Nummerierte Seiten** – für die Backoffice-Listen Kunden (`GET /customers`) und
+Projekte (`GET /projects`), die Seitenzahlen und eine Gesamtzahl brauchen:
+
+```
+GET /api/v1/projects?page=6&page_size=25&status_group=current&customer_id=…
+```
+
+```json
+{
+  "items": [ … ],
+  "page": 6,
+  "page_size": 25,
+  "total_items": 587,
+  "total_pages": 24
+}
+```
+
+- `page` ab 1, `page_size` Standard 25, Maximum 100.
+- `total_items` zählt **dieselbe** gefilterte, mandantenbeschränkte Abfrage wie die Seite
+  (Unterabfrage) – nie fremde Betriebe, nie ungefilterte Mengen.
+- Stabile Sortierung: Sortierspalte, dann ID.
+- Seite hinter der letzten → letzte vorhandene Seite, `page` nennt sie. Leer:
+  `page = 1`, `total_pages = 0`. `page < 1` oder `page_size` außerhalb → `422`.
+- Ändert sich die Liste zwischen zwei Aufrufen, verschieben sich Einträge um eine
+  Position. Für diese Listen ist das akzeptiert.
 - Filter sind explizit definierte Query-Parameter, keine generische Filtersprache.
 - Sortierung nur über eine Whitelist von Feldern.
 

@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { lazy } from "react";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ProjectTabsProvider } from "../../core/modules/ProjectTabs";
 import { useUngespeicherteAenderungen } from "../../core/ui/ungespeichert";
+import { RueckfrageProvider } from "../../core/ui/Rueckfrage";
 
 /**
  * Projekt-Tabwechsel bei ungespeicherten Änderungen eines Modul-Tabs.
@@ -42,11 +43,11 @@ function zeigen() {
     { initialEntries: ["/projects/projekt-1"] },
   );
   render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><RueckfrageProvider>
       <ProjectTabsProvider tabs={TABS}>
         <RouterProvider router={router} />
       </ProjectTabsProvider>
-    </QueryClientProvider>,
+    </RueckfrageProvider></QueryClientProvider>,
   );
 }
 
@@ -69,24 +70,28 @@ afterEach(() => vi.restoreAllMocks());
 
 describe("Projekt-Tabwechsel", () => {
   it("fragt bei ungespeicherten Änderungen und bleibt bei Ablehnung im Tab", async () => {
-    const frage = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+    const frage = vi.spyOn(window, "confirm");
     zeigen();
     fireEvent.click(await screen.findByRole("button", { name: "Beispiel" }));
     expect(await screen.findByText("Modul-Tab mit Entwurf")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Dateien" }));
-    expect(frage).toHaveBeenCalledTimes(1);
+    const dialog = await screen.findByRole("dialog", { name: "Tab wechseln?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Änderungen behalten" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.getByText("Modul-Tab mit Entwurf")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Dateien" }));
-    expect(frage).toHaveBeenCalledTimes(2);
-    expect(screen.queryByText("Modul-Tab mit Entwurf")).toBeNull();
+    const zweiter = await screen.findByRole("dialog", { name: "Tab wechseln?" });
+    fireEvent.click(within(zweiter).getByRole("button", { name: "Änderungen verwerfen und fortfahren" }));
+    await waitFor(() => expect(screen.queryByText("Modul-Tab mit Entwurf")).toBeNull());
+    expect(frage).not.toHaveBeenCalled();
   });
 
   it("wechselt ohne Änderungen ohne Rückfrage", async () => {
-    const frage = vi.spyOn(window, "confirm");
     zeigen();
     fireEvent.click(await screen.findByRole("button", { name: "Dateien" }));
-    expect(frage).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Dateien" })).toHaveClass("tabs__tab--active"));
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

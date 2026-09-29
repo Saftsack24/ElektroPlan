@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { STANDARD_RASTER_MM, abstandFangen, aufRaster, fangen } from "./fang";
+import { STANDARD_RASTER_MM, aufRaster, fangen } from "./fang";
 
 const basis = { aktiv: true, ausgesetzt: false, rasterMm: 100, massstab: 0.05, endpunkte: [] };
 
@@ -44,10 +44,5 @@ describe("Fangfunktion", () => {
       ziel: "frei",
     });
     expect(fangen({ x: 1_012.4, y: 998.6 }, { ...basis, endpunkte, ausgesetzt: true }).ziel).toBe("frei");
-  });
-
-  it("fängt Öffnungsabstände auf das Raster", () => {
-    expect(abstandFangen(1_057.5, 100, true)).toBe(1_100);
-    expect(abstandFangen(1_057.5, 100, false)).toBe(1_058);
   });
 });

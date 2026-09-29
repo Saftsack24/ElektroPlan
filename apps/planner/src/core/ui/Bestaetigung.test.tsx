@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
@@ -31,7 +31,7 @@ function Aufbau({ laeuft = false, onBestaetigen = vi.fn() }) {
 }
 
 describe("Bestätigungsdialog", () => {
-  it("setzt den Fokus auf Abbrechen und gibt ihn beim Schließen zurück", () => {
+  it("setzt den Fokus auf Abbrechen und gibt ihn beim Schließen zurück", async () => {
     render(<Aufbau />);
     const ausloeser = screen.getByRole("button", { name: "Sperren" });
     ausloeser.focus();
@@ -42,7 +42,8 @@ describe("Bestätigungsdialog", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Abbrechen" }));
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(document.activeElement).toBe(ausloeser);
+    // Zurückgegeben wird, sobald der Dialog wirklich aus dem DOM ist.
+    await waitFor(() => expect(document.activeElement).toBe(ausloeser));
   });
 
   it("schließt mit Escape, ohne zu bestätigen", () => {

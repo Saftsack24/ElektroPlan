@@ -1,8 +1,8 @@
 # Modul: electrical (Elektroplanung)
 
 Art: Fachmodul · Präfix: `electrical_` · Status: **Raummodell umgesetzt (Phase 3)**,
-**grafischer 2D-Editor umgesetzt (Phase 4a)**, 3D-Ansicht (4b) und
-Geräte/Stromkreise/Leitungswege geplant (Phasen 5–6)
+**grafischer 2D-Editor umgesetzt (Phase 4a)**, **abgeleitete 3D-Ansicht umgesetzt
+(Phase 4b)**, Geräte/Stromkreise/Leitungswege geplant (Phasen 5–6)
 Abhängig von: **Phasen 3–6 nur `core`** · ab Phase 7 zusätzlich `materials`
 
 > Die Module Registry verweigert den Start bei einer Abhängigkeit auf ein nicht
@@ -76,8 +76,10 @@ Ausstattungsvorlagen gebraucht (offener Punkt 1).
 `sort_order` als Position in der Raumkontur (ab 0, lückenlos, je Raum eindeutig). Die
 Richtung ist fachlich bedeutsam — `offset_mm` einer Öffnung zählt vom Startpunkt.
 
-Eine Wand gehört **immer** zu einem Raum. Wandhöhe und Wandtyp (`exterior`, `interior`,
-`partition`) sind noch nicht angelegt; Phase 3 braucht sie nicht, und die Raumhöhe gilt.
+Eine Wand gehört **immer** zu einem Raum. **Entschieden (T8, ADR 0016):** Es gibt keine
+Wandhöhe und keinen gespeicherten Wandtyp. Die effektive Raumhöhe ist die Höhe aller
+Wände des Raums; „gemeinsam/innen" und „außen" sind nur abgeleitete Darstellungsbegriffe.
+Bauarten (Mauerwerk, Trockenbau …), Kniestock und Dachschräge sind spätere Fachkonzepte.
 
 ### `electrical_openings` — umgesetzt (Phase 3)
 Tür, Fenster oder Durchgang an einer Wand (`kind`), beschrieben über den Abstand vom
@@ -374,9 +376,10 @@ Raumkontur seit Phase 4a.
 
 ### 2D-Editor (Phase 4a) — umgesetzt
 
-Projekt-Tab „Räume & Grundriss" mit zwei Ansichten auf **denselben** Serverstand:
-„Grafischer Editor" (Standard) und „Tabellen & Details" (die Formulare aus Phase 3). Die
-zuletzt gewählte Ansicht merkt sich der Browser. Code:
+Projekt-Tab „Räume & Grundriss" mit Ansichten auf **denselben** Serverstand:
+„2D-Editor" (Standard; bis Phase 4b „Grafischer Editor"), seit Phase 4b „3D-Ansicht" und
+„Tabellen & Details" (die Formulare aus Phase 3). Die zuletzt gewählte Ansicht merkt sich
+der Browser; unbekannte gespeicherte Werte fallen auf den 2D-Editor. Code:
 `apps/planner/src/modules/electrical/editor/`. Entscheidung: [ADR 0014](../decisions/0014-2d-editor-svg-and-atomic-contour.md).
 
 **Darstellung:** SVG ohne Zusatzbibliothek. Die Geometrie liegt in einer transformierten
@@ -384,13 +387,15 @@ Gruppe; Maßtexte, Raumnamen, Eckgriffe, Raster und Vorschau im Bildraum. Wände
 ihrer Stärke gezeichnet, Öffnungen als Lücke mit einfacher Markierung (Tür:
 durchgezogen, Fenster: gestrichelt blau, Durchgang: gestrichelt grau). Kein Türanschlag
 und keine Fenstergrafik — fachlich nicht definiert. Keine Electrical-Device-Symbole
-(offene Entscheidung T1, vor Phase 5). Wandlängen in Metern mit drei Nachkommastellen
-(= Millimeter), zu kurze Wände bleiben unbeschriftet.
+(offene Entscheidung T1, vor Phase 5). Wandlängen in der persönlichen Anzeigeeinheit
+(Standard Zentimeter, siehe „Maßeinheit" unten), zu kurze Wände bleiben unbeschriftet.
 
 **Koordinaten:** Welt (ganze mm, y nach oben) · Viewport (px/mm, Ursprung) · Bild (px).
 Reine Funktionen in `viewport.ts`; Zoom und Pan ändern nie Geometrie. Maßstab 0,005 bis
 2 px/mm; Zoom um den Zeiger (Mausrad) oder die Mitte (Schaltflächen, `+`/`−`); Pan per
-Werkzeug „Verschieben" (`H`) oder mittlerer Maustaste; „Einpassen" (`F`) auf alle Räume.
+Werkzeug „Verschieben" (`H`) oder mittlerer Maustaste; „Ansicht zurücksetzen" (`F`,
+seit der Bedienungsnacharbeit 1; vorher „Einpassen") setzt Zoom und Ausschnitt auf den
+gesamten Grundriss zurück.
 Eine Größenänderung hält Maßstab und Mitte.
 
 **Raster und Fang (`fang.ts`):** Raster 10/50/100/250/500 mm, Standard 100 mm. Fang auf
@@ -433,13 +438,65 @@ laden (lokale Änderungen verwerfen)" nach Rückfrage oder „Entwurf vorerst be
 betroffene Wände und Öffnungen rot markiert (`keys`). Netzwerkfehler: Entwurf bleibt.
 Rückmeldungen stehen in der Seitenleiste, damit die Zeichenfläche nicht springt.
 
-**Nie stilles Verwerfen:** Raumwechsel mit ungespeicherten Änderungen fragt „jetzt
-speichern und wechseln?" (sonst bleibt der Raum aktiv). Geschoss- und Ansichtswechsel
-fragen nach dem Verwerfen. Neuladen und Schließen des Browsers: `beforeunload`.
-Interne Links, Browser-Zurück und Browser-Vorwärts: fachneutraler
-`core/ui/Navigationsschutz.tsx` auf dem Data-Router-Blocker (seit Phase 4a.1), genau eine
-Rückfrage, bei Ablehnung bleiben URL, Entwurf und Undo-Historie erhalten. Projekt-
-Tabwechsel und Abmelden: `core/ui/ungespeichert.ts` (`verlassenBestaetigen`).
+**Nie stilles Verwerfen:** Alle Rückfragen laufen über den eigenen, zentralen Dialog
+(`core/ui/Rueckfrage.tsx`) – kein `window.confirm` mehr. Raumwechsel mit ungespeicherten
+Änderungen bietet „Speichern und wechseln", „Änderungen verwerfen und fortfahren" und
+„Beim Raum bleiben". Geschoss- und Ansichtswechsel, „Änderungen verwerfen" und
+„Serverstand laden" fragen mit konkreter Situation; der Anfangsfokus liegt auf der
+sicheren Wahl, Escape bricht ab, der Fokus kehrt zurück. Interne Links, Browser-Zurück
+und -Vorwärts: fachneutraler `core/ui/Navigationsschutz.tsx` auf dem Data-Router-Blocker,
+genau eine Rückfrage, bei Ablehnung bleiben URL, Entwurf und Undo-Historie erhalten.
+Projekt-Tabwechsel und Abmelden: `useVerlassenBestaetigen`. **Einzige Ausnahme:**
+Neuladen, Tab schließen oder Verlassen der Website zeigen weiter den **browsernativen**
+Dialog (`beforeunload`) – Browser lassen dort keinen eigenen Dialog und keinen eigenen
+Text zu.
+
+**Maßeinheit (Bedienungsnacharbeit 1):** Gespeichert, übertragen und gerechnet wird
+unverändert in ganzen Millimetern (`_mm`-Felder, SVG- und 3D-Geometrie). Angezeigt und
+eingegeben wird in der persönlichen Einheit – Standard Zentimeter, wahlweise Millimeter
+(„Einstellungen" in der Kopfleiste, lokal im Browser). Zentimeter akzeptieren Komma oder
+Punkt und höchstens eine Nachkommastelle (`11,5` → 115 mm); feinere Werte werden
+abgelehnt, nie gerundet. Umgerechnet wird ausschließlich in `core/masse.ts`; offene
+Formulare rechnen ihre Eingabetexte bei einem Einheitenwechsel um. Flächen bleiben m².
+Betroffen: Eigenschaften, Statuszeile, Maßtexte und Raster der Zeichenfläche,
+Raum-/Wand-/Öffnungsdialoge, Tabellen, Geschosshöhen im Core-Strukturtab, 3D-Seitenleiste
+und 3D-Hinweistexte. **Seit 4b.2 je Benutzer:** gespeichert unter
+`elektroplan.masseinheit.<user_id>`; zwei Benutzer desselben Browsers haben getrennte
+Einheiten, ein Betriebswechsel behält die Wahl, beim Laden und nach dem Abmelden gilt der
+Standard. Der frühere browserweite Schlüssel wird beim ersten Anmelden einmalig
+übernommen und entfernt.
+
+**Öffnungen direkt mit der Maus (Phase 4b.2):** Werkzeug „Öffnung" (O), Art wählen,
+über eine Wand fahren: Eine Vorschau folgt der auf die Wand projizierten Zeigerposition
+(Mitte der Öffnung unter dem Zeiger, Standardmaße der Art), rastet mit **5 cm** ab
+Wandanfang ein (unabhängig vom Zeichenraster; Alt oder „Fang" aus: ganze Millimeter) und
+nennt „verbindet „A" und „B"" bzw. „nicht geteilte Wand – kein zweiter Raum" oder den
+Grund, warum es hier nicht geht. Die Vorschau bleibt vollständig in der Wand **und im
+atomaren Wandabschnitt unter dem Zeiger** – nie halb über der Grenze eines gemeinsamen
+Stücks; sie überlappt weder Öffnungen derselben Wand noch eine auf der Gegenseite
+gespeicherte Öffnung. Passt die Standardbreite nicht, erscheint eine Meldung. Ein Klick
+setzt genau diese Lage in den lokalen Entwurf und wählt die neue Öffnung sofort aus;
+Position und Maße bleiben in der Seitenleiste exakt bearbeitbar. Liegen zwei Wände
+übereinander, gehört die neue Öffnung der Wand des aktiven Raums.
+
+**Öffnung verschieben:** Eine Öffnung des aktiven Raums lässt sich im Auswahl- und im
+Öffnungswerkzeug greifen und **nur entlang ihrer Wand** ziehen (Projektion, 5-cm-Fang,
+Vorschau). Eine Kollision oder Grenze verändert nichts – die letzte gültige Lage bleibt,
+die Vorschau nennt den Grund. Wechselt die Öffnung zwischen gemeinsamem und nicht
+geteiltem Wandstück, meldet ein Hinweis den Wechsel. Nie Wechsel auf eine andere Wand.
+Escape bricht das Ziehen ab (Entwurf zurück, Zeiger freigegeben); `pointercancel` und ein
+unerwarteter Verlust des eingefangenen Zeigers ebenso. Gespeichert wird nur über
+„Speichern" (atomarer Konturvorgang).
+
+**Gemeinsame Öffnungen im 2D-Editor:** Alle Öffnungen liegen in **einer** Ebene über den
+Wänden und werden genau einmal an ihrer Eigentümerwand gezeichnet – dadurch sind sie auch
+auf der Seite des Nachbarraums sichtbar, ohne zweiten Datensatz und ohne doppelte Linien.
+Ist der Nachbarraum aktiv, erscheint sie gestrichelt als abgeleitet (Tooltip nennt beide
+Räume und die Quellwand); ein Klick führt zur einen gespeicherten Öffnung (bei
+ungespeicherten Änderungen mit der üblichen Rückfrage). Die Seitenleiste nennt
+„Verbindet „A" und „B"" und „Gespeichert einmal an Wand n von „A"", bei einer Wand des
+Nachbarraums „Abgeleitet aus dem Nachbarraum (dort gespeichert)" mit Sprung zur Öffnung.
+Eine abgeleitete Darstellung lässt sich weder separat bearbeiten noch löschen.
 
 **Lokale Prüfung als Bedienhilfe:** `geometrie.ts` spiegelt die Serverregeln (Länge,
 Fläche, Entwurfs- und Konturregeln, Öffnungen). Überschneidungen im laufenden Polygonzug
@@ -463,15 +520,128 @@ Ein einzelner Lauf auf einem Rechner — keine allgemeine Zusage.
 7 Räumen, 30 Wänden, 15 Öffnungen vom leeren Geschoss bis zum letzten erfolgreichen
 Speichern in 126,7 s. Kein Usability-Test mit Menschen.
 
-### 3D-Ansicht (Phase 4b) — geplant
+### 3D-Ansicht (Phase 4b) — umgesetzt
 
-Extrudierte Räume aus Kontur und Höhe, Wände, Öffnungen als Aussparungen, Geräte als
-Symbole, Leitungswege als Linienzüge; Orbit, Zoom, Pan, Auswahl.
-**Keine Geometriebearbeitung in 3D im MVP.**
+Dritte Ansicht im Tab „Räume & Grundriss": **„2D-Editor" · „3D-Ansicht" · „Tabellen &
+Details"**, alle auf demselben Serverstand. Entscheidung:
+[ADR 0016](../decisions/0016-derived-3d-view-wall-height-and-coincident-walls.md).
+Code: `apps/planner/src/modules/electrical/ansicht3d/`.
 
-Performance-Regel: Die Three.js-Szene wird **nicht** an den React-State gekoppelt.
-React hält die fachlichen Daten, eine imperative Szenenschicht hält Objekte und wird über
-gezielte Aktualisierungen synchronisiert.
+**Rolle:** Die 2D-Ansicht bleibt die **einzige Autorenfläche**. Die 3D-Ansicht ist
+vollständig abgeleitet und schreibgeschützt: Darstellung, Navigation, Kontrolle, Auswahl.
+Keine Eingabefelder, kein Speichern, kein Schreibendpunkt, kein eigener Datenstand — sie
+liest denselben Query-Eintrag `["electrical","plan",floorId]` (`plan.ts`) wie der Editor
+und zeigt nach dem Speichern im Editor deshalb beim nächsten Aufruf den neuen Stand.
+Lesbar mit `electrical.plan.read`, auch bei archivierten Projekten.
+
+**Schichten:**
+
+| Datei | Aufgabe | braucht |
+|---|---|---|
+| `transformation.ts` | mm → m, Achsen, Zentrierung | nichts |
+| `wandgruppen.ts` | exakte Gruppierung (T9), Öffnungen in kanonischer Richtung, Konflikte | nichts |
+| `wandzerlegung.ts` | Wand minus Aussparungen → Rechtecke (ohne CSG) | nichts |
+| `szenenmodell.ts` | Plan → unveränderliches Szenenmodell mit Warnungen und Auswahl-IDs | nichts |
+| `geometrien.ts` | Szenenmodell → `BufferGeometry` (Boden per `ShapeUtils`, Wandquader, Öffnungsflächen) | Three.js |
+| `szene.ts` | imperative Szenenschicht, Lebenszyklus | Three.js, injizierte `Umgebung` |
+| `umgebung.ts` | `WebGLRenderer`, `OrbitControls`, rAF, `ResizeObserver` | Browser |
+| `Ansicht3d.tsx`, `Seitenleiste.tsx` | React: Laden, Zustände, Auswahl, Knöpfe, Text | React |
+| `Ansicht3dLaden.tsx` | Lazy-Grenze mit Fehlerfang (enthält kein Three.js) | React |
+
+**Koordinaten:** Grundriss-x → Three.js +X, Grundriss-y → −Z, Höhe → +Y, Millimeter
+einmalig in Meter. Draufsicht: Norden oben, Osten rechts — wie im 2D-Editor. Zentriert um
+den auf ganze Millimeter abgerundeten Mittelpunkt der Ausdehnung; die Transformation steht
+im Szenenmodell. Nichts wird zurückgeschrieben.
+
+**Darstellung:** Böden gültiger Konturen (auch konkave, trianguliert mit Earcut über
+`ShapeUtils`) in ruhigen Farben mit Umriss; Wände in ihrer Stärke, Höhe = effektive
+Raumhöhe (T8), Wandkörper an den Enden um die halbe Stärke verlängert (geschlossene
+Ecken); Öffnungen als echte Aussparungen; Fenster mit leicht sichtbarer Glasfläche, Tür
+und Durchgang mit unsichtbarer, treffbarer Auswahlfläche. Gemeinsame Wände hell, nicht
+geteilte Wände grau-blau, Wandkronen dunkel. Keine Decke, keine Texturen, keine Schatten.
+Orientierungsraster 1 m.
+
+**Gemeinsame Wände (T9, präzisiert in 4b.2):** Wände verschiedener Räume desselben
+Geschosses, die **exakt auf derselben Geraden** liegen und sich über eine positive Länge
+überlappen, werden an allen Wandendpunkten in **atomare Abschnitte** zerlegt; je Abschnitt
+entsteht **ein** Wandkörper (Verlängerung um die halbe Stärke nur an freien Enden). Eine
+einmal gespeicherte Öffnung auf einem gemeinsamen Abschnitt schneidet den Körper
+vollständig und gilt für beide Räume. Konfliktregeln (größere Stärke, größere Höhe,
+Vereinigung überlappender Aussparungen, Dubletten, Grenz- und Teilkonflikte) stehen in
+ADR 0016. Räume ohne gültige Kontur werden mit Grund unter „Nicht dargestellt" genannt.
+
+### Gemeinsame Wandtopologie (Phase 4b.2)
+
+Reine Geometrieschicht in `apps/planner/src/modules/electrical/topologie/`, verwendet von
+2D-Editor **und** 3D-Ansicht; keine Core-Abhängigkeit, keine Persistenz.
+
+| Datei | Aufgabe |
+|---|---|
+| `lage.ts` | exakte Lagen `ganz + stufen·√m` auf einer Wandgeraden, Vergleich über Quadrate |
+| `wandtopologie.ts` | Geraden (gekürzte Richtung + ganzzahliger Abstand), atomare Abschnitte mit Quellwänden, Räumen, kanonischer Richtung, Länge, Lage `gemeinsam`/`aussen`, Konflikt `mehrdeutig`, Fortsetzung; Teilung je Wand |
+| `oeffnungen.ts` | Einordnung jeder gespeicherten Öffnung: `gemeinsam` (mit abgeleitetem Nachbarraum), `aussen`, `konflikt` (`mehrdeutig`, `grenze`, `teilweise`, `widerspruch`, `art`), `ungueltig`; Dubletten der Gegenseite; Übertragung zwischen Wänden |
+
+Eine Öffnung ist genau eine Zeile an ihrer Eigentümerwand; der zweite Raum wird nur
+abgeleitet (ADR 0016, „Präzisierung 4b.2"). Keine Paar-ID, keine Migration, keine
+Backendänderung. **T10** (physische Wandidentität) bleibt vor Phase 6 offen.
+
+**Kamera und Bedienung:** Perspektivkamera, OrbitControls (Drehen, Zoomen, Verschieben,
+Pfeiltasten, Touch mit ein/zwei Fingern), Dämpfung, nie unter den Fußboden, Distanz
+begrenzt. Startansicht isometrisch und eingepasst; Knöpfe „Ansicht zurücksetzen" (ganzer
+Grundriss, Blickrichtung bleibt; Tooltip erklärt es),
+„Isometrische Ansicht", „Draufsicht", „Näher", „Weiter weg". Auswahl per Klick
+(Raycasting nur gegen Böden, Wände, Öffnungsflächen), Hervorhebung, Escape hebt auf.
+Seitenleiste: Raum (Name, Nummer, Höhe, Fläche, Wände), Wand (Länge, Stärke,
+Darstellungshöhe, Lage, Räume), Öffnung (Art, Maße, Brüstung, Wand, erfasst in) samt
+Hinweisen; darunter „Nicht dargestellt" und „Hinweise zur Darstellung" mit „In der
+Ansicht zeigen".
+
+**Lebenszyklus (`Grundrissszene`):** Konstruktor (wirft `WebGLNichtVerfuegbar`),
+`setzePlan(modell, { einpassen })`, `setzeAuswahl`, `einpassen`, `standardansicht`,
+`draufsicht`, `zoomen`, `groesseSetzen`, `pausieren`/`fortsetzen`, `entsorgen`. Gerendert
+wird nur auf Anforderung (Bewegung inkl. Dämpfungsnachlauf, Größe, Plan, Auswahl); ohne
+Interaktion läuft keine Schleife. Verborgenes Dokument pausiert. Pixel Ratio höchstens 2.
+Eine Szene je Mount; ein Geschosswechsel ersetzt nur den Plan und passt neu ein.
+`entsorgen()` gibt Canvas, Listener, `ResizeObserver`, Bildanforderung, Controls,
+Renderer (samt `forceContextLoss`), Geometrien und Materialien frei — auch unter
+`StrictMode` bleibt genau eine Szene.
+
+**Zustände:** Plan lädt · Ladefehler mit „Erneut laden" · Geschoss ohne Räume · kein Raum
+darstellbar · teilweise darstellbar mit Hinweisen · WebGL nicht verfügbar (Verweis auf
+2D-Editor und Tabelle) · WebGL-Kontext verloren („Ansicht neu starten") · 3D-Modul nicht
+ladbar („Erneut versuchen") · Behälter ohne Größe (kein Rendern, kein Fehler).
+
+**Lazy Loading:** Three.js steckt nur im Chunk `Ansicht3d` (Produktionsbuild ≈ 588 kB,
+≈ 152 kB gzip) und wird erst beim ersten Öffnen der 3D-Ansicht geladen.
+
+**Performance (gemessen 2026-09-27, ein Rechner: AMD Ryzen 7 2700, 24 GB, NVIDIA RTX
+3060; Chromium 152 im Browserbereich der Claude-Desktop-App, ANGLE/D3D11, Canvas ca.
+700 × 560 px, Pixel Ratio 1,25; Messpunkte über `performance.measure`, Bildkosten als
+Dauer des rAF-Callbacks):**
+
+| Szene | Build | Szenenmodell | Geometrie | erstes Bild | Drehen/Zoomen je Bild (Median / p95 / max) |
+|---|---|---|---|---|---|
+| EFH aus 4a (7 Räume, 30 Wände, 15 Öffnungen) | Produktion | 3,8 ms | 9,9 ms | 76 ms (inkl. Shader) | 1,8 / 3,7 / 4,2 ms |
+| Belastungsprobe (30 Räume, 120 Wände, 60 Öffnungen) | Produktion | 4,5 ms | 11,4 ms | 23,5 ms | 3,9 / 5,0 / 6,4 ms |
+| Abnahmegeschoss (3 Räume, 14 Wände) | Entwicklung | 0,7 ms | 3,0 ms | 6,6 ms | 0,8 / 1,3 / 1,9 ms |
+| Belastungsprobe | Entwicklung | 3,6 ms | 33 ms | — | 3,2 / 5,4 / 14 ms |
+
+Erstes Öffnen im Produktionsbuild vom Klick bis zum ersten Bild: 444 ms (Chunk 148 kB
+übertragen in 30 ms, Planabfrage, Aufbau). Der Browserbereich taktete mit rund 32 Bildern
+je Sekunde; die Bildkosten liegen weit darunter. Im Ruhezustand keine Bildanforderung.
+Ein einzelner Rechner und Browser — keine allgemeine Leistungszusage, keine Aussage zur
+späteren Android-App.
+
+**Barrierefreiheit — Grenzen:** Die Szene selbst ist nicht barrierefrei. Textliche
+Alternative sind Seitenleiste, Hinweisliste und die Tabellenansicht. Szenenbereich als
+beschriftete `application` mit Beschreibung, sichtbare Bedienhilfe, alle Kameraknöpfe per
+Tastatur, sichtbarer Fokus, Warnungen mit Zeichen und dem Wort „Hinweis", keine
+automatisch kreisende Kamera, kein Vollbild, Seitenleiste unter 960 px unter der Szene.
+
+**Ausdrücklich nicht in Phase 4b:** Geometriebearbeitung in 3D, Geräte, Symbole,
+Stromkreise, Leitungswege, Installationszonen, Materialermittlung, Kalkulation, AR,
+Offline-Sync, Grundrissimport, Decken, Dachformen, Kniestock, Wandbauarten, Texturen,
+Schatten, physische Wandidentität.
 
 ### Ausdrücklich nicht in Phase 4a
 
@@ -505,17 +675,12 @@ Geometriefehler lesen. Die Wandtabelle ist die Konturvorschau.
 3. Import bestehender Grundrisse (PDF/DWG) — nicht im MVP.
 4. Symbolbibliothek: eigene SVG-Symbole oder Anlehnung an DIN EN 60617 — offene
    Entscheidung T1, **vor Phase 5** zu klären (Phase 4a platziert keine Geräte).
-5. **Deckungsgleiche Wände benachbarter Räume (T9, verbindlich vor Phase 4b).** Jeder
-   Raum besitzt seine eigene gerichtete Kontur (ADR 0013). Zwei Nachbarräume beschreiben
-   dieselbe physische Wand deshalb geometrisch doppelt — mit eigener Richtung, Stärke und
-   eigenen Öffnungen. Eine naive 3D-Extrusion erzeugte deckungsgleiche, sich
-   durchdringende Wandkörper; eine Tür oder ein Durchgang zwischen zwei Räumen kann auf
-   beiden Seiten unterschiedlich oder nur einseitig erfasst sein (im Messlauf der Phase 4a
-   lagen Türen zwischen Räumen jeweils nur an einer Raumseite). Vor Phase 4b ist zu
-   entscheiden: (a) der Renderer führt deckungsgleiche Wände zusammen (reine Darstellung,
-   kein Modellwechsel), (b) eine zusätzliche physische Wandidentität, auf die sich beide
-   Raumseiten beziehen, oder (c) ein anderes ausdrückliches Modell. Die Entscheidung
-   betrifft auch Leitungswege (Phase 6), die Wände queren. Bis dahin: keine stille
-   Datenmodelländerung, keine Migration.
+5. ~~Deckungsgleiche Wände benachbarter Räume (T9).~~ **Entschieden** mit
+   [ADR 0016](../decisions/0016-derived-3d-view-wall-height-and-coincident-walls.md),
+   **präzisiert in Phase 4b.2**: exakt kollineare Teilüberlappungen werden in atomare
+   Abschnitte zerlegt; eine Öffnung ist genau einmal gespeichert, ihr Nachbarraum
+   abgeleitet; keine Migration. **Neu zu bewerten vor Phase 6/7:** ob Leitungsrouting und
+   Materialermittlung eine persistente physische Wandidentität brauchen (Querungen,
+   Doppelzählung, einseitig erfasste Öffnungen, teilweise überlappende Wände).
 6. Kanäle, Rohre und Verlegesysteme als eigene Materialposition je Meter — Entwurf mit
    Phase 7 abstimmen.

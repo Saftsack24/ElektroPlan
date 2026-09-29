@@ -8,6 +8,7 @@ import { EINLADUNG_PFAD, EinladungAnnehmenPage } from "../core/auth/EinladungAnn
 import { LoginPage } from "../core/auth/LoginPage";
 import { ProjectTabsProvider } from "../core/modules/ProjectTabs";
 import { Navigationsschutz } from "../core/ui/Navigationsschutz";
+import { RueckfrageProvider } from "../core/ui/Rueckfrage";
 import { moduleRegistry } from "../modules";
 import { Layout } from "./Layout";
 
@@ -73,6 +74,7 @@ function Gate() {
 export function Anwendung() {
   return (
     <AuthProvider>
+      <RueckfrageProvider>
       <Navigationsschutz />
       {/* Die Annahme einer Einladung braucht keine Anmeldung - und landet
           auch bei einer bestehenden Sitzung im selben Browser nicht in deren
@@ -82,6 +84,7 @@ export function Anwendung() {
         <Route path={EINLADUNG_PFAD} element={<EinladungAnnehmenPage />} />
         <Route path="*" element={<Gate />} />
       </Routes>
+      </RueckfrageProvider>
     </AuthProvider>
   );
 }

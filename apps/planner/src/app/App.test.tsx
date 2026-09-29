@@ -1,9 +1,10 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { StrictMode, lazy } from "react";
 import { createMemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useUngespeicherteAenderungen } from "../core/ui/ungespeichert";
+import { masseinheitBenutzerSetzen } from "../core/ui/masseinheit";
 
 /**
  * Anwendungswurzel auf dem Data Router (Phase 4a.1).
@@ -59,6 +60,13 @@ vi.mock("../modules", () => ({
 
 const { ANWENDUNGSROUTEN, App, erzeugeRouter } = await import("./App");
 
+/** Beantwortet die eigene Rückfrage mit diesem Titel. */
+async function antworten(titel: string, knopf: string) {
+  const dialog = await screen.findByRole("dialog", { name: titel });
+  fireEvent.click(within(dialog).getByRole("button", { name: knopf }));
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: titel })).toBeNull());
+}
+
 function zeigen(eintraege: string[], index = eintraege.length - 1) {
   const router = createMemoryRouter(ANWENDUNGSROUTEN, { initialEntries: eintraege, initialIndex: index });
   const ansicht = render(
@@ -103,45 +111,65 @@ describe("Anwendungswurzel", () => {
     router.dispose();
   });
 
-  it("blockiert unter StrictMode Browser-Zurück und -Vorwärts", async () => {
-    const frage = vi.spyOn(window, "confirm").mockReturnValue(false);
+  it("blockiert unter StrictMode Browser-Zurück und -Vorwärts - mit genau einer eigenen Rückfrage", async () => {
+    const frage = vi.spyOn(window, "confirm");
     const { router } = zeigen(["/zweite", "/beispiel", "/zweite"], 1);
     await screen.findByText("Beispielmodul mit Entwurf");
 
     await act(() => router.navigate(-1));
-    await waitFor(() => expect(frage).toHaveBeenCalledTimes(1));
+    await antworten("Seite verlassen?", "Änderungen behalten");
     expect(router.state.location.pathname).toBe("/beispiel");
 
     await act(() => router.navigate(1));
-    await waitFor(() => expect(frage).toHaveBeenCalledTimes(2));
+    await antworten("Seite verlassen?", "Änderungen behalten");
     expect(router.state.location.pathname).toBe("/beispiel");
     expect(screen.getByText("Beispielmodul mit Entwurf")).toBeInTheDocument();
 
-    frage.mockReturnValue(true);
     await act(() => router.navigate(-1));
+    await antworten("Seite verlassen?", "Änderungen verwerfen und fortfahren");
     await waitFor(() => expect(router.state.location.pathname).toBe("/zweite"));
-    expect(frage).toHaveBeenCalledTimes(3);
+    expect(frage).not.toHaveBeenCalled();
   });
 
   it("fragt in der Hauptnavigation genau einmal und bleibt bei Ablehnung", async () => {
-    const frage = vi.spyOn(window, "confirm").mockReturnValue(false);
     const { router } = zeigen(["/beispiel"]);
     await screen.findByText("Beispielmodul mit Entwurf");
     fireEvent.click(screen.getByRole("link", { name: "Übersicht" }));
-    await waitFor(() => expect(frage).toHaveBeenCalledTimes(1));
+    expect(await screen.findAllByRole("dialog")).toHaveLength(1);
+    await antworten("Seite verlassen?", "Änderungen behalten");
     expect(router.state.location.pathname).toBe("/beispiel");
     expect(screen.getByText("Beispielmodul mit Entwurf")).toBeInTheDocument();
   });
 
-  it("Abmelden fragt über den Core-Mechanismus und meldet erst nach Bestätigung ab", async () => {
-    const frage = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+  it("Abmelden fragt über die eigene Rückfrage und meldet erst nach Bestätigung genau einmal ab", async () => {
+    const frage = vi.spyOn(window, "confirm");
     zeigen(["/beispiel"]);
     await screen.findByText("Beispielmodul mit Entwurf");
     fireEvent.click(screen.getByRole("button", { name: "Abmelden" }));
+    await antworten("Abmelden?", "Änderungen behalten");
     expect(abmelden).not.toHaveBeenCalled();
+
     fireEvent.click(screen.getByRole("button", { name: "Abmelden" }));
+    // Ein zweiter Klick, während die Rückfrage offen ist, zählt nicht doppelt.
+    fireEvent.click(screen.getByRole("button", { name: "Abmelden", hidden: true }));
+    await antworten("Abmelden?", "Änderungen verwerfen und fortfahren");
     expect(abmelden).toHaveBeenCalledTimes(1);
-    expect(frage).toHaveBeenCalledTimes(2);
+    expect(frage).not.toHaveBeenCalled();
+  });
+
+  it("stellt die Maßeinheit in den Einstellungen um und merkt sie sich", async () => {
+    // Den angemeldeten Benutzer meldet sonst der (hier ersetzte) AuthProvider.
+    masseinheitBenutzerSetzen("33333333-3333-4333-8333-333333333333");
+    zeigen(["/zweite"]);
+    await screen.findByText("Zweite Seite");
+    fireEvent.click(screen.getByRole("button", { name: "Einstellungen" }));
+    const dialog = await screen.findByRole("dialog", { name: "Einstellungen" });
+    expect(within(dialog).getByLabelText(/Zentimeter/)).toBeChecked();
+    expect(within(dialog).getByText(/gespeicherten Planmaße bleiben unverändert/)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByLabelText(/Millimeter/));
+    expect(within(dialog).getByLabelText(/Millimeter/)).toBeChecked();
+    expect(window.localStorage.getItem("elektroplan.masseinheit.33333333-3333-4333-8333-333333333333")).toBe("mm");
+    expect(window.localStorage.getItem("elektroplan.masseinheit")).toBeNull();
   });
 
   it("öffnet die Einladungsseite ohne Anwendungshülle - auch bei bestehender Sitzung", async () => {

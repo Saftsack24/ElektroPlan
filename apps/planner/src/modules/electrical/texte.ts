@@ -24,6 +24,14 @@ export const OEFFNUNGSART_LABEL: Record<Oeffnungsart, string> = {
   passage: "Durchgang",
 };
 
+/** Einheitliche Bezeichnung in 2D und 3D. */
+export const ANSICHT_ZURUECKSETZEN = "Ansicht zurücksetzen";
+export const ANSICHT_ZURUECKSETZEN_2D =
+  "Setzt Zoom und Ausschnitt auf den gesamten Grundriss zurück";
+/** In 3D bleibt die Blickrichtung - die Standardausrichtung liefert „Isometrische Ansicht". */
+export const ANSICHT_ZURUECKSETZEN_3D =
+  "Setzt Zoom und Ausschnitt auf den gesamten Grundriss zurück; die Blickrichtung bleibt. Zur Standardausrichtung: „Isometrische Ansicht“";
+
 export const KONTURZUSTAND_LABEL: Record<Konturzustand, string> = {
   draft: "Entwurf",
   valid: "Geschlossen",
@@ -40,8 +48,8 @@ export const KONTURZUSTAND_ERKLAERUNG: Record<Konturzustand, string> = {
  * Flächenangabe des Servers (Dezimalstring) fuer die Anzeige aufbereiten.
  *
  * Das Frontend rechnet nicht: Es formatiert den Wert, den der Server geliefert
- * hat (ADR 0005, ADR 0007). Längen zeigt die Oberfläche in Millimetern - so, wie
- * sie erfasst werden.
+ * hat (ADR 0005, ADR 0007). Längen zeigt die Oberfläche in der persönlichen
+ * Anzeigeeinheit (`core/masse.ts`), Flächen immer in m².
  */
 export function flaecheAnzeigen(area_m2: string | null): string {
   if (area_m2 === null) return "—";

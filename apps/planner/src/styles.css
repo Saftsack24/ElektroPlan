@@ -199,6 +199,8 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 }
 
 /* --- Dialog --- */
+/* Genau ein Scrollbereich: Das <dialog> selbst scrollt nie, der Kopf steht
+   fest, allein .dialog__inhalt scrollt. Aktionen bleiben unten angeheftet. */
 .dialog {
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -206,18 +208,91 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
   color: var(--text);
   padding: 0;
   width: min(720px, calc(100vw - 32px));
-  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
 }
+.dialog[open] { display: flex; flex-direction: column; }
 .dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
-.dialog__inhalt { padding: 20px; overflow-y: auto; max-height: calc(100vh - 32px); }
-.dialog__kopf { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.dialog__kopf {
+  flex: none;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 16px 20px 8px;
+}
 .dialog__kopf h2 { margin: 0; }
-.dialog__aktionen { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 4px; }
+.dialog__inhalt {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 20px;
+}
+.dialog__inhalt::after { content: ""; display: block; height: 16px; }
+.dialog__aktionen {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  margin-top: 4px;
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  background: var(--surface);
+}
 
 @media (max-width: 640px) {
-  .dialog { width: 100vw; max-width: 100vw; height: 100vh; max-height: 100vh; border-radius: 0; }
-  .dialog__inhalt { max-height: 100vh; }
+  .dialog { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; }
 }
+
+/* Feldzeile: Felder nebeneinander, oben bündig. Hinweise und Fehler wachsen
+   nur unter ihrem eigenen Feld und verschieben das Nachbarfeld nicht. Auf
+   schmalen Flächen brechen die Felder untereinander um. */
+.feldzeile {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr));
+  gap: 12px;
+  align-items: start;
+  margin-top: 12px;
+}
+
+/* --- Combobox mit schwebender Vorschlagsliste --- */
+.combobox__popup {
+  z-index: 1000;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+.combobox__liste { list-style: none; margin: 0; padding: 0; }
+.combobox__liste:empty { display: none; }
+.combobox__option {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.combobox__option:last-child { border-bottom: 0; }
+.combobox__option--aktiv { background: var(--bg); outline: 2px solid var(--primary); outline-offset: -2px; }
+.combobox__status { margin: 0; padding: 8px 10px; min-height: 2.4em; font-size: 0.9rem; }
+.combobox__status--fehler { color: var(--error-text); }
+.auswahl__chip {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+.auswahl__chip-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+
+/* --- Nummerierte Seiten --- */
+.seiten { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
+.seiten__info { margin: 0; }
+.seiten__liste { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; list-style: none; margin: 0; padding: 0; }
+.seiten__knopf { min-width: 2.4em; padding: 6px 8px; }
+.seiten__knopf--aktiv { background: var(--primary); color: var(--primary-contrast); font-weight: 600; }
+.seiten__luecke { padding: 0 4px; color: var(--muted); }
+
+.kunde-projekte__gruppe { margin: 8px 0 0; font-size: 1rem; }
+html { scrollbar-gutter: stable; }
 
 /* --- Feldfehler und Hinweise --- */
 .field__input--fehler { border-color: var(--error-text); }
@@ -226,9 +301,6 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .field--schalter { flex-direction: row; align-items: center; gap: 8px; }
 
 .alert--erfolg { background: var(--surface); border: 1px solid var(--border); }
-
-/* --- Nachladen --- */
-.nachladen { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
 
 /* --- Formularbloecke und eingerueckte Karten --- */
 .form-grid__block {
@@ -242,33 +314,6 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .card--eingerueckt { border-style: dashed; }
 .details__titel { cursor: pointer; font-weight: 600; }
 .table__zeile--neu td { background: var(--bg); }
-
-/* --- Kundenauswahl mit Suche --- */
-.auswahl__liste {
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
-  max-height: 220px;
-  overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-.auswahl__eintrag {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 7px 10px;
-  border: 0;
-  border-bottom: 1px solid var(--border);
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  cursor: pointer;
-}
-.auswahl__liste li:last-child .auswahl__eintrag { border-bottom: 0; }
-.auswahl__eintrag:hover { background: var(--bg); }
-.auswahl__eintrag:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
-.auswahl__gewaehlt { margin: 4px 0 8px; font-weight: 600; }
 
 /* ------------------------------------------------ Grundrisseditor (Phase 4a) */
 .card--editor { padding: 12px; }
@@ -326,6 +371,16 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .grundriss__oeffnung--warnung .grundriss__oeffnung-symbol { stroke: var(--warnung); }
 .grundriss__oeffnung--fehler .grundriss__oeffnung-symbol { stroke: var(--error-text); stroke-width: 5px; }
 .grundriss__oeffnung--ausgewaehlt .grundriss__oeffnung-symbol { stroke: var(--primary); stroke-width: 6px; }
+/* Abgeleitete Seite einer gemeinsamen Öffnung: gestrichelt, keine zweite Speicherung. */
+.grundriss__oeffnung--abgeleitet .grundriss__oeffnung-symbol { stroke-dasharray: 5 3; opacity: 0.85; }
+.grundriss__oeffnung--konflikt .grundriss__oeffnung-symbol { stroke: var(--warnung); }
+.grundriss__oeffnungsvorschau { pointer-events: none; }
+.grundriss__oeffnungsvorschau-flaeche { stroke: var(--primary); stroke-opacity: 0.45; stroke-linecap: butt; }
+.grundriss__oeffnungsvorschau--fehler .grundriss__oeffnungsvorschau-flaeche { stroke: var(--error-text); stroke-opacity: 0.4; }
+.grundriss__oeffnungsvorschau-text {
+  font-size: 12px; font-weight: 600; fill: var(--text); paint-order: stroke; stroke: var(--surface); stroke-width: 4px;
+}
+.grundriss__oeffnungsvorschau--fehler .grundriss__oeffnungsvorschau-text { fill: var(--error-text); }
 .grundriss__ecke { fill: var(--surface); stroke: var(--primary); stroke-width: 1.5; cursor: move; }
 .grundriss__ecke--ausgewaehlt { fill: var(--primary); }
 .grundriss__beschriftung text, .grundriss__mass, .grundriss__raumname { pointer-events: none; }
@@ -343,11 +398,16 @@ polyline.grundriss__vorschau { fill: none; }
 
 .eigenschaften { display: flex; flex-direction: column; gap: 8px; font-size: 0.9rem; max-height: 62vh; overflow-y: auto; }
 .eigenschaften h3, .eigenschaften h4 { margin: 4px 0; }
+.eigenschaften__verbindung p { margin: 2px 0; }
 .eigenschaften__kopf { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .eigenschaften__kennzahlen { margin: 0; }
 .eigenschaften__befunde { margin: 0; padding-left: 18px; color: var(--warnung); }
 .eigenschaften__abschnitt { border-top: 1px solid var(--border); padding-top: 8px; }
 .eigenschaften__felder { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+/* Nebeneinanderliegende Felder bündig: Die Zellen einer Zeile sind gleich hoch
+   (Grid streckt), die Beschriftung nimmt den freien Platz ein - so beginnt jedes
+   Eingabefeld einer Zeile auf derselben Höhe, auch wenn eine Beschriftung umbricht. */
+.eigenschaften__felder > .field > .field__label { flex: 1 1 auto; }
 .eigenschaften__formular { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
 .eigenschaften__liste { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .eigenschaften__liste .button { width: 100%; text-align: left; }
@@ -457,3 +517,37 @@ a.button--ghost { color: var(--text); }
   .kennwerte { grid-template-columns: 1fr; }
   .table--benutzer th:nth-child(5), .table--benutzer td:nth-child(5) { display: none; }
 }
+
+/* ------------------------------------------------ 3D-Ansicht (Phase 4b) */
+.ansicht3d { display: flex; flex-direction: column; gap: 8px; }
+.ansicht3d__leiste { display: flex; flex-wrap: wrap; gap: 6px; }
+.ansicht3d__hilfe { margin: 0; font-size: 0.85rem; color: var(--muted); }
+.ansicht3d__arbeitsbereich { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 12px; }
+@media (max-width: 960px) { .ansicht3d__arbeitsbereich { grid-template-columns: 1fr; } }
+.ansicht3d__flaeche {
+  position: relative; height: 62vh; min-height: 360px; overflow: hidden;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+}
+@media (max-width: 640px) { .ansicht3d__flaeche { height: 55vh; min-height: 300px; } }
+.ansicht3d__szene { position: absolute; inset: 0; outline: none; }
+.ansicht3d__szene:focus-visible { outline: 3px solid var(--primary); outline-offset: -3px; }
+.ansicht3d__overlay {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; padding: 16px; text-align: center; background: color-mix(in srgb, var(--surface) 86%, transparent);
+}
+.ansicht3d__ersatz { padding: 16px; }
+.ansicht3d__seite { display: flex; flex-direction: column; gap: 12px; max-height: 62vh; overflow: auto; }
+@media (max-width: 960px) { .ansicht3d__seite { max-height: none; } }
+.ansicht3d__abschnitt { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
+.ansicht3d__abschnitt h3 { margin: 0 0 6px; font-size: 1rem; }
+.ansicht3d__titel { margin: 0 0 6px; font-size: 0.95rem; }
+.ansicht3d__verbindung { margin: 0 0 6px; font-weight: 600; }
+.ansicht3d__werte { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 0 0 8px; font-size: 0.9rem; }
+.ansicht3d__werte > div { display: contents; }
+.ansicht3d__werte dt { color: var(--muted); }
+.ansicht3d__werte dd { margin: 0; overflow-wrap: anywhere; }
+.ansicht3d__hinweise, .ansicht3d__ausgelassen { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 0.88rem; }
+.ansicht3d__hinweis { border-left: 4px solid var(--warnung); padding: 2px 0 2px 8px; }
+.ansicht3d__hinweis p { margin: 0 0 4px; }
+.ansicht3d__hinweiszeichen { color: var(--warnung); }
+.ansicht3d__zusammenfassung { margin: 0; font-size: 0.85rem; }

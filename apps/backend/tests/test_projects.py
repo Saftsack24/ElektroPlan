@@ -11,6 +11,7 @@ Benoetigt PostgreSQL (``ELEKTROPLAN_TEST_DATABASE_URL``).
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -68,6 +69,16 @@ def _projekt(
     response = api.post("/api/v1/projects", headers=auth_headers(token), json=payload)
     assert response.status_code == 201, response.text
     return dict(response.json())
+
+
+def _liste(api: TestClient, token: str, **params: object) -> Any:
+    response = api.get("/api/v1/projects", headers=auth_headers(token), params=params)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _ids(seite: Any) -> list[object]:
+    return [item["id"] for item in seite["items"]]
 
 
 # ------------------------------------------------------------------ Anlegen
@@ -246,14 +257,10 @@ def test_sortierung_nach_letzter_aenderung_blaettert_vollstaendig(
     assert geaendert.status_code == 200
 
     gesehen: list[dict[str, object]] = []
-    cursor: str | None = None
-    while True:
-        params = {"sort": "updated_at", "limit": "2", **({"cursor": cursor} if cursor else {})}
-        seite = api.get("/api/v1/projects", headers=auth_headers(token), params=params).json()
+    for nummer in (1, 2, 3):
+        seite = _liste(api, token, sort="updated_at", page_size=2, page=nummer)
+        assert seite["total_pages"] == 3
         gesehen.extend(seite["items"])
-        if not seite["has_more"]:
-            break
-        cursor = seite["next_cursor"]
 
     assert gesehen[0]["id"] == projekte[0]["id"]
     assert len({item["id"] for item in gesehen}) == 5 == len(gesehen)
@@ -261,14 +268,177 @@ def test_sortierung_nach_letzter_aenderung_blaettert_vollstaendig(
     assert zeiten == sorted(zeiten, reverse=True)
 
 
-def test_suche_findet_ueber_den_kundennamen(
+def test_suche_findet_nicht_mehr_ueber_den_kundennamen(
     api: TestClient, token: str, kunde: dict[str, object]
 ) -> None:
+    """Seit Task 0018: Nach dem Kunden filtert ``customer_id``, nicht die Suche."""
     _projekt(api, token, kunde["id"], name="Voellig anderer Titel")
 
-    body = api.get("/api/v1/projects", headers=auth_headers(token), params={"q": "Bauherr"}).json()
+    body = _liste(api, token, q="Bauherr")
 
-    assert len(body["items"]) == 1
+    assert body["items"] == []
+    assert body["total_items"] == 0
+
+
+def test_suche_findet_bezeichnung_nummer_und_ort(
+    api: TestClient, token: str, kunde: dict[str, object]
+) -> None:
+    neubau = _projekt(api, token, kunde["id"], name="Neubau Ahornweg")
+    ort = _projekt(api, token, kunde["id"], name="Sanierung", site_city="Hameln")
+
+    assert _ids(_liste(api, token, q="ahorn")) == [neubau["id"]]
+    assert _ids(_liste(api, token, q="hameln")) == [ort["id"]]
+    assert _ids(_liste(api, token, q=str(ort["project_number"]))) == [ort["id"]]
+
+
+# ------------------------------------------------ Nummerierte Seiten (ADR 0017)
+
+
+def _aktivieren(api: TestClient, token: str, projekt: dict[str, object]) -> None:
+    response = api.post(
+        f"/api/v1/projects/{projekt['id']}/activate",
+        headers={**auth_headers(token), "If-Match": str(projekt["version"])},
+    )
+    assert response.status_code == 200, response.text
+
+
+def _statuswechsel(api: TestClient, token: str, projekt_id: object, ziel: str) -> None:
+    aktuell = api.get(f"/api/v1/projects/{projekt_id}", headers=auth_headers(token)).json()
+    response = api.post(
+        f"/api/v1/projects/{projekt_id}/{ziel}",
+        headers={**auth_headers(token), "If-Match": str(aktuell["version"])},
+    )
+    assert response.status_code == 200, response.text
+
+
+def test_projektliste_liefert_nummerierte_seiten(
+    api: TestClient, token: str, kunde: dict[str, object]
+) -> None:
+    for n in range(5):
+        _projekt(api, token, kunde["id"], name=f"Projekt {n}")
+
+    erste = _liste(api, token, page_size=2)
+    letzte = _liste(api, token, page_size=2, page=3)
+    dahinter = _liste(api, token, page_size=2, page=7)
+
+    assert (erste["page"], erste["total_items"], erste["total_pages"]) == (1, 5, 3)
+    assert len(erste["items"]) == 2
+    assert (letzte["page"], len(letzte["items"])) == (3, 1)
+    assert dahinter["page"] == 3
+    assert _ids(dahinter) == _ids(letzte)
+
+
+def test_leere_projektliste(api: TestClient, token: str) -> None:
+    leer = _liste(api, token, page=2)
+
+    assert leer == {"items": [], "page": 1, "page_size": 25, "total_items": 0, "total_pages": 0}
+
+
+def test_gleichnamige_projekte_bleiben_stabil_sortiert(
+    api: TestClient, token: str, kunde: dict[str, object]
+) -> None:
+    erwartet = sorted(str(_projekt(api, token, kunde["id"], name="Gleich")["id"]) for _ in range(5))
+
+    def durchblaettern() -> list[str]:
+        return [
+            projekt_id
+            for nummer in (1, 2, 3)
+            for projekt_id in _ids(_liste(api, token, sort="name", page_size=2, page=nummer))
+        ]
+
+    assert durchblaettern() == erwartet
+    assert durchblaettern() == erwartet
+
+
+def test_statusgruppen(api: TestClient, token: str, kunde: dict[str, object]) -> None:
+    entwurf = _projekt(api, token, kunde["id"], name="Entwurf")
+    aktiv = _projekt(api, token, kunde["id"], name="Aktiv")
+    _aktivieren(api, token, aktiv)
+    fertig = _projekt(api, token, kunde["id"], name="Fertig")
+    _statuswechsel(api, token, fertig["id"], "activate")
+    _statuswechsel(api, token, fertig["id"], "complete")
+    archiv = _projekt(api, token, kunde["id"], name="Archiv")
+    _statuswechsel(api, token, archiv["id"], "archive")
+
+    laufend = _liste(api, token, status_group="current")
+    geschlossen = _liste(api, token, status_group="closed")
+
+    assert set(_ids(laufend)) == {entwurf["id"], aktiv["id"]}
+    assert laufend["total_items"] == 2
+    assert set(_ids(geschlossen)) == {fertig["id"], archiv["id"]}
+    assert geschlossen["total_items"] == 2
+
+
+def test_status_und_statusgruppe_schliessen_sich_aus(api: TestClient, token: str) -> None:
+    response = api.get(
+        "/api/v1/projects",
+        headers=auth_headers(token),
+        params={"status": "draft", "status_group": "current"},
+    )
+
+    assert response.status_code == 422
+
+
+def test_unbekannte_statusgruppe_ist_eingabefehler(api: TestClient, token: str) -> None:
+    response = api.get(
+        "/api/v1/projects", headers=auth_headers(token), params={"status_group": "offen"}
+    )
+
+    assert response.status_code == 422
+
+
+def test_filter_nach_kunde_mit_zaehlung(
+    api: TestClient, token: str, kunde: dict[str, object]
+) -> None:
+    anderer = api.post(
+        "/api/v1/customers",
+        headers=auth_headers(token),
+        json={"name": "Andere Firma", "kind": "company"},
+    ).json()
+    eigene = [_projekt(api, token, kunde["id"], name=f"Eigen {n}") for n in range(3)]
+    _projekt(api, token, anderer["id"], name="Fremdkunde")
+
+    seite = _liste(api, token, customer_id=str(kunde["id"]), page_size=2)
+
+    assert seite["total_items"] == 3
+    assert seite["total_pages"] == 2
+    assert set(_ids(seite)) <= {p["id"] for p in eigene}
+
+
+def test_unbekannte_kunden_id_liefert_leere_liste(api: TestClient, token: str) -> None:
+    seite = _liste(api, token, customer_id=str(uuid.uuid4()))
+
+    assert seite["items"] == []
+    assert seite["total_items"] == 0
+
+
+def test_kombination_aus_suche_kunde_status_und_seite(
+    api: TestClient, token: str, kunde: dict[str, object]
+) -> None:
+    anderer = api.post(
+        "/api/v1/customers",
+        headers=auth_headers(token),
+        json={"name": "Andere Firma", "kind": "company"},
+    ).json()
+    treffer = []
+    for n in range(3):
+        projekt = _projekt(api, token, kunde["id"], name=f"Neubau {n}")
+        _aktivieren(api, token, projekt)
+        treffer.append(projekt["id"])
+    # Je ein Gegenbeispiel pro Bedingung:
+    _projekt(api, token, kunde["id"], name="Neubau Entwurf")  # falscher Status
+    _aktivieren(api, token, _projekt(api, token, kunde["id"], name="Sanierung"))  # Suche
+    _aktivieren(api, token, _projekt(api, token, anderer["id"], name="Neubau fremd"))  # Kunde
+
+    filter_ = {"q": "neubau", "customer_id": str(kunde["id"]), "status": "active"}
+    erste = _liste(api, token, page_size=2, page=1, **filter_)
+    zweite = _liste(api, token, page_size=2, page=2, **filter_)
+
+    assert (erste["total_items"], erste["total_pages"]) == (3, 2)
+    assert sorted(_ids(erste) + _ids(zweite)) == sorted(treffer)
+
+    gruppe = _liste(api, token, q="neubau", customer_id=str(kunde["id"]), status_group="current")
+    assert gruppe["total_items"] == 4
 
 
 def test_ausgeblendetes_projekt_verschwindet(

@@ -1,9 +1,10 @@
 import { ApiError, createApiClient } from "@elektroplan/api-client";
 import type { ApiClient, MeResponse, TokenResponse } from "@elektroplan/api-client";
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import { config } from "../config";
+import { masseinheitBenutzerSetzen } from "../ui/masseinheit";
 
 interface AuthState {
   status: "loading" | "anonymous" | "authenticated";
@@ -187,6 +188,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     [api, loadSession],
   );
+
+  // Persönliche Anzeigeeinstellungen gehören dem angemeldeten Benutzer -
+  // nicht dem Browser. Vor dem ersten Bild umschalten, damit nie die Wahl
+  // eines anderen Benutzers aufblitzt; beim Laden und nach dem Abmelden gilt
+  // der Standard. Ein Betriebswechsel behält dieselbe `user_id`.
+  const benutzerId = state.status === "authenticated" ? (state.me?.user_id ?? null) : null;
+  useLayoutEffect(() => masseinheitBenutzerSetzen(benutzerId), [benutzerId]);
 
   const value = useMemo<AuthContextValue>(
     () => ({ ...state, api, login, logout, switchOrganization, aktualisieren }),

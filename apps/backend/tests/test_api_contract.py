@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.files.storage import build_storage_key, matches_magic_bytes
-from app.core.pagination import clamp_limit, decode_cursor, encode_cursor
+from app.core.pagination import clamp_limit, count_pages, decode_cursor, encode_cursor
 from app.errors import PROBLEM_CONTENT_TYPE, ValidationFailedError
 
 # ------------------------------------------------------------- Fehlerformat
@@ -131,6 +131,29 @@ def test_cursor_roundtrip() -> None:
 def test_ungueltiger_cursor_ist_eingabefehler() -> None:
     with pytest.raises(ValidationFailedError):
         decode_cursor("kein-gueltiger-cursor")
+
+
+@pytest.mark.parametrize(
+    ("total_items", "page_size", "total_pages"),
+    [(0, 25, 0), (1, 25, 1), (25, 25, 1), (26, 25, 2), (600, 25, 24), (7, 3, 3)],
+)
+def test_seitenzahl(total_items: int, page_size: int, total_pages: int) -> None:
+    assert count_pages(total_items, page_size) == total_pages
+
+
+def test_kunden_und_projektliste_haben_nummerierte_seiten_im_vertrag(client: TestClient) -> None:
+    """OpenAPI: page/page_size statt limit/cursor, Gesamtzahl in der Antwort (ADR 0017)."""
+    schema = client.get("/openapi.json").json()
+    for pfad in ("/api/v1/customers", "/api/v1/projects"):
+        parameter = {p["name"] for p in schema["paths"][pfad]["get"]["parameters"]}
+        assert {"page", "page_size"} <= parameter
+        assert not parameter & {"limit", "cursor"}
+    projekt_parameter = {
+        p["name"] for p in schema["paths"]["/api/v1/projects"]["get"]["parameters"]
+    }
+    assert {"status", "status_group", "customer_id", "q"} <= projekt_parameter
+    seite = schema["components"]["schemas"]["NumberedPage_ProjectSummary_"]
+    assert set(seite["required"]) == {"items", "page", "page_size", "total_items", "total_pages"}
 
 
 def test_limit_wird_begrenzt() -> None:

@@ -6,7 +6,7 @@ import { Link, useParams } from "react-router-dom";
 
 import { useAuth, usePermission } from "../../core/auth/AuthProvider";
 import { useProjectTabs } from "../../core/modules/ProjectTabs";
-import { verlassenBestaetigen } from "../../core/ui/ungespeichert";
+import { useVerlassenBestaetigen } from "../../core/ui/Rueckfrage";
 import { ProjectFilesTab } from "./ProjectFilesTab";
 import { ProjectMasterDataTab } from "./ProjectMasterDataTab";
 import { ProjectStructureTab } from "./ProjectStructureTab";
@@ -34,10 +34,14 @@ export default function ProjectDetailPage() {
   const modulTabs = useProjectTabs();
 
   const [aktiv, setAktivRoh] = useState<string>(EIGENE_TABS[0].id);
+  const verlassen = useVerlassenBestaetigen();
   // Ein Tabwechsel entlaedt den bisherigen Tab. Haelt er ungespeicherte
   // Aenderungen, wird vorher gefragt (fachneutraler Core-Baustein).
   const setAktiv = (id: string) => {
-    if (id !== aktiv && verlassenBestaetigen()) setAktivRoh(id);
+    if (id === aktiv) return;
+    void verlassen("Tab wechseln?", "Sie wollen zu einem anderen Tab des Projekts wechseln.", () =>
+      setAktivRoh(id),
+    );
   };
   const [fehler, setFehler] = useState<string | null>(null);
 

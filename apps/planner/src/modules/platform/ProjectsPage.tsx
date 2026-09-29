@@ -1,23 +1,23 @@
-import type { ProjectSummary } from "@elektroplan/api-client";
+import type { CustomerOut } from "@elektroplan/api-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
-import { useCursorListe } from "../../core/api/useCursorListe";
-import { useAuth, usePermission } from "../../core/auth/AuthProvider";
-import { WeitereLaden } from "../../core/ui/WeitereLaden";
-import { zuordenbareKunden } from "./auswahl";
 import { alsFormularfehler } from "../../core/api/fehler";
-import type { Suchergebnis } from "./KundenAuswahl";
+import { useNummerierteListe } from "../../core/api/useNummerierteListe";
+import { useAuth, usePermission } from "../../core/auth/AuthProvider";
+import { Seitennavigation } from "../../core/ui/Seitennavigation";
+import { useEntprellt } from "../../core/ui/useEntprellt";
+import { KundenAuswahl } from "./KundenAuswahl";
+import { kundenSuchen } from "./kundensuche";
 import { ProjectFormDialog } from "./ProjectFormDialog";
 import type { ProjektWerte } from "./ProjectFormDialog";
+import { Projekttabelle } from "./Projekttabelle";
 import { START_EBENE, START_HOEHE_MM, startstrukturAnlegen } from "./startstruktur";
 import { STATUS_LABEL } from "./status";
 import type { ProjectStatus } from "./status";
 
 const SEITENGROESSE = 25;
-/** Treffer je Suchanfrage im Anlagedialog - bewusst klein und sichtbar. */
-const TREFFER_PRO_SEITE = 20;
 
 const PROJEKTFELDER = [
   "customer_id",
@@ -25,6 +25,7 @@ const PROJEKTFELDER = [
   "site_street",
   "site_postal_code",
   "site_city",
+  "site_country_code",
 ] as const;
 
 export default function ProjectsPage() {
@@ -36,8 +37,10 @@ export default function ProjectsPage() {
 
   const [suche, setSuche] = useState("");
   const [status, setStatus] = useState<ProjectStatus | "">("");
+  const [kunde, setKunde] = useState<CustomerOut | null>(null);
   const [dialogOffen, setDialogOffen] = useState(false);
   const [parameter, setParameter] = useSearchParams();
+  const suchbegriff = useEntprellt(suche.trim());
 
   // Schnellaktion der Startseite: "?neu=1" oeffnet den Anlagedialog einmal
   // und verschwindet danach aus der Adresse.
@@ -51,44 +54,21 @@ export default function ProjectsPage() {
   const [hinweis, setHinweis] = useState<string | null>(null);
   const [hinweisVollstaendig, setHinweisVollstaendig] = useState(true);
 
-  // Suchbegriff und Status stehen im Query-Key: Jede Aenderung erzeugt eine
-  // neue Abfrage, der Cursor beginnt damit von vorn.
-  const liste = useCursorListe({
-    schluessel: ["projects", "liste", suche, status],
-    laden: (cursor) =>
+  // Suche, Status und Kunde stehen im Schluessel: Jede Aenderung beginnt
+  // wieder auf Seite 1 (useNummerierteListe).
+  const liste = useNummerierteListe({
+    schluessel: ["projects", "liste", suchbegriff, status, kunde?.id ?? null],
+    laden: (seite) =>
       api.get("/api/v1/projects", {
         query: {
-          limit: SEITENGROESSE,
-          ...(suche ? { q: suche } : {}),
+          page: seite,
+          page_size: SEITENGROESSE,
+          ...(suchbegriff ? { q: suchbegriff } : {}),
           ...(status ? { status } : {}),
-          ...(cursor ? { cursor } : {}),
+          ...(kunde !== null ? { customer_id: kunde.id } : {}),
         },
       }),
   });
-
-  const projekte = liste.eintraege;
-
-  /**
-   * Serverseitige Kundensuche fuer den Anlagedialog.
-   *
-   * Vorher lud die Seite pauschal die ersten 200 Kunden. Ab dem 201. waere
-   * der gesuchte nicht dabei gewesen, ohne Hinweis. Jetzt sucht der Server,
-   * es werden nur die Treffer geladen, und ``weitere`` sagt der Oberflaeche,
-   * wann sie zum Eingrenzen auffordern muss.
-   *
-   * Anonymisierte Kunden bleiben sichtbar, sind aber fuer neue Zuordnungen
-   * gesperrt (``404``) - sie werden hier herausgefiltert.
-   */
-  const kundenSuchen = async (begriff: string): Promise<Suchergebnis> => {
-    const seite = await api.get("/api/v1/customers", {
-      query: {
-        sort: "name",
-        limit: TREFFER_PRO_SEITE,
-        ...(begriff.trim() ? { q: begriff.trim() } : {}),
-      },
-    });
-    return { treffer: zuordenbareKunden(seite.items), weitere: seite.has_more };
-  };
 
   /**
    * Projekt anlegen und - falls gewuenscht - die Startstruktur nachziehen.
@@ -111,7 +91,7 @@ export default function ProjectsPage() {
         body: {
           customer_id: werte.customer_id,
           name: werte.name.trim(),
-          site_country_code: "DE",
+          site_country_code: werte.site_country_code,
           ...(werte.site_street.trim() ? { site_street: werte.site_street.trim() } : {}),
           ...(werte.site_postal_code.trim()
             ? { site_postal_code: werte.site_postal_code.trim() }
@@ -164,6 +144,8 @@ export default function ProjectsPage() {
     return undefined;
   };
 
+  const gefiltert = suchbegriff !== "" || status !== "" || kunde !== null;
+
   return (
     <div className="stack">
       <section className="card">
@@ -192,11 +174,12 @@ export default function ProjectsPage() {
         <div className="filter-row">
           <div className="field">
             <label className="field__label" htmlFor="projektsuche">
-              Suche (Name, Nummer, Ort, Kunde)
+              Suche (Bezeichnung, Projektnummer, Baustellenort)
             </label>
             <input
               id="projektsuche"
               className="field__input"
+              type="search"
               value={suche}
               placeholder="z. B. Neubau"
               onChange={(event) => {
@@ -205,6 +188,20 @@ export default function ProjectsPage() {
               }}
             />
           </div>
+          {darfKundenLesen && (
+            <KundenAuswahl
+              id="projektfilter-kunde"
+              label="Kunde"
+              zweck="filter"
+              gewaehlt={kunde}
+              entfernenLabel="Kundenfilter entfernen"
+              suchen={(begriff) => kundenSuchen(api, begriff, { nurZuordenbar: false })}
+              onChange={(gewaehlt) => {
+                setKunde(gewaehlt);
+                setHinweis(null);
+              }}
+            />
+          )}
           <div className="field">
             <label className="field__label" htmlFor="projektstatus">
               Status
@@ -241,13 +238,20 @@ export default function ProjectsPage() {
             </button>
           </p>
         )}
-        {liste.geladen && <Projekttabelle projekte={projekte} />}
         {liste.geladen && (
-          <WeitereLaden
-            sichtbar={liste.hatWeitere}
-            laedt={liste.laedtWeitere}
-            anzahl={projekte.length}
-            onLaden={liste.weitereLaden}
+          <Projekttabelle
+            projekte={liste.eintraege}
+            leerText={gefiltert ? "Keine Projekte zu diesen Filtern gefunden." : "Noch keine Projekte angelegt."}
+          />
+        )}
+        {liste.geladen && (
+          <Seitennavigation
+            bezeichnung="Seiten der Projektliste"
+            seite={liste.seite}
+            gesamtSeiten={liste.gesamtSeiten}
+            gesamtEintraege={liste.gesamtEintraege}
+            wechselt={liste.wechselt}
+            onSeite={liste.zuSeite}
           />
         )}
       </section>
@@ -255,45 +259,11 @@ export default function ProjectsPage() {
       {darfSchreiben && (
         <ProjectFormDialog
           offen={dialogOffen}
-          suchen={kundenSuchen}
+          suchen={(begriff) => kundenSuchen(api, begriff, { nurZuordenbar: true })}
           onSubmit={anlegen}
           onClose={() => setDialogOffen(false)}
         />
       )}
     </div>
-  );
-}
-
-function Projekttabelle({ projekte }: { projekte: ProjectSummary[] }) {
-  if (projekte.length === 0) {
-    return <p className="muted">Keine Projekte gefunden.</p>;
-  }
-  return (
-    <table className="table">
-      <thead>
-        <tr>
-          <th>Nummer</th>
-          <th>Bezeichnung</th>
-          <th>Kunde</th>
-          <th>Ort</th>
-          <th>Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        {projekte.map((projekt) => (
-          <tr key={projekt.id}>
-            <td>
-              <code>{projekt.project_number}</code>
-            </td>
-            <td>
-              <Link to={`/projects/${projekt.id}`}>{projekt.name}</Link>
-            </td>
-            <td>{projekt.customer_name}</td>
-            <td>{projekt.site_city ?? "—"}</td>
-            <td>{STATUS_LABEL[projekt.status]}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
   );
 }

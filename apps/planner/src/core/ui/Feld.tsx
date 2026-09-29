@@ -21,6 +21,7 @@ export function Feld({
   hinweis,
   disabled = false,
   autoComplete,
+  inputMode,
 }: {
   id: string;
   label: string;
@@ -32,6 +33,8 @@ export function Feld({
   hinweis?: string | undefined;
   disabled?: boolean;
   autoComplete?: string | undefined;
+  /** Bildschirmtastatur, etwa `decimal` für Maße mit Komma. */
+  inputMode?: "text" | "numeric" | "decimal" | undefined;
 }) {
   const fehlerId = `${id}-fehler`;
   const hinweisId = `${id}-hinweis`;
@@ -52,6 +55,7 @@ export function Feld({
         required={required}
         disabled={disabled}
         autoComplete={autoComplete}
+        inputMode={inputMode}
         aria-invalid={fehler ? true : undefined}
         aria-describedby={beschrieben || undefined}
         onChange={(event) => onChange(event.target.value)}

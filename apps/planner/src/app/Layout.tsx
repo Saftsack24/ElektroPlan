@@ -1,13 +1,16 @@
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 
 import { useAuth } from "../core/auth/AuthProvider";
-import { verlassenBestaetigen } from "../core/ui/ungespeichert";
+import { EinstellungenDialog } from "../core/ui/EinstellungenDialog";
+import { useVerlassenBestaetigen } from "../core/ui/Rueckfrage";
 import { moduleRegistry } from "../modules";
 
 export function Layout() {
   const { me, logout, activeModuleIds, permissions } = useAuth();
   const navigation = moduleRegistry.navigation({ activeModuleIds, permissions });
+  const verlassen = useVerlassenBestaetigen();
+  const [einstellungen, setEinstellungen] = useState(false);
 
   return (
     <div className="shell">
@@ -26,9 +29,16 @@ export function Layout() {
         <div className="shell__user">
           <span className="shell__org">{me?.organization.name}</span>
           <span className="shell__email">{me?.email}</span>
-          <button className="button button--ghost" type="button" onClick={() => {
-              if (verlassenBestaetigen()) void logout();
-            }}>
+          <button className="button button--ghost" type="button" onClick={() => setEinstellungen(true)}>
+            Einstellungen
+          </button>
+          <button
+            className="button button--ghost"
+            type="button"
+            onClick={() => {
+              void verlassen("Abmelden?", "Sie wollen sich abmelden.", () => void logout());
+            }}
+          >
             Abmelden
           </button>
         </div>
@@ -39,6 +49,8 @@ export function Layout() {
           <Outlet />
         </Suspense>
       </main>
+
+      <EinstellungenDialog offen={einstellungen} onClose={() => setEinstellungen(false)} />
     </div>
   );
 }

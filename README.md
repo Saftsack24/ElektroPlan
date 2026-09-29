@@ -47,7 +47,7 @@ Ausführlich: [`docs/architecture.md`](docs/architecture.md)
 |---|---|
 | Backend | Python 3.12+, FastAPI, SQLAlchemy 2.0, Alembic, PostgreSQL 17 |
 | Frontend | TypeScript (strict), React, Vite, TanStack Query, Zod |
-| 3D | Three.js (Ansicht, ab Phase 4b) |
+| 3D | Three.js (reine Ansicht seit Phase 4b; Browser mit WebGL 2 nötig, sonst Hinweis und 2D/Tabelle) |
 | Mobil | React + Capacitor, später ARCore (ab Phase 13) |
 | Dateien | S3-kompatibler Object Storage (lokal MinIO) |
 | Infrastruktur | Docker, Docker Compose |
@@ -103,6 +103,27 @@ Administration mit Benutzerliste, Einladungen (Token nur als Hash, einmalig, bef
 Sperren des Zugangs je Betrieb, Vergabe fester Systemrollen mit nachvollziehbaren
 effektiven Rechten und Schutz des letzten Administrators; arbeitsorientierte Startseite.
 Entscheidung: [ADR 0015](docs/decisions/0015-membership-administration-and-invitations.md).
+
+**Phase 4b — 3D-Ansicht — abgeschlossen.**
+Abgeleitete, schreibgeschützte 3D-Ansicht des Grundrisses neben 2D-Editor und Tabellen;
+gemeinsame Wände werden – exakt, auch bei Teilüberlappung – abschnittsweise
+zusammengeführt (seit 4b.2), Datenkonflikte als Hinweis. Entscheidung: [ADR 0016](docs/decisions/0016-derived-3d-view-wall-height-and-coincident-walls.md).
+Voraussetzung im Browser: WebGL 2; ohne WebGL bleiben 2D-Editor und Tabellen nutzbar.
+
+**Bedienungsnacharbeit 1 — umgesetzt.**
+Kunden- und Projektlisten mit nummerierten Seiten ([ADR 0017](docs/decisions/0017-numbered-pages-for-customer-and-project-lists.md)),
+eigener Kundenfilter in der Projektübersicht, laufende und abgeschlossene Projekte auf der
+Kundenseite, Adressvorschlag aus dem Kunden, eigener Bestätigungsdialog statt
+Browserdialog (außer beim Neuladen/Schließen) und eine persönliche **Maßeinheit**:
+Längen erscheinen standardmäßig in Zentimetern, umstellbar auf Millimeter unter
+„Einstellungen" (je Benutzer, in diesem Browser). Gespeichert und übertragen wird weiter
+in ganzen Millimetern.
+
+**Bedienungsnacharbeit 2 (Phase 4b.2) — umgesetzt.**
+Türen, Fenster und Durchgänge werden im 2D-Editor direkt mit der Maus auf eine Wand
+gesetzt und entlang der Wand verschoben (Vorschau mit verbundenen Räumen, 5-cm-Fang,
+Escape bricht ab); genaue Werte weiter in der Seitenleiste. Eine Öffnung auf einer
+gemeinsamen Wand wird nur **einmal** gespeichert und gilt – abgeleitet – für beide Räume.
 
 > **Einladungen in der Entwicklung:** Es gibt noch keinen E-Mail-Versand. Mit
 > `ELEKTROPLAN_INVITATION_DELIVERY=development_link` (in `docker-compose.yml` gesetzt)

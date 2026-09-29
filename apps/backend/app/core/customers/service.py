@@ -16,13 +16,7 @@ from sqlalchemy.orm import Session
 from app.core.customers.models import Customer
 from app.core.customers.schemas import CustomerCreate, CustomerUpdate
 from app.core.numbering.service import CUSTOMER_SEQUENCE, next_number
-from app.core.pagination import (
-    KeysetPage,
-    apply_keyset,
-    build_keyset_page,
-    parse_datetime_key,
-    parse_text_key,
-)
+from app.core.pagination import OffsetPage, fetch_numbered_page, order_with_tiebreaker
 from app.core.persistence import flush
 from app.core.preconditions import check_version
 from app.core.tenancy.repository import TenantRepository
@@ -79,44 +73,36 @@ class CustomerService:
     def list_customers(
         self,
         *,
-        limit: int,
-        cursor: str | None = None,
+        page: int,
+        page_size: int,
         search: str | None = None,
         kind: str | None = None,
         sort: CustomerSort = "created_at",
-    ) -> KeysetPage[Customer]:
-        """Seite von Kunden - gefiltert, sortiert, cursorbasiert."""
+    ) -> OffsetPage[Customer]:
+        """Nummerierte Seite von Kunden - gefiltert, stabil sortiert (ADR 0017).
+
+        Die Basisabfrage ist bereits auf den Betrieb und auf nicht
+        ausgeblendete Kunden eingeschraenkt; Zaehlung und Seite teilen sie.
+        Anonymisierte Kunden bleiben enthalten: Sie sind als Belegzuordnung
+        sichtbar (docs/api.md, "Zustand des Kunden bei der Projektzuordnung").
+        """
         stmt = self.repository.query()
         if kind:
             stmt = stmt.where(Customer.kind == kind)
         if search:
             stmt = _apply_search(stmt, search)
-
-        if sort == "name":
-            stmt = apply_keyset(
-                stmt,
-                sort_column=Customer.name,
-                id_column=Customer.id,
-                descending=False,
-                cursor=cursor,
-                parse_key=parse_text_key,
-            )
-        else:
-            stmt = apply_keyset(
-                stmt,
-                sort_column=Customer.created_at,
-                id_column=Customer.id,
-                descending=True,
-                cursor=cursor,
-                parse_key=parse_datetime_key,
-            )
-
-        rows = list(self.session.execute(stmt.limit(limit + 1)).scalars().all())
-        return build_keyset_page(
-            rows,
-            limit=limit,
-            key_of=lambda row: _sort_value(row, sort),
-            id_of=lambda row: row.id,
+        stmt = order_with_tiebreaker(
+            stmt,
+            sort_column=Customer.name if sort == "name" else Customer.created_at,
+            id_column=Customer.id,
+            descending=sort != "name",
+        )
+        return fetch_numbered_page(
+            self.session,
+            stmt,
+            page=page,
+            page_size=page_size,
+            load=lambda seite: list(self.session.execute(seite).scalars().all()),
         )
 
     # ---------------------------------------------------------------- Aendern
@@ -235,7 +221,3 @@ def _apply_search(stmt: Select[tuple[Customer]], search: str) -> Select[tuple[Cu
             func.coalesce(Customer.billing_city, "").ilike(pattern),
         )
     )
-
-
-def _sort_value(customer: Customer, sort: CustomerSort) -> str:
-    return customer.name if sort == "name" else customer.created_at.isoformat()

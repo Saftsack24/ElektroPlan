@@ -65,9 +65,3 @@ export function fangen(welt: Punkt, optionen: Fangoptionen): Fangergebnis {
   if (bester !== null) return { punkt: bester, ziel: "endpunkt" };
   return { punkt: aufRaster(welt, optionen.rasterMm), ziel: "raster" };
 }
-
-/** Abstand entlang einer Wand auf das Raster fangen (für Öffnungen). */
-export function abstandFangen(abstand: number, rasterMm: number, aktiv: boolean): number {
-  if (!aktiv) return Math.round(abstand) + 0;
-  return Math.round(abstand / rasterMm) * rasterMm + 0;
-}

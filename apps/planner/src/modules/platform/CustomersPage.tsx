@@ -3,9 +3,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
-import { useCursorListe } from "../../core/api/useCursorListe";
+import { useNummerierteListe } from "../../core/api/useNummerierteListe";
 import { useAuth, usePermission } from "../../core/auth/AuthProvider";
-import { WeitereLaden } from "../../core/ui/WeitereLaden";
+import { Seitennavigation } from "../../core/ui/Seitennavigation";
+import { useEntprellt } from "../../core/ui/useEntprellt";
 import { CustomerFormDialog } from "./CustomerFormDialog";
 import type { KundenWerte } from "./CustomerFormDialog";
 import { alsFormularfehler } from "../../core/api/fehler";
@@ -34,6 +35,7 @@ export default function CustomersPage() {
   const queryClient = useQueryClient();
 
   const [suche, setSuche] = useState("");
+  const suchbegriff = useEntprellt(suche.trim());
   const [dialogOffen, setDialogOffen] = useState(false);
   const [parameter, setParameter] = useSearchParams();
 
@@ -49,17 +51,17 @@ export default function CustomersPage() {
   const [erfolg, setErfolg] = useState<string | null>(null);
   const [zuletztAngelegt, setZuletztAngelegt] = useState<string | null>(null);
 
-  // Der Suchbegriff steht im Query-Key: Eine Aenderung erzeugt eine neue
-  // Abfrage, und der Cursor beginnt damit zwangslaeufig von vorn.
-  const liste = useCursorListe({
-    schluessel: ["customers", "liste", suche],
-    laden: (cursor) =>
+  // Der Suchbegriff steht im Schluessel: Eine Aenderung beginnt wieder auf
+  // Seite 1 (useNummerierteListe).
+  const liste = useNummerierteListe({
+    schluessel: ["customers", "liste", suchbegriff],
+    laden: (seite) =>
       api.get("/api/v1/customers", {
         query: {
           sort: "name",
-          limit: SEITENGROESSE,
-          ...(suche ? { q: suche } : {}),
-          ...(cursor ? { cursor } : {}),
+          page: seite,
+          page_size: SEITENGROESSE,
+          ...(suchbegriff ? { q: suchbegriff } : {}),
         },
       }),
   });
@@ -115,6 +117,7 @@ export default function CustomersPage() {
           <input
             id="kundensuche"
             className="field__input"
+            type="search"
             value={suche}
             placeholder="z. B. Schmidt"
             onChange={(event) => {
@@ -139,11 +142,13 @@ export default function CustomersPage() {
         )}
         {liste.geladen && <Kundentabelle kunden={kunden} hervorgehoben={zuletztAngelegt} />}
         {liste.geladen && (
-          <WeitereLaden
-            sichtbar={liste.hatWeitere}
-            laedt={liste.laedtWeitere}
-            anzahl={kunden.length}
-            onLaden={liste.weitereLaden}
+          <Seitennavigation
+            bezeichnung="Seiten der Kundenliste"
+            seite={liste.seite}
+            gesamtSeiten={liste.gesamtSeiten}
+            gesamtEintraege={liste.gesamtEintraege}
+            wechselt={liste.wechselt}
+            onSeite={liste.zuSeite}
           />
         )}
       </section>

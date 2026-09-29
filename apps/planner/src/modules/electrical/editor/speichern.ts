@@ -14,7 +14,7 @@ import type { Fehlereintrag, ServerFehler } from "./zustand";
 export const GEOMETRIEFEHLER: Record<string, string> = {
   "wall-degenerate": "Start- und Endpunkt einer Wand sind identisch.",
   "coordinate-out-of-range": "Ein Punkt liegt außerhalb des zulässigen Bereichs von ±1 km.",
-  "wall-length-implausible": "Eine Wand ist kürzer als 100 mm oder länger als 100 m.",
+  "wall-length-implausible": "Eine Wand ist kürzer als 10 cm (100 mm) oder länger als 100 m.",
   "wall-duplicate": "Zwei Wände verlaufen zwischen denselben Punkten.",
   "walls-intersect": "Zwei Wände überschneiden oder berühren sich.",
   "wall-backtracks": "Zwei aufeinanderfolgende Wände laufen übereinander zurück.",

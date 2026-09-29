@@ -1,6 +1,8 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 
+import { eingabeUmrechnen } from "../../../core/masse";
+import { useEinheitenwechsel, useMasse } from "../../../core/ui/masseinheit";
 import { KONTURZUSTAND_LABEL, OEFFNUNGSARTEN, OEFFNUNGSART_LABEL } from "../texte";
 import type { EntwurfWand, Oeffnungsart, RaumImPlan, Raumentwurf } from "./entwurf";
 import { ende, segmenteAus, start } from "./entwurf";
@@ -19,6 +21,8 @@ import {
   wandlaengeSetzen,
 } from "./werkzeuge";
 import type { Ergebnis } from "./werkzeuge";
+import type { EditorEinordnung, EditorTopologie } from "./platzierung";
+import { verbindungsText } from "./platzierung";
 import type { Auswahl, EditorZustand } from "./zustand";
 
 export function flaecheText(mm2: number | null): string {
@@ -35,8 +39,9 @@ interface Feldbeschreibung {
 }
 
 /**
- * Präzise Eingabe in ganzen Millimetern. Ändert nur den **lokalen** Entwurf -
- * gespeichert wird erst mit „Speichern“.
+ * Präzise Maßeingabe in der persönlichen Anzeigeeinheit. Übernommen werden
+ * immer ganze Millimeter (`core/masse.ts`). Ändert nur den **lokalen**
+ * Entwurf - gespeichert wird erst mit „Speichern“.
  */
 function Zahlenformular({
   id,
@@ -51,21 +56,25 @@ function Zahlenformular({
   onUebernehmen: (werte: Record<string, number>) => string | undefined;
   gesperrt: boolean;
 }) {
+  const masse = useMasse();
   const [werte, setWerte] = useState<Record<string, string>>(() =>
-    Object.fromEntries(felder.map((f) => [f.name, String(f.wert)])),
+    Object.fromEntries(felder.map((f) => [f.name, masse.alsEingabe(f.wert)])),
   );
   const [fehler, setFehler] = useState<string | null>(null);
+  useEinheitenwechsel((von, nach) =>
+    setWerte((alt) => Object.fromEntries(Object.entries(alt).map(([k, v]) => [k, eingabeUmrechnen(v, von, nach)]))),
+  );
 
   const absenden = (event: FormEvent) => {
     event.preventDefault();
     const zahlen: Record<string, number> = {};
     for (const f of felder) {
-      const text = (werte[f.name] ?? "").trim();
-      if (!/^-?\d+$/.test(text)) {
-        setFehler(`„${f.label}“ braucht eine ganze Zahl in Millimetern.`);
+      const gelesen = masse.lesen(werte[f.name] ?? "");
+      if (!gelesen.ok) {
+        setFehler(`„${f.label}“: ${gelesen.fehler}`);
         return;
       }
-      zahlen[f.name] = Number.parseInt(text, 10);
+      zahlen[f.name] = gelesen.mm;
     }
     setFehler(onUebernehmen(zahlen) ?? null);
   };
@@ -75,11 +84,11 @@ function Zahlenformular({
       <div className="eigenschaften__felder">
         {felder.map((f) => (
           <label key={f.name} className="field" htmlFor={`${id}-${f.name}`}>
-            <span className="field__label">{f.label}</span>
+            <span className="field__label">{masse.label(f.label)}</span>
             <input
               id={`${id}-${f.name}`}
               className="field__input"
-              inputMode="numeric"
+              inputMode="decimal"
               value={werte[f.name] ?? ""}
               disabled={gesperrt}
               onChange={(event) => setWerte({ ...werte, [f.name]: event.target.value })}
@@ -111,6 +120,9 @@ export function Eigenschaften({
   onWaehlen,
   onRaumBearbeiten,
   neueId,
+  einordnung,
+  topologie,
+  raumName,
 }: {
   zustand: EditorZustand;
   raeume: readonly RaumImPlan[];
@@ -119,8 +131,13 @@ export function Eigenschaften({
   onWaehlen: (auswahl: Auswahl) => void;
   onRaumBearbeiten: () => void;
   neueId: () => string;
+  /** Abgeleitete Raumverbindungen und Wandabschnitte (Phase 4b.2). */
+  einordnung: EditorEinordnung;
+  topologie: EditorTopologie;
+  raumName: (raumId: string) => string;
 }) {
   const [hinweis, setHinweis] = useState<string | null>(null);
+  const masse = useMasse();
   const { entwurf, basis, auswahl } = zustand;
 
   const anwenden = (ergebnis: Ergebnis<Raumentwurf>): string | undefined => {
@@ -168,7 +185,7 @@ export function Eigenschaften({
       </div>
       <p className="eigenschaften__kennzahlen">
         <strong>{KONTURZUSTAND_LABEL[bericht.status]}</strong> · {entwurf.walls.length} Wände · Fläche{" "}
-        {flaecheText(bericht.flaecheMm2)} · Umfang {bericht.umfangMm === null ? "—" : `${bericht.umfangMm} mm`}
+        {flaecheText(bericht.flaecheMm2)} · Umfang {masse.anzeigenOptional(bericht.umfangMm)}
       </p>
       {bericht.befunde.length > 0 && <Befundliste befunde={bericht.befunde} />}
       {hinweis !== null && (
@@ -186,8 +203,8 @@ export function Eigenschaften({
             gesperrt={gesperrt}
             aktion="Punkt setzen"
             felder={[
-              { name: "x", label: "X (mm)", wert: auswahl.punkt.x },
-              { name: "y", label: "Y (mm)", wert: auswahl.punkt.y },
+              { name: "x", label: "X", wert: auswahl.punkt.x },
+              { name: "y", label: "Y", wert: auswahl.punkt.y },
             ]}
             onUebernehmen={(w) => {
               const neu = { x: w.x as number, y: w.y as number };
@@ -202,7 +219,7 @@ export function Eigenschaften({
       {wand !== undefined && oeffnung === undefined && (
         <section className="eigenschaften__abschnitt" aria-label={`Wand ${wandNummer}`}>
           <h4>
-            Wand {wandNummer} · {streckenlaenge(start(wand), ende(wand))} mm
+            Wand {wandNummer} · {masse.anzeigen(streckenlaenge(start(wand), ende(wand)))}
           </h4>
           <Zahlenformular
             key={`wand-${wand.id}-${wand.x1_mm},${wand.y1_mm},${wand.x2_mm},${wand.y2_mm},${wand.thickness_mm}`}
@@ -233,7 +250,7 @@ export function Eigenschaften({
             id="wandlaenge"
             gesperrt={gesperrt}
             aktion="Länge setzen"
-            felder={[{ name: "laenge", label: "Länge (mm)", wert: streckenlaenge(start(wand), ende(wand)) }]}
+            felder={[{ name: "laenge", label: "Länge", wert: streckenlaenge(start(wand), ende(wand)) }]}
             onUebernehmen={(w) => anwenden(wandlaengeSetzen(entwurf, wand.id, w.laenge as number))}
           />
           {darfSchreiben && (
@@ -256,14 +273,22 @@ export function Eigenschaften({
             </div>
           )}
           <OeffnungenDerWand wand={wand} onWaehlen={onWaehlen} raumId={entwurf.roomId} />
+          <AbgeleiteteOeffnungen
+            wandId={wand.id}
+            topologie={topologie}
+            einordnung={einordnung}
+            raumName={raumName}
+            onWaehlen={onWaehlen}
+          />
         </section>
       )}
 
       {wand !== undefined && oeffnung !== undefined && (
         <section className="eigenschaften__abschnitt" aria-label="Öffnung">
           <h4>
-            {OEFFNUNGSART_LABEL[oeffnung.kind]} in Wand {wandNummer} · {oeffnung.width_mm} mm breit
+            {OEFFNUNGSART_LABEL[oeffnung.kind]} in Wand {wandNummer} · {masse.anzeigen(oeffnung.width_mm)} breit
           </h4>
+          <Verbindung einordnung={einordnung} oeffnungId={oeffnung.id} raumName={raumName} wandNummer={wandNummer} />
           {darfSchreiben ? (
             <label className="field" htmlFor="oeffnung-art">
               <span className="field__label">Art</span>
@@ -295,7 +320,7 @@ export function Eigenschaften({
             gesperrt={gesperrt}
             aktion="Maße übernehmen"
             felder={[
-              { name: "offset_mm", label: "Abstand vom Wandanfang", wert: oeffnung.offset_mm },
+              { name: "offset_mm", label: "Abstand", wert: oeffnung.offset_mm },
               { name: "width_mm", label: "Breite", wert: oeffnung.width_mm },
               { name: "height_mm", label: "Höhe", wert: oeffnung.height_mm },
               { name: "sill_height_mm", label: "Brüstung", wert: oeffnung.sill_height_mm },
@@ -311,7 +336,7 @@ export function Eigenschaften({
               })
             }
           />
-          <p className="muted">Der Abstand zählt vom Anfang der gerichteten Wand ({wand.x1_mm} / {wand.y1_mm}).</p>
+          <p className="muted">Der Abstand wird vom Anfang der gerichteten Wand gemessen ({masse.punkt(wand.x1_mm, wand.y1_mm)}).</p>
           {darfSchreiben && (
             <button
               type="button"
@@ -341,6 +366,96 @@ export function Eigenschaften({
   );
 }
 
+/**
+ * Abgeleitete Raumverbindung der gewählten Öffnung. Die Öffnung ist genau
+ * einmal gespeichert - an dieser Wand; ein Nachbarraum ist nur abgeleitet.
+ */
+function Verbindung({
+  einordnung,
+  oeffnungId,
+  raumName,
+  wandNummer,
+}: {
+  einordnung: EditorEinordnung;
+  oeffnungId: string;
+  raumName: (raumId: string) => string;
+  wandNummer: number;
+}) {
+  const e = einordnung.get(oeffnungId);
+  if (e === undefined) return null;
+  const konflikt = e.klasse === "konflikt" || e.klasse === "ungueltig";
+  return (
+    <div className={konflikt ? "alert eigenschaften__verbindung" : "eigenschaften__verbindung"} role="status">
+      <p>
+        <strong>{verbindungsText(e, raumName)}</strong>
+      </p>
+      <p className="muted">
+        Gespeichert einmal an Wand {wandNummer} von „{raumName(e.wand.raumId)}“
+        {e.klasse === "gemeinsam" ? " – im Nachbarraum erscheint sie abgeleitet, ohne zweiten Datensatz." : "."}
+      </p>
+      {e.dubletten.length > 0 && (
+        <p className="muted">
+          Hinweis: Dieselbe Öffnung ist zusätzlich auf der Gegenseite gespeichert. Eine Erfassung genügt; die zweite kann
+          entfernt werden.
+        </p>
+      )}
+      {konflikt && <p className="muted">Bitte die Öffnung verschieben oder die Wände bereinigen – es wird nichts geraten.</p>}
+    </div>
+  );
+}
+
+/**
+ * Öffnungen, die ein Nachbarraum auf demselben Wandstück gespeichert hat -
+ * im aktiven Raum nur abgeleitet. Bearbeiten oder Löschen geht nur an der
+ * einen gespeicherten Öffnung; die Schaltfläche führt dorthin.
+ */
+function AbgeleiteteOeffnungen({
+  wandId,
+  topologie,
+  einordnung,
+  raumName,
+  onWaehlen,
+}: {
+  wandId: string;
+  topologie: EditorTopologie;
+  einordnung: EditorEinordnung;
+  raumName: (raumId: string) => string;
+  onWaehlen: (auswahl: Auswahl) => void;
+}) {
+  const masse = useMasse();
+  const teilung = topologie.teilung.get(wandId);
+  if (teilung === undefined) return null;
+  const abschnitte = new Set(teilung.abschnitte.map((a) => a.id));
+  const fremde = [...einordnung.values()].filter(
+    (e) =>
+      e.klasse === "gemeinsam" &&
+      e.nachbarRaumId === teilung.wand.raumId &&
+      e.abschnitte.some((a) => abschnitte.has(a.id)),
+  );
+  if (fremde.length === 0) return null;
+  return (
+    <>
+      <p className="muted">Abgeleitet aus dem Nachbarraum (dort gespeichert):</p>
+      <ul className="eigenschaften__liste">
+        {fremde.map((e) => (
+          <li key={e.oeffnung.oeffnungId}>
+            <button
+              type="button"
+              className="button button--ghost"
+              onClick={() =>
+                onWaehlen({ art: "oeffnung", raumId: e.wand.raumId, wandId: e.wand.id, oeffnungId: e.oeffnung.oeffnungId })
+              }
+            >
+              {OEFFNUNGSART_LABEL[e.oeffnung.art]}, {masse.anzeigen(e.oeffnung.breiteMm)} breit – gespeichert in „
+              {raumName(e.wand.raumId)}“
+            </button>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
 function Befundliste({ befunde }: { befunde: readonly Befund[] }) {
   const codes = [...new Set(befunde.map((b) => b.code))];
   return (
@@ -361,6 +476,7 @@ function OeffnungenDerWand({
   raumId: string;
   onWaehlen: (auswahl: Auswahl) => void;
 }) {
+  const masse = useMasse();
   if (wand.openings.length === 0) return <p className="muted">Keine Öffnung in dieser Wand.</p>;
   return (
     <ul className="eigenschaften__liste">
@@ -371,7 +487,7 @@ function OeffnungenDerWand({
             className="button button--ghost"
             onClick={() => onWaehlen({ art: "oeffnung", raumId, wandId: wand.id, oeffnungId: o.id })}
           >
-            {OEFFNUNGSART_LABEL[o.kind]} bei {o.offset_mm} mm, {o.width_mm} mm breit
+            {OEFFNUNGSART_LABEL[o.kind]} bei {masse.anzeigen(o.offset_mm)}, {masse.anzeigen(o.width_mm)} breit
           </button>
         </li>
       ))}

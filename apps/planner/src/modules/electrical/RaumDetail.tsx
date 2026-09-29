@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { useAuth } from "../../core/auth/AuthProvider";
 import { alsFormularfehler } from "../../core/api/fehler";
+import { useMasse } from "../../core/ui/masseinheit";
 import { OeffnungDialog } from "./OeffnungDialog";
 import type { Oeffnungswerte } from "./OeffnungDialog";
 import { WandDialog } from "./WandDialog";
@@ -42,6 +43,7 @@ export function RaumDetail({
   onRaumGeaendert: () => Promise<void>;
 }) {
   const { api } = useAuth();
+  const masse = useMasse();
   const queryClient = useQueryClient();
   const [wanddialog, setWanddialog] = useState<{ wand: WallOut | null } | null>(null);
   const [fehler, setFehler] = useState<string | null>(null);
@@ -172,7 +174,7 @@ export function RaumDetail({
         <p>
           <strong>{KONTURZUSTAND_LABEL[zustand]}</strong> · {bericht.wall_count} Wände ·
           Fläche {flaecheAnzeigen(bericht.area_m2)} · Umfang{" "}
-          {bericht.perimeter_mm === null ? "—" : `${bericht.perimeter_mm} mm`}
+          {masse.anzeigenOptional(bericht.perimeter_mm)}
         </p>
         <p className="muted">{KONTURZUSTAND_ERKLAERUNG[zustand]}</p>
 
@@ -219,8 +221,8 @@ export function RaumDetail({
                 <th>Nr.</th>
                 <th>Von (X/Y)</th>
                 <th>Nach (X/Y)</th>
-                <th>Länge (mm)</th>
-                <th>Stärke (mm)</th>
+                <th>Länge</th>
+                <th>Stärke</th>
                 <th>Öffnungen</th>
                 {darfSchreiben && <th>Aktion</th>}
               </tr>
@@ -230,13 +232,13 @@ export function RaumDetail({
                 <tr key={wand.id}>
                   <td>{index + 1}</td>
                   <td>
-                    {wand.x1_mm} / {wand.y1_mm}
+                    {masse.punkt(wand.x1_mm, wand.y1_mm)}
                   </td>
                   <td>
-                    {wand.x2_mm} / {wand.y2_mm}
+                    {masse.punkt(wand.x2_mm, wand.y2_mm)}
                   </td>
-                  <td>{wand.length_mm}</td>
-                  <td>{wand.thickness_mm}</td>
+                  <td>{masse.anzeigen(wand.length_mm)}</td>
+                  <td>{masse.anzeigen(wand.thickness_mm)}</td>
                   <td>{wand.opening_count}</td>
                   {darfSchreiben && (
                     <td>
@@ -334,6 +336,7 @@ function Oeffnungen({
   onGeaendert: () => Promise<void>;
 }) {
   const { api } = useAuth();
+  const masse = useMasse();
   const queryClient = useQueryClient();
   const [dialog, setDialog] = useState<{ oeffnung: OpeningOut | null } | null>(null);
   const [fehler, setFehler] = useState<string | null>(null);
@@ -411,7 +414,7 @@ function Oeffnungen({
     <section className="card card--eingerueckt">
       <div className="card__header">
         <h4>
-          Öffnungen in Wand {nummer} ({wand.length_mm} mm)
+          Öffnungen in Wand {nummer} ({masse.anzeigen(wand.length_mm)})
         </h4>
         {darfSchreiben && (
           <button
@@ -443,10 +446,10 @@ function Oeffnungen({
           <thead>
             <tr>
               <th>Art</th>
-              <th>Abstand (mm)</th>
-              <th>Breite (mm)</th>
-              <th>Höhe (mm)</th>
-              <th>Brüstung (mm)</th>
+              <th>Abstand</th>
+              <th>Breite</th>
+              <th>Höhe</th>
+              <th>Brüstung</th>
               {darfSchreiben && <th>Aktion</th>}
             </tr>
           </thead>
@@ -454,10 +457,10 @@ function Oeffnungen({
             {liste.map((oeffnung) => (
               <tr key={oeffnung.id}>
                 <td>{OEFFNUNGSART_LABEL[oeffnung.kind]}</td>
-                <td>{oeffnung.offset_mm}</td>
-                <td>{oeffnung.width_mm}</td>
-                <td>{oeffnung.height_mm}</td>
-                <td>{oeffnung.sill_height_mm}</td>
+                <td>{masse.anzeigen(oeffnung.offset_mm)}</td>
+                <td>{masse.anzeigen(oeffnung.width_mm)}</td>
+                <td>{masse.anzeigen(oeffnung.height_mm)}</td>
+                <td>{masse.anzeigen(oeffnung.sill_height_mm)}</td>
                 {darfSchreiben && (
                   <td>
                     <div className="button-row">

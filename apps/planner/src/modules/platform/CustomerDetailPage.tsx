@@ -6,6 +6,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { useAuth, usePermission } from "../../core/auth/AuthProvider";
 import { Feld } from "../../core/ui/Feld";
+import { KundenProjekte } from "./KundenProjekte";
 
 type Bearbeitbar = {
   name: string;
@@ -45,6 +46,7 @@ export default function CustomerDetailPage() {
   const darfSchreiben = usePermission("customer.record.write");
   const darfLoeschen = usePermission("customer.record.delete");
   const darfAnonymisieren = usePermission("customer.record.anonymize");
+  const darfProjekteLesen = usePermission("project.record.read");
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -205,6 +207,8 @@ export default function CustomerDetailPage() {
           </div>
         </form>
       </section>
+
+      {darfProjekteLesen && <KundenProjekte kundeId={kunde.data.id} />}
 
       {(darfLoeschen || darfAnonymisieren) && (
         <section className="card">

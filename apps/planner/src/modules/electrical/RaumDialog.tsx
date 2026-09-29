@@ -2,11 +2,17 @@ import { useState } from "react";
 
 import { Dialog } from "../../core/ui/Dialog";
 import { Feld } from "../../core/ui/Feld";
+import { EINGABEHINWEIS, eingabeUmrechnen, mmAlsEingabeOptional } from "../../core/masse";
+import { useEinheitenwechsel, useMasse } from "../../core/ui/masseinheit";
 
 export type Raumwerte = {
   name: string;
   room_number: string;
-  /** Leer bedeutet: Standardhöhe des Geschosses gilt. */
+  /**
+   * Ganze Millimeter als Text; leer bedeutet: Standardhöhe des Geschosses
+   * gilt. Der Dialog nimmt die Höhe in der Anzeigeeinheit entgegen und
+   * liefert hier immer Millimeter (`core/masse.ts`).
+   */
   height_mm: string;
 };
 
@@ -46,7 +52,16 @@ export function RaumDialog({
   // einen ``key`` je bearbeitetem Datensatz. React montiert ihn damit neu,
   // und der Anfangszustand ist genau der uebergebene. Ein Effekt, der den
   // Zustand nachtraeglich ueberschreibt, waere eine zweite Wahrheit.
-  const [werte, setWerte] = useState<Raumwerte>(startwerte ?? LEERER_RAUM);
+  const masse = useMasse();
+  // Das Höhenfeld hält Text in der Anzeigeeinheit, nicht Millimeter.
+  const [werte, setWerte] = useState<Raumwerte>(() => {
+    const start = startwerte ?? LEERER_RAUM;
+    const mm = start.height_mm.trim() === "" ? null : Number(start.height_mm);
+    return { ...start, height_mm: mmAlsEingabeOptional(mm, masse.einheit) };
+  });
+  useEinheitenwechsel((von, nach) =>
+    setWerte((alt) => ({ ...alt, height_mm: eingabeUmrechnen(alt.height_mm, von, nach) })),
+  );
   const [felder, setFelder] = useState<Raumfeldfehler>({});
   const [fehler, setFehler] = useState<string | null>(null);
   const [laeuft, setLaeuft] = useState(false);
@@ -61,9 +76,9 @@ export function RaumDialog({
     if (laeuft) return;
     const pflicht: Raumfeldfehler = {};
     if (werte.name.trim().length === 0) pflicht.name = "Bitte eine Bezeichnung angeben.";
-    if (werte.height_mm.trim() !== "" && !/^\d+$/.test(werte.height_mm.trim())) {
-      pflicht.height_mm = "Bitte eine ganze Zahl in Millimetern angeben.";
-    }
+    const hoehe = masse.lesenOptional(werte.height_mm);
+    if (!hoehe.ok) pflicht.height_mm = hoehe.fehler;
+    else if (hoehe.mm !== null && hoehe.mm <= 0) pflicht.height_mm = "Die Raumhöhe muss größer als 0 sein.";
     if (Object.keys(pflicht).length > 0) {
       setFelder(pflicht);
       return;
@@ -71,7 +86,10 @@ export function RaumDialog({
 
     setLaeuft(true);
     try {
-      const ergebnis = await onSubmit(werte);
+      const ergebnis = await onSubmit({
+        ...werte,
+        height_mm: hoehe.ok && hoehe.mm !== null ? String(hoehe.mm) : "",
+      });
       if (ergebnis === undefined) {
         setFelder({});
         setFehler(null);
@@ -88,7 +106,7 @@ export function RaumDialog({
     <Dialog
       offen={offen}
       titel={titel}
-      beschreibung="Maße in Millimetern (ganze Zahlen)."
+      beschreibung={EINGABEHINWEIS[masse.einheit]}
       onClose={schliessen}
     >
       <form
@@ -119,12 +137,12 @@ export function RaumDialog({
         />
         <Feld
           id="raum-hoehe"
-          label="Raumhöhe (mm, optional)"
-          type="number"
+          label={`Raumhöhe (${masse.einheit}, optional)`}
+          inputMode="decimal"
           value={werte.height_mm}
           disabled={laeuft}
           fehler={felder.height_mm}
-          hinweis={`Leer lassen: Standardhöhe des Geschosses (${standardhoehe_mm} mm).`}
+          hinweis={`Leer lassen: Standardhöhe des Geschosses (${masse.anzeigen(standardhoehe_mm)}).`}
           onChange={(height_mm) => setWerte({ ...werte, height_mm })}
         />
 

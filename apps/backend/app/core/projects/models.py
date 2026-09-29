@@ -48,6 +48,14 @@ PROJECT_STATUS_TRANSITIONS: dict[str, frozenset[str]] = {
     PROJECT_STATUS_ARCHIVED: frozenset(),
 }
 
+#: Statusgruppen fuer Listenfilter (``status_group``). ``current``: noch
+#: laufende Vorgaenge - ein Entwurf zaehlt dazu. ``closed``: abgeschlossen
+#: oder archiviert. Zusammen decken sie jeden Status genau einmal ab.
+PROJECT_STATUS_GROUPS: dict[str, tuple[str, ...]] = {
+    "current": (PROJECT_STATUS_DRAFT, PROJECT_STATUS_ACTIVE),
+    "closed": (PROJECT_STATUS_COMPLETED, PROJECT_STATUS_ARCHIVED),
+}
+
 
 class Project(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, SoftDeletable, Authored, Base):
     """Ein Bauvorhaben eines Kunden."""

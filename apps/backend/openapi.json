@@ -389,7 +389,7 @@
           "customers"
         ],
         "summary": "Kunden auflisten",
-        "description": "Kunden der eigenen Organisation - gefiltert, sortiert, seitenweise.",
+        "description": "Kunden der eigenen Organisation - gefiltert, sortiert, nummerierte Seiten.\n\nEine Seite hinter der letzten liefert die letzte vorhandene Seite; das\nFeld ``page`` der Antwort nennt sie (ADR 0017).",
         "operationId": "listCustomers",
         "parameters": [
           {
@@ -446,31 +446,29 @@
             }
           },
           {
-            "name": "limit",
+            "name": "page",
             "in": "query",
             "required": false,
             "schema": {
               "type": "integer",
-              "maximum": 200,
+              "maximum": 1000000,
               "minimum": 1,
-              "default": 50,
-              "title": "Limit"
-            }
+              "description": "Seite, beginnend bei 1",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Seite, beginnend bei 1"
           },
           {
-            "name": "cursor",
+            "name": "page_size",
             "in": "query",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Cursor"
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25,
+              "title": "Page Size"
             }
           }
         ],
@@ -480,7 +478,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Page_CustomerOut_"
+                  "$ref": "#/components/schemas/NumberedPage_CustomerOut_"
                 }
               }
             }
@@ -867,7 +865,7 @@
           "projects"
         ],
         "summary": "Projekte auflisten",
-        "description": "Projekte der eigenen Organisation - gefiltert, sortiert, seitenweise.",
+        "description": "Projekte der eigenen Organisation - gefiltert, sortiert, nummerierte Seiten.\n\nEine Seite hinter der letzten liefert die letzte vorhandene Seite; das\nFeld ``page`` der Antwort nennt sie (ADR 0017).",
         "operationId": "listProjects",
         "parameters": [
           {
@@ -884,10 +882,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Name, Nummer, Ort, Kunde",
+              "description": "Bezeichnung, Projektnummer oder Baustellenort",
               "title": "Q"
             },
-            "description": "Name, Nummer, Ort, Kunde"
+            "description": "Bezeichnung, Projektnummer oder Baustellenort"
           },
           {
             "name": "status",
@@ -910,6 +908,28 @@
               ],
               "title": "Status"
             }
+          },
+          {
+            "name": "status_group",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "current",
+                    "closed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "current = draft + active, closed = completed + archived. Schliesst sich mit status aus.",
+              "title": "Status Group"
+            },
+            "description": "current = draft + active, closed = completed + archived. Schliesst sich mit status aus."
           },
           {
             "name": "customer_id",
@@ -944,31 +964,29 @@
             }
           },
           {
-            "name": "limit",
+            "name": "page",
             "in": "query",
             "required": false,
             "schema": {
               "type": "integer",
-              "maximum": 200,
+              "maximum": 1000000,
               "minimum": 1,
-              "default": 50,
-              "title": "Limit"
-            }
+              "description": "Seite, beginnend bei 1",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Seite, beginnend bei 1"
           },
           {
-            "name": "cursor",
+            "name": "page_size",
             "in": "query",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Cursor"
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25,
+              "title": "Page Size"
             }
           }
         ],
@@ -978,7 +996,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Page_ProjectSummary_"
+                  "$ref": "#/components/schemas/NumberedPage_ProjectSummary_"
                 }
               }
             }
@@ -6622,6 +6640,84 @@
         "title": "ModuleInfo",
         "description": "Beschreibung eines registrierten Moduls."
       },
+      "NumberedPage_CustomerOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CustomerOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page",
+            "description": "Tatsaechlich gelieferte Seite, beginnend bei 1. Lag die angefragte Seite hinter der letzten, ist es die letzte vorhandene Seite."
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          },
+          "total_items": {
+            "type": "integer",
+            "title": "Total Items",
+            "description": "Treffer unter allen Filtern, nur eigener Betrieb."
+          },
+          "total_pages": {
+            "type": "integer",
+            "title": "Total Pages",
+            "description": "0 bei leerer Treffermenge."
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "page_size",
+          "total_items",
+          "total_pages"
+        ],
+        "title": "NumberedPage[CustomerOut]"
+      },
+      "NumberedPage_ProjectSummary_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectSummary"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page",
+            "description": "Tatsaechlich gelieferte Seite, beginnend bei 1. Lag die angefragte Seite hinter der letzten, ist es die letzte vorhandene Seite."
+          },
+          "page_size": {
+            "type": "integer",
+            "title": "Page Size"
+          },
+          "total_items": {
+            "type": "integer",
+            "title": "Total Items",
+            "description": "Treffer unter allen Filtern, nur eigener Betrieb."
+          },
+          "total_pages": {
+            "type": "integer",
+            "title": "Total Pages",
+            "description": "0 bei leerer Treffermenge."
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "page_size",
+          "total_items",
+          "total_pages"
+        ],
+        "title": "NumberedPage[ProjectSummary]"
+      },
       "OpeningCreate": {
         "properties": {
           "kind": {
@@ -6889,38 +6985,6 @@
         ],
         "title": "Page[AuditEntryOut]"
       },
-      "Page_CustomerOut_": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/CustomerOut"
-            },
-            "type": "array",
-            "title": "Items"
-          },
-          "next_cursor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Next Cursor"
-          },
-          "has_more": {
-            "type": "boolean",
-            "title": "Has More",
-            "default": false
-          }
-        },
-        "type": "object",
-        "required": [
-          "items"
-        ],
-        "title": "Page[CustomerOut]"
-      },
       "Page_DirectoryEntryOut_": {
         "properties": {
           "items": {
@@ -6952,38 +7016,6 @@
           "items"
         ],
         "title": "Page[DirectoryEntryOut]"
-      },
-      "Page_ProjectSummary_": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/ProjectSummary"
-            },
-            "type": "array",
-            "title": "Items"
-          },
-          "next_cursor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Next Cursor"
-          },
-          "has_more": {
-            "type": "boolean",
-            "title": "Has More",
-            "default": false
-          }
-        },
-        "type": "object",
-        "required": [
-          "items"
-        ],
-        "title": "Page[ProjectSummary]"
       },
       "PermissionInfo": {
         "properties": {

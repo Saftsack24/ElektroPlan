@@ -9,8 +9,7 @@ import {
   konturUmkehren,
   letztenPunktEntfernen,
   oeffnungEntfernen,
-  oeffnungSetzen,
-  oeffnungVerschieben,
+  oeffnungEinfuegen,
   polygonWaende,
   projektion,
   punktAnhaengen,
@@ -103,13 +102,13 @@ describe("Kontur bearbeiten", () => {
   });
 
   it("entfernt eine Wand nur ohne Öffnungen", () => {
-    const mitTuer = wert(oeffnungSetzen(rechteck(), "w1", "door", { x: 2500, y: 0 }, "t", { rasterMm: 10, fangen: true }));
+    const mitTuer = oeffnungEinfuegen(rechteck(), "w1", "door", 2058, "t");
     expect(wandEntfernen(mitTuer, "w1")).toHaveProperty("fehler");
     expect(wert(wandEntfernen(rechteck(), "w1")).walls).toHaveLength(3);
   });
 
   it("kehrt die Umlaufrichtung um und rechnet Öffnungsabstände vom neuen Anfang", () => {
-    const mitTuer = wert(oeffnungSetzen(rechteck(), "w1", "door", { x: 1500, y: 0 }, "t", { rasterMm: 100, fangen: true }));
+    const mitTuer = oeffnungEinfuegen(rechteck(), "w1", "door", 1100, "t");
     const umgekehrt = konturUmkehren(mitTuer);
     const tuerwand = umgekehrt.walls.find((w) => w.id === "w1") as EntwurfWand;
     expect(tuerwand).toMatchObject({ x1_mm: 5000, y1_mm: 0, x2_mm: 0, y2_mm: 0 });
@@ -125,8 +124,8 @@ describe("Öffnungen", () => {
     expect(projektion(w, { x: 9000, y: 4000 })).toBe(0);
   });
 
-  it("setzt die Öffnung mittig unter den Zeiger, gefangen, vollständig in der Wand", () => {
-    const e = wert(oeffnungSetzen(rechteck(), "w1", "window", { x: 1500, y: 80 }, "f", { rasterMm: 100, fangen: true }));
+  it("fügt eine Öffnung mit den Standardmaßen ihrer Art an genau einer Wand ein", () => {
+    const e = oeffnungEinfuegen(rechteck(), "w1", "window", 1000, "f");
     expect(e.walls[0]?.openings[0]).toEqual({
       id: "f",
       kind: "window",
@@ -135,30 +134,11 @@ describe("Öffnungen", () => {
       height_mm: 1260,
       sill_height_mm: 900,
     });
-    const amEnde = wert(oeffnungSetzen(rechteck(), "w1", "door", { x: 4990, y: 0 }, "t", { rasterMm: 100, fangen: true }));
-    expect(amEnde.walls[0]?.openings[0]?.offset_mm).toBe(5000 - 885);
-  });
-
-  it("bezieht den Abstand auf die Wandrichtung", () => {
-    // Obere Wand läuft von rechts nach links: x = 4000 liegt 1000 mm hinter dem Anfang.
-    const e = wert(oeffnungSetzen(rechteck(), "w3", "door", { x: 4000, y: 4000 }, "t", { rasterMm: 1, fangen: false }));
-    expect(e.walls[2]?.openings[0]?.offset_mm).toBe(Math.round(1000 - 885 / 2));
-  });
-
-  it("verschiebt eine Öffnung nur entlang ihrer Wand", () => {
-    const e = wert(oeffnungSetzen(rechteck(), "w1", "door", { x: 1500, y: 0 }, "t", { rasterMm: 100, fangen: true }));
-    const verschoben = oeffnungVerschieben(e, "w1", "t", { x: 3500, y: 2000 }, { rasterMm: 100, fangen: true });
-    expect(verschoben.walls[0]?.openings[0]?.offset_mm).toBe(3100);
-    expect(verschoben.walls[1]?.openings).toEqual([]);
-  });
-
-  it("lehnt eine Öffnung ab, die breiter als die Wand ist", () => {
-    const schmal = eckeVerschieben(rechteck(), { x: 5000, y: 0 }, { x: 800, y: 0 });
-    expect(oeffnungSetzen(schmal, "w1", "door", { x: 400, y: 0 }, "t", { rasterMm: 10, fangen: true })).toHaveProperty("fehler");
+    expect(e.walls.slice(1).every((w) => w.openings.length === 0)).toBe(true);
   });
 
   it("vermerkt entfernte, bereits gespeicherte Öffnungen ausdrücklich", () => {
-    const e = wert(oeffnungSetzen(rechteck(), "w1", "door", { x: 1500, y: 0 }, "t", { rasterMm: 100, fangen: true }));
+    const e = oeffnungEinfuegen(rechteck(), "w1", "door", 1100, "t");
     expect(oeffnungEntfernen(e, "w1", "t", new Set()).entfernteOeffnungen).toEqual([]);
     expect(oeffnungEntfernen(e, "w1", "t", new Set(["t"])).entfernteOeffnungen).toEqual(["t"]);
   });

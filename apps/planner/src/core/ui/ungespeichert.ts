@@ -8,19 +8,22 @@ import { useEffect } from "react";
  *
  * * hält der {@link Navigationsschutz} (Data-Router-Blocker) jede
  *   Navigation innerhalb der Anwendung an - interne Links, Browser-Zurück und
- *   Browser-Vorwärts - und fragt genau einmal nach,
- * * zeigt der Browser beim Neuladen oder Schließen seine eigene Warnung
- *   (`beforeunload`),
+ *   Browser-Vorwärts - und fragt über die eigene Rückfrage genau einmal nach,
  * * kann jede Stelle, die Inhalte ohne Navigation austauscht (Projekt-Tab,
- *   Abmelden), über {@link verlassenBestaetigen} nachfragen.
+ *   Abmelden), über `useVerlassenBestaetigen` (`Rueckfrage.tsx`) nachfragen,
+ * * zeigt der Browser beim Neuladen, Schließen des Tabs oder Verlassen der
+ *   Website **seine eigene** Warnung (`beforeunload`). Das ist die einzige
+ *   verbliebene native Rückfrage: Browser lassen dort keinen eigenen Dialog
+ *   zu, und der Text ist nicht wählbar.
  *
  * Der Core weiß dabei nicht, **was** ungespeichert ist - nur, dass etwas
  * ungespeichert ist.
  *
  * @see ./Navigationsschutz.tsx
+ * @see ./Rueckfrage.tsx
  */
 export const STANDARD_MELDUNG =
-  "Es gibt ungespeicherte Änderungen. Wenn Sie fortfahren, gehen sie verloren. Trotzdem fortfahren?";
+  "Es gibt ungespeicherte Änderungen. Wenn Sie fortfahren, gehen sie verloren.";
 
 const aktive = new Map<symbol, string>();
 
@@ -31,13 +34,6 @@ export function ungespeichertMeldung(): string | undefined {
 
 export function gibtUngespeicherteAenderungen(): boolean {
   return aktive.size > 0;
-}
-
-/** Fragt nach, falls irgendwo ungespeicherte Änderungen bestehen. */
-export function verlassenBestaetigen(): boolean {
-  const meldung = ungespeichertMeldung();
-  if (meldung === undefined) return true;
-  return window.confirm(meldung);
 }
 
 export function useUngespeicherteAenderungen(aktiv: boolean, meldung: string = STANDARD_MELDUNG) {

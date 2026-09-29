@@ -1,44 +1,57 @@
 import { fireEvent, render } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { gibtUngespeicherteAenderungen, useUngespeicherteAenderungen, verlassenBestaetigen } from "./ungespeichert";
+import { gibtUngespeicherteAenderungen, ungespeichertMeldung, useUngespeicherteAenderungen } from "./ungespeichert";
 
 function Halter({ aktiv }: { aktiv: boolean }) {
-  useUngespeicherteAenderungen(aktiv, "Wirklich verlassen?");
+  useUngespeicherteAenderungen(aktiv, "Der Entwurf geht verloren.");
   return <a href="#projekte">Alle Projekte</a>;
 }
 
 afterEach(() => vi.restoreAllMocks());
 
-describe("Schutz vor stillem Verwerfen", () => {
-  it("fragt nur nach, solange ungespeicherte Änderungen gemeldet sind", () => {
-    const frage = vi.spyOn(window, "confirm").mockReturnValue(false);
+describe("Meldestelle für ungespeicherte Änderungen", () => {
+  it("meldet nur, solange eine Stelle ungespeicherte Änderungen hält", () => {
     const { rerender, unmount } = render(<Halter aktiv={false} />);
-    expect(verlassenBestaetigen()).toBe(true);
-    expect(frage).not.toHaveBeenCalled();
+    expect(gibtUngespeicherteAenderungen()).toBe(false);
 
     rerender(<Halter aktiv />);
     expect(gibtUngespeicherteAenderungen()).toBe(true);
-    expect(verlassenBestaetigen()).toBe(false);
-    expect(frage).toHaveBeenCalledWith("Wirklich verlassen?");
+    expect(ungespeichertMeldung()).toBe("Der Entwurf geht verloren.");
 
     unmount();
     expect(gibtUngespeicherteAenderungen()).toBe(false);
   });
 
-  it("fängt Links nicht mehr selbst ab - das übernimmt der Navigationsschutz des Routers", () => {
+  it("fragt nie über window.confirm - auch nicht bei Link-Klicks", () => {
     const frage = vi.spyOn(window, "confirm").mockReturnValue(false);
     const { getByText } = render(<Halter aktiv />);
     const klick = new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 });
     fireEvent(getByText("Alle Projekte"), klick);
-    // Kein zweiter, eigener Dialog: Sonst fragte ein Router-Link doppelt.
     expect(frage).not.toHaveBeenCalled();
   });
 
-  it("setzt die Browserwarnung beim Verlassen der Seite", () => {
+  it("beforeunload bleibt browsernativ registriert", () => {
     render(<Halter aktiv />);
     const ereignis = new Event("beforeunload", { cancelable: true });
     window.dispatchEvent(ereignis);
     expect(ereignis.defaultPrevented).toBe(true);
+  });
+
+  it("registriert unter StrictMode genau einen beforeunload-Listener und entfernt ihn wieder", () => {
+    const hinzu = vi.spyOn(window, "addEventListener");
+    const weg = vi.spyOn(window, "removeEventListener");
+    const { unmount } = render(
+      <StrictMode>
+        <Halter aktiv />
+      </StrictMode>,
+    );
+    const zaehlen = (spy: typeof hinzu) => spy.mock.calls.filter(([typ]) => typ === "beforeunload").length;
+    // StrictMode spielt Einhängen, Aushängen, Einhängen durch: netto einer.
+    expect(zaehlen(hinzu) - zaehlen(weg)).toBe(1);
+    unmount();
+    expect(zaehlen(hinzu) - zaehlen(weg)).toBe(0);
+    expect(gibtUngespeicherteAenderungen()).toBe(false);
   });
 });

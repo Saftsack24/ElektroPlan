@@ -1,0 +1,217 @@
+/**
+ * Längenmaße an der Oberflächengrenze - reine Funktionen, ohne React.
+ *
+ * **Gespeichert, übertragen und gerechnet wird ausschließlich in ganzen
+ * Millimetern** (ADR 0007). Die Anzeigeeinheit ist nur eine Eingabe- und
+ * Darstellungsschicht: Diese Datei ist die einzige Stelle, an der zwischen
+ * Millimetern und Zentimetern umgerechnet wird. Komponenten rechnen nie
+ * selbst mit `/ 10` oder `* 10`.
+ *
+ * Kein Fließkomma: Ein Zentimeterwert mit einer Nachkommastelle wird als
+ * Ganzzahl plus Ziffer gelesen (`11,5` → 11 · 10 + 5 = 115 mm). So entsteht nie
+ * `114.99999`.
+ *
+ * Flächen bleiben in Quadratmetern und sind nicht Teil dieser Umrechnung.
+ */
+
+export type Masseinheit = "cm" | "mm";
+
+export const MASSEINHEITEN: readonly Masseinheit[] = ["cm", "mm"];
+
+/** Voreinstellung für Benutzer ohne gespeicherte Wahl. */
+export const STANDARD_MASSEINHEIT: Masseinheit = "cm";
+
+export function istMasseinheit(wert: unknown): wert is Masseinheit {
+  return wert === "cm" || wert === "mm";
+}
+
+export const EINHEIT_NAME: Record<Masseinheit, string> = {
+  cm: "Zentimeter",
+  mm: "Millimeter",
+};
+
+/** Kurzer Satz über das erwartete Eingabeformat. */
+export const EINGABEHINWEIS: Record<Masseinheit, string> = {
+  cm: "Maße in Zentimetern, höchstens eine Nachkommastelle (z. B. 11,5).",
+  mm: "Maße in ganzen Millimetern.",
+};
+
+/** `„Breite" + cm → „Breite (cm)"`. */
+export function mitEinheit(label: string, einheit: Masseinheit): string {
+  return `${label} (${einheit})`;
+}
+
+const GRUPPIERT = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 });
+
+function zerlegen(mm: number, einheit: Masseinheit): { vorzeichen: string; ganz: number; zehntel: number | null } {
+  const betrag = Math.abs(Math.trunc(mm));
+  const vorzeichen = mm < 0 && betrag !== 0 ? "-" : "";
+  if (einheit === "mm") return { vorzeichen, ganz: betrag, zehntel: null };
+  const rest = betrag % 10;
+  return { vorzeichen, ganz: (betrag - rest) / 10, zehntel: rest === 0 ? null : rest };
+}
+
+/**
+ * Maß für die Anzeige, mit Einheit und Tausenderpunkten:
+ * `115 → „11,5 cm"`, `2500 → „250 cm"`, `12500 mm → „1.250 cm"`.
+ */
+export function mmAnzeigen(mm: number, einheit: Masseinheit): string {
+  return `${zahlAnzeigen(mm, einheit)} ${einheit}`;
+}
+
+/** Nur die Zahl, ohne Einheit - für Spalten mit Einheit im Kopf. */
+export function zahlAnzeigen(mm: number, einheit: Masseinheit): string {
+  const { vorzeichen, ganz, zehntel } = zerlegen(mm, einheit);
+  return `${vorzeichen}${GRUPPIERT.format(ganz)}${zehntel === null ? "" : `,${zehntel}`}`;
+}
+
+/** Koordinatenpaar: `„30 / -42,5 cm"`. */
+export function punktAnzeigen(x: number, y: number, einheit: Masseinheit): string {
+  return `${zahlAnzeigen(x, einheit)} / ${zahlAnzeigen(y, einheit)} ${einheit}`;
+}
+
+/** Optionales Maß für die Anzeige; `null` wird zum Gedankenstrich. */
+export function mmAnzeigenOptional(mm: number | null | undefined, einheit: Masseinheit): string {
+  return mm === null || mm === undefined ? "—" : mmAnzeigen(mm, einheit);
+}
+
+/**
+ * Maß als **editierbarer** Eingabetext - ohne Einheit und ohne
+ * Tausenderpunkte, damit er unverändert wieder gelesen werden kann.
+ */
+export function mmAlsEingabe(mm: number, einheit: Masseinheit): string {
+  const { vorzeichen, ganz, zehntel } = zerlegen(mm, einheit);
+  return `${vorzeichen}${ganz}${zehntel === null ? "" : `,${zehntel}`}`;
+}
+
+/** Optionaler Eingabetext: `null` bleibt ein leeres Feld. */
+export function mmAlsEingabeOptional(mm: number | null | undefined, einheit: Masseinheit): string {
+  return mm === null || mm === undefined ? "" : mmAlsEingabe(mm, einheit);
+}
+
+export type Masseingabe = { ok: true; mm: number } | { ok: false; fehler: string };
+export type OptionaleMasseingabe = { ok: true; mm: number | null } | { ok: false; fehler: string };
+
+const FEHLER_FORMAT: Record<Masseinheit, string> = {
+  cm: "Bitte eine Zahl in Zentimetern angeben, z. B. 11,5.",
+  mm: "Bitte eine ganze Zahl in Millimetern angeben.",
+};
+
+export const FEHLER_GENAUIGKEIT =
+  "Höchstens eine Nachkommastelle - gespeichert werden ganze Millimeter.";
+
+export const FEHLER_TAUSENDER = "Bitte ohne Tausenderpunkt eingeben (z. B. 1250 statt 1.250).";
+
+const ZENTIMETER = /^([+-]?)(\d*)(?:[.,](\d+))?$/;
+const MILLIMETER = /^([+-]?)(\d+)$/;
+
+/**
+ * Liest einen Eingabetext als ganze Millimeter.
+ *
+ * * Zentimeter: Komma oder Punkt, höchstens eine (von null verschiedene)
+ *   Nachkommastelle. `11,5`, `11.5`, `-3`, `,5` und `11,50` sind gültig;
+ *   `11,55` wäre kein ganzer Millimeter und wird abgelehnt.
+ * * Millimeter: nur ganze Zahlen.
+ * * Ein leerer Text ist hier ein Fehler - für optionale Felder gibt es
+ *   {@link mmAusEingabeOptional}.
+ */
+export function mmAusEingabe(text: string, einheit: Masseinheit): Masseingabe {
+  const roh = text.trim().replace(/\s+/g, "");
+  if (roh === "") return { ok: false, fehler: FEHLER_FORMAT[einheit] };
+
+  let vorzeichen: string;
+  let ganzText: string;
+  let zehntel = 0;
+  if (einheit === "mm") {
+    const treffer = MILLIMETER.exec(roh);
+    if (treffer === null) return { ok: false, fehler: FEHLER_FORMAT.mm };
+    vorzeichen = treffer[1] ?? "";
+    ganzText = treffer[2] ?? "";
+  } else {
+    const treffer = ZENTIMETER.exec(roh);
+    if (treffer === null) return { ok: false, fehler: FEHLER_FORMAT.cm };
+    vorzeichen = treffer[1] ?? "";
+    ganzText = treffer[2] ?? "";
+    if (ganzText === "" && treffer[3] === undefined) return { ok: false, fehler: FEHLER_FORMAT.cm };
+    // „1.250" ist mehrdeutig (Tausenderpunkt oder Dezimalpunkt) - nie raten.
+    if (/^\d+\.\d{3}$/.test(roh.replace(/^[+-]/, ""))) return { ok: false, fehler: FEHLER_TAUSENDER };
+    const nachkomma = (treffer[3] ?? "").replace(/0+$/, "");
+    if (nachkomma.length > 1) return { ok: false, fehler: FEHLER_GENAUIGKEIT };
+    zehntel = nachkomma === "" ? 0 : Number(nachkomma);
+  }
+
+  const ganz = ganzText === "" ? 0 : Number(ganzText);
+  const betrag = einheit === "mm" ? ganz : ganz * 10 + zehntel;
+  if (!Number.isSafeInteger(betrag)) return { ok: false, fehler: FEHLER_FORMAT[einheit] };
+  // `+ 0` macht aus -0 eine 0.
+  return { ok: true, mm: (vorzeichen === "-" ? -betrag : betrag) + 0 };
+}
+
+/** Wie {@link mmAusEingabe}; ein leeres Feld ergibt `null`. */
+export function mmAusEingabeOptional(text: string, einheit: Masseinheit): OptionaleMasseingabe {
+  if (text.trim() === "") return { ok: true, mm: null };
+  return mmAusEingabe(text, einheit);
+}
+
+// ------------------------------------------------ Mehrere Felder eines Formulars
+
+/**
+ * Wandelt Millimeter-Texte (wie sie aus der API in Formularwerte übernommen
+ * werden, etwa `"115"`) in Eingabetexte der Anzeigeeinheit um. Leere Felder
+ * bleiben leer.
+ */
+export function eingabenAusMm<WerteT extends Record<string, unknown>, FeldT extends keyof WerteT & string>(
+  werte: WerteT,
+  felder: readonly FeldT[],
+  einheit: Masseinheit,
+): WerteT {
+  const neu: Record<string, unknown> = { ...werte };
+  for (const feld of felder) {
+    const text = String(werte[feld] ?? "").trim();
+    neu[feld] = text === "" || !/^-?\d+$/.test(text) ? text : mmAlsEingabe(Number(text), einheit);
+  }
+  return neu as WerteT;
+}
+
+/** {@link eingabeUmrechnen} für mehrere Felder. */
+export function eingabenUmrechnen<WerteT extends Record<string, unknown>, FeldT extends keyof WerteT & string>(
+  werte: WerteT,
+  felder: readonly FeldT[],
+  von: Masseinheit,
+  nach: Masseinheit,
+): WerteT {
+  const neu: Record<string, unknown> = { ...werte };
+  for (const feld of felder) neu[feld] = eingabeUmrechnen(String(werte[feld] ?? ""), von, nach);
+  return neu as WerteT;
+}
+
+/**
+ * Liest mehrere Pflicht-Maßfelder. Liefert die Millimeter aller lesbaren
+ * Felder und je unlesbarem Feld eine Meldung.
+ */
+export function eingabenLesen<FeldT extends string>(
+  werte: Readonly<Record<FeldT, string>>,
+  felder: readonly FeldT[],
+  einheit: Masseinheit,
+): { mm: Partial<Record<FeldT, number>>; fehler: Partial<Record<FeldT, string>> } {
+  const mm: Partial<Record<FeldT, number>> = {};
+  const fehler: Partial<Record<FeldT, string>> = {};
+  for (const feld of felder) {
+    const gelesen = mmAusEingabe(werte[feld], einheit);
+    if (gelesen.ok) mm[feld] = gelesen.mm;
+    else fehler[feld] = gelesen.fehler;
+  }
+  return { mm, fehler };
+}
+
+/**
+ * Rechnet einen noch nicht übernommenen Eingabetext in eine andere Einheit
+ * um - für den Fall, dass die Einheit wechselt, während ein Formular offen
+ * ist. Ein unlesbarer Text bleibt unverändert stehen; er wird beim Absenden
+ * ohnehin als Fehler gemeldet.
+ */
+export function eingabeUmrechnen(text: string, von: Masseinheit, nach: Masseinheit): string {
+  if (von === nach || text.trim() === "") return text;
+  const gelesen = mmAusEingabe(text, von);
+  return gelesen.ok ? mmAlsEingabe(gelesen.mm, nach) : text;
+}

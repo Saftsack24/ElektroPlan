@@ -1,15 +1,18 @@
-"""Cursor-basierte Auflistung (docs/api.md, Abschnitt 4).
+"""Auflistungen (docs/api.md, Abschnitt 4) - zwei Muster.
 
-Kein ``offset``: Bei gleichzeitigen Aenderungen wuerde ein Offset Eintraege
-ueberspringen oder doppelt liefern.
+**Keyset-Cursor** (Protokoll, Benutzerverwaltung): Sortierwert plus ID des
+letzten gelieferten Datensatzes. Stabil bei gleichzeitigen Aenderungen, aber
+ohne Seitenzahlen und ohne Gesamtzahl.
 
-Der Cursor ist ein **Keyset**: Sortierwert plus ID des letzten gelieferten
-Datensatzes. Die ID ist der Gleichstandsbrecher - ohne sie waere die Seite bei
-gleichen Sortierwerten (zwei Kunden gleichen Namens) nicht stabil.
+**Nummerierte Seiten** (Kunden, Projekte - ADR 0017): ``page``/``page_size``
+mit ``total_items`` und ``total_pages``. Die Backoffice-Listen brauchen
+"Seite 6 von 24" und den Sprung auf eine beliebige Seite; beides kann ein
+Cursor nicht liefern. Der Preis ist bewusst akzeptiert: Aendert sich die Liste
+zwischen zwei Seitenaufrufen, verschieben sich Eintraege um eine Position.
 
-Die Helfer hier sind bewusst allgemein gehalten: Kunden, Projekte und das
-Protokoll benutzen dieselbe Mechanik. Ein drittes Muster wird erst eingefuehrt,
-wenn eine Liste es tatsaechlich braucht.
+In beiden Mustern ist die ID der abschliessende Gleichstandsbrecher - ohne
+sie waere die Reihenfolge bei gleichen Sortierwerten (zwei Kunden gleichen
+Namens) nicht stabil.
 """
 
 from __future__ import annotations
@@ -23,13 +26,17 @@ from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
-from sqlalchemy import Select, and_, or_
-from sqlalchemy.orm import InstrumentedAttribute
+from sqlalchemy import Select, and_, func, or_, select
+from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from app.errors import ValidationFailedError
 
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 200
+
+#: Nummerierte Seiten: 25 Eintraege sind eine Bildschirmseite der Tabellen.
+DEFAULT_PAGE_SIZE = 25
+MAX_PAGE_SIZE = 100
 
 #: Trennzeichen zwischen Sortierwert und ID. Der Sortierwert darf es
 #: enthalten - beim Dekodieren wird von rechts getrennt.
@@ -115,9 +122,9 @@ def apply_keyset[SelectT: Select[Any]](
             stmt = stmt.where(or_(sort_column < key, and_(sort_column == key, id_column < last_id)))
         else:
             stmt = stmt.where(or_(sort_column > key, and_(sort_column == key, id_column > last_id)))
-    if descending:
-        return stmt.order_by(sort_column.desc(), id_column.desc())
-    return stmt.order_by(sort_column.asc(), id_column.asc())
+    return order_with_tiebreaker(
+        stmt, sort_column=sort_column, id_column=id_column, descending=descending
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,3 +156,88 @@ def build_keyset_page[ModelT](
         else None
     )
     return KeysetPage(items=visible, next_cursor=next_cursor, has_more=has_more)
+
+
+# ------------------------------------------------------ Nummerierte Seiten
+
+
+class NumberedPage[ItemT](BaseModel):
+    """Eine nummerierte Seite samt Gesamtzahl (ADR 0017)."""
+
+    items: list[ItemT]
+    page: int = Field(
+        description=(
+            "Tatsaechlich gelieferte Seite, beginnend bei 1. Lag die angefragte Seite "
+            "hinter der letzten, ist es die letzte vorhandene Seite."
+        )
+    )
+    page_size: int
+    total_items: int = Field(description="Treffer unter allen Filtern, nur eigener Betrieb.")
+    total_pages: int = Field(description="0 bei leerer Treffermenge.")
+
+
+@dataclass(frozen=True, slots=True)
+class OffsetPage[RowT]:
+    """Eine geladene nummerierte Seite - noch ohne Serialisierung."""
+
+    items: Sequence[RowT]
+    page: int
+    page_size: int
+    total_items: int
+    total_pages: int
+
+
+def order_with_tiebreaker[SelectT: Select[Any]](
+    stmt: SelectT,
+    *,
+    sort_column: InstrumentedAttribute[Any],
+    id_column: InstrumentedAttribute[Any],
+    descending: bool,
+) -> SelectT:
+    """Stabile Reihenfolge: Sortierspalte, dann die ID in derselben Richtung."""
+    if descending:
+        return stmt.order_by(sort_column.desc(), id_column.desc())
+    return stmt.order_by(sort_column.asc(), id_column.asc())
+
+
+def count_pages(total_items: int, page_size: int) -> int:
+    """Anzahl der Seiten; ``0`` bei leerer Treffermenge."""
+    return -(-total_items // page_size)
+
+
+def fetch_numbered_page[RowT](
+    session: Session,
+    stmt: Select[Any],
+    *,
+    page: int,
+    page_size: int,
+    load: Callable[[Select[Any]], Sequence[RowT]],
+) -> OffsetPage[RowT]:
+    """Zaehlt die Treffer und laedt genau eine Seite.
+
+    **Zaehlung und Datenselektion benutzen dieselbe Abfrage.** Gezaehlt wird
+    ueber ``stmt`` als Unterabfrage (ohne Sortierung) - jede Filter- und
+    Mandantenbedingung, die die Seite einschraenkt, schraenkt damit auch die
+    Gesamtzahl ein. Eine zweite, von Hand nachgebaute Zaehlabfrage koennte
+    davon abweichen; genau das ist hier ausgeschlossen.
+
+    ``stmt`` muss bereits sortiert sein (siehe :func:`order_with_tiebreaker`).
+
+    Eine Seite hinter der letzten wird **auf die letzte vorhandene Seite**
+    abgebildet, nicht mit einem Fehler beantwortet: Nach dem Ausblenden des
+    letzten Eintrags einer Seite oder einem engeren Filter landet die
+    Oberflaeche so auf einer gueltigen Seite, statt auf einer dauerhaft
+    leeren. Die Antwort nennt die tatsaechlich gelieferte Seite.
+    """
+    count_stmt = select(func.count()).select_from(stmt.order_by(None).subquery())
+    total_items = int(session.execute(count_stmt).scalar_one())
+    total_pages = count_pages(total_items, page_size)
+    effective = max(1, min(page, total_pages))
+    rows = load(stmt.limit(page_size).offset((effective - 1) * page_size))
+    return OffsetPage(
+        items=rows,
+        page=effective,
+        page_size=page_size,
+        total_items=total_items,
+        total_pages=total_pages,
+    )

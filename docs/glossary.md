@@ -38,6 +38,11 @@ Dokumentation und Oberfläche auf Deutsch, Code und API auf Englisch.
 | Höhenlage des Fertigfußbodens | `elevation_mm` | ganzzahlige Millimeter |
 | Standard-Geschosshöhe | `default_ceiling_height_mm` | lichte Höhe in Millimetern |
 | Protokolleintrag | `audit_entry` | |
+| Statusgruppe | `status_group`: `current`, `closed` | Listenfilter: laufend (Entwurf + in Bearbeitung) bzw. abgeschlossen + archiviert |
+| Nummerierte Seite | `page`, `page_size`, `total_items`, `total_pages` | seitenbasierte Liste für Kunden und Projekte (ADR 0017) |
+| Anzeigeeinheit (Maßeinheit) | `masseinheit` (nur Oberfläche): `cm`, `mm` | persönliche Darstellung von Längen; gespeichert wird immer in Millimetern |
+| Adressvorschlag | – (nur Oberfläche) | Rechnungsadresse des Kunden als Vorschlag für die Baustellenadresse; keine Verknüpfung |
+| Rückfrage | – (nur Oberfläche, `Rueckfrage`) | eigener Bestätigungsdialog der Anwendung statt `window.confirm` |
 
 ## Elektroplanung
 
@@ -59,6 +64,19 @@ Dokumentation und Oberfläche auf Deutsch, Code und API auf Englisch.
 | Planungsstand (eines Geschosses) | `floor plan` (`GET …/floors/{id}/plan`) | Räume, Wände, Öffnungen in einer Antwort (Phase 4a) |
 | Kontur speichern | `replace contour` (`PUT …/rooms/{id}/contour`) | vollständiger Zielzustand eines Raums, atomar (ADR 0014) |
 | Grundrisseditor / grafischer Editor | `editor` (Frontend `modules/electrical/editor`) | SVG-Zeichenfläche (Phase 4a) |
+| 2D-Editor / 3D-Ansicht / Tabellen & Details | Ansichtswerte `editor` / `3d` / `tabelle` | drei Ansichten desselben Serverstands (Phase 4b) |
+| 3D-Ansicht | Frontend `modules/electrical/ansicht3d` | abgeleitet und schreibgeschützt (ADR 0016) |
+| Szenenmodell | `Szenenmodell` (`szenenmodell.ts`) | aus dem Planungsstand abgeleitet, ganze Millimeter, unveränderlich |
+| Szenenschicht | `Grundrissszene` (`szene.ts`) | imperative Three.js-Schicht mit Lebenszyklus |
+| Logische Wand | `LogischeWand` | gespeicherte, gerichtete Wand eines Raums |
+| Darstellungswand / Wandkörper | `Wand3d` | eine oder mehrere exakt deckungsgleiche logische Wände (T9) |
+| gemeinsame Wand / nicht geteilte Wand | `Wandlage`: `gemeinsam` / `aussen` | abgeleitet, kein gespeicherter Wandtyp (T8) |
+| atomarer Wandabschnitt | `Wandabschnitt` (Frontend, `topologie/`) | Stück einer Geraden zwischen zwei aufeinanderfolgenden Wandendpunkten mit festen überdeckenden Wänden; nur abgeleitet (ADR 0016, 4b.2) |
+| Eigentümerwand (einer Öffnung) | `wall_id` der Öffnung | die eine Wand, an der eine Öffnung gespeichert ist |
+| abgeleitete Raumverbindung | `Oeffnungseinordnung` (`gemeinsam`, `nachbarRaumId`) | zweiter Raum einer Öffnung auf einem gemeinsamen Abschnitt – nie gespeichert |
+| Darstellungsdublette | – | dieselbe Öffnung auf beiden Raumseiten exakt gleich gespeichert; wird einmal gezeigt und zur Bereinigung gemeldet |
+| Kanonische Wandrichtung | `kanonisch` | lexikografisch kleinerer Endpunkt zuerst |
+| Darstellungswarnung / Hinweis | `Warnung` | Befund in gespeicherten Daten samt Darstellungsregel; ändert nichts |
 | Entwurf (des Editors) | — (nur Frontend: `Raumentwurf`) | ungespeicherter lokaler Stand **eines** Raums; nicht zu verwechseln mit dem Konturzustand `draft` |
 | Fang | `snap` (Frontend: `fangen`) | Einrasten auf Raster oder Wandendpunkt |
 | Raster | `grid` (Frontend: `rasterMm`) | 10/50/100/250/500 mm |

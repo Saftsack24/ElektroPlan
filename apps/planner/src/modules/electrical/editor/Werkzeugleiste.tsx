@@ -1,3 +1,5 @@
+import { useMasse } from "../../../core/ui/masseinheit";
+import { ANSICHT_ZURUECKSETZEN, ANSICHT_ZURUECKSETZEN_2D } from "../texte";
 import type { Oeffnungsart } from "./entwurf";
 import { RASTERGROESSEN_MM } from "./fang";
 import type { Werkzeug } from "./zustand";
@@ -47,6 +49,7 @@ export function Werkzeugleiste({
   onEinpassen: () => void;
   darfSchreiben: boolean;
 }) {
+  const masse = useMasse();
   return (
     <div className="werkzeugleiste" role="toolbar" aria-label="Werkzeuge des Grundrisseditors">
       <div className="werkzeugleiste__gruppe">
@@ -106,8 +109,8 @@ export function Werkzeugleiste({
         <button type="button" className="button werkzeug" title="Verkleinern (−)" aria-label="Verkleinern" onClick={() => onZoom(0.8)}>
           −
         </button>
-        <button type="button" className="button werkzeug" title="Ansicht einpassen (F)" onClick={onEinpassen}>
-          Einpassen
+        <button type="button" className="button werkzeug" title={`${ANSICHT_ZURUECKSETZEN_2D} (F)`} onClick={onEinpassen}>
+          {ANSICHT_ZURUECKSETZEN}
         </button>
       </div>
 
@@ -125,7 +128,7 @@ export function Werkzeugleiste({
           >
             {RASTERGROESSEN_MM.map((mm) => (
               <option key={mm} value={mm}>
-                {mm} mm
+                {masse.anzeigen(mm)}
               </option>
             ))}
           </select>

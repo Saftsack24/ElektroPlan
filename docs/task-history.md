@@ -1817,3 +1817,297 @@ paralleler Versionskonflikt verständlich gemeldet → Dashboard als Admin und M
 auch auf 375 px Breite → Abmelden und Neuladen.
 
 **Offen:** siehe `docs/current-status.md`.
+
+---
+
+## Task 0017 – Phase 4b: abgeleitete 3D-Ansicht des Grundrisses
+
+**Datum:** 2026-09-27
+
+**Ziel:**
+Der Grundriss aus Phase 4a wird dreidimensional dargestellt, navigiert, kontrolliert und
+ausgewählt. Die 2D-Ansicht bleibt die einzige Autorenfläche; die 3D-Ansicht ist
+vollständig abgeleitet und schreibgeschützt. Die fachlichen Entscheidungen T8 und T9
+waren vorgegeben und sind in ADR 0016 festgehalten.
+
+**Ausgangsprüfung:** Der Plan-Endpunkt liefert je Raum `effective_height_mm` und
+`contour_status`, Wände gerichtet mit Stärke und gerundeter Länge, Öffnungen mit Art,
+Abstand, Breite, Höhe und Brüstung — ausreichend, keine API-Änderung nötig. Query-Key
+`["electrical","plan",floorId]`, Ansichtsschutz über `window.confirm`, `StrictMode`
+aktiv. Abweichung in der Auftragsliste: ADR 0013 heißt
+`0013-room-contour-as-ordered-wall-segments.md`.
+
+**Durchgeführte Änderungen:**
+
+1. **ADR 0016** (T8, T9, Three.js-Einbindung, Konfliktregeln, Neubewertung vor
+   Leitungsrouting/Materialermittlung). T8/T9 in Status, Moduldoku und Roadmap als
+   entschieden geführt; neue offene Frage T10 (physische Wandidentität, vor Phase 6).
+2. **Reine Aufbereitung** in `apps/planner/src/modules/electrical/ansicht3d/`:
+   `transformation.ts` (mm → m, x → +X, y → −Z, Höhe → +Y, Zentrierung auf ganzzahlig
+   abgerundete Mitte), `wandgruppen.ts` (kanonischer Schlüssel aus Geschoss und sortierten
+   Endpunkten, Öffnungsumrechnung `L − Abstand − Breite`, Dedup, Konfliktwarnungen,
+   Erkennung teilweiser Überlagerung — exakt ganzzahlig), `wandzerlegung.ts` (Raster
+   entlang aller Öffnungskanten, Zusammenfassen der Wandzellen, keine Nullflächen,
+   defensiv bei ungültigen Maßen), `szenenmodell.ts` (Plan → unveränderliches Modell,
+   ausgelassene Räume mit Grund, `objektZu`, `warnungenZu`).
+3. **Geometrie** `geometrien.ts`: Boden über `ShapeUtils`/Earcut mit nach oben
+   ausgerichteten Dreiecken, Umriss, Wandquader aus den Wandteilen (Gruppen senkrecht /
+   waagerecht, Enden um halbe Stärke verlängert), Öffnungsflächen in der Wandmitte.
+4. **Szenenschicht** `szene.ts` (`Grundrissszene`) mit injizierbarer `Umgebung`
+   (`umgebung.ts`: `WebGLRenderer`, `OrbitControls`, rAF, `ResizeObserver`, WebGL-2-Probe).
+   Rendern nur auf Anforderung, Pixel Ratio ≤ 2, Pause bei verborgenem Dokument,
+   Meldung bei Kontextverlust, Raycasting nur gegen auswählbare Objekte, Hervorhebung per
+   Materialtausch, vollständiges `entsorgen()` inklusive `forceContextLoss`.
+5. **React**: `Ansicht3d.tsx` (gleicher Query-Key, Modell per `useMemo`, Szene einmal je
+   Mount, gezielte `setzePlan`/`setzeAuswahl`, Zustände, Escape), `Seitenleiste.tsx`
+   (Auswahl, „Nicht dargestellt", Hinweise mit „In der Ansicht zeigen"),
+   `Ansicht3dLaden.tsx` (Lazy-Grenze mit Fehlerfang und neuem Versuch).
+6. **RoomsTab**: drei Ansichten „2D-Editor" · „3D-Ansicht" · „Tabellen & Details";
+   gemerkte Wahl mit sicherem Rückfall; die Verwerfen-Rückfrage kommt weiter nur beim
+   Verlassen des Editors. `plan.ts` hält Query-Key und Abfrage für Editor und 3D.
+7. **Abhängigkeiten**: `three` 0.186.1, `@types/three` 0.186.0. Die Typen ziehen als
+   Entwicklungsabhängigkeiten u. a. `@types/webxr`, `@types/stats.js`, `meshoptimizer`,
+   `fflate`, `@tweenjs/tween.js` und `@dimforge/rapier3d-compat` nach; nichts davon
+   gelangt ins Bundle. Vite `chunkSizeWarningLimit` 650 kB.
+8. **Befunde behoben**: Die Mittellinie des Orientierungsrasters schien im Browser
+   durch die 2 mm höher liegenden Böden — Raster jetzt `renderOrder −1` ohne
+   Tiefenschreiben, mit Regressionstest. Außerdem richtet die Szene die Kamera selbst
+   aus (`lookAt`), statt sich auf die Controls zu verlassen (Befund der Szenentests).
+
+**Tests (automatisiert):**
+- Frontend: **441** bestanden (vorher 319), davon 122 neu: Transformation 8,
+  Wandzerlegung 11, Wandgruppen 22, Szenenmodell 12, Geometrie 10, Szenenschicht 25,
+  3D-Komponente 20, Ansichten/Lazy-Grenze 13, Editor-Rückfrage beim Wechsel zu 3D 1.
+- Backend: **707** bestanden, 0 übersprungen — unverändert, keine Backenddatei geändert.
+- `tasks.ps1 check` vollständig grün; ein Alembic-Head `0005_member_administration`
+  (keine Migration), kein API-Drift, Modulgrenzen unverändert.
+
+**Browserabnahme (Compose-System, synthetische Daten, echtes WebGL 2):**
+Chromium 152 (Browserbereich der Claude-Desktop-App), ANGLE/D3D11, NVIDIA RTX 3060.
+Daten per API angelegt: `PR-2026-0008` — EG mit Küche und Flur (exakt gemeinsame Wand,
+Tür nur flurseitig erfasst), Küchenfenster mit 900 mm Brüstung, L-förmigem Wohnen,
+Flur 2600 mm hoch (Höhenkonflikt), Wand Flur/Wohnen 115/175 mm (Stärkekonflikt),
+beidseitig gleich erfasstem Durchgang und offenem Abstellraum; OG mit einem Raum;
+Geschoss „Belastungsprobe" mit 30 Räumen, 120 Wänden, 60 Öffnungen. `PR-2026-0009` mit
+gleichem EG, archiviert. Zusätzlich gelesen: `PR-2026-0006` (EFH aus dem Messlauf 4a).
+
+| # | Punkt | Ergebnis | Art |
+|---|---|---|---|
+| 1 | Wechsel 2D → 3D | ok | visuell |
+| 2 | Schutz ungespeicherter Änderungen | Rückfrage mit bestehendem Text; Abbrechen: Editor und Entwurf bleiben; OK: 3D. `window.confirm` per Skript beantwortet | Skript + visuell |
+| 3 | vollständig, nicht gespiegelt | Draufsicht: Küche West, Wohnen Ost, L-Flügel Nord, Fenster/Haustür Süd | visuell |
+| 4 | gemeinsame Wand einmal | 14 logische → 12 Körper, davon 2 gemeinsam (hell) | visuell + Text |
+| 5 | einseitige Tür schneidet durch | Durchbruch sichtbar, per Klick ausgewählt | visuell |
+| 6 | Warnung zur einseitigen Erfassung | sichtbar in der Liste und bei der Auswahl | Text |
+| 7 | Fenster mit Brüstung | Brüstung sichtbar; Auswahl: 1260 × 1385 mm, Brüstung 900 mm | visuell + Text |
+| 8 | L-Boden korrekt | Form in Drauf- und Schrägsicht, Fläche 20,00 m² | visuell |
+| 9 | Orbit | Ziehen dreht; ein Ziehen löst keine Auswahl aus | visuell |
+| 10 | Zoom | Mausrad, die Seite scrollt nicht mit; Knöpfe „Näher"/„Weiter weg" | visuell |
+| 11 | Pan | Pfeiltasten; Umschalt+Ziehen als erzeugte `PointerEvent`s (das Werkzeug überträgt beim Ziehen keine Modifier); rechte Maustaste nicht geprüft | visuell, eingeschränkt |
+| 12 | Ansicht einpassen | ok nach starkem Zoom | visuell |
+| 13 | Draufsicht | ok | visuell |
+| 14–17 | Raum, Wand, Öffnung auswählen; Fachdaten | Wohnen; Wand Flur/Wohnen (175 mm dargestellt, erfasst 115/175, Höhe 2600 mm); Fenster; Tür — alle Werte korrekt | visuell + Text |
+| 18 | Escape | hebt auf, Fokus bleibt in der Szene | Text |
+| 19 | Geschosswechsel | EG → OG → Belastungsprobe: ein Canvas, neu eingepasst, alte Auswahl entfällt | visuell |
+| 20 | zurück zum 2D-Editor ohne Datenverlust | Räume vorhanden; per API alle Räume unverändert in Version 1 (kein Schreibvorgang) | API + Text |
+| 21 | archiviertes Projekt | 3D vollständig, Schreibschutzhinweis, keine Bearbeitungsknöpfe | visuell |
+| 22 | 375 px | kein horizontaler Überlauf, Knöpfe umgebrochen, Szene 308 × 445 px, Seitenleiste darunter | visuell + Messung |
+| 23 | Neuladen, Zurück/Vorwärts | Sitzung und gemerkte Ansicht bleiben; Zurück/Vorwärts ok | Text |
+| 24 | Konsole und Containerlogs | keine Fehler aus der 3D-Ansicht; vorhandene Einträge stammen vom Docker-Neustart (401 vor der Anmeldung) und vom bewussten Planner-Neustart (Vite-WebSocket, Exit 143) | Log |
+| 25 | kein Dauer-CPU nach Verlassen | 0 rAF-Anforderungen in 3 s im 2D-Editor und in 3 s ruhiger 3D-Ansicht | Messung |
+| + | Leckprüfung | 10 × 2D ↔ 3D: jedes Mal genau 1 Canvas, im 2D-Editor 0 | Messung |
+
+Nur automatisiert geprüft, im Browser nicht auslösbar: WebGL nicht verfügbar,
+Kontextverlust, gescheitertes Nachladen des Chunks. Kein Touchgerät, kein zweiter Browser.
+
+**Befund am realen Grundriss aus 4a:** 7 Räume ergeben 26 Wandkörper, nur 4 exakt
+gemeinsam, 7 Hinweise „Wände überlagern sich teilweise", 3 einseitig erfasste Türen.
+Die exakte T9-Regel führt diese Wände bewusst nicht zusammen.
+
+**Performance:** siehe `docs/modules/electrical.md`, Abschnitt 10 (Produktionsbuild:
+EFH Drehen/Zoomen Median 1,8 ms je Bild, Belastungsprobe 3,9 ms; erstes Öffnen 444 ms).
+Ein Rechner (AMD Ryzen 7 2700, 24 GB, RTX 3060), ein Browser — keine allgemeine Zusage.
+
+**Selbstreview:**
+
+| Frage | Ergebnis |
+|---|---|
+| Wirklich rein lesend? | Ja. Kein `post/put/patch/delete`, kein `setQueryData` in `ansicht3d`; per API bestätigt, dass die Versionen unverändert blieben. |
+| Floats zurück ins Datenmodell? | Nein. Umrechnung nur in `geometrien.ts`; nichts fließt zurück, React erhält nur `{art, id}`. |
+| Gespiegelt? | Nein — Tests (Umlaufsinn, Draufsicht) und visuell. |
+| Nur exakte Gruppierung? | Ja; Tests für 1 mm Abweichung, Teilüberlappung, anderes Geschoss, gleiche ID. |
+| Richtungsumkehr der Öffnungen? | Test mit der Formel; beidseitiger Durchgang im Browser dedupliziert. |
+| Konflikte sichtbar? | Ja, elf Warnungsarten mit Darstellungsregel im Text. |
+| WebGL-Ressourcen entsorgt, StrictMode? | Test zählt Geometrie- und Materialfreigaben exakt; StrictMode-Test: eine Szene, ein Canvas; Browser: 10 Wechsel ohne Rückstand. |
+| Kamera → React-Render? | Nein (Profiler-Test). |
+| Ungültige Konturen ehrlich ausgelassen? | Ja, mit Grund — auch defensiv bei „valid" mit Lücke. |
+| 2D-Editor unverändert? | Ja; nur der Query-Key liegt jetzt in `plan.ts`; alle Editortests grün. |
+| Grenzen gelockert, Backend geändert, zweiter Three.js-Consumer? | Nein, nein, nein. |
+| WebGL-Fallback erreichbar? | Ja, automatisiert (Probe schlägt fehl → Hinweis); im Browser nicht auslösbar. |
+| Hinweise verständlich? | Deutsch, mit Raumnamen, Maßen und der angewandten Regel. |
+
+**Offen:** siehe `docs/current-status.md` (Abschnitte 7 und 9): teilweise überlappende
+Wände im 2D-Editor angleichen können, T10 vor Phase 6, Fallbacks im echten Browser,
+weitere Browser und Touch, Usability mit Menschen.
+
+---
+
+## Task 0018 – Bedienungsnacharbeit 1: Kunden, Projekte, Seiten, Maßeinheit, Rückfragen
+
+**Datum:** 2026-09-28 · **Stand:** umgesetzt, **nicht committet** (zusammen mit Phase 4b)
+
+**Ziel:** Punkte 1–8 und 10–11 der manuellen Abnahme nach Phase 4b. Punkt 9 (Tür per Maus,
+gekoppelte Öffnungen, teilweise gemeinsame Wände) ist ausdrücklich ein Folgeauftrag und
+wurde nicht begonnen.
+
+**Ausgangsprüfung (Befunde):**
+
+- `customer_id` existierte im Projektlisten-Endpunkt bereits, ungetestet; `q` suchte auch
+  im Kundennamen.
+- Doppelte Scrollleiste: `.dialog` (nativ `overflow: auto`) **und** `.dialog__inhalt`
+  scrollten mit derselben Maximalhöhe.
+- Versatz Gebäude/Geschoss: `.inline-form` richtete mit `align-items: flex-end` aus.
+- `api.md` §4 („Cursor, kein offset") und §9 (Feldnamen stabil) standen der
+  Seitenpagination entgegen → **ADR 0017**.
+- Die 3D-Taste „Ansicht einpassen" behält die Blickrichtung – der neue Tooltip sagt das,
+  statt eine Standardausrichtung zu versprechen.
+
+**Umsetzung:**
+
+1. **Backend (Core):** `fetch_numbered_page` zählt die bereits gefilterte,
+   mandantenbeschränkte Abfrage als Unterabfrage – Zählung und Seite können nicht
+   auseinanderlaufen. Stabile Sortierung mit ID. Seite außerhalb → letzte Seite; leer →
+   `page 1`, `total_pages 0`. `status_group`; Suche ohne Kundenname. Audit und
+   Benutzerverwaltung bleiben beim Cursor. Keine Migration.
+2. **Frontend-Core:** `Seitennavigation`/`seitenfolge`, `useNummerierteListe`,
+   `Combobox` (fixed verankert, Listbox-Semantik, Tastatur), `Dialog` mit genau einem
+   Scrollbereich und referenzgezählter Seiten-Sperre, `RueckfrageProvider`
+   (eine Frage zur Zeit, Antwort genau einmal), `core/masse.ts` + `masseinheit.ts`
+   (reine Umrechnung ohne Fließkomma, Store über `useSyncExternalStore`, Einstellungsdialog).
+3. **Platform:** getrennter Kundenfilter, Kunden-Projektliste mit Statusgruppen,
+   Adressvorschlag mit Feldherkunft (`adressvorschlag.ts`), Ländercode-Feld, `.feldzeile`.
+4. **Electrical:** alle Längenanzeigen und -eingaben über `useMasse` (Eigenschaften,
+   Statuszeile, SVG-Maßtexte, Raster, Dialoge, Tabellen, 3D-Seitenleiste und
+   3D-Hinweistexte über einen übergebenen Formatierer). Geometrie, Gruppierung und
+   Öffnungslogik unverändert. `window.confirm` → Rückfrage; Raumwechsel mit drei Wegen.
+
+**Im Browser gefundener und behobener Fehler:** Unter StrictMode (Entwicklung) merkte
+sich der Dialog beim zweiten Effektlauf den bereits fokussierten Knopf **im** Dialog als
+Rückgabeziel; nach dem Schließen landete der Fokus auf `body`. jsdom zeigte das nicht
+(kein `inert`). Behoben: gemerkt wird nur ein Element außerhalb, zurückgegeben erst, wenn
+der Dialog aus dem DOM ist. Regressionstest bildet den inerten Hintergrund nach.
+Außerdem: nach der Kundenauswahl geht der Fokus auf den Knopf der Auswahlanzeige.
+
+**Browserabnahme** (laufendes Compose-System, synthetische Daten: 46 Kunden, 40
+Projekte, davon 30 an einem Kunden; Chromium im Browserbereich der Desktop-App):
+
+| # | Prüfung | Art | Ergebnis |
+|---|---|---|---|
+| 1–2 | Projektübersicht, allgemeine Suche | funktional | Suche „Testprojekt 1" → 10 Treffer, von Seite 2 zurück auf Seite 1 |
+| 3–4 | Kundenfilter per Tastatur, entfernen | visuell + funktional | Liste schwebt am Feld (klappt bei wenig Platz nach oben), Pfeil/Enter wählt, 30 Einträge; Entfernen → 40, Fokus im Suchfeld |
+| 5–6 | nummerierte Seiten Projekte/Kunden | funktional | „Seite 1 von 2 · 40", Seite 2 = 15; Kunden „Seite 1 von 2 · 46", letzte Seite = 21, Erste/Vorige gesperrt |
+| 7–9 | Kundendetail | funktional | 24 laufende; umgeschaltet 6 archivierte |
+| 10–12 | Projektformular | gemessen | genau ein Scrollbereich, Dialog selbst `overflow hidden`, `html` gesperrt; Dialoghöhe 688 px und Feldlage über alle Tipp-/Ladezustände konstant; Fokus bleibt im Feld |
+| 13–15 | Adressübernahme, Wechsel, „übernehmen" | funktional | wie spezifiziert, manuelles Feld bleibt |
+| 16–17 | Ausrichtung, schmal (375 px) | gemessen | Label/Eingabe auf gleicher Höhe (768/793 px); schmal untereinander, kein Überlauf |
+| 18–19 | cm Standard, Umstellung auf mm | visuell + funktional | 2D „500 cm" → „5.000 mm", Raster „10 cm" → „100 mm", ohne Neuladen |
+| 20 | Anlage in cm, Prüfung per API | API | Geschoss „287,5"/„262,5" cm → `elevation_mm 2875`, `default_ceiling_height_mm 2625` (int) |
+| 21 | 2D/3D vergleichen | funktional | dieselbe Tür 88,5 cm/201 cm bzw. 885 mm/2.010 mm; 3D-Hinweistexte folgen |
+| 22–24 | Rückfrage, Abbrechen, Verwerfen | visuell + funktional | eigener Dialog, Anfangsfokus „Änderungen behalten", Escape; Fokus zurück auf „3D-Ansicht" (nach Fehlerbehebung); Verwerfen → 3D, 1 Canvas |
+| 25 | Neuladen | indirekt | F5 lud nicht neu, Entwurf blieb; Konsole: Chromium blockierte beim skriptgesteuerten Neuladen „beforeunload confirmation panel" – der native Dialog selbst ist im Screenshot nicht sichtbar |
+| 26 | „Ansicht zurücksetzen" 2D/3D | funktional | Beschriftung und Tooltip, keine „einpassen"-Texte mehr |
+| 27 | Konsole, Container | Logs | keine Anwendungsfehler; nur 401 der Sitzungsprüfung und HMR-WebSocket bei Neustarts; Backend ohne 5xx |
+
+Zusätzlich im Browser: interne Navigation fragt genau einmal, Abmelden fragt (nur
+Abbrechen geprüft – Sitzung bleibt).
+
+**Selbstreview:** siehe Abschlussbericht dieser Session; alle Fragen mit Nachweis
+beantwortet, keine offenen Widersprüche zwischen Code, OpenAPI, Client und Doku.
+
+**Offen:** Punkt 9 (Tür/Teilwand) als nächster Block; nativer `beforeunload`-Dialog nicht
+visuell bestätigt; Anonymisierungs-Rückfrage nutzt noch `window.confirm` (keine
+ungespeicherten Änderungen, außerhalb des Auftrags).
+
+---
+
+## Task 0019 – Bedienungsnacharbeit 2 / Phase 4b.2: gemeinsame Wandabschnitte, Tür per Maus
+
+**Datum:** 2026-09-28 · **Stand:** umgesetzt, **nicht committet** (zusammen mit Phase 4b und 4b.1)
+
+### Anlass
+
+Punkt 9 der Abnahme nach 4b. Die Browserabnahme mit dem realen Grundriss aus dem Messlauf 4a
+(`PR-2026-0006`) zeigte: nur 4 Wandpaare exakt deckungsgleich, 7 Paare nur teilweise
+überlappend (lange Flurwand gegen Bad/Schlafen/Kind, Wohnen gegen Küche/Flur, Schlafen gegen
+Bad/HWR). Folge in 3D: doppelte, sich durchdringende Wandkörper, 7 Überlagerungshinweise,
+Türen auf den kurzen Raumwänden als „nur einseitig erfasst" gemeldet. Im 2D-Editor musste eine
+Tür über Abstandsangaben gesetzt werden; eine später gezeichnete Nachbarwand konnte sie
+überdecken.
+
+### Umsetzung
+
+1. **Reine Topologieschicht** `modules/electrical/topologie/` (`lage.ts`, `wandtopologie.ts`,
+   `oeffnungen.ts`): exakte Geraden (gekürzte ganzzahlige Richtung, ganzzahliger Abstand),
+   atomare Abschnitte an allen Wandendpunkten, exakte Lagen `ganz + stufen·√m` für schräge
+   Wände, Einordnung jeder Öffnung (`gemeinsam` mit abgeleitetem Nachbarn, `aussen`,
+   `konflikt`: `mehrdeutig`/`grenze`/`teilweise`/`widerspruch`/`art`, `ungueltig`),
+   Dubletten, Übertragung zwischen Wänden. 2D und 3D verwenden dieselbe Ableitung.
+2. **Eine Öffnung, keine Dublette** (ADR 0016 präzisiert): Öffnung bleibt eine Zeile an ihrer
+   Eigentümerwand; der zweite Raum ist abgeleitet. Keine Paar-ID, keine Migration,
+   **keine Backendänderung** – die Serverprüfung der einzelnen Öffnung bleibt Autorität, eine
+   halb gespeicherte Raumverbindung ist ausgeschlossen.
+3. **3D:** ein Wandkörper je atomarem Abschnitt, Verlängerung nur an freien Enden, eine
+   gespeicherte Tür schneidet den gemeinsamen Körper; neue Hinweise (Dublette, Grenze,
+   teilweise, nicht eindeutig), entfallen: „einseitig", „teilweise überlagert". Seitenleiste:
+   „Verbindet „A" und „B"", Maße aus der gespeicherten Öffnung.
+4. **2D:** Öffnungsebene über allen Wänden (jede Öffnung einmal, im Nachbarraum gestrichelt
+   als abgeleitet, Klick führt zur gespeicherten Öffnung); Werkzeug „Öffnung" mit Vorschau,
+   geometrischer Wandsuche (aktiver Raum bevorzugt), 5-cm-Fang, Begrenzung auf Wand und
+   atomaren Abschnitt, Kollisionsprüfung auch gegen die Gegenseite; Verschieben nur entlang
+   der Wand, Escape/`pointercancel`/Verlust des Zeigers brechen ab und geben den Zeiger frei;
+   Hinweis beim Wechsel gemeinsam ↔ nicht geteilt. Seitenleiste: Verbindung, Quellwand,
+   abgeleitete Öffnungen der Nachbarwand. Ersetzt: `oeffnungSetzen`, `oeffnungVerschieben`,
+   `abstandFangen` (Platzierung jetzt in `editor/platzierung.ts`).
+5. **Maßeinheit je Benutzer:** `elektroplan.masseinheit.<user_id>`, gesetzt vom
+   `AuthProvider`; Laden/Abmelden → Standard; alter Schlüssel einmalig übernommen und entfernt.
+6. **`.claude/launch.json`:** untracktes Vorschau-Werkzeugartefakt (Format der
+   Desktop-App-Vorschau, Port 3000, Root-`dev`; nirgends referenziert, nicht in 4b/4b.1
+   berichtet) aus dem Arbeitsbaum entfernt; `.claude` nicht versioniert. Kopie liegt in der
+   Scratchpad-Sicherung.
+
+### Messwerte
+
+| Messung | Wert |
+|---|---|
+| Realer 4a-Grundriss in 3D | 23 Wandkörper, 11 gemeinsam, 15 Öffnungen, **0 Hinweise** (vorher 26 Körper, davon 7 Paare sich durchdringend, 7 Überlagerungs- und 3 Einseitigkeitshinweise) |
+| Topologie + Einordnung je Zeichenschritt (Node/jsdom, Median / p95) | 4a: 0,34 / 0,66 ms · Belastung 30 Räume: 0,53 / 0,91 ms · 200 Wände: 0,76 / 1,28 ms |
+| 3D im Browser (Entwicklungsbuild, Pane verborgen) | Szenenmodell 1,0–2,5 ms, Geometrie 3,0–3,7 ms |
+| 3D-Chunk Produktion | 588,5 kB (152 kB gzip) – unverändert |
+
+### Browserabnahme (Compose, synthetische Daten)
+
+Original `PR-2026-0006` nur gelesen; bearbeitet wurde die per API angelegte identische Kopie
+`PR-2026-0042` („Abnahme 4b.2 Teilwände"). Zweiter synthetischer Benutzer per
+Entwicklungseinladung (Rolle Planer).
+
+* **Funktional/DOM geprüft:** 3D-Zusammenfassung beider Projekte (23/11/15/0); 15 bzw. 16
+  Öffnungselemente in 2D (eines je Öffnung); Türwerkzeug per Taste; Vorschau über gemeinsamer
+  Wand „verbindet „0.01 Wohnen" und „0.02 Küche"", über Außenwand „kein zweiter Raum", abseits
+  keine; Kollision mit vorhandenem Fenster; Klick → Tür bei 255 cm, sofort ausgewählt; Ziehen
+  mit echter Maus (Zeiger 30 cm neben der Wand) → 355 cm, gleiche Wand, 5-cm-Raster; Escape
+  während des Ziehens → Lage zurück, Vorschau weg; numerisch 352,5 cm übernommen; Speichern;
+  Nachbarraum Küche: Tür gestrichelt als abgeleitet mit Tooltip; Klick auf eine abgeleitete Tür
+  → Wechsel in den Eigentümerraum und Auswahl der gespeicherten Tür; Außenwandtür „kein
+  zweiter Raum"; cm → mm: Geometrie identisch, Anzeige 3800 mm; Ansichtswechsel mit
+  ungespeicherter Tür → eigener Dialog „Ansicht wechseln?" mit Fokus auf „Änderungen
+  behalten"; 10× 2D ↔ 3D → stets genau 1 bzw. 0 Canvas; Konsole ohne Fehler, Backend ohne
+  Fehler; zwei Benutzer im selben Browser: Admin mm, Planerin cm, nach Rückwechsel Admin
+  weiter mm.
+* **Per Datenbank geprüft:** genau eine neue Zeile an der Wohnen-Wand (3525 mm), keine an der
+  Küchenwand; Projekt 15 → 16 Öffnungen.
+* **Nicht visuell geprüft:** Der Browserbereich war während der Abnahme verborgen; WebGL-Bilder
+  und Screenshots wurden nicht gezeichnet. Die 3D-Auswahl einer gemeinsamen Öffnung ist nur
+  automatisiert geprüft. Pointer Capture lässt sich mit seitenseitig erzeugten Ereignissen im
+  Browser nicht beobachten (Chromium gewährt sie nur echten Zeigern) – automatisiert geprüft.
+* **Befund behoben:** Kollisionsmeldung „mit der vorhandenen Fenster" → artikelgerecht
+  („dem vorhandenen Fenster"), mit Regressionstest.

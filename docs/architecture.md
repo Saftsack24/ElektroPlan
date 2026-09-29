@@ -433,6 +433,10 @@ apps/planner/src/
     electrical/   index.ts exportiert PlannerModule-Descriptor
       editor/     grafischer 2D-Editor (Phase 4a): reine Geometrie-, Viewport-,
                   Fang- und Werkzeugfunktionen, Reducer, SVG-Zeichenfläche
+      ansicht3d/  abgeleitete 3D-Ansicht (Phase 4b): reine Szenenmodell-Aufbereitung,
+                  Three.js-Geometrien, imperative Szenenschicht, React-Ansicht (lazy)
+      topologie/  gemeinsame, reine Wandtopologie für 2D und 3D (Phase 4b.2): atomare
+                  Wandabschnitte, abgeleitete Raumverbindungen von Öffnungen
     materials/ calculation/ offers/ work-orders/
   modules/index.ts  statische Registrierung aller Module
 ```
@@ -453,6 +457,27 @@ an den Router — ohne zu wissen, was ungespeichert ist. Der Editor liest den Pl
 `GET /floors/{id}/plan` und schreibt eine Raumgeometrie über den atomaren Befehl
 `PUT /rooms/{id}/contour`. Der lokale Entwurf ist keine zweite Datenhaltung: Er entsteht
 aus dem Serverstand und wird nach dem Speichern durch die Serverantwort ersetzt.
+
+**Imperative 3D-Szenenschicht (Phase 4b, ADR 0016).** Three.js lebt ausschließlich im
+Fachmodul `electrical` (`ansicht3d/`), nicht im Core und nicht in einem eigenen Paket
+(kein zweiter Consumer). React hält nur fachliche Daten und eine kleine Auswahlreferenz;
+eine Klasse (`Grundrissszene`) besitzt Renderer, Szene, Kamera und Controls von der
+Erzeugung bis `entsorgen()`. Sie wird einmal je Mount erzeugt, über gezielte Aufrufe
+(`setzePlan`, `setzeAuswahl`, Kamerabefehle) aktualisiert und rendert nur auf
+Anforderung — kein React-State pro Frame, keine Neuerzeugung bei Renders oder Resize.
+Renderer, Controls, Bildtakt und Größenbeobachtung werden injiziert und sind in Tests
+ersetzt. Die Umwandlung Plan → Szenenmodell ist reine, ganzzahlige Logik ohne DOM, WebGL
+oder React; erst die Geometrieschicht rechnet Millimeter in Meter um. Die 3D-Ansicht
+schreibt nichts.
+
+**Gemeinsame Wandtopologie (Phase 4b.2, ADR 0016).** 2D-Editor und 3D-Ansicht leiten
+gemeinsame Wandabschnitte und die Raumverbindung von Öffnungen aus **einer** reinen
+Schicht ab (`modules/electrical/topologie/`): exakt kollineare Wände werden ganzzahlig und
+ohne Toleranz in atomare Abschnitte zerlegt, jede gespeicherte Öffnung wird eingeordnet
+(gemeinsam mit abgeleitetem Nachbarraum, außen, Konflikt). Die Schicht ist intern im
+Fachmodul, ohne Core-Abhängigkeit und ohne Persistenz – eine Öffnung bleibt genau eine
+Zeile an ihrer Wand; die Nachbarschaft ist Ansicht, kein Datum. Eine physische
+Wandidentität (T10) ist vor Phase 6 neu zu bewerten.
 
 ---
 

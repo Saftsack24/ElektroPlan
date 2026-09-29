@@ -200,7 +200,10 @@ export interface paths {
         };
         /**
          * Kunden auflisten
-         * @description Kunden der eigenen Organisation - gefiltert, sortiert, seitenweise.
+         * @description Kunden der eigenen Organisation - gefiltert, sortiert, nummerierte Seiten.
+         *
+         *     Eine Seite hinter der letzten liefert die letzte vorhandene Seite; das
+         *     Feld ``page`` der Antwort nennt sie (ADR 0017).
          */
         get: operations["listCustomers"];
         put?: never;
@@ -286,7 +289,10 @@ export interface paths {
         };
         /**
          * Projekte auflisten
-         * @description Projekte der eigenen Organisation - gefiltert, sortiert, seitenweise.
+         * @description Projekte der eigenen Organisation - gefiltert, sortiert, nummerierte Seiten.
+         *
+         *     Eine Seite hinter der letzten liefert die letzte vorhandene Seite; das
+         *     Feld ``page`` der Antwort nennt sie (ADR 0017).
          */
         get: operations["listProjects"];
         put?: never;
@@ -1908,6 +1914,50 @@ export interface components {
             /** Permissions */
             permissions: string[];
         };
+        /** NumberedPage[CustomerOut] */
+        NumberedPage_CustomerOut_: {
+            /** Items */
+            items: components["schemas"]["CustomerOut"][];
+            /**
+             * Page
+             * @description Tatsaechlich gelieferte Seite, beginnend bei 1. Lag die angefragte Seite hinter der letzten, ist es die letzte vorhandene Seite.
+             */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /**
+             * Total Items
+             * @description Treffer unter allen Filtern, nur eigener Betrieb.
+             */
+            total_items: number;
+            /**
+             * Total Pages
+             * @description 0 bei leerer Treffermenge.
+             */
+            total_pages: number;
+        };
+        /** NumberedPage[ProjectSummary] */
+        NumberedPage_ProjectSummary_: {
+            /** Items */
+            items: components["schemas"]["ProjectSummary"][];
+            /**
+             * Page
+             * @description Tatsaechlich gelieferte Seite, beginnend bei 1. Lag die angefragte Seite hinter der letzten, ist es die letzte vorhandene Seite.
+             */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /**
+             * Total Items
+             * @description Treffer unter allen Filtern, nur eigener Betrieb.
+             */
+            total_items: number;
+            /**
+             * Total Pages
+             * @description 0 bei leerer Treffermenge.
+             */
+            total_pages: number;
+        };
         /**
          * OpeningCreate
          * @description Neue Oeffnung in einer Wand.
@@ -2021,34 +2071,10 @@ export interface components {
              */
             has_more: boolean;
         };
-        /** Page[CustomerOut] */
-        Page_CustomerOut_: {
-            /** Items */
-            items: components["schemas"]["CustomerOut"][];
-            /** Next Cursor */
-            next_cursor?: string | null;
-            /**
-             * Has More
-             * @default false
-             */
-            has_more: boolean;
-        };
         /** Page[DirectoryEntryOut] */
         Page_DirectoryEntryOut_: {
             /** Items */
             items: components["schemas"]["DirectoryEntryOut"][];
-            /** Next Cursor */
-            next_cursor?: string | null;
-            /**
-             * Has More
-             * @default false
-             */
-            has_more: boolean;
-        };
-        /** Page[ProjectSummary] */
-        Page_ProjectSummary_: {
-            /** Items */
-            items: components["schemas"]["ProjectSummary"][];
             /** Next Cursor */
             next_cursor?: string | null;
             /**
@@ -2938,8 +2964,9 @@ export interface operations {
                 q?: string | null;
                 kind?: ("private" | "company") | null;
                 sort?: "created_at" | "name";
-                limit?: number;
-                cursor?: string | null;
+                /** @description Seite, beginnend bei 1 */
+                page?: number;
+                page_size?: number;
             };
             header?: never;
             path?: never;
@@ -2953,7 +2980,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Page_CustomerOut_"];
+                    "application/json": components["schemas"]["NumberedPage_CustomerOut_"];
                 };
             };
             /** @description Validation Error */
@@ -3225,13 +3252,16 @@ export interface operations {
     listProjects: {
         parameters: {
             query?: {
-                /** @description Name, Nummer, Ort, Kunde */
+                /** @description Bezeichnung, Projektnummer oder Baustellenort */
                 q?: string | null;
                 status?: ("draft" | "active" | "completed" | "archived") | null;
+                /** @description current = draft + active, closed = completed + archived. Schliesst sich mit status aus. */
+                status_group?: ("current" | "closed") | null;
                 customer_id?: string | null;
                 sort?: "created_at" | "name" | "updated_at";
-                limit?: number;
-                cursor?: string | null;
+                /** @description Seite, beginnend bei 1 */
+                page?: number;
+                page_size?: number;
             };
             header?: never;
             path?: never;
@@ -3245,7 +3275,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Page_ProjectSummary_"];
+                    "application/json": components["schemas"]["NumberedPage_ProjectSummary_"];
                 };
             };
             /** @description Validation Error */

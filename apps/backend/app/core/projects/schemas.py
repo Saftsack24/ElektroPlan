@@ -17,6 +17,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.core.validation import reject_explicit_null
 
 ProjectStatus = Literal["draft", "active", "completed", "archived"]
+#: ``current`` = draft + active, ``closed`` = completed + archived.
+ProjectStatusGroup = Literal["current", "closed"]
 
 #: Hoehenlage eines Geschosses: 200 m unter bis 1 km ueber dem Bezugspunkt.
 MIN_ELEVATION_MM = -200_000

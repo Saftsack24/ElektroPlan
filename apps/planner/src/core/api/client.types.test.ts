@@ -62,7 +62,15 @@ function typpruefungen(): void {
     body: { billing_city: "Hannover" },
     ifMatch: 3,
   });
-  void api.get("/api/v1/projects", { query: { status: "active", limit: 10 } });
+  void api.get("/api/v1/projects", { query: { status: "active", page: 2, page_size: 10 } });
+  void api.get("/api/v1/projects", { query: { status_group: "closed", customer_id: "abc" } });
+  // @ts-expect-error - Kunden und Projekte blaettern seit ADR 0017 nicht mehr per Cursor
+  void api.get("/api/v1/customers", { query: { cursor: "abc" } });
+  // @ts-expect-error - "offen" ist keine Statusgruppe
+  void api.get("/api/v1/projects", { query: { status_group: "offen" } });
+  expectTypeOf(api.get("/api/v1/projects", { query: {} }))
+    .resolves.toHaveProperty("total_pages")
+    .toEqualTypeOf<number>();
   void api.post("/api/v1/projects/{project_id}/activate", {
     path: { project_id: "abc" },
     ifMatch: 1,

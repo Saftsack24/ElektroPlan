@@ -14,6 +14,13 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
   },
+  build: {
+    // Der lazy geladene Chunk der 3D-Ansicht enthält Three.js (~590 kB
+    // minifiziert) und wird erst beim Öffnen der 3D-Ansicht geladen
+    // (ADR 0016). Die Grenze liegt knapp darüber, damit jeder andere
+    // Chunk weiterhin gewarnt wird, sobald er so groß wird.
+    chunkSizeWarningLimit: 650,
+  },
   test: {
     environment: "jsdom",
     globals: true,

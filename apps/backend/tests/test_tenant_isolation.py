@@ -445,6 +445,54 @@ def test_projektliste_zeigt_nur_eigene(api: TestClient, two_tenants: tuple[Tenan
     assert str(scholz.project_id) not in ids
 
 
+def test_gesamtzahlen_zaehlen_nur_den_eigenen_betrieb(
+    api: TestClient, two_tenants: tuple[Tenant, Tenant]
+) -> None:
+    """``total_items`` darf keine fremden Datensaetze mitzaehlen (ADR 0017).
+
+    Beide Betriebe haben je genau einen Kunden und ein Projekt. Ein
+    ungefilterter ``COUNT`` ergaebe 2 - und verriete damit den Umfang fremder
+    Daten.
+    """
+    scholz, mueller = two_tenants
+    token = login(api, mueller.admin_email)
+
+    kunden = api.get("/api/v1/customers", headers=auth_headers(token)).json()
+    projekte = api.get("/api/v1/projects", headers=auth_headers(token)).json()
+    laufend = api.get(
+        "/api/v1/projects", headers=auth_headers(token), params={"status_group": "current"}
+    ).json()
+
+    assert (kunden["total_items"], kunden["total_pages"]) == (1, 1)
+    assert (projekte["total_items"], projekte["total_pages"]) == (1, 1)
+    assert laufend["total_items"] == 1
+    assert {item["id"] for item in projekte["items"]} == {str(mueller.project_id)}
+    assert str(scholz.project_id) not in {item["id"] for item in laufend["items"]}
+
+
+def test_projektfilter_mit_fremder_kunden_id_liefert_nichts(
+    api: TestClient, two_tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Eine fremde Kunden-ID ergibt dieselbe Antwort wie eine unbekannte."""
+    scholz, mueller = two_tenants
+    token = login(api, mueller.admin_email)
+
+    fremd = api.get(
+        "/api/v1/projects",
+        headers=auth_headers(token),
+        params={"customer_id": str(scholz.customer_id)},
+    )
+    unbekannt = api.get(
+        "/api/v1/projects",
+        headers=auth_headers(token),
+        params={"customer_id": str(uuid.uuid4())},
+    )
+
+    assert fremd.status_code == unbekannt.status_code == 200
+    assert fremd.json() == unbekannt.json()
+    assert fremd.json()["total_items"] == 0
+
+
 def test_projekt_kann_keinen_fremden_kunden_bekommen(
     api: TestClient, two_tenants: tuple[Tenant, Tenant]
 ) -> None:

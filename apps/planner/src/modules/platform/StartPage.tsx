@@ -161,7 +161,7 @@ function Projektkarte({
     queryKey: ["projects", "start", schluessel],
     queryFn: () =>
       api.get("/api/v1/projects", {
-        query: { sort: "updated_at", limit: KARTENGROESSE, ...(status ? { status } : {}) },
+        query: { sort: "updated_at", page_size: KARTENGROESSE, ...(status ? { status } : {}) },
       }),
   });
 

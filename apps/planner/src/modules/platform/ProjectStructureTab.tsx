@@ -4,7 +4,9 @@ import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/rea
 import { useState } from "react";
 
 import { useAuth, usePermission } from "../../core/auth/AuthProvider";
+import { eingabenAusMm, eingabenLesen, eingabenUmrechnen } from "../../core/masse";
 import { Feld } from "../../core/ui/Feld";
+import { useEinheitenwechsel, useMasse } from "../../core/ui/masseinheit";
 
 /**
  * Gebäude und Geschosse eines Projekts.
@@ -14,8 +16,9 @@ import { Feld } from "../../core/ui/Feld";
  * ausklappbaren Bereich „Gebäudestruktur verwalten", damit die Seite beim
  * Nachschlagen ruhig bleibt.
  *
- * Alle Höhenangaben sind ganzzahlige Millimeter (ADR 0007). Die Oberfläche
- * rechnet nicht um - sie zeigt Millimeter und nimmt Millimeter entgegen.
+ * Alle Höhenangaben sind ganzzahlige Millimeter (ADR 0007). Angezeigt und
+ * eingegeben wird in der persönlichen Anzeigeeinheit; umgerechnet wird nur
+ * an der Oberflächengrenze (`core/masse.ts`), gesendet werden Millimeter.
  */
 export function ProjectStructureTab({
   projectId,
@@ -25,6 +28,7 @@ export function ProjectStructureTab({
   schreibgeschuetzt: boolean;
 }) {
   const { api } = useAuth();
+  const masse = useMasse();
   const darfSchreiben = usePermission("project.record.write") && !schreibgeschuetzt;
 
   const gebaeude = useQuery({
@@ -74,8 +78,8 @@ export function ProjectStructureTab({
                 <th>Gebäude</th>
                 <th>Ebene</th>
                 <th>Geschoss</th>
-                <th>FFB-Höhe (mm)</th>
-                <th>Standardhöhe (mm)</th>
+                <th>Höhenlage (FFB)</th>
+                <th>Standardhöhe</th>
               </tr>
             </thead>
             <tbody>
@@ -96,8 +100,8 @@ export function ProjectStructureTab({
                     <td>{zeile === 0 ? haus.name : ""}</td>
                     <td>{geschoss.level}</td>
                     <td>{geschoss.name}</td>
-                    <td>{geschoss.elevation_mm}</td>
-                    <td>{geschoss.default_ceiling_height_mm}</td>
+                    <td>{masse.anzeigen(geschoss.elevation_mm)}</td>
+                    <td>{masse.anzeigen(geschoss.default_ceiling_height_mm)}</td>
                   </tr>
                 ));
               })}
@@ -202,11 +206,20 @@ function Verwaltung({
   );
 }
 
+/** Formularwerte; die beiden Höhen stehen in Millimetern (Startwerte). */
 const LEERES_GESCHOSS = {
   name: "",
   level: "0",
   elevation_mm: "0",
   default_ceiling_height_mm: "2500",
+};
+const HOEHENFELDER = ["elevation_mm", "default_ceiling_height_mm"] as const;
+
+type Geschossanlage = {
+  name: string;
+  level: number;
+  elevation_mm: number;
+  default_ceiling_height_mm: number;
 };
 
 function GebaeudeKarte({
@@ -217,8 +230,12 @@ function GebaeudeKarte({
   onLoeschen: () => void;
 }) {
   const { api } = useAuth();
+  const masse = useMasse();
   const queryClient = useQueryClient();
-  const [formular, setFormular] = useState(LEERES_GESCHOSS);
+  const leer = () => eingabenAusMm(LEERES_GESCHOSS, HOEHENFELDER, masse.einheit);
+  // Die Höhenfelder halten Text in der Anzeigeeinheit.
+  const [formular, setFormular] = useState(leer);
+  useEinheitenwechsel((von, nach) => setFormular((alt) => eingabenUmrechnen(alt, HOEHENFELDER, von, nach)));
   const [fehler, setFehler] = useState<string | null>(null);
 
   const melden = (error: unknown, standard: string) =>
@@ -231,18 +248,13 @@ function GebaeudeKarte({
   });
 
   const anlegen = useMutation({
-    mutationFn: (eingabe: typeof LEERES_GESCHOSS) =>
+    mutationFn: (body: Geschossanlage) =>
       api.post("/api/v1/buildings/{building_id}/floors", {
         path: { building_id: gebaeude.id },
-        body: {
-          name: eingabe.name.trim(),
-          level: Number.parseInt(eingabe.level, 10),
-          elevation_mm: Number.parseInt(eingabe.elevation_mm, 10),
-          default_ceiling_height_mm: Number.parseInt(eingabe.default_ceiling_height_mm, 10),
-        },
+        body,
       }),
     onSuccess: async () => {
-      setFormular(LEERES_GESCHOSS);
+      setFormular(leer());
       setFehler(null);
       await queryClient.invalidateQueries({ queryKey: ["floors", gebaeude.id] });
     },
@@ -280,8 +292,8 @@ function GebaeudeKarte({
             <tr>
               <th>Ebene</th>
               <th>Bezeichnung</th>
-              <th>FFB-Höhe (mm)</th>
-              <th>Standardhöhe (mm)</th>
+              <th>Höhenlage (FFB)</th>
+              <th>Standardhöhe</th>
               <th />
             </tr>
           </thead>
@@ -290,8 +302,8 @@ function GebaeudeKarte({
               <tr key={geschoss.id}>
                 <td>{geschoss.level}</td>
                 <td>{geschoss.name}</td>
-                <td>{geschoss.elevation_mm}</td>
-                <td>{geschoss.default_ceiling_height_mm}</td>
+                <td>{masse.anzeigen(geschoss.elevation_mm)}</td>
+                <td>{masse.anzeigen(geschoss.default_ceiling_height_mm)}</td>
                 <td>
                   <button
                     className="button button--ghost"
@@ -315,7 +327,20 @@ function GebaeudeKarte({
         className="inline-form"
         onSubmit={(event) => {
           event.preventDefault();
-          if (!anlegen.isPending) anlegen.mutate(formular);
+          if (anlegen.isPending) return;
+          const hoehen = eingabenLesen(formular, HOEHENFELDER, masse.einheit);
+          const erster = HOEHENFELDER.find((feld) => hoehen.fehler[feld] !== undefined);
+          if (erster !== undefined) {
+            const name = erster === "elevation_mm" ? "Höhenlage" : "Standardhöhe";
+            setFehler(`${name}: ${hoehen.fehler[erster] ?? ""}`);
+            return;
+          }
+          anlegen.mutate({
+            name: formular.name.trim(),
+            level: Number.parseInt(formular.level, 10),
+            elevation_mm: hoehen.mm.elevation_mm ?? 0,
+            default_ceiling_height_mm: hoehen.mm.default_ceiling_height_mm ?? 0,
+          });
         }}
       >
         <Feld
@@ -335,16 +360,16 @@ function GebaeudeKarte({
         />
         <Feld
           id={`elevation-${gebaeude.id}`}
-          label="FFB-Höhe (mm)"
-          type="number"
+          label={masse.label("Höhenlage (FFB)")}
+          inputMode="decimal"
           value={formular.elevation_mm}
           disabled={anlegen.isPending}
           onChange={(elevation_mm) => setFormular({ ...formular, elevation_mm })}
         />
         <Feld
           id={`height-${gebaeude.id}`}
-          label="Standardhöhe (mm)"
-          type="number"
+          label={masse.label("Standardhöhe")}
+          inputMode="decimal"
           value={formular.default_ceiling_height_mm}
           disabled={anlegen.isPending}
           onChange={(default_ceiling_height_mm) =>

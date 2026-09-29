@@ -1,7 +1,12 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
-import type { Seite } from "../../../core/api/useCursorListe";
+/** Eine Cursorseite der Benutzerverwaltung (docs/api.md, Abschnitt 4). */
+export interface Seite<ItemT> {
+  items: ItemT[];
+  next_cursor?: string | null;
+  has_more?: boolean;
+}
 
 /**
  * Blättern mit Vor und Zurück auf Basis des Keyset-Cursors.

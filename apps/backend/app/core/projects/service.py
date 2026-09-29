@@ -16,13 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.core.customers.models import Customer
 from app.core.numbering.service import PROJECT_SEQUENCE, next_number
-from app.core.pagination import (
-    KeysetPage,
-    apply_keyset,
-    build_keyset_page,
-    parse_datetime_key,
-    parse_text_key,
-)
+from app.core.pagination import OffsetPage, fetch_numbered_page, order_with_tiebreaker
 from app.core.persistence import (
     flush,
     foreign_key_violation_translated,
@@ -31,6 +25,7 @@ from app.core.persistence import (
 from app.core.preconditions import check_version
 from app.core.projects.models import (
     PROJECT_STATUS_ARCHIVED,
+    PROJECT_STATUS_GROUPS,
     PROJECT_STATUS_TRANSITIONS,
     Building,
     Floor,
@@ -42,6 +37,7 @@ from app.core.projects.schemas import (
     FloorCreate,
     FloorUpdate,
     ProjectCreate,
+    ProjectStatusGroup,
     ProjectUpdate,
 )
 from app.core.tenancy.repository import TenantRepository
@@ -135,18 +131,33 @@ class ProjectService:
     def list_projects(
         self,
         *,
-        limit: int,
-        cursor: str | None = None,
+        page: int,
+        page_size: int,
         search: str | None = None,
         status: str | None = None,
+        status_group: ProjectStatusGroup | None = None,
         customer_id: uuid.UUID | None = None,
         sort: ProjectSort = "created_at",
-    ) -> KeysetPage[tuple[Project, str]]:
-        """Seite von Projekten samt Kundenname.
+    ) -> OffsetPage[tuple[Project, str]]:
+        """Nummerierte Seite von Projekten samt Kundenname (ADR 0017).
 
         Der Kundenname wird mitgelesen statt je Zeile nachgeladen - sonst
-        entstuende bei 50 Projekten ein N+1-Problem.
+        entstuende bei 25 Projekten ein N+1-Problem.
+
+        Die Freitextsuche umfasst **nur** Bezeichnung, Projektnummer und
+        Baustellenort. Nach dem Kunden wird ueber ``customer_id`` gefiltert -
+        eindeutig, statt ueber einen Namensbestandteil, der auch in einer
+        Projektbezeichnung stehen kann.
+
+        ``customer_id`` ist mandantensicher: Die Abfrage ist auf den eigenen
+        Betrieb beschraenkt, eine fremde Kunden-ID liefert deshalb schlicht
+        keinen Treffer und ``total_items == 0`` - nie einen Hinweis darauf, ob
+        es den Kunden anderswo gibt.
         """
+        if status is not None and status_group is not None:
+            raise ValidationFailedError(
+                "Bitte entweder einen Status oder eine Statusgruppe angeben, nicht beides."
+            )
         stmt: Select[tuple[Project, str]] = (
             select(Project, Customer.name)
             .join(
@@ -161,6 +172,8 @@ class ProjectService:
         )
         if status:
             stmt = stmt.where(Project.status == status)
+        if status_group is not None:
+            stmt = stmt.where(Project.status.in_(PROJECT_STATUS_GROUPS[status_group]))
         if customer_id is not None:
             stmt = stmt.where(Project.customer_id == customer_id)
         if search:
@@ -170,47 +183,26 @@ class ProjectService:
                     Project.name.ilike(pattern),
                     Project.project_number.ilike(pattern),
                     func.coalesce(Project.site_city, "").ilike(pattern),
-                    Customer.name.ilike(pattern),
                 )
             )
 
-        if sort == "name":
-            stmt = apply_keyset(
-                stmt,
-                sort_column=Project.name,
-                id_column=Project.id,
-                descending=False,
-                cursor=cursor,
-                parse_key=parse_text_key,
-            )
-        elif sort == "updated_at":
-            stmt = apply_keyset(
-                stmt,
-                sort_column=Project.updated_at,
-                id_column=Project.id,
-                descending=True,
-                cursor=cursor,
-                parse_key=parse_datetime_key,
-            )
-        else:
-            stmt = apply_keyset(
-                stmt,
-                sort_column=Project.created_at,
-                id_column=Project.id,
-                descending=True,
-                cursor=cursor,
-                parse_key=parse_datetime_key,
-            )
-
-        rows: list[tuple[Project, str]] = [
-            (project, customer_name)
-            for project, customer_name in self.session.execute(stmt.limit(limit + 1)).all()
-        ]
-        return build_keyset_page(
-            rows,
-            limit=limit,
-            key_of=lambda row: _project_sort_value(row[0], sort),
-            id_of=lambda row: row[0].id,
+        sort_column = {
+            "name": Project.name,
+            "updated_at": Project.updated_at,
+            "created_at": Project.created_at,
+        }[sort]
+        stmt = order_with_tiebreaker(
+            stmt, sort_column=sort_column, id_column=Project.id, descending=sort != "name"
+        )
+        return fetch_numbered_page(
+            self.session,
+            stmt,
+            page=page,
+            page_size=page_size,
+            load=lambda seite: [
+                (project, customer_name)
+                for project, customer_name in self.session.execute(seite).all()
+            ],
         )
 
     def create(self, payload: ProjectCreate, *, actor_user_id: uuid.UUID) -> Project:
@@ -569,11 +561,3 @@ def count_projects_of_customer(
         Project.deleted_at.is_(None),
     )
     return int(session.execute(stmt).scalar_one())
-
-
-def _project_sort_value(project: Project, sort: ProjectSort) -> str:
-    if sort == "name":
-        return project.name
-    if sort == "updated_at":
-        return project.updated_at.isoformat()
-    return project.created_at.isoformat()

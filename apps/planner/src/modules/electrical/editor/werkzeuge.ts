@@ -12,7 +12,6 @@
  */
 import type { EntwurfOeffnung, EntwurfWand, Oeffnungsart, Raumentwurf } from "./entwurf";
 import { ende, start } from "./entwurf";
-import { abstandFangen } from "./fang";
 import { gleich, streckenlaenge } from "./geometrie";
 import type { Punkt } from "./geometrie";
 
@@ -39,7 +38,7 @@ export function rechteckWaende(
   const minY = Math.min(a.y, b.y);
   const maxY = Math.max(a.y, b.y);
   if (maxX - minX < 100 || maxY - minY < 100) {
-    return { fehler: "Ein Raum braucht mindestens 100 mm Breite und Tiefe." };
+    return { fehler: "Ein Raum braucht mindestens 10 cm (100 mm) Breite und Tiefe." };
   }
   const ecken: Punkt[] = [
     { x: minX, y: minY },
@@ -164,7 +163,7 @@ export function wandlaengeSetzen(
   const exakt = Math.hypot(dx, dy);
   if (exakt === 0) return { fehler: "Die Wand hat keine Richtung." };
   if (!Number.isInteger(laenge) || laenge < 100) {
-    return { fehler: "Die Länge muss eine ganze Zahl von mindestens 100 mm sein." };
+    return { fehler: "Die Länge muss mindestens 10 cm (100 mm) betragen, in ganzen Millimetern." };
   }
   const neuesEnde = {
     x: Math.round(w.x1_mm + (dx / exakt) * laenge) + 0,
@@ -269,23 +268,6 @@ export function projektion(w: EntwurfWand, p: Punkt): number {
   return Math.min(Math.max(entlang, 0), exakt);
 }
 
-/**
- * Ganzzahliger Abstand einer Öffnung, deren **Mitte** unter dem Zeiger liegt -
- * gefangen und so begrenzt, dass sie vollständig in der (gerundeten) Wand liegt.
- */
-export function oeffnungsabstand(
-  w: EntwurfWand,
-  p: Punkt,
-  breite: number,
-  optionen: { rasterMm: number; fangen: boolean },
-): Ergebnis<number> {
-  const laenge = streckenlaenge(start(w), ende(w));
-  if (breite > laenge) return { fehler: `Die Öffnung (${breite} mm) ist breiter als die Wand (${laenge} mm).` };
-  const roh = projektion(w, p) - breite / 2;
-  const gefangen = abstandFangen(roh, optionen.rasterMm, optionen.fangen);
-  return { wert: Math.min(Math.max(gefangen, 0), laenge - breite) };
-}
-
 export const OEFFNUNG_STANDARD: Record<
   Oeffnungsart,
   { width_mm: number; height_mm: number; sill_height_mm: number }
@@ -296,36 +278,19 @@ export const OEFFNUNG_STANDARD: Record<
   passage: { width_mm: 885, height_mm: 2_010, sill_height_mm: 0 },
 };
 
-export function oeffnungSetzen(
+/**
+ * Fügt eine neue Öffnung mit den Standardmaßen ihrer Art an einem bereits
+ * berechneten Abstand ein (`platzierung.ts`). Sie gehört genau dieser Wand.
+ */
+export function oeffnungEinfuegen(
   entwurf: Raumentwurf,
   wandId: string,
   art: Oeffnungsart,
-  p: Punkt,
+  offsetMm: number,
   id: string,
-  optionen: { rasterMm: number; fangen: boolean },
-): Ergebnis<Raumentwurf> {
-  const w = entwurf.walls[wandIndex(entwurf, wandId)] as EntwurfWand;
-  const masse = OEFFNUNG_STANDARD[art];
-  const abstand = oeffnungsabstand(w, p, masse.width_mm, optionen);
-  if ("fehler" in abstand) return abstand;
-  const oeffnung: EntwurfOeffnung = { id, kind: art, offset_mm: abstand.wert, ...masse };
-  return { wert: mitWand(entwurf, wandId, (x) => ({ ...x, openings: sortiert([...x.openings, oeffnung]) })) };
-}
-
-/** Verschiebt eine Öffnung entlang ihrer Wand - sie wechselt die Wand nie. */
-export function oeffnungVerschieben(
-  entwurf: Raumentwurf,
-  wandId: string,
-  oeffnungId: string,
-  p: Punkt,
-  optionen: { rasterMm: number; fangen: boolean },
 ): Raumentwurf {
-  const w = entwurf.walls[wandIndex(entwurf, wandId)] as EntwurfWand;
-  const o = w.openings.find((x) => x.id === oeffnungId);
-  if (o === undefined) return entwurf;
-  const abstand = oeffnungsabstand(w, p, o.width_mm, optionen);
-  if ("fehler" in abstand) return entwurf;
-  return oeffnungAendern(entwurf, wandId, oeffnungId, { offset_mm: abstand.wert });
+  const oeffnung: EntwurfOeffnung = { id, kind: art, offset_mm: offsetMm, ...OEFFNUNG_STANDARD[art] };
+  return mitWand(entwurf, wandId, (x) => ({ ...x, openings: sortiert([...x.openings, oeffnung]) }));
 }
 
 export function oeffnungAendern(

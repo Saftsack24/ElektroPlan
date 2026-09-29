@@ -1,8 +1,11 @@
 import { useState } from "react";
 
 import { Dialog } from "../../core/ui/Dialog";
+import { EINGABEHINWEIS, eingabenAusMm, eingabenLesen, eingabenUmrechnen } from "../../core/masse";
 import { Feld } from "../../core/ui/Feld";
+import { useEinheitenwechsel, useMasse } from "../../core/ui/masseinheit";
 
+/** Ganze Millimeter als Text - in beide Richtungen. Die Anzeigeeinheit gilt nur im Dialog. */
 export type Wandwerte = {
   x1_mm: string;
   y1_mm: string;
@@ -23,7 +26,7 @@ export type Wandfeldfehler = Partial<Record<keyof Wandwerte, string>>;
 
 export type Wandergebnis = { fehler?: string; felder?: Wandfeldfehler };
 
-const GANZZAHL = /^-?\d+$/;
+const MASSFELDER = ["x1_mm", "y1_mm", "x2_mm", "y2_mm", "thickness_mm"] as const;
 
 /**
  * Wand erfassen oder ändern.
@@ -53,7 +56,12 @@ export function WandDialog({
   // einen ``key`` je bearbeitetem Datensatz. React montiert ihn damit neu,
   // und der Anfangszustand ist genau der uebergebene. Ein Effekt, der den
   // Zustand nachtraeglich ueberschreibt, waere eine zweite Wahrheit.
-  const [werte, setWerte] = useState<Wandwerte>(startwerte ?? LEERE_WAND);
+  const masse = useMasse();
+  // Die Felder halten Text in der Anzeigeeinheit; gesendet werden Millimeter.
+  const [werte, setWerte] = useState<Wandwerte>(() =>
+    eingabenAusMm(startwerte ?? LEERE_WAND, MASSFELDER, masse.einheit),
+  );
+  useEinheitenwechsel((von, nach) => setWerte((alt) => eingabenUmrechnen(alt, MASSFELDER, von, nach)));
   const [felder, setFelder] = useState<Wandfeldfehler>({});
   const [fehler, setFehler] = useState<string | null>(null);
   const [laeuft, setLaeuft] = useState(false);
@@ -66,18 +74,14 @@ export function WandDialog({
 
   const absenden = async () => {
     if (laeuft) return;
-    const pflicht: Wandfeldfehler = {};
-    for (const feld of ["x1_mm", "y1_mm", "x2_mm", "y2_mm", "thickness_mm"] as const) {
-      if (!GANZZAHL.test(werte[feld].trim())) {
-        pflicht[feld] = "Bitte eine ganze Zahl in Millimetern angeben.";
-      }
-    }
-    if (
-      Object.keys(pflicht).length === 0 &&
-      werte.x1_mm.trim() === werte.x2_mm.trim() &&
-      werte.y1_mm.trim() === werte.y2_mm.trim()
-    ) {
+    const gelesen = eingabenLesen(werte, MASSFELDER, masse.einheit);
+    const pflicht: Wandfeldfehler = { ...gelesen.fehler };
+    const { x1_mm, y1_mm, x2_mm, y2_mm, thickness_mm } = gelesen.mm;
+    if (Object.keys(pflicht).length === 0 && x1_mm === x2_mm && y1_mm === y2_mm) {
       pflicht.x2_mm = "Start- und Endpunkt müssen sich unterscheiden.";
+    }
+    if (thickness_mm !== undefined && thickness_mm <= 0) {
+      pflicht.thickness_mm = "Die Wandstärke muss größer als 0 sein.";
     }
     if (Object.keys(pflicht).length > 0) {
       setFelder(pflicht);
@@ -86,7 +90,13 @@ export function WandDialog({
 
     setLaeuft(true);
     try {
-      const ergebnis = await onSubmit(werte);
+      const ergebnis = await onSubmit({
+        x1_mm: String(x1_mm),
+        y1_mm: String(y1_mm),
+        x2_mm: String(x2_mm),
+        y2_mm: String(y2_mm),
+        thickness_mm: String(thickness_mm),
+      });
       if (ergebnis === undefined) {
         setFelder({});
         setFehler(null);
@@ -105,7 +115,7 @@ export function WandDialog({
       titel={titel}
       beschreibung={
         "Die Wand verläuft vom Start- zum Endpunkt. Diese Richtung bestimmt, " +
-        "wovon der Abstand einer Öffnung gezählt wird. Alle Maße in Millimetern."
+        `wovon der Abstand einer Öffnung gezählt wird. ${EINGABEHINWEIS[masse.einheit]}`
       }
       onClose={schliessen}
     >
@@ -119,8 +129,8 @@ export function WandDialog({
       >
         <Feld
           id="wand-x1"
-          label="Startpunkt X (mm)"
-          type="number"
+          label={masse.label("Startpunkt X")}
+          inputMode="decimal"
           value={werte.x1_mm}
           required
           disabled={laeuft}
@@ -129,8 +139,8 @@ export function WandDialog({
         />
         <Feld
           id="wand-y1"
-          label="Startpunkt Y (mm)"
-          type="number"
+          label={masse.label("Startpunkt Y")}
+          inputMode="decimal"
           value={werte.y1_mm}
           required
           disabled={laeuft}
@@ -139,8 +149,8 @@ export function WandDialog({
         />
         <Feld
           id="wand-x2"
-          label="Endpunkt X (mm)"
-          type="number"
+          label={masse.label("Endpunkt X")}
+          inputMode="decimal"
           value={werte.x2_mm}
           required
           disabled={laeuft}
@@ -149,8 +159,8 @@ export function WandDialog({
         />
         <Feld
           id="wand-y2"
-          label="Endpunkt Y (mm)"
-          type="number"
+          label={masse.label("Endpunkt Y")}
+          inputMode="decimal"
           value={werte.y2_mm}
           required
           disabled={laeuft}
@@ -159,13 +169,13 @@ export function WandDialog({
         />
         <Feld
           id="wand-staerke"
-          label="Wandstärke (mm)"
-          type="number"
+          label={masse.label("Wandstärke")}
+          inputMode="decimal"
           value={werte.thickness_mm}
           required
           disabled={laeuft}
           fehler={felder.thickness_mm}
-          hinweis="Üblich: 115 mm innen, 365 mm außen."
+          hinweis={`Üblich: ${masse.anzeigen(115)} innen, ${masse.anzeigen(365)} außen.`}
           onChange={(thickness_mm) => setWerte({ ...werte, thickness_mm })}
         />
 

@@ -10,6 +10,7 @@ Benoetigt PostgreSQL (``ELEKTROPLAN_TEST_DATABASE_URL``).
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -217,48 +218,136 @@ def test_kundennummer_ist_nicht_aenderbar(api: TestClient, betrieb: uuid.UUID) -
 # ------------------------------------------------------- Auflisten und Suche
 
 
-def test_liste_ist_paginiert(api: TestClient, betrieb: uuid.UUID) -> None:
+def _seite(api: TestClient, token: str, **params: object) -> Any:
+    response = api.get("/api/v1/customers", headers=auth_headers(token), params=params)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _ids(seite: Any) -> list[str]:
+    return [str(item["id"]) for item in seite["items"]]
+
+
+def test_liste_liefert_nummerierte_seiten(api: TestClient, betrieb: uuid.UUID) -> None:
     token = login(api, ADMIN_EMAIL)
     for index in range(5):
         _create(api, token, name=f"Kunde {index}")
 
-    erste = api.get("/api/v1/customers", headers=auth_headers(token), params={"limit": 2}).json()
+    erste = _seite(api, token, page_size=2)
 
+    assert erste["page"] == 1
+    assert erste["page_size"] == 2
+    assert erste["total_items"] == 5
+    assert erste["total_pages"] == 3
     assert len(erste["items"]) == 2
-    assert erste["has_more"] is True
-    assert erste["next_cursor"]
-
-    zweite = api.get(
-        "/api/v1/customers",
-        headers=auth_headers(token),
-        params={"limit": 2, "cursor": erste["next_cursor"]},
-    ).json()
-
-    assert len(zweite["items"]) == 2
-    erste_ids = {item["id"] for item in erste["items"]}
-    zweite_ids = {item["id"] for item in zweite["items"]}
-    assert erste_ids.isdisjoint(zweite_ids)
+    assert "next_cursor" not in erste
+    assert "has_more" not in erste
 
 
-def test_cursor_liefert_jeden_datensatz_genau_einmal(api: TestClient, betrieb: uuid.UUID) -> None:
+def test_letzte_seite_ist_teilweise_gefuellt(api: TestClient, betrieb: uuid.UUID) -> None:
+    token = login(api, ADMIN_EMAIL)
+    for index in range(5):
+        _create(api, token, name=f"Kunde {index}")
+
+    letzte = _seite(api, token, page_size=2, page=3)
+
+    assert letzte["page"] == 3
+    assert len(letzte["items"]) == 1
+
+
+def test_alle_seiten_liefern_jeden_datensatz_genau_einmal(
+    api: TestClient, betrieb: uuid.UUID
+) -> None:
     token = login(api, ADMIN_EMAIL)
     for index in range(7):
         _create(api, token, name=f"Kunde {index}")
 
-    gesehen: list[str] = []
-    cursor: str | None = None
-    for _ in range(10):
-        params: dict[str, object] = {"limit": 3}
-        if cursor:
-            params["cursor"] = cursor
-        seite = api.get("/api/v1/customers", headers=auth_headers(token), params=params).json()
-        gesehen.extend(item["id"] for item in seite["items"])
-        cursor = seite["next_cursor"]
-        if not seite["has_more"]:
-            break
+    gesehen = [
+        kunde_id
+        for nummer in (1, 2, 3)
+        for kunde_id in _ids(_seite(api, token, page_size=3, page=nummer, sort="name"))
+    ]
 
     assert len(gesehen) == 7
     assert len(set(gesehen)) == 7
+
+
+def test_leere_liste_hat_keine_seiten(api: TestClient, betrieb: uuid.UUID) -> None:
+    token = login(api, ADMIN_EMAIL)
+
+    leer = _seite(api, token, page=4)
+
+    assert leer == {"items": [], "page": 1, "page_size": 25, "total_items": 0, "total_pages": 0}
+
+
+def test_seite_hinter_der_letzten_liefert_die_letzte(api: TestClient, betrieb: uuid.UUID) -> None:
+    """Etwa nach dem Ausblenden des einzigen Eintrags der letzten Seite."""
+    token = login(api, ADMIN_EMAIL)
+    for index in range(3):
+        _create(api, token, name=f"Kunde {index}")
+
+    seite = _seite(api, token, page_size=2, page=99)
+
+    assert seite["page"] == 2
+    assert seite["total_pages"] == 2
+    assert len(seite["items"]) == 1
+
+
+@pytest.mark.parametrize(
+    "params", [{"page": 0}, {"page": -1}, {"page_size": 0}, {"page_size": 101}]
+)
+def test_ungueltige_seitenangaben_sind_eingabefehler(
+    api: TestClient, betrieb: uuid.UUID, params: dict[str, object]
+) -> None:
+    token = login(api, ADMIN_EMAIL)
+
+    response = api.get("/api/v1/customers", headers=auth_headers(token), params=params)
+
+    assert response.status_code == 422
+
+
+def test_gleichnamige_kunden_bleiben_stabil_sortiert(api: TestClient, betrieb: uuid.UUID) -> None:
+    """Gleicher Sortierwert: Die ID entscheidet - ueber Seitengrenzen hinweg."""
+    token = login(api, ADMIN_EMAIL)
+    erwartet = sorted(str(_create(api, token, name="Schmidt")["id"]) for _ in range(5))
+
+    def durchblaettern() -> list[str]:
+        return [
+            kunde_id
+            for nummer in (1, 2, 3)
+            for kunde_id in _ids(_seite(api, token, sort="name", page_size=2, page=nummer))
+        ]
+
+    assert durchblaettern() == erwartet
+    assert durchblaettern() == erwartet
+
+
+def test_gesamtzahl_folgt_dem_suchfilter(api: TestClient, betrieb: uuid.UUID) -> None:
+    token = login(api, ADMIN_EMAIL)
+    for index in range(3):
+        _create(api, token, name=f"Schmidt {index}")
+    _create(api, token, name="Meier")
+
+    seite = _seite(api, token, q="schmidt", page_size=2)
+
+    assert seite["total_items"] == 3
+    assert seite["total_pages"] == 2
+    assert all("Schmidt" in item["name"] for item in seite["items"])
+
+
+def test_ausgeblendete_kunden_zaehlen_nicht(api: TestClient, betrieb: uuid.UUID) -> None:
+    token = login(api, ADMIN_EMAIL)
+    _create(api, token, name="Bleibt")
+    weg = _create(api, token, name="Weg")
+    response = api.delete(
+        f"/api/v1/customers/{weg['id']}", headers={**auth_headers(token), "If-Match": "1"}
+    )
+    assert response.status_code == 204
+
+    seite = _seite(api, token)
+
+    assert seite["total_items"] == 1
+    assert [item["name"] for item in seite["items"]] == ["Bleibt"]
 
 
 def test_sortierung_nach_name(api: TestClient, betrieb: uuid.UUID) -> None:
@@ -297,12 +386,10 @@ def test_filter_nach_art(api: TestClient, betrieb: uuid.UUID) -> None:
     assert [item["name"] for item in body["items"]] == ["Firmenkunde"]
 
 
-def test_ungueltiger_cursor_ist_ein_eingabefehler(api: TestClient, betrieb: uuid.UUID) -> None:
+def test_nicht_ganzzahlige_seite_ist_ein_eingabefehler(api: TestClient, betrieb: uuid.UUID) -> None:
     token = login(api, ADMIN_EMAIL)
 
-    response = api.get(
-        "/api/v1/customers", headers=auth_headers(token), params={"cursor": "kein-cursor"}
-    )
+    response = api.get("/api/v1/customers", headers=auth_headers(token), params={"page": "zwei"})
 
     assert response.status_code == 422
     assert response.json()["type"].endswith("/validation-failed")

@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 
+import { seitenScrollSperren } from "./scrollsperre";
+
 /**
  * Modaler Dialog auf Basis des nativen `<dialog>`-Elements.
  *
@@ -22,6 +24,12 @@ import type { ReactNode } from "react";
  *
  * Auf schmalen Bildschirmen füllt der Dialog per CSS nahezu die ganze
  * Fläche — eine eigene Vollbildvariante ist dafür nicht nötig.
+ *
+ * **Genau ein Scrollbereich.** Der Dialog selbst scrollt nicht; Kopf mit
+ * Titel und Schließen-Knopf steht fest, darunter scrollt allein
+ * `.dialog__inhalt`. Aktionen mit `.dialog__aktionen` bleiben dort unten
+ * angeheftet sichtbar. Solange ein Dialog offen ist, ist die Seite dahinter
+ * gesperrt (`scrollsperre.ts`).
  */
 export function Dialog({
   offen,
@@ -41,13 +49,34 @@ export function Dialog({
 
   // Vor dem Öffnen-Effekt deklariert: Er muss das fokussierte Element
   // festhalten, bevor der Dialog den Fokus übernimmt.
+  //
+  // Gemerkt wird nur ein Element **außerhalb** des Dialogs. Unter StrictMode
+  // läuft dieser Effekt ein zweites Mal, wenn der Fokus schon im Dialog
+  // liegt; ohne diese Prüfung ginge der Fokus beim Schließen auf ein
+  // entferntes Element - und damit auf `body`.
+  //
+  // Zurückgegeben wird der Fokus erst, wenn der Dialog wirklich aus dem DOM
+  // ist: Das simulierte Aushängen unter StrictMode lässt ihn stehen und darf
+  // den Fokus nicht aus dem offenen Dialog ziehen.
+  const vorher = useRef<HTMLElement | null>(null);
   useEffect(() => {
     if (!offen) return;
-    const vorher = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const dialog = element.current;
+    const aktiv = document.activeElement;
+    if (aktiv instanceof HTMLElement && dialog?.contains(aktiv) !== true) {
+      vorher.current = aktiv;
+    }
     return () => {
-      if (vorher !== null && vorher.isConnected) vorher.focus();
+      setTimeout(() => {
+        if (dialog?.isConnected === true) return;
+        const ziel = vorher.current;
+        if (ziel !== null && ziel.isConnected) ziel.focus();
+      }, 0);
     };
   }, [offen]);
+
+  // Die Seite dahinter scrollt nicht mit; referenzgezählt über alle Dialoge.
+  useEffect(() => (offen ? seitenScrollSperren() : undefined), [offen]);
 
   useEffect(() => {
     const dialog = element.current;
@@ -95,18 +124,18 @@ export function Dialog({
         if (event.target === element.current) onClose();
       }}
     >
-      <div className="dialog__inhalt">
-        <div className="dialog__kopf">
-          <h2 id={titelId.current}>{titel}</h2>
-          <button
-            type="button"
-            className="button button--ghost"
-            aria-label="Dialog schließen"
-            onClick={onClose}
-          >
-            ✕
-          </button>
-        </div>
+      <div className="dialog__kopf">
+        <h2 id={titelId.current}>{titel}</h2>
+        <button
+          type="button"
+          className="button button--ghost"
+          aria-label="Dialog schließen"
+          onClick={onClose}
+        >
+          ✕
+        </button>
+      </div>
+      <div className="dialog__inhalt" data-dialog-scrollbereich>
         {beschreibung !== undefined && <p className="muted">{beschreibung}</p>}
         {children}
       </div>

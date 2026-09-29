@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 
 import { alsFormularfehler } from "../../../core/api/fehler";
 import { useAuth } from "../../../core/auth/AuthProvider";
+import { BEHALTEN_LABEL, VERWERFEN_LABEL, useRueckfrage } from "../../../core/ui/Rueckfrage";
 import { useUngespeicherteAenderungen } from "../../../core/ui/ungespeichert";
+import { planAbfrage, planSchluessel } from "../plan";
 import { RaumDialog } from "../RaumDialog";
 import type { Raumwerte } from "../RaumDialog";
 import { Eigenschaften, flaecheText } from "./Eigenschaften";
@@ -17,10 +19,11 @@ import { fehlerAuswerten } from "./speichern";
 import type { Groesse, Viewport } from "./viewport";
 import { START_VIEWPORT, einpassen, grenzenVon, zoomen } from "./viewport";
 import { Werkzeugleiste } from "./Werkzeugleiste";
+import { editorEinordnung, editorTopologie } from "./platzierung";
 import {
   letztenPunktEntfernen,
+  oeffnungEinfuegen,
   oeffnungEntfernen,
-  oeffnungSetzen,
   polygonWaende,
   rechteckWaende,
   wandEntfernen,
@@ -30,9 +33,6 @@ import type { Raumdarstellung } from "./Zeichenflaeche";
 import { ANFANG, editorReducer, fehlerhafteKeys, ungespeichert } from "./zustand";
 import type { Auswahl, Speicherstatus, Werkzeug } from "./zustand";
 
-export function planSchluessel(floorId: string) {
-  return ["electrical", "plan", floorId] as const;
-}
 
 const STATUS_TEXT: Record<Speicherstatus, string> = {
   sauber: "Keine ungespeicherten Änderungen",
@@ -44,8 +44,8 @@ const STATUS_TEXT: Record<Speicherstatus, string> = {
   fehler: "Nicht gespeichert",
 };
 
-const VERWERFEN_FRAGE =
-  "Der aktive Raum hat ungespeicherte Änderungen. Wenn Sie fortfahren, gehen sie verloren. Trotzdem fortfahren?";
+const RAUM_MELDUNG =
+  "Der aktive Raum hat ungespeicherte Änderungen. Wenn Sie fortfahren, gehen sie verloren.";
 
 /** Darstellung eines nicht aktiven Raums - je Serverobjekt einmal berechnet. */
 const darstellungen = new WeakMap<RaumImPlan, Raumdarstellung>();
@@ -91,6 +91,7 @@ export function GrundrissEditor({
 }) {
   const { api } = useAuth();
   const queryClient = useQueryClient();
+  const fragen = useRueckfrage();
   const [zustand, dispatch] = useReducer(editorReducer, ANFANG);
   const [viewport, setViewport] = useState<Viewport>(START_VIEWPORT);
   const groesse = useRef<Groesse>({ breite: 900, hoehe: 560 });
@@ -103,11 +104,7 @@ export function GrundrissEditor({
   const eingepasst = useRef(false);
   const nachLadenAktivieren = useRef<string | null>(null);
 
-  const plan = useQuery({
-    queryKey: planSchluessel(floorId),
-    queryFn: () =>
-      api.get("/api/v1/modules/electrical/floors/{floor_id}/plan", { path: { floor_id: floorId } }),
-  });
+  const plan = useQuery(planAbfrage(api, floorId));
   const raeume: readonly RaumImPlan[] = useMemo(
     () => (Array.isArray(plan.data?.rooms) ? plan.data.rooms : []),
     [plan.data],
@@ -115,7 +112,7 @@ export function GrundrissEditor({
 
   const offen = ungespeichert(zustand);
   const schreibbar = darfSchreiben;
-  useUngespeicherteAenderungen(offen);
+  useUngespeicherteAenderungen(offen, RAUM_MELDUNG);
   useEffect(() => onUngespeichert(offen), [offen, onUngespeichert]);
 
   // Neu geladener Serverstand: ersetzt nur einen unveränderten Entwurf.
@@ -181,25 +178,49 @@ export function GrundrissEditor({
 
   const fehlerKeys = useMemo(() => fehlerhafteKeys(zustand), [zustand]);
 
+  // Gemeinsame Wandtopologie des gezeigten Stands: aktiver Raum aus dem
+  // Entwurf, alle anderen vom Server - dieselbe Ableitung wie in der
+  // 3D-Ansicht. Daraus: welche Öffnung welche zwei Räume verbindet.
+  const topologie = useMemo(() => editorTopologie(floorId, darstellung), [floorId, darstellung]);
+  const einordnung = useMemo(() => editorEinordnung(topologie), [topologie]);
+  const raumName = useCallback(
+    (raumId: string) => {
+      const raum = darstellung.find((r) => r.id === raumId);
+      return raum === undefined ? "unbekannter Raum" : raum.nummer !== null ? `${raum.nummer} ${raum.name}` : raum.name;
+    },
+    [darstellung],
+  );
+
   // -------------------------------------------------------------- Aktionen
 
   const aendern = useCallback((entwurf: Raumentwurf) => dispatch({ typ: "aendern", entwurf }), []);
 
   /**
    * Vor dem Wechsel zu einem anderen Raum: Ungespeicherte Änderungen werden
-   * nie still verworfen. Der Benutzer entscheidet ausdrücklich, ob jetzt
-   * gespeichert wird; lehnt er ab, bleibt er beim bisherigen Raum.
+   * nie still verworfen. Der Benutzer entscheidet ausdrücklich: speichern
+   * und wechseln, verwerfen und wechseln oder beim Raum bleiben.
    */
   const vorRaumwechsel = async (): Promise<boolean> => {
     if (!offen) return true;
     const name = zustand.basis?.raum.name ?? "";
-    if (!window.confirm(`Der Raum „${name}“ hat ungespeicherte Änderungen.
-
-OK: jetzt speichern und wechseln.
-Abbrechen: beim Raum bleiben.`)) {
-      return false;
+    const antwort = await fragen({
+      titel: "Raum wechseln?",
+      text: (
+        <p>
+          Der Raum „{name}“ hat ungespeicherte Änderungen. Sie können sie vor dem Wechsel speichern
+          oder verwerfen.
+        </p>
+      ),
+      alternativeLabel: "Speichern und wechseln",
+      bestaetigenLabel: VERWERFEN_LABEL,
+      abbrechenLabel: "Beim Raum bleiben",
+    });
+    if (antwort === "alternative") return speichern();
+    if (antwort === "bestaetigt") {
+      dispatch({ typ: "verwerfen" });
+      return true;
     }
-    return speichern();
+    return false;
   };
 
   const raumAktivieren = async (raumId: string, auswahl: Auswahl): Promise<boolean> => {
@@ -239,7 +260,8 @@ Abbrechen: beim Raum bleiben.`)) {
     else neuenRaumVorbereiten(ergebnis.wert);
   };
 
-  const oeffnungPlatzieren = async (raumId: string, wandId: string, punkt: Punkt) => {
+  /** Setzt eine neue Öffnung an einem bereits geprüften Abstand (`platzierung.ts`). */
+  const oeffnungPlatzieren = async (raumId: string, wandId: string, offsetMm: number) => {
     let entwurf = zustand.entwurf;
     if (entwurf === null || entwurf.roomId !== raumId) {
       const raum = raeume.find((r) => r.id === raumId);
@@ -248,13 +270,9 @@ Abbrechen: beim Raum bleiben.`)) {
       entwurf = basisAus(raum).entwurf;
     }
     const id = neueId();
-    const ergebnis = oeffnungSetzen(entwurf, wandId, oeffnungsart, punkt, id, { rasterMm, fangen: fangAktiv });
-    if ("fehler" in ergebnis) {
-      setHinweis(ergebnis.fehler);
-      return;
-    }
     setHinweis(null);
-    dispatch({ typ: "aendern", entwurf: ergebnis.wert });
+    // Genau eine neue Öffnung an genau einer Wand - ihr Nachbarraum ist abgeleitet.
+    dispatch({ typ: "aendern", entwurf: oeffnungEinfuegen(entwurf, wandId, oeffnungsart, offsetMm, id) });
     dispatch({ typ: "auswaehlen", auswahl: { art: "oeffnung", raumId, wandId, oeffnungId: id } });
   };
 
@@ -309,9 +327,32 @@ Abbrechen: beim Raum bleiben.`)) {
     else dispatch({ typ: "raum-aktivieren", raum });
   };
 
-  const verwerfen = () => {
-    if (offen && !window.confirm(VERWERFEN_FRAGE)) return;
+  const verwerfen = async () => {
+    if (offen) {
+      const antwort = await fragen({
+        titel: "Änderungen verwerfen?",
+        text: <p>{RAUM_MELDUNG}</p>,
+        bestaetigenLabel: "Änderungen verwerfen",
+        abbrechenLabel: BEHALTEN_LABEL,
+      });
+      if (antwort !== "bestaetigt") return;
+    }
     dispatch({ typ: "verwerfen" });
+  };
+
+  const serverstandBestaetigen = async () => {
+    const antwort = await fragen({
+      titel: "Serverstand laden?",
+      text: (
+        <p>
+          Der aktuelle Serverstand ersetzt Ihren lokalen Entwurf dieses Raums. Ihre lokalen
+          Änderungen gehen dabei verloren.
+        </p>
+      ),
+      bestaetigenLabel: "Lokale Änderungen verwerfen und Serverstand laden",
+      abbrechenLabel: BEHALTEN_LABEL,
+    });
+    if (antwort === "bestaetigt") await serverstandLaden();
   };
 
   const raumAnlegen = async (werte: Raumwerte) => {
@@ -540,7 +581,7 @@ Abbrechen: beim Raum bleiben.`)) {
             >
               Speichern
             </button>
-            <button type="button" className="button button--ghost" disabled={!offen || status === "speichert"} onClick={verwerfen}>
+            <button type="button" className="button button--ghost" disabled={!offen || status === "speichert"} onClick={() => void verwerfen()}>
               Änderungen verwerfen
             </button>
           </span>
@@ -574,9 +615,13 @@ Abbrechen: beim Raum bleiben.`)) {
           onWaehlen={waehlen}
           onPolygonFertig={polygonFertig}
           onRechteckFertig={rechteckFertig}
-          onOeffnungSetzen={(raumId, wandId, punkt) => void oeffnungPlatzieren(raumId, wandId, punkt)}
+          onOeffnungSetzen={(raumId, wandId, offsetMm) => void oeffnungPlatzieren(raumId, wandId, offsetMm)}
+          onHinweis={setHinweis}
           oeffnungsart={oeffnungsart}
           geschossLabel={geschossLabel}
+          topologie={topologie}
+          einordnung={einordnung}
+          raumName={raumName}
         />
         </div>
         {/* Rückmeldungen des Servers stehen in der Seitenleiste: Die
@@ -597,9 +642,7 @@ Abbrechen: beim Raum bleiben.`)) {
                 <button
                   type="button"
                   className="button button--ghost"
-                  onClick={() => {
-                    if (window.confirm("Den aktuellen Serverstand laden und Ihre lokalen Änderungen verwerfen?")) void serverstandLaden();
-                  }}
+                  onClick={() => void serverstandBestaetigen()}
                 >
                   Serverstand laden (lokale Änderungen verwerfen)
                 </button>
@@ -618,6 +661,9 @@ Abbrechen: beim Raum bleiben.`)) {
           onWaehlen={waehlen}
           onRaumBearbeiten={() => setRaumdaten(true)}
           neueId={neueId}
+          einordnung={einordnung}
+          topologie={topologie}
+          raumName={raumName}
         />
         </div>
       </div>
@@ -627,9 +673,10 @@ Abbrechen: beim Raum bleiben.`)) {
         <ul>
           <li>Rechteckraum (R): erste Ecke klicken, gegenüberliegende Ecke klicken, Namen vergeben.</li>
           <li>Polygonraum (P): Punkte nacheinander klicken; Klick auf den Startpunkt, Doppelklick oder Enter schließt. Rücktaste oder Strg+Z entfernt den letzten Punkt, Escape bricht ab.</li>
-          <li>Öffnung (O): Art wählen, dann auf die Wand klicken. Verschieben: im Auswahlwerkzeug ziehen.</li>
+          <li>Öffnung (O): Art wählen und über eine Wand fahren – die Vorschau zeigt Lage und verbundene Räume; ein Klick setzt die Öffnung (Fang 5 cm, Alt: millimetergenau). Eine vorhandene Öffnung lässt sich entlang ihrer Wand ziehen; Escape bricht das Ziehen ab. Genaue Werte in der Seitenleiste.</li>
+          <li>Eine Öffnung auf einer gemeinsamen Wand wird nur einmal gespeichert und gilt für beide Räume; im Nachbarraum erscheint sie gestrichelt als abgeleitete Darstellung.</li>
           <li>Eckpunkt ziehen verschiebt beide angrenzenden Wände. Alt beim Ziehen setzt den Fang aus.</li>
-          <li>Mausrad zoomt um den Zeiger, mittlere Maustaste oder H verschiebt die Ansicht, F passt ein.</li>
+          <li>Mausrad zoomt um den Zeiger, mittlere Maustaste oder H verschiebt die Ansicht, F setzt die Ansicht zurück (ganzer Grundriss).</li>
           <li>Strg+Z / Strg+Y (oder Strg+Umschalt+Z): Rückgängig / Wiederholen · Strg+S: Speichern · Entf: Auswahl entfernen.</li>
           <li>Änderungen bleiben lokal, bis „Speichern“ gedrückt wird. Die Ansicht „Tabellen &amp; Details“ bietet dieselben Daten als Formular.</li>
         </ul>

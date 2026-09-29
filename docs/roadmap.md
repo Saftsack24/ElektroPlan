@@ -1,6 +1,6 @@
 # Roadmap
 
-Stand: 2026-09-27 (nach Task 0016 — Phase 4.2)
+Stand: 2026-09-28 (nach Task 0019 — Bedienungsnacharbeit 2 / Phase 4b.2)
 Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 
 ---
@@ -21,7 +21,9 @@ Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 | 4a | 2D-Editor | **DONE** | 3 |
 | 4a.1 | Navigationsschutz und Testdatenbank-Sicherheit | **DONE** | 4a |
 | 4.2 | Benutzerverwaltung, Rollenvergabe, Startseite | **DONE** | 4a.1 |
-| 4b | 3D-Ansicht | NOT STARTED | 4a |
+| 4b | 3D-Ansicht | **DONE** (Checkpoint 4b/4b.1/4b.2 committet) | 4a |
+| 4b.1 | Bedienungsnacharbeit 1 (Listen, Kundenfilter, Maßeinheit, Rückfragen) | **DONE** (Checkpoint 4b/4b.1/4b.2 committet) | 4b |
+| 4b.2 | Bedienungsnacharbeit 2 (Tür per Maus, gemeinsame Öffnungen, Teilwände) | **DONE** (Checkpoint 4b/4b.1/4b.2 committet) | 4b.1 |
 | 5 | Electrical Devices | NOT STARTED | 4a |
 | 6 | Circuits & Cable Routes | NOT STARTED | 5 |
 | 7 | Materials | NOT STARTED | 6 |
@@ -265,12 +267,50 @@ letzte Administrator ist auch parallel geschützt – automatisiert und im Brows
 
 ---
 
-## Phase 4b — 3D-Ansicht · NOT STARTED
+## Phase 4b — 3D-Ansicht · DONE (2026-09-27, mit dem gemeinsamen Checkpoint 4b/4b.1/4b.2 committet)
 
 Three.js: extrudierte Räume, Wände, Öffnungen, Orbit/Zoom/Pan, Auswahl.
-**Keine Geometriebearbeitung in 3D.**
+**Keine Geometriebearbeitung in 3D.** Die 3D-Ansicht ist vollständig abgeleitet und
+schreibgeschützt; die 2D-Ansicht bleibt die einzige Autorenfläche.
 
-**Exit:** Der Grundriss aus 4a ist in 3D navigierbar; Szene und React-State sind entkoppelt.
+Entscheidungen T8 (Wandhöhe/Wandtyp) und T9 (deckungsgleiche Wände):
+[ADR 0016](decisions/0016-derived-3d-view-wall-height-and-coincident-walls.md).
+Ergebnis: [`docs/task-history.md`](task-history.md), Task 0017. **Keine Migration**, keine
+API-Änderung.
+
+**Exit — erfüllt:**
+
+| Kriterium | Nachweis |
+|---|---|
+| Der Grundriss aus 4a ist in 3D navigierbar | EFH aus dem Messlauf 4a (7 Räume, 30 Wände, 15 Öffnungen) im Browser mit echtem WebGL 2 gedreht, gezoomt, verschoben, eingepasst, ausgewählt; Produktionsbuild: Drehen/Zoomen Median 1,8 ms je Bild |
+| Szene und React-State sind entkoppelt | Test: Kamerabewegung über 40 Bilder ohne React-Commit; Szene einmal je Mount, unter `StrictMode` genau eine; Browser: nach 10 Wechseln 2D ↔ 3D immer genau ein Canvas, im Ruhezustand keine Bildanforderung |
+
+**Grenze, ausdrücklich:** Im realen Grundriss aus 4a sind nur 4 Wände exakt gemeinsam;
+7 Paare überlagern sich teilweise und werden nach T9 nicht zusammengeführt (gemeldet).
+Neubewertung einer physischen Wandidentität (T10) vor Phase 6.
+
+---
+
+## Phase 4b.1 — Bedienungsnacharbeit 1 · DONE (2026-09-28, mit dem gemeinsamen Checkpoint committet)
+
+Punkte 1–8 und 10–11 der manuellen Abnahme nach Phase 4b: nummerierte Seiten für Kunden
+und Projekte ([ADR 0017](decisions/0017-numbered-pages-for-customer-and-project-lists.md)),
+getrennter Kundenfilter, Projekte auf der Kundenseite (`status_group`), Adressvorschlag
+mit Ländercode, stabiler Kundenvorschlag, ein Dialog-Scrollbereich, Feldzeile,
+persönliche Maßeinheit (Standard cm, gespeichert weiter in mm), eigener
+Bestätigungsdialog, „Ansicht zurücksetzen". Keine Migration. Ergebnis:
+[`docs/task-history.md`](task-history.md), Task 0018.
+
+## Phase 4b.2 — Bedienungsnacharbeit 2 · DONE (2026-09-28, mit dem gemeinsamen Checkpoint committet)
+
+Punkt 9 der Abnahme nach 4b. Exakt kollineare Teilüberlappungen werden in atomare
+Wandabschnitte zerlegt – gemeinsam für 2D und 3D (`modules/electrical/topologie/`); im
+realen Grundriss aus 4a verschwinden damit alle 7 doppelten Wandkörper. Eine Öffnung ist
+genau eine gespeicherte Zeile; liegt sie ganz in einem gemeinsamen Abschnitt, verbindet
+sie abgeleitet beide Räume (ADR 0016, „Präzisierung 4b.2"). Türen werden im 2D-Editor
+direkt per Maus platziert und entlang ihrer Wand verschoben (Vorschau, 5-cm-Fang, Escape).
+Maßeinheit je Benutzer. Keine Migration, keine API-Änderung. Ergebnis:
+[`docs/task-history.md`](task-history.md), Task 0019. T10 bleibt vor Phase 6 offen.
 
 ---
 

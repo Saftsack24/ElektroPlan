@@ -5,6 +5,129 @@ Einträge entstehen nach relevanten Änderungen, nicht nach jedem Commit.
 
 ---
 
+## 2026-09-28 — Bedienungsnacharbeit 2: gemeinsame Wandabschnitte, Tür per Maus
+
+Keine Migration, **keine** API- oder Backendänderung. Mit dem gemeinsamen Checkpoint 4b/4b.1/4b.2 committet.
+
+### Added
+
+- 2D-Editor: **Türen, Fenster und Durchgänge direkt mit der Maus platzieren** – Vorschau
+  auf der Wand mit verbundenen Räumen, 5-cm-Fang (Alt: millimetergenau), Begrenzung auf
+  Wand und Wandabschnitt, Kollisionsprüfung auch gegen die Gegenseite, neue Öffnung sofort
+  ausgewählt und numerisch nachbearbeitbar.
+- 2D-Editor: **Öffnung per Maus entlang ihrer Wand verschieben**; Escape bricht ab,
+  Hinweis beim Wechsel zwischen gemeinsamem und nicht geteiltem Wandstück.
+- **Abgeleitete Raumverbindung:** Eine einmal gespeicherte Öffnung auf einer gemeinsamen
+  Wand gilt für beide Räume – „Verbindet „A" und „B"" in Seitenleiste, 3D-Auswahl und
+  Tooltip; im Nachbarraum gestrichelt als abgeleitet, Klick führt zur gespeicherten Öffnung.
+- Gemeinsame reine Wandtopologie für 2D und 3D (`modules/electrical/topologie/`).
+
+### Changed
+
+- **T9 präzisiert (ADR 0016):** exakt kollineare Teilüberlappungen werden in atomare
+  Abschnitte zerlegt und in 3D je Abschnitt einmal extrudiert; keine doppelten Wandkörper
+  mehr (realer 4a-Grundriss: 23 statt 26 Körper, 0 statt 7 Überlagerungshinweise).
+- 3D: Verlängerung der Wandkörper nur an freien Enden (kein Flimmern an Stößen).
+- 3D-Hinweise: „nur auf einer Raumseite erfasst" und „Wände überlagern sich teilweise"
+  entfallen; neu: Dublette, Grenze zweier Nachbarn, nur teilweise gemeinsam, nicht eindeutig.
+- **Maßeinheit je Benutzer** (`elektroplan.masseinheit.<user_id>`) statt je Browser;
+  der alte Schlüssel wird einmalig übernommen und entfernt.
+- 2D: Öffnungen werden in einer eigenen Ebene über allen Wänden gezeichnet (vorher konnte
+  die Wand eines später gezeichneten Nachbarraums eine Tür überdecken).
+
+### Removed
+
+- Untracktes Werkzeugartefakt `.claude/launch.json` (Vorschaukonfiguration mit falschem
+  Port 3000) aus dem Arbeitsbaum entfernt.
+
+---
+
+## 2026-09-28 — Bedienungsnacharbeit 1: Kunden, Projekte, Seiten, Maßeinheit, Rückfragen
+
+Keine Migration. **API-Änderung** an zwei Listen (ADR 0017). Mit dem gemeinsamen Checkpoint 4b/4b.1/4b.2 committet.
+
+### Changed (API)
+
+- `GET /customers` und `GET /projects`: **nummerierte Seiten** statt Keyset-Cursor.
+  Anfrage `page` (ab 1), `page_size` (Standard 25, max. 100); Antwort `items`, `page`,
+  `page_size`, `total_items`, `total_pages`. `limit`, `cursor`, `next_cursor` und
+  `has_more` entfallen dort. Seite hinter der letzten → letzte vorhandene Seite.
+- `GET /projects`: Freitextsuche `q` nur noch über Bezeichnung, Projektnummer und
+  Baustellenort – nicht mehr über den Kundennamen. Nach dem Kunden filtert
+  `customer_id` (mandantensicher, fremde ID → leere Liste).
+- `GET /projects`: neuer Filter `status_group` = `current` (Entwurf + in Bearbeitung)
+  oder `closed` (abgeschlossen + archiviert); zusammen mit `status` → `422`.
+
+### Added
+
+- Projektübersicht: eigener **Kundenfilter** (serverseitige Suche nach Name, Nummer,
+  Ort; Tastatur; entfernbar). Anonymisierte Kunden bleiben als Filter auffindbar.
+- Kundendetail: Abschnitt **„Projekte dieses Kunden"** – laufende Projekte, umschaltbar
+  auf abgeschlossene und archivierte; nur mit `project.record.read`.
+- **Nummerierte Seitennavigation** für Kunden, Projekte und Kundenprojekte.
+- Projektformular: **Adressvorschlag** aus der Rechnungsadresse des Kunden mit
+  Kennzeichnung „Vom Kunden übernommen", Schutz manueller Eingaben, Aktion
+  „Kundenadresse übernehmen", sichtbares Feld **Ländercode**.
+- **Persönliche Maßeinheit** (Standard Zentimeter, wahlweise Millimeter) unter
+  „Einstellungen", lokal im Browser; wirkt sofort in Formularen, Tabellen, 2D und 3D.
+  Gespeichert und übertragen wird weiter in ganzen Millimetern.
+- **Eigener Bestätigungsdialog** für ungespeicherte Änderungen (Ansichts-, Geschoss-,
+  Raum-, Tabwechsel, Serverstand laden, interne Navigation, Abmelden). Beim Raumwechsel
+  zusätzlich „Speichern und wechseln".
+
+### Changed
+
+- Dialoge haben genau einen Scrollbereich; die Seite dahinter ist gesperrt.
+- Kundenvorschläge schweben am Feld und verändern die Dialoghöhe nicht.
+- Gebäude und Geschoss stehen in einer oben bündigen Feldzeile.
+- 2D- und 3D-Knopf „Ansicht einpassen" heißt jetzt **„Ansicht zurücksetzen"**, mit
+  Tooltip.
+
+### Removed
+
+- „Weitere laden" und die Bausteine `useCursorListe`, `WeitereLaden`, `eintraegeAus`.
+- `window.confirm` für ungespeicherte Änderungen. Browsernativ bleibt nur
+  `beforeunload` (Neuladen, Tab schließen, Website verlassen).
+
+---
+
+## 2026-09-27 — Phase 4b: abgeleitete 3D-Ansicht des Grundrisses
+
+Keine Migration, keine API-Änderung. Entscheidung: ADR 0016 (T8, T9).
+
+### Added
+
+- **3D-Ansicht** im Tab „Räume & Grundriss" neben „2D-Editor" und „Tabellen & Details":
+  Böden gültiger Raumkonturen (auch konkav), Wände in Stärke und effektiver Raumhöhe,
+  Öffnungen als echte Aussparungen, gemeinsame Wände einmal und hell, nicht geteilte
+  Wände grau-blau; keine Decke. Nur lesend, auch für archivierte Projekte.
+- Bedienung: Drehen, Zoomen, Verschieben (Maus, Pfeiltasten, Touch), „Ansicht
+  einpassen", „Isometrische Ansicht", „Draufsicht", „Näher", „Weiter weg"; Auswahl von
+  Raum, Wand und Öffnung per Klick, Escape hebt auf; Seitenleiste mit Fachdaten.
+- **Hinweise zur Darstellung**: einseitig oder widersprüchlich erfasste Öffnungen,
+  abweichende Öffnungsart, Wandstärke oder Raumhöhe, Mehrfachwände, teilweise
+  überlagerte Wände — samt der angewandten Darstellungsregel. „Nicht dargestellt" nennt
+  Räume ohne geschlossene Kontur.
+- Zustände: Laden, Ladefehler, leeres Geschoss, nichts darstellbar, WebGL nicht
+  verfügbar, WebGL-Kontext verloren, 3D-Modul nicht ladbar.
+- Abhängigkeit **`three` 0.186.1** (Planner), **`@types/three` 0.186.0** (Entwicklung).
+
+### Changed
+
+- Ansichtsknopf „Grafischer Editor" heißt jetzt „2D-Editor". Gespeicherte Ansichtswahl
+  kennt zusätzlich `3d`; unbekannte Werte fallen auf den 2D-Editor.
+- Der Planungs-Query-Key liegt in `modules/electrical/plan.ts` (gemeinsam für 2D und 3D),
+  nicht mehr im Editor.
+- Vite: `build.chunkSizeWarningLimit` 650 kB wegen des lazy geladenen Three.js-Chunks.
+
+### Decided
+
+- **T8:** Wandhöhe = effektive Raumhöhe; kein Wandtyp; innen/außen nur abgeleitet.
+- **T9:** deckungsgleiche Wände nur in der Darstellung gruppiert, nur bei exakt gleichen
+  ganzzahligen Endpunkten; keine persistente Wandentität, keine Migration.
+
+---
+
 ## 2026-09-27 — Phase 4.2: Benutzerverwaltung, Rollenvergabe und Startseite
 
 Migration `0005_member_administration`. Entscheidung: ADR 0015.

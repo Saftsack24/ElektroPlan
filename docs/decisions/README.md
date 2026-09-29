@@ -23,6 +23,8 @@ Format: Context · Problem · Considered Options · Decision · Consequences
 | [0013](0013-room-contour-as-ordered-wall-segments.md) | Raumkontur als geordnete Wandsegmente | accepted | 2026-09-26 |
 | [0014](0014-2d-editor-svg-and-atomic-contour.md) | 2D-Editor: SVG, lokaler Entwurf, atomares Konturspeichern | accepted | 2026-09-26 |
 | [0015](0015-membership-administration-and-invitations.md) | Mitgliedschaftsverwaltung, Einladungen, letzter Administrator | accepted | 2026-09-27 |
+| [0016](0016-derived-3d-view-wall-height-and-coincident-walls.md) | Abgeleitete 3D-Ansicht: Wandhöhe/Wandlage (T8), deckungsgleiche Wände (T9); präzisiert 4b.2: exakte Teilwände, eine Öffnung als Quelle | accepted | 2026-09-27, präzisiert 2026-09-28 |
+| [0017](0017-numbered-pages-for-customer-and-project-lists.md) | Nummerierte Seiten für Kunden- und Projektlisten | accepted | 2026-09-28 |
 
 ## Wann ein ADR nötig ist
 

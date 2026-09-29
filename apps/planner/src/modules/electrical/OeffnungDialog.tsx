@@ -1,10 +1,13 @@
 import { useState } from "react";
 
 import { Dialog } from "../../core/ui/Dialog";
+import { EINGABEHINWEIS, eingabenAusMm, eingabenLesen, eingabenUmrechnen } from "../../core/masse";
 import { Auswahl, Feld } from "../../core/ui/Feld";
+import { useEinheitenwechsel, useMasse } from "../../core/ui/masseinheit";
 import { OEFFNUNGSARTEN } from "./texte";
 import type { Oeffnungsart } from "./texte";
 
+/** Maße als ganze Millimeter in Textform - in beide Richtungen. */
 export type Oeffnungswerte = {
   kind: Oeffnungsart;
   offset_mm: string;
@@ -25,7 +28,7 @@ export type Oeffnungsfeldfehler = Partial<Record<keyof Oeffnungswerte, string>>;
 
 export type Oeffnungsergebnis = { fehler?: string; felder?: Oeffnungsfeldfehler };
 
-const NICHT_NEGATIV = /^\d+$/;
+const MASSFELDER = ["offset_mm", "width_mm", "height_mm", "sill_height_mm"] as const;
 
 /**
  * Tür, Fenster oder Durchgang in einer Wand.
@@ -54,7 +57,12 @@ export function OeffnungDialog({
   // einen ``key`` je bearbeitetem Datensatz. React montiert ihn damit neu,
   // und der Anfangszustand ist genau der uebergebene. Ein Effekt, der den
   // Zustand nachtraeglich ueberschreibt, waere eine zweite Wahrheit.
-  const [werte, setWerte] = useState<Oeffnungswerte>(startwerte ?? LEERE_OEFFNUNG);
+  const masse = useMasse();
+  // Die Felder halten Text in der Anzeigeeinheit; gesendet werden Millimeter.
+  const [werte, setWerte] = useState<Oeffnungswerte>(() =>
+    eingabenAusMm(startwerte ?? LEERE_OEFFNUNG, MASSFELDER, masse.einheit),
+  );
+  useEinheitenwechsel((von, nach) => setWerte((alt) => eingabenUmrechnen(alt, MASSFELDER, von, nach)));
   const [felder, setFelder] = useState<Oeffnungsfeldfehler>({});
   const [fehler, setFehler] = useState<string | null>(null);
   const [laeuft, setLaeuft] = useState(false);
@@ -67,19 +75,18 @@ export function OeffnungDialog({
 
   const absenden = async () => {
     if (laeuft) return;
-    const pflicht: Oeffnungsfeldfehler = {};
-    for (const feld of ["offset_mm", "width_mm", "height_mm", "sill_height_mm"] as const) {
-      if (!NICHT_NEGATIV.test(werte[feld].trim())) {
-        pflicht[feld] = "Bitte eine ganze Zahl ab 0 angeben.";
-      }
+    const gelesen = eingabenLesen(werte, MASSFELDER, masse.einheit);
+    const pflicht: Oeffnungsfeldfehler = { ...gelesen.fehler };
+    for (const feld of MASSFELDER) {
+      const wert = gelesen.mm[feld];
+      if (wert !== undefined && wert < 0) pflicht[feld] = "Der Wert darf nicht negativ sein.";
     }
+    const { offset_mm: abstand = 0, width_mm: breite = 0 } = gelesen.mm;
     if (Object.keys(pflicht).length === 0) {
-      const abstand = Number.parseInt(werte.offset_mm, 10);
-      const breite = Number.parseInt(werte.width_mm, 10);
       if (breite <= 0) {
         pflicht.width_mm = "Die Breite muss größer als 0 sein.";
       } else if (abstand + breite > wandlaenge_mm) {
-        pflicht.width_mm = `Die Öffnung muss in die ${wandlaenge_mm} mm lange Wand passen.`;
+        pflicht.width_mm = `Die Öffnung muss in die ${masse.anzeigen(wandlaenge_mm)} lange Wand passen.`;
       }
     }
     if (Object.keys(pflicht).length > 0) {
@@ -89,7 +96,13 @@ export function OeffnungDialog({
 
     setLaeuft(true);
     try {
-      const ergebnis = await onSubmit(werte);
+      const ergebnis = await onSubmit({
+        kind: werte.kind,
+        offset_mm: String(gelesen.mm.offset_mm),
+        width_mm: String(gelesen.mm.width_mm),
+        height_mm: String(gelesen.mm.height_mm),
+        sill_height_mm: String(gelesen.mm.sill_height_mm),
+      });
       if (ergebnis === undefined) {
         setFelder({});
         setFehler(null);
@@ -106,7 +119,7 @@ export function OeffnungDialog({
     <Dialog
       offen={offen}
       titel={titel}
-      beschreibung={`Abstand vom Wandanfang. Die Wand ist ${wandlaenge_mm} mm lang.`}
+      beschreibung={`Die Wand ist ${masse.anzeigen(wandlaenge_mm)} lang. ${EINGABEHINWEIS[masse.einheit]}`}
       onClose={schliessen}
     >
       <form
@@ -141,8 +154,8 @@ export function OeffnungDialog({
         </Auswahl>
         <Feld
           id="oeffnung-abstand"
-          label="Abstand vom Wandanfang (mm)"
-          type="number"
+          label={masse.label("Abstand vom Wandanfang")}
+          inputMode="decimal"
           value={werte.offset_mm}
           required
           disabled={laeuft}
@@ -151,8 +164,8 @@ export function OeffnungDialog({
         />
         <Feld
           id="oeffnung-breite"
-          label="Breite (mm)"
-          type="number"
+          label={masse.label("Breite")}
+          inputMode="decimal"
           value={werte.width_mm}
           required
           disabled={laeuft}
@@ -161,8 +174,8 @@ export function OeffnungDialog({
         />
         <Feld
           id="oeffnung-hoehe"
-          label="Höhe (mm)"
-          type="number"
+          label={masse.label("Höhe")}
+          inputMode="decimal"
           value={werte.height_mm}
           required
           disabled={laeuft}
@@ -172,8 +185,8 @@ export function OeffnungDialog({
         {werte.kind === "window" && (
           <Feld
             id="oeffnung-bruestung"
-            label="Brüstungshöhe (mm)"
-            type="number"
+            label={masse.label("Brüstungshöhe")}
+            inputMode="decimal"
             value={werte.sill_height_mm}
             required
             disabled={laeuft}

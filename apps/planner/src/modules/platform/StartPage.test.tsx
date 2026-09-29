@@ -65,7 +65,7 @@ function zeigen() {
 
 function antworten({ projekte = [PROJEKT], einladungen = 0 } = {}) {
   api.get.mockImplementation((pfad: string) => {
-    if (pfad === "/api/v1/projects") return Promise.resolve({ items: projekte, has_more: false });
+    if (pfad === "/api/v1/projects") return Promise.resolve({ items: projekte, page: 1, page_size: 5, total_items: projekte.length, total_pages: 1 });
     if (pfad === "/api/v1/members") {
       return Promise.resolve({
         items: Array.from({ length: einladungen }, (_, n) => ({
@@ -120,8 +120,8 @@ describe("Startseite", () => {
       .map(([, optionen]) => (optionen as { query: unknown }).query);
     expect(projektabfragen).toEqual(
       expect.arrayContaining([
-        { sort: "updated_at", limit: 5 },
-        { sort: "updated_at", limit: 5, status: "active" },
+        { sort: "updated_at", page_size: 5 },
+        { sort: "updated_at", page_size: 5, status: "active" },
       ]),
     );
   });
