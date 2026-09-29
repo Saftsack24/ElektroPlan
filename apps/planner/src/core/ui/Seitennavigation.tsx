@@ -1,4 +1,8 @@
 import { seitenfolge } from "./seitenfolge";
+import { KNOPF_GRUND } from "./stil";
+
+const SEITENKNOPF = `${KNOPF_GRUND} min-w-[2.4em] px-2 py-1.5 border-line bg-transparent text-fg`;
+const SEITENKNOPF_AKTIV = `${KNOPF_GRUND} min-w-[2.4em] px-2 py-1.5 border-transparent bg-accent font-semibold text-on-accent`;
 
 /**
  * Nummerierte Seitennavigation für serverseitig gezählte Listen (ADR 0017).
@@ -30,7 +34,7 @@ export function Seitennavigation({
   const anzahl =
     gesamtEintraege === 1 ? "1 Eintrag" : `${gesamtEintraege.toLocaleString("de-DE")} Einträge`;
   if (gesamtSeiten <= 1) {
-    return gesamtEintraege > 0 ? <p className="muted seiten__info">{anzahl}</p> : null;
+    return gesamtEintraege > 0 ? <p className="m-0 text-muted">{anzahl}</p> : null;
   }
 
   const gehe = (ziel: number) => {
@@ -40,32 +44,32 @@ export function Seitennavigation({
   const letzte = seite >= gesamtSeiten;
 
   return (
-    <nav className="seiten" aria-label={bezeichnung}>
-      <p className="muted seiten__info" aria-live="polite">
+    <nav className="mt-3 flex flex-wrap items-center justify-between gap-2" aria-label={bezeichnung}>
+      <p className="m-0 text-muted" aria-live="polite">
         Seite {seite} von {gesamtSeiten} · {anzahl}
         {wechselt ? " · wird geladen …" : ""}
       </p>
-      <ul className="seiten__liste">
+      <ul className="m-0 flex list-none flex-wrap items-center gap-1 p-0">
         <li>
-          <button type="button" className="button button--ghost seiten__knopf" disabled={erste} onClick={() => gehe(1)} aria-label="Erste Seite">
+          <button type="button" className={SEITENKNOPF} disabled={erste} onClick={() => gehe(1)} aria-label="Erste Seite">
             «
           </button>
         </li>
         <li>
-          <button type="button" className="button button--ghost seiten__knopf" disabled={erste} onClick={() => gehe(seite - 1)} aria-label="Vorige Seite">
+          <button type="button" className={SEITENKNOPF} disabled={erste} onClick={() => gehe(seite - 1)} aria-label="Vorige Seite">
             ‹
           </button>
         </li>
         {seitenfolge(seite, gesamtSeiten).map((position, index) =>
           position === "…" ? (
-            <li key={`luecke-${index}`} className="seiten__luecke" aria-hidden="true">
+            <li key={`luecke-${index}`} className="px-1 text-muted" aria-hidden="true">
               …
             </li>
           ) : (
             <li key={position}>
               <button
                 type="button"
-                className={position === seite ? "button seiten__knopf seiten__knopf--aktiv" : "button button--ghost seiten__knopf"}
+                className={position === seite ? SEITENKNOPF_AKTIV : SEITENKNOPF}
                 aria-current={position === seite ? "page" : undefined}
                 aria-label={`Seite ${position}`}
                 onClick={() => gehe(position)}
@@ -76,12 +80,12 @@ export function Seitennavigation({
           ),
         )}
         <li>
-          <button type="button" className="button button--ghost seiten__knopf" disabled={letzte} onClick={() => gehe(seite + 1)} aria-label="Nächste Seite">
+          <button type="button" className={SEITENKNOPF} disabled={letzte} onClick={() => gehe(seite + 1)} aria-label="Nächste Seite">
             ›
           </button>
         </li>
         <li>
-          <button type="button" className="button button--ghost seiten__knopf" disabled={letzte} onClick={() => gehe(gesamtSeiten)} aria-label="Letzte Seite">
+          <button type="button" className={SEITENKNOPF} disabled={letzte} onClick={() => gehe(gesamtSeiten)} aria-label="Letzte Seite">
             »
           </button>
         </li>

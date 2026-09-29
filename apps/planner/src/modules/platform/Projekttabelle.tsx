@@ -1,6 +1,7 @@
 import type { ProjectSummary } from "@elektroplan/api-client";
 import { Link } from "react-router-dom";
 
+import { TABELLE, TABELLENRAHMEN } from "../../core/ui/stil";
 import { STATUS_LABEL } from "./status";
 
 const DATUM = new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" });
@@ -22,10 +23,10 @@ export function Projekttabelle({
   mitKunde?: boolean;
   mitAenderung?: boolean;
 }) {
-  if (projekte.length === 0) return <p className="muted">{leerText}</p>;
+  if (projekte.length === 0) return <p className="text-muted">{leerText}</p>;
   return (
-    <div className="tabellenrahmen">
-      <table className="table">
+    <div className={TABELLENRAHMEN}>
+      <table className={TABELLE}>
         <thead>
           <tr>
             <th>Nummer</th>

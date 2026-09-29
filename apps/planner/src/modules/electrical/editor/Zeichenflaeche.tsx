@@ -8,6 +8,7 @@ import type {
 } from "react";
 
 import { useMasse } from "../../../core/ui/masseinheit";
+import "./grundriss.css";
 import type { EntwurfWand, Oeffnungsart, Raumentwurf } from "./entwurf";
 import { ende, start } from "./entwurf";
 import { fangen } from "./fang";
@@ -43,6 +44,13 @@ import {
   wandUnterZeiger,
 } from "./platzierung";
 import type { Aktion, Auswahl, EditorZustand } from "./zustand";
+
+/** Klasse je Öffnungsart (grundriss.css); ausgeschrieben statt zusammengesetzt. */
+const OEFFNUNG_KLASSE: Record<Oeffnungsart, string> = {
+  door: "grundriss__oeffnung--door",
+  window: "grundriss__oeffnung--window",
+  passage: "grundriss__oeffnung--passage",
+};
 
 /** Ein Raum, wie er gezeichnet wird: aktiv aus dem Entwurf, sonst aus dem Serverstand. */
 export interface Raumdarstellung {
@@ -481,7 +489,10 @@ export function Zeichenflaeche(props: Props) {
         : "crosshair";
 
   return (
-    <div className="grundriss__flaeche" ref={huelle}>
+    <div
+      className="relative h-[62vh] min-h-[420px] touch-none overflow-hidden rounded-ep border border-line bg-canvas"
+      ref={huelle}
+    >
       <svg
         ref={flaeche}
         className="grundriss__svg"
@@ -534,7 +545,10 @@ export function Zeichenflaeche(props: Props) {
         <Vorschau zustand={zustand} zeiger={zeiger} viewport={viewport} />
         {vorschau !== null && <Oeffnungsvorschaubild vorschau={vorschau} topologie={props.topologie} viewport={viewport} />}
       </svg>
-      <p className="grundriss__statuszeile" aria-live="off">
+      <p
+        className="absolute inset-x-0 bottom-0 m-0 flex justify-between gap-3 border-t border-line bg-page px-2 py-[3px] text-[0.78rem] text-muted"
+        aria-live="off"
+      >
         <span>{props.geschossLabel}</span>
         <span>
           {zeiger === null
@@ -690,7 +704,7 @@ const Oeffnungsebene = memo(function Oeffnungsebene({
         ...(e?.abschnitte ?? []).flatMap((a) => a.quellen.map((q) => q.wand.staerkeMm)),
       );
       const abgeleitet = aktiverRaum !== null && e?.nachbarRaumId === aktiverRaum;
-      const k = ["grundriss__oeffnung", `grundriss__oeffnung--${o.art}`];
+      const k = ["grundriss__oeffnung", OEFFNUNG_KLASSE[o.art]];
       if (e?.klasse === "gemeinsam") k.push("grundriss__oeffnung--gemeinsam");
       if (e?.klasse === "konflikt" || (e?.dubletten.length ?? 0) > 0) k.push("grundriss__oeffnung--konflikt");
       if (abgeleitet) k.push("grundriss__oeffnung--abgeleitet");

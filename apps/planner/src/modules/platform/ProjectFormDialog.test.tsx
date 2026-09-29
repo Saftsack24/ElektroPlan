@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { describe, expect, it, vi } from "vitest";
 
 import { masseinheitSetzen } from "../../core/ui/masseinheit";
+import { FELDZEILE } from "../../core/ui/stil";
 import { ProjectFormDialog } from "./ProjectFormDialog";
 import type { Projektabsendeergebnis, ProjektWerte } from "./ProjectFormDialog";
 import type { Suchergebnis } from "./KundenAuswahl";
@@ -321,7 +322,7 @@ describe("Dialogaufbau des Projektformulars", () => {
       within(dialog).getByRole("heading", { name: "Neues Projekt" }).closest("[data-dialog-scrollbereich]"),
     ).toBeNull();
     expect(bereiche[0]?.querySelector("form")).not.toBeNull();
-    expect(dialog.querySelector(".dialog__aktionen")).not.toBeNull();
+    expect(dialog.querySelector("[data-dialog-aktionen]")).not.toBeNull();
   });
 
   it("verändert beim Öffnen und Laden der Vorschläge den Formularfluss nicht", async () => {
@@ -330,7 +331,7 @@ describe("Dialogaufbau des Projektformulars", () => {
     const bereich = screen.getByRole("dialog").querySelector("[data-dialog-scrollbereich]") as HTMLElement;
     // Elemente im Formularfluss - ohne die schwebende Liste.
     const imFluss = () =>
-      [...bereich.querySelectorAll("*")].filter((e) => e.closest(".combobox__popup") === null).length;
+      [...bereich.querySelectorAll("*")].filter((e) => e.closest("[data-testid$=\"-popup\"]") === null).length;
     const vorher = imFluss();
 
     // Der Dialog fokussiert das Kundenfeld beim Öffnen; die Liste öffnet sich.
@@ -348,10 +349,11 @@ describe("Dialogaufbau des Projektformulars", () => {
 
   it("richtet Gebäude und Geschoss in einer Feldzeile oben bündig aus", () => {
     aufbauen(vi.fn());
-    const gebaeude = screen.getByLabelText("Gebäude").closest(".field");
-    const geschoss = screen.getByLabelText("Geschoss").closest(".field");
+    // Feld = Hülle aus Beschriftung, Eingabe, Fehler und Hinweis (core/ui/Feld.tsx).
+    const gebaeude = screen.getByLabelText("Gebäude").parentElement;
+    const geschoss = screen.getByLabelText("Geschoss").parentElement;
     expect(gebaeude?.parentElement).toBe(geschoss?.parentElement);
-    expect(gebaeude?.parentElement).toHaveClass("feldzeile");
+    expect(gebaeude?.parentElement?.className).toBe(FELDZEILE);
     // Der Hinweis gehört zum Geschossfeld und steht darunter.
     expect(within(geschoss as HTMLElement).getByText(/Ebene 0, Standardhöhe 250 cm/)).toBeInTheDocument();
   });

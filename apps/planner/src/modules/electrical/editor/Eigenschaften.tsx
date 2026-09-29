@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 
 import { eingabeUmrechnen } from "../../../core/masse";
 import { useEinheitenwechsel, useMasse } from "../../../core/ui/masseinheit";
+import { FELD, FELD_BESCHRIFTUNG, FELD_FEHLER, KNOPFZEILE, eingabefeld, knopf, meldungsflaeche } from "../../../core/ui/stil";
 import { KONTURZUSTAND_LABEL, OEFFNUNGSARTEN, OEFFNUNGSART_LABEL } from "../texte";
 import type { EntwurfWand, Oeffnungsart, RaumImPlan, Raumentwurf } from "./entwurf";
 import { ende, segmenteAus, start } from "./entwurf";
@@ -24,6 +25,12 @@ import type { Ergebnis } from "./werkzeuge";
 import type { EditorEinordnung, EditorTopologie } from "./platzierung";
 import { verbindungsText } from "./platzierung";
 import type { Auswahl, EditorZustand } from "./zustand";
+
+/** Seitenleiste: scrollt selbst, damit die Zeichenfläche daneben stehen bleibt. */
+const SEITENLEISTE = "flex max-h-[62vh] flex-col gap-2 overflow-y-auto text-small [&_:is(h3,h4)]:my-1";
+/** Eintrag einer Auswahlliste: ganze Breite, Text linksbündig. */
+const LISTENKNOPF = `${knopf()} w-full text-left`;
+const LISTENKNOPF_GEWAEHLT = `${knopf("gewaehlt")} w-full text-left`;
 
 export function flaecheText(mm2: number | null): string {
   if (mm2 === null) return "Kontur offen";
@@ -80,14 +87,16 @@ function Zahlenformular({
   };
 
   return (
-    <form className="eigenschaften__formular" onSubmit={absenden} noValidate>
-      <div className="eigenschaften__felder">
+    <form className="mb-2 flex flex-col gap-1.5" onSubmit={absenden} noValidate>
+      {/* Die Beschriftung nimmt den freien Platz ein: So beginnt jedes Eingabefeld
+          einer Zeile auf derselben Höhe, auch wenn eine Beschriftung umbricht. */}
+      <div className="grid grid-cols-2 gap-1.5">
         {felder.map((f) => (
-          <label key={f.name} className="field" htmlFor={`${id}-${f.name}`}>
-            <span className="field__label">{masse.label(f.label)}</span>
+          <label key={f.name} className={FELD} htmlFor={`${id}-${f.name}`}>
+            <span className={`${FELD_BESCHRIFTUNG} flex-auto`}>{masse.label(f.label)}</span>
             <input
               id={`${id}-${f.name}`}
-              className="field__input"
+              className={eingabefeld()}
               inputMode="decimal"
               value={werte[f.name] ?? ""}
               disabled={gesperrt}
@@ -97,12 +106,12 @@ function Zahlenformular({
         ))}
       </div>
       {fehler !== null && (
-        <p className="field__fehler" role="alert">
+        <p className={FELD_FEHLER} role="alert">
           {fehler}
         </p>
       )}
       {!gesperrt && (
-        <button type="submit" className="button button--ghost">
+        <button type="submit" className={knopf()}>
           {aktion}
         </button>
       )}
@@ -152,10 +161,10 @@ export function Eigenschaften({
 
   if (entwurf === null || basis === null) {
     return (
-      <div className="eigenschaften">
+      <div className={SEITENLEISTE}>
         <h3>Räume dieses Geschosses</h3>
         <Raumliste raeume={raeume} auswahl={auswahl} onWaehlen={onWaehlen} />
-        <p className="muted">
+        <p className="text-muted">
           Einen Raum anklicken, um ihn zu bearbeiten.
           {darfSchreiben ? " Mit „Rechteckraum“ oder „Polygonraum“ entsteht ein neuer Raum." : ""}
         </p>
@@ -171,31 +180,31 @@ export function Eigenschaften({
   const wandNummer = wand === undefined ? 0 : entwurf.walls.indexOf(wand) + 1;
 
   return (
-    <div className="eigenschaften">
-      <div className="eigenschaften__kopf">
+    <div className={SEITENLEISTE}>
+      <div className="flex items-center justify-between gap-2">
         <h3>
           {basis.raum.room_number !== null ? `${basis.raum.room_number} ` : ""}
           {basis.raum.name}
         </h3>
         {darfSchreiben && (
-          <button type="button" className="button button--ghost" onClick={onRaumBearbeiten}>
+          <button type="button" className={knopf()} onClick={onRaumBearbeiten}>
             Raumdaten
           </button>
         )}
       </div>
-      <p className="eigenschaften__kennzahlen">
+      <p className="m-0">
         <strong>{KONTURZUSTAND_LABEL[bericht.status]}</strong> · {entwurf.walls.length} Wände · Fläche{" "}
         {flaecheText(bericht.flaecheMm2)} · Umfang {masse.anzeigenOptional(bericht.umfangMm)}
       </p>
       {bericht.befunde.length > 0 && <Befundliste befunde={bericht.befunde} />}
       {hinweis !== null && (
-        <p className="alert" role="status">
+        <p className={meldungsflaeche("schlicht")} role="status">
           {hinweis}
         </p>
       )}
 
       {auswahl?.art === "ecke" && (
-        <section className="eigenschaften__abschnitt" aria-label="Eckpunkt">
+        <section className="border-t border-line pt-2" aria-label="Eckpunkt">
           <h4>Eckpunkt</h4>
           <Zahlenformular
             key={`ecke-${auswahl.punkt.x},${auswahl.punkt.y}`}
@@ -217,7 +226,7 @@ export function Eigenschaften({
       )}
 
       {wand !== undefined && oeffnung === undefined && (
-        <section className="eigenschaften__abschnitt" aria-label={`Wand ${wandNummer}`}>
+        <section className="border-t border-line pt-2" aria-label={`Wand ${wandNummer}`}>
           <h4>
             Wand {wandNummer} · {masse.anzeigen(streckenlaenge(start(wand), ende(wand)))}
           </h4>
@@ -254,16 +263,16 @@ export function Eigenschaften({
             onUebernehmen={(w) => anwenden(wandlaengeSetzen(entwurf, wand.id, w.laenge as number))}
           />
           {darfSchreiben && (
-            <div className="button-row">
-              <button type="button" className="button button--ghost" onClick={() => anwenden(wandTeilen(entwurf, wand.id, neueId()))}>
+            <div className={KNOPFZEILE}>
+              <button type="button" className={knopf()} onClick={() => anwenden(wandTeilen(entwurf, wand.id, neueId()))}>
                 Wand teilen
               </button>
-              <button type="button" className="button button--ghost" onClick={() => anwenden(eckeEntfernen(entwurf, wand.id))}>
+              <button type="button" className={knopf()} onClick={() => anwenden(eckeEntfernen(entwurf, wand.id))}>
                 Eckpunkt am Wandende entfernen
               </button>
               <button
                 type="button"
-                className="button button--ghost"
+                className={knopf()}
                 onClick={() => {
                   if (anwenden(wandEntfernen(entwurf, wand.id)) === undefined) onWaehlen({ art: "raum", raumId: entwurf.roomId });
                 }}
@@ -284,17 +293,17 @@ export function Eigenschaften({
       )}
 
       {wand !== undefined && oeffnung !== undefined && (
-        <section className="eigenschaften__abschnitt" aria-label="Öffnung">
+        <section className="border-t border-line pt-2" aria-label="Öffnung">
           <h4>
             {OEFFNUNGSART_LABEL[oeffnung.kind]} in Wand {wandNummer} · {masse.anzeigen(oeffnung.width_mm)} breit
           </h4>
           <Verbindung einordnung={einordnung} oeffnungId={oeffnung.id} raumName={raumName} wandNummer={wandNummer} />
           {darfSchreiben ? (
-            <label className="field" htmlFor="oeffnung-art">
-              <span className="field__label">Art</span>
+            <label className={FELD} htmlFor="oeffnung-art">
+              <span className={FELD_BESCHRIFTUNG}>Art</span>
               <select
                 id="oeffnung-art"
-                className="field__input"
+                className={eingabefeld()}
                 value={oeffnung.kind}
                 onChange={(event) => {
                   const art = event.target.value as Oeffnungsart;
@@ -336,11 +345,11 @@ export function Eigenschaften({
               })
             }
           />
-          <p className="muted">Der Abstand wird vom Anfang der gerichteten Wand gemessen ({masse.punkt(wand.x1_mm, wand.y1_mm)}).</p>
+          <p className="text-muted">Der Abstand wird vom Anfang der gerichteten Wand gemessen ({masse.punkt(wand.x1_mm, wand.y1_mm)}).</p>
           {darfSchreiben && (
             <button
               type="button"
-              className="button button--ghost"
+              className={knopf()}
               onClick={() => {
                 onAendern(oeffnungEntfernen(entwurf, wand.id, oeffnung.id, gespeicherteOeffnungen));
                 onWaehlen({ art: "wand", raumId: entwurf.roomId, wandId: wand.id });
@@ -353,8 +362,8 @@ export function Eigenschaften({
       )}
 
       {darfSchreiben && (auswahl === null || auswahl.art === "raum") && (
-        <div className="button-row">
-          <button type="button" className="button button--ghost" onClick={() => onAendern(konturUmkehren(entwurf))}>
+        <div className={KNOPFZEILE}>
+          <button type="button" className={knopf()} onClick={() => onAendern(konturUmkehren(entwurf))}>
             Umlaufrichtung umkehren
           </button>
         </div>
@@ -385,21 +394,21 @@ function Verbindung({
   if (e === undefined) return null;
   const konflikt = e.klasse === "konflikt" || e.klasse === "ungueltig";
   return (
-    <div className={konflikt ? "alert eigenschaften__verbindung" : "eigenschaften__verbindung"} role="status">
+    <div className={konflikt ? `${meldungsflaeche("schlicht")} [&_p]:my-0.5` : "[&_p]:my-0.5"} role="status">
       <p>
         <strong>{verbindungsText(e, raumName)}</strong>
       </p>
-      <p className="muted">
+      <p className="text-muted">
         Gespeichert einmal an Wand {wandNummer} von „{raumName(e.wand.raumId)}“
         {e.klasse === "gemeinsam" ? " – im Nachbarraum erscheint sie abgeleitet, ohne zweiten Datensatz." : "."}
       </p>
       {e.dubletten.length > 0 && (
-        <p className="muted">
+        <p className="text-muted">
           Hinweis: Dieselbe Öffnung ist zusätzlich auf der Gegenseite gespeichert. Eine Erfassung genügt; die zweite kann
           entfernt werden.
         </p>
       )}
-      {konflikt && <p className="muted">Bitte die Öffnung verschieben oder die Wände bereinigen – es wird nichts geraten.</p>}
+      {konflikt && <p className="text-muted">Bitte die Öffnung verschieben oder die Wände bereinigen – es wird nichts geraten.</p>}
     </div>
   );
 }
@@ -435,13 +444,13 @@ function AbgeleiteteOeffnungen({
   if (fremde.length === 0) return null;
   return (
     <>
-      <p className="muted">Abgeleitet aus dem Nachbarraum (dort gespeichert):</p>
-      <ul className="eigenschaften__liste">
+      <p className="text-muted">Abgeleitet aus dem Nachbarraum (dort gespeichert):</p>
+      <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
         {fremde.map((e) => (
           <li key={e.oeffnung.oeffnungId}>
             <button
               type="button"
-              className="button button--ghost"
+              className={LISTENKNOPF}
               onClick={() =>
                 onWaehlen({ art: "oeffnung", raumId: e.wand.raumId, wandId: e.wand.id, oeffnungId: e.oeffnung.oeffnungId })
               }
@@ -459,7 +468,7 @@ function AbgeleiteteOeffnungen({
 function Befundliste({ befunde }: { befunde: readonly Befund[] }) {
   const codes = [...new Set(befunde.map((b) => b.code))];
   return (
-    <ul className="eigenschaften__befunde" aria-label="Hinweise zur Kontur">
+    <ul className="m-0 pl-[18px] text-warning" aria-label="Hinweise zur Kontur">
       {codes.map((code) => (
         <li key={code}>{geometrietext(code)}</li>
       ))}
@@ -477,14 +486,14 @@ function OeffnungenDerWand({
   onWaehlen: (auswahl: Auswahl) => void;
 }) {
   const masse = useMasse();
-  if (wand.openings.length === 0) return <p className="muted">Keine Öffnung in dieser Wand.</p>;
+  if (wand.openings.length === 0) return <p className="text-muted">Keine Öffnung in dieser Wand.</p>;
   return (
-    <ul className="eigenschaften__liste">
+    <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
       {wand.openings.map((o) => (
         <li key={o.id}>
           <button
             type="button"
-            className="button button--ghost"
+            className={LISTENKNOPF}
             onClick={() => onWaehlen({ art: "oeffnung", raumId, wandId: wand.id, oeffnungId: o.id })}
           >
             {OEFFNUNGSART_LABEL[o.kind]} bei {masse.anzeigen(o.offset_mm)}, {masse.anzeigen(o.width_mm)} breit
@@ -504,14 +513,14 @@ function Raumliste({
   auswahl: Auswahl;
   onWaehlen: (auswahl: Auswahl) => void;
 }) {
-  if (raeume.length === 0) return <p className="muted">Noch kein Raum auf diesem Geschoss.</p>;
+  if (raeume.length === 0) return <p className="text-muted">Noch kein Raum auf diesem Geschoss.</p>;
   return (
-    <ul className="eigenschaften__liste">
+    <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
       {raeume.map((raum) => (
         <li key={raum.id}>
           <button
             type="button"
-            className={auswahl?.raumId === raum.id ? "button button--ghost eigenschaften__gewaehlt" : "button button--ghost"}
+            className={auswahl?.raumId === raum.id ? LISTENKNOPF_GEWAEHLT : LISTENKNOPF}
             aria-current={auswahl?.raumId === raum.id ? "true" : undefined}
             onClick={() => onWaehlen({ art: "raum", raumId: raum.id })}
           >

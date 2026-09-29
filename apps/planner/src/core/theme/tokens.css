@@ -1,0 +1,129 @@
+/*
+ * Semantische Design-Tokens (ADR 0018).
+ *
+ * Zwei Ebenen:
+ *
+ * 1. Laufzeit-Tokens `--ep-*` auf :root. Sie tragen die eigentlichen Werte
+ *    und sind zur Laufzeit überschreibbar (etwa über
+ *    `document.documentElement.style.setProperty("--ep-accent", …)`),
+ *    ohne Tailwind neu zu bauen und ohne Komponenten anzufassen.
+ * 2. `@theme inline` ordnet sie Tailwind-Namen zu. `inline` sorgt dafür, dass
+ *    jede Utility direkt `var(--ep-…)` verwendet - `bg-accent` folgt damit
+ *    jeder Laufzeitänderung.
+ *
+ * Komponenten verwenden ausschließlich die semantischen Namen (`bg-surface`,
+ * `text-muted`, `border-line` …), nie konkrete Farbwerte. Die Standardpalette
+ * von Tailwind ist abgeschaltet; `bg-gray-500` existiert nicht.
+ *
+ * Fachneutral: Tokens für Wände, Türen und Fenster gehören dem Fachmodul
+ * electrical (modules/electrical/editor/grundriss.css).
+ */
+
+:root {
+  /* Flächen */
+  --ep-page: #f5f6f8;
+  --ep-surface: #ffffff;
+  --ep-surface-raised: #ffffff;
+  --ep-nav: #ffffff;
+  --ep-border: #d8dce3;
+
+  /* Text */
+  --ep-text: #1c2430;
+  --ep-text-muted: #5b6676;
+
+  /* Akzent, Fokus, Auswahl */
+  --ep-accent: #14507d;
+  --ep-accent-hover: #0f3e61;
+  --ep-on-accent: #ffffff;
+  --ep-focus: #14507d;
+  --ep-selected: #14507d;
+  --ep-selected-surface: #f5f6f8;
+
+  /* Zustände */
+  --ep-success: #2f7a3e;
+  --ep-warning: #c77d00;
+  --ep-danger: #8c1d1d;
+  --ep-danger-surface: #fdecec;
+
+  /* Zeichenflächen (2D-Editor, 3D-Ansicht) */
+  --ep-canvas: #ffffff;
+  --ep-canvas-grid: #d8dce3;
+
+  /* Überlagerungen */
+  --ep-backdrop: rgb(0 0 0 / 0.45);
+
+  /* Form */
+  --ep-radius: 8px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ep-page: #14181d;
+    --ep-surface: #1d232b;
+    --ep-surface-raised: #1d232b;
+    --ep-nav: #1d232b;
+    --ep-border: #2e3742;
+
+    --ep-text: #e8ecf1;
+    --ep-text-muted: #9aa6b4;
+
+    --ep-accent: #4a9fd8;
+    --ep-accent-hover: #6cb2e2;
+    --ep-on-accent: #0d1216;
+    --ep-focus: #4a9fd8;
+    --ep-selected: #4a9fd8;
+    --ep-selected-surface: #14181d;
+
+    --ep-success: #7cc98a;
+    --ep-warning: #f0b44a;
+    --ep-danger: #ffb4b4;
+    --ep-danger-surface: #3a1f1f;
+
+    --ep-canvas: #1d232b;
+    --ep-canvas-grid: #2e3742;
+  }
+}
+
+@theme inline {
+  /* Nur semantische Farben - die Standardpalette ist bewusst leer. */
+  --color-*: initial;
+
+  --color-page: var(--ep-page);
+  --color-surface: var(--ep-surface);
+  --color-raised: var(--ep-surface-raised);
+  --color-nav: var(--ep-nav);
+  --color-line: var(--ep-border);
+
+  --color-fg: var(--ep-text);
+  --color-muted: var(--ep-text-muted);
+
+  --color-accent: var(--ep-accent);
+  --color-accent-hover: var(--ep-accent-hover);
+  --color-on-accent: var(--ep-on-accent);
+  --color-focus: var(--ep-focus);
+  --color-selected: var(--ep-selected);
+  --color-selected-soft: var(--ep-selected-surface);
+
+  --color-success: var(--ep-success);
+  --color-warning: var(--ep-warning);
+  --color-danger: var(--ep-danger);
+  --color-danger-soft: var(--ep-danger-surface);
+
+  --color-canvas: var(--ep-canvas);
+  --color-canvas-grid: var(--ep-canvas-grid);
+
+  --radius-ep: var(--ep-radius);
+}
+
+@theme {
+  /* Wiederkehrende Schriftgrößen der bisherigen Oberfläche. */
+  --text-label: 0.85rem;
+  --text-small: 0.9rem;
+
+  /* Schatten schwebender Elemente (neutral, farbunabhängig). */
+  --shadow-popup: 0 8px 24px rgb(0 0 0 / 0.18);
+  --shadow-hint: 0 2px 6px rgb(0 0 0 / 0.12);
+
+  /* Ab dieser Breite stehen Arbeitsfläche und Seitenleiste nebeneinander. */
+  --breakpoint-split: 60rem;
+}

@@ -360,8 +360,9 @@ Sie sind Core, fachneutral und dürfen von jedem Modul importiert werden:
 | Baustein | Aufgabe |
 |---|---|
 | `Feld`, `Auswahl`, `Schalter` | beschriftete Formularfelder mit Fehler und Hinweis |
-| `Dialog` | natives `<dialog>`; genau ein Scrollbereich (`.dialog__inhalt`), fester Kopf, angeheftete `.dialog__aktionen`, referenzgezählte Seiten-Sperre (`scrollsperre.ts`) |
-| `.feldzeile` (CSS) | Felder nebeneinander, oben bündig; Hinweise und Fehler verschieben das Nachbarfeld nicht |
+| `Dialog`, `DialogAktionen` | natives `<dialog>`; genau ein Scrollbereich (`data-dialog-scrollbereich`), fester Kopf, angeheftete Aktionsleiste `<DialogAktionen>` (`anordnung="zeile"` oder `"formular"`, `data-dialog-aktionen`), referenzgezählte Seiten-Sperre (`scrollsperre.ts`) |
+| `stil.ts` (Klassenrezepte) | Tailwind-Rezepte für wiederkehrende Muster (ADR 0018): `knopf()`, `eingabefeld()`, `meldungsflaeche()`, `karte()`, `reiter()`, `TABELLE`, `FELD*`, `FORMULARRASTER*`, `FELDZEILE` (Felder nebeneinander, oben bündig), `KENNWERTE` … |
+| `core/theme/` | fachneutrale Laufzeit-Tokens `--ep-*` und ihre Tailwind-Namen (`tokens.css`), minimale Grundregeln (`basis.css`) |
 | `Combobox` | Suchfeld mit schwebender, `position: fixed` verankerter Vorschlagsliste (WAI-ARIA Combobox/Listbox); sucht nicht selbst |
 | `Seitennavigation`, `seitenfolge` | nummerierte Seiten mit erster/letzter, voriger/nächster Seite und Ellipsen |
 | `useNummerierteListe` | Liste mit echten Serverseiten (ADR 0017); Filterwechsel → Seite 1, ungültige Seite → letzte gültige |
@@ -381,6 +382,24 @@ Zuständigkeit. Modulinterne, aber seitenübergreifende Dinge — etwa die Statu
 Projekts — liegen in einer eigenen Datei des Moduls (`modules/platform/status.ts`).
 
 Eine Sammelablage `utils` gibt es bewusst nicht: Jede Datei hat eine benennbare Aufgabe.
+
+### Gestaltung und Modulgrenzen (Phase 4c.1)
+
+Die Gestaltung folgt denselben Grenzen wie der Code ([ADR 0018](decisions/0018-frontend-styling-tailwind-and-theme-tokens.md)):
+
+* **Core** besitzt die Theme-Infrastruktur (`core/theme/`) und die fachneutralen
+  Klassenrezepte (`core/ui/stil.ts`). Beides kennt kein Fachmodul.
+* **Fachmodule** verwenden Utilities und Core-Rezepte. Fachliche Darstellungsregeln und
+  fachliche Tokens bleiben im Modul – Electrical etwa mit
+  `modules/electrical/editor/grundriss.css` (SVG-Zeichenfläche, `--ep-plan-*`), die der
+  Editor selbst importiert.
+* Farben nur über semantische Tokens (`bg-surface`, `text-muted`, `border-line`,
+  `bg-accent` …); die Standardpalette von Tailwind ist abgeschaltet. Anleitung und
+  Ausnahmen: `docs/architecture.md`, Abschnitt 13, „Gestaltung mit Tailwind".
+* Klassennamen stehen vollständig im Quelltext; Varianten über statische Zuordnungen
+  (`Record<Art, string>`), nie über zusammengesetzte Namen.
+* Die Frontend-Grenzprüfung (`npm run check:boundaries`) gilt unverändert; CSS-Importe
+  eines Moduls sind modulinterne relative Importe.
 
 ### Projekt-Tabs und die Grenze zur Composition Root
 

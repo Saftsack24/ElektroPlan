@@ -142,7 +142,7 @@ describe("Einladung annehmen", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Einladung annehmen" }));
     expect(await screen.findByLabelText(/^Bisheriges Passwort/)).toHaveValue("");
-    expect(screen.getByText(/gibt es bereits ein Konto/, { selector: ".alert" })).toBeInTheDocument();
+    expect(screen.getByText(/gibt es bereits ein Konto/, { selector: "[role=alert]" })).toBeInTheDocument();
   });
 
   it("meldet ungültige, abgelaufene oder verbrauchte Einladungen einheitlich", async () => {

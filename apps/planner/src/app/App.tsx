@@ -39,7 +39,7 @@ function AuthenticatedApp() {
           <Route
             path="*"
             element={
-              <p className="muted">
+              <p className="text-muted">
                 Diese Seite gibt es nicht, oder Ihnen fehlt die Berechtigung dafür.
               </p>
             }
@@ -54,7 +54,7 @@ function Gate() {
   const { status } = useAuth();
 
   if (status === "loading") {
-    return <p className="muted centered">Sitzung wird geprüft ...</p>;
+    return <p className="px-4 py-12 text-center text-muted">Sitzung wird geprüft ...</p>;
   }
   if (status === "anonymous") {
     return <LoginPage />;

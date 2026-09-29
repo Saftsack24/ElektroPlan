@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { FELD, FELD_BESCHRIFTUNG, FELD_FEHLER, FELD_HINWEIS, SCHALTERFELD, eingabefeld } from "./stil";
+
 /**
  * Gemeinsame Formularbausteine der Oberflaeche.
  *
@@ -42,14 +44,14 @@ export function Feld({
     .filter((teil) => teil !== null)
     .join(" ");
   return (
-    <div className="field">
-      <label className="field__label" htmlFor={id}>
+    <div className={FELD}>
+      <label className={FELD_BESCHRIFTUNG} htmlFor={id}>
         {label}
         {required ? " *" : ""}
       </label>
       <input
         id={id}
-        className={fehler ? "field__input field__input--fehler" : "field__input"}
+        className={eingabefeld({ fehler: Boolean(fehler) })}
         type={type}
         value={value}
         required={required}
@@ -61,12 +63,12 @@ export function Feld({
         onChange={(event) => onChange(event.target.value)}
       />
       {fehler !== undefined && (
-        <span id={fehlerId} className="field__fehler" role="alert">
+        <span id={fehlerId} className={FELD_FEHLER} role="alert">
           {fehler}
         </span>
       )}
       {hinweis !== undefined && (
-        <span id={hinweisId} className="field__hinweis">
+        <span id={hinweisId} className={FELD_HINWEIS}>
           {hinweis}
         </span>
       )}
@@ -96,14 +98,14 @@ export function Auswahl({
 }) {
   const fehlerId = `${id}-fehler`;
   return (
-    <div className="field">
-      <label className="field__label" htmlFor={id}>
+    <div className={FELD}>
+      <label className={FELD_BESCHRIFTUNG} htmlFor={id}>
         {label}
         {required ? " *" : ""}
       </label>
       <select
         id={id}
-        className={fehler ? "field__input field__input--fehler" : "field__input"}
+        className={eingabefeld({ fehler: Boolean(fehler) })}
         value={value}
         required={required}
         disabled={disabled}
@@ -114,7 +116,7 @@ export function Auswahl({
         {children}
       </select>
       {fehler !== undefined && (
-        <span id={fehlerId} className="field__fehler" role="alert">
+        <span id={fehlerId} className={FELD_FEHLER} role="alert">
           {fehler}
         </span>
       )}
@@ -137,7 +139,7 @@ export function Schalter({
   disabled?: boolean;
 }) {
   return (
-    <div className="field field--schalter">
+    <div className={SCHALTERFELD}>
       <input
         id={id}
         type="checkbox"

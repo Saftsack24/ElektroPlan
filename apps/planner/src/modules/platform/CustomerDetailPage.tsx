@@ -6,6 +6,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { useAuth, usePermission } from "../../core/auth/AuthProvider";
 import { Feld } from "../../core/ui/Feld";
+import { FORMULARRASTER, FORMULARRASTER_AKTIONEN, KNOPFZEILE, STAPEL, karte, knopf, meldungsflaeche } from "../../core/ui/stil";
 import { KundenProjekte } from "./KundenProjekte";
 
 type Bearbeitbar = {
@@ -113,40 +114,40 @@ export default function CustomerDetailPage() {
     onError: (error: unknown) => melden(error, "Anonymisieren fehlgeschlagen."),
   });
 
-  if (kunde.isPending) return <p className="muted">Kunde wird geladen ...</p>;
+  if (kunde.isPending) return <p className="text-muted">Kunde wird geladen ...</p>;
   if (kunde.isError || !kunde.data) {
-    return <p className="alert alert--error">Dieser Kunde ist nicht verfügbar.</p>;
+    return <p className={meldungsflaeche()}>Dieser Kunde ist nicht verfügbar.</p>;
   }
 
   const werte = entwurf ?? ausKunde(kunde.data);
   const gesperrt = !darfSchreiben || kunde.data.anonymized_at !== null;
 
   return (
-    <div className="stack">
-      <section className="card">
-        <p className="muted">
+    <div className={STAPEL}>
+      <section className={karte()}>
+        <p className="text-muted">
           <Link to="/customers">← Alle Kunden</Link>
         </p>
         <h1>{kunde.data.name}</h1>
-        <p className="muted">
+        <p className="text-muted">
           Kundennummer <code>{kunde.data.customer_number}</code> · Version{" "}
           {kunde.data.version}
         </p>
         {kunde.data.anonymized_at !== null && (
-          <p className="alert alert--error">
+          <p className={meldungsflaeche()}>
             Dieser Kunde wurde anonymisiert. Die personenbezogenen Daten sind entfernt;
             der Datensatz bleibt als Belegzuordnung bestehen und lässt sich nicht mehr
             bearbeiten.
           </p>
         )}
-        {meldung && <p className="muted">{meldung}</p>}
-        {fehler && <p className="alert alert--error">{fehler}</p>}
+        {meldung && <p className="text-muted">{meldung}</p>}
+        {fehler && <p className={meldungsflaeche()}>{fehler}</p>}
       </section>
 
-      <section className="card">
+      <section className={karte()}>
         <h2>Stammdaten</h2>
         <form
-          className="form-grid"
+          className={FORMULARRASTER}
           onSubmit={(event) => {
             event.preventDefault();
             speichern.mutate(werte);
@@ -196,9 +197,9 @@ export default function CustomerDetailPage() {
             value={werte.billing_city}
             onChange={(billing_city) => setEntwurf({ ...werte, billing_city })}
           />
-          <div className="form-grid__actions">
+          <div className={FORMULARRASTER_AKTIONEN}>
             <button
-              className="button button--primary"
+              className={knopf("primaer")}
               type="submit"
               disabled={gesperrt || speichern.isPending || entwurf === null}
             >
@@ -211,18 +212,18 @@ export default function CustomerDetailPage() {
       {darfProjekteLesen && <KundenProjekte kundeId={kunde.data.id} />}
 
       {(darfLoeschen || darfAnonymisieren) && (
-        <section className="card">
+        <section className={karte()}>
           <h2>Datenschutz und Löschung</h2>
-          <p className="muted">
+          <p className="text-muted">
             <strong>Ausblenden</strong> entfernt den Kunden aus Listen; bestehende Belege
             bleiben zuordenbar. <strong>Anonymisieren</strong> setzt ein Löschbegehren nach
             Art. 17 DSGVO um: Die personenbezogenen Felder werden überschrieben, die
             Kundennummer bleibt. Das ist <strong>nicht umkehrbar</strong>.
           </p>
-          <div className="button-row">
+          <div className={KNOPFZEILE}>
             {darfLoeschen && (
               <button
-                className="button button--ghost"
+                className={knopf()}
                 type="button"
                 disabled={ausblenden.isPending}
                 onClick={() => ausblenden.mutate()}
@@ -232,7 +233,7 @@ export default function CustomerDetailPage() {
             )}
             {darfAnonymisieren && kunde.data.anonymized_at === null && (
               <button
-                className="button button--ghost"
+                className={knopf()}
                 type="button"
                 disabled={anonymisieren.isPending}
                 onClick={() => {

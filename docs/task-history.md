@@ -2111,3 +2111,100 @@ Entwicklungseinladung (Rolle Planer).
   Browser nicht beobachten (Chromium gewährt sie nur echten Zeigern) – automatisiert geprüft.
 * **Befund behoben:** Kollisionsmeldung „mit der vorhandenen Fenster" → artikelgerecht
   („dem vorhandenen Fenster"), mit Regressionstest.
+
+---
+
+## Task 0020 – Phase 4c.1: Frontend auf Tailwind CSS, Theme-Grundlage
+
+**Datum:** 2026-09-29 · **Stand:** umgesetzt, **nicht committet** (Ausgangsstand `ce57492`,
+Arbeitsbaum vorher sauber; Sicherung als Archiv im Scratchpad)
+
+### Anlass
+
+Die Gestaltung lag in einer globalen `styles.css` (553 Zeilen, ~267 Regelblöcke,
+BEM-Klassen für Core, Plattform und Electrical gemischt). Neue Oberfläche soll einen
+einheitlichen Weg haben, und Phase 4c.2 soll Farben persönlich einstellbar machen, ohne
+Komponenten umzuschreiben. Ausdrücklich **kein Redesign**, keine Verhaltensänderung.
+
+### Umsetzung
+
+1. **Tailwind CSS 4.3.3** + `@tailwindcss/vite` 4.3.3 (devDependencies, Lockfile inkl.
+   Linux-musl-Binärdatei für das Alpine-Image). CSS-first in `src/styles.css`: nur
+   `theme.css` und `utilities.css`, **kein Preflight** (hätte Überschriften, Listen und
+   Knöpfe zurückgesetzt), `source("./")`. Die zunächst eingeführte Ausschlussliste
+   `@source not inline(...)` ist in einer Nachkorrektur wieder entfernt: Sie hätte gültige
+   Utilities wie `hidden` oder `fixed` bei späterer Verwendung stillschweigend aus dem Build
+   entfernt.
+2. **Tokens** (`core/theme/tokens.css`): `--ep-*` für Seite, Oberfläche, Dialog,
+   Navigation, Rahmen, Text, gedämpft, Akzent/Hover/Kontrast, Fokus, Auswahl, Erfolg,
+   Warnung, Fehler, Zeichenfläche, Raster, Backdrop, Radius – hell/dunkel mit den
+   bisherigen Werten; `@theme inline` → `bg-surface`, `text-muted` …; Standardpalette
+   abgeschaltet. **Grundregeln** (`core/theme/basis.css`).
+3. **Rezepte** (`core/ui/stil.ts`): `knopf()`, `eingabefeld()`, `meldungsflaeche()`,
+   `karte()`, `reiter()`, Konstanten für Feld, Formularraster, Feldzeile, Tabelle,
+   Kennwerte. **`DialogAktionen`** ersetzt `.dialog__aktionen` (typisiert, `anordnung`).
+4. **Migration** in der beauftragten Reihenfolge: Shell/Startseite → Core-Bausteine →
+   Anmeldung/Einladung → Kunden/Projekte → Formulare, Dialoge, Combobox, Seiten →
+   Verwaltung → Projektstruktur → Electrical-Räume → 2D-Editor → 3D-Ansicht. Dynamische
+   Klassen (`marke--${art}`, `grundriss__status--${status}`,
+   `grundriss__oeffnung--${art}`) durch statische Zuordnungen ersetzt.
+5. **Electrical** behält fachliche Darstellung im Modul: `editor/grundriss.css`
+   (SVG-Zeichenfläche, Tokens `--ep-plan-*`), vom Editor importiert, eigener CSS-Chunk.
+6. **Tests** an vier Stellen von Klassennamen auf Semantik umgestellt
+   (`[data-dialog-aktionen]`, `[role=alert]`, Rezeptvergleich für Hauptknopf, Reiter und
+   Feldzeile); Anzahl unverändert 622.
+7. **Docker:** Planner-Image neu gebaut; der Container kompiliert Tailwind
+   (`/workspace/apps/planner/src/styles.css`, v4.3.3).
+
+### Befund während der Migration (behoben)
+
+`[font:inherit]` im Knopf-Rezept überschrieb als Kurzschreibweise `font-semibold`
+(Tailwind sortiert nach Eigenschaft, nicht nach `className`) – die aktive Seitenzahl verlor
+ihr Fettgewicht. Lösung: `font: inherit` für Formularelemente als Grundregel in
+`basis.css`; Rezepte setzen keine Schrift-Kurzschreibweise mehr.
+
+### Visueller Vergleich
+
+Vorher (Stand `ce57492`) und nachher wurden im Browserbereich für jedes sichtbare Element
+Position, Größe und 28 berechnete Stileigenschaften (Farben, Rahmen, Abstände, Schrift,
+Display, Overflow, SVG-Füllung/Strich …) erfasst und verglichen: 19 Seiten und Zustände,
+33 Vergleiche (dunkel 1280 px, dunkel 420 px, hell 1280 px) – Startseite, Kundenliste,
+Kundendetail, Projektliste, Projektdetail mit drei Reitern, 2D-Editor ohne/mit Auswahl,
+3D-Ansicht, Tabellenansicht, Benutzerliste, Mitglied, Rollen, System, Protokoll,
+Projektdialog, Combobox mit Vorschlägen, Einstellungsdialog.
+**Ergebnis:** keine Farb-, Abstands-, Rahmen- oder Layoutabweichung. Verbleibende
+Unterschiede: Messbedingungen (Pixelverhältnis 1,25 ↔ 1 → Rahmen 0,8/1 px, bis 4 px
+aufsummierte Rundung), neue Daten (Anmeldezeit, Protokolleinträge),
+Kontrollkästchen/Optionsfelder erben die Schriftgröße (ohne sichtbare Wirkung),
+`rounded-full` statt `999px`, Schatten in Tailwind-Notation. Die Vergleichsdaten liegen
+nur im Browserspeicher des Browserbereichs, nicht im Repository.
+
+**Funktional im Browser geprüft:** Anmeldung (nach Ablauf der Sitzung), Dialog modal mit
+Fokusfalle, ein Scrollbereich, angeheftete Aktionen, Seitensperre, Escape und
+Fokusrückgabe; Combobox mit Pfeiltaste (aktive Option mit Auswahlrahmen); Seiten;
+Einstellungen cm → mm → cm (2D-Maße „5.000 mm"/„500 cm"); Navigationsschutz mit eigener
+Rückfrage (Fokus „Änderungen behalten"), Verwerfen ohne Speichern; Zoom und Zurücksetzen;
+4× 2D ↔ 3D stets genau ein bzw. kein Canvas, Canvasgröße = Fläche, WebGL2-Kontext;
+Benutzertabelle blendet bei 420 px „Letzte Anmeldung" aus; mobiler Dialog vollflächig.
+
+**Nicht geprüft:** Bildschirmfotos und sichtbares WebGL-Bild – der Browserbereich war
+verdeckt (Bilder werden dann nicht gezeichnet, Animationsbilder laufen nicht). Vorher-
+Bildschirmfotos existieren deshalb nicht; Ersatz ist der Stilvergleich.
+
+### Messwerte
+
+| Messung | vorher | nachher |
+|---|---|---|
+| Produktions-CSS | 20,24 kB (4,69 kB gzip), ein Bundle | 17,37 kB (4,22 kB gzip) Haupt + 3,75 kB (0,94 kB gzip) Editor-Chunk (mit Ausschlussliste waren es 15,22 kB / 3,86 kB) |
+| CSS-Regelblöcke (handgeschrieben) | ~267 in `styles.css` | 13 in `core/theme/` (Tokens, Grundregeln) + 43 in `grundriss.css` (davon ~39 SVG-Regeln, nur mit dem Editor geladen); ~215 globale Regeln durch Utilities/Rezepte ersetzt |
+| Frontendtests | 622 | 622 |
+
+### Offene Punkte
+
+Sichtprüfung mit Bildschirmfotos und WebGL-Bild; helle Warnfarbe (3,3 : 1) und Rahmen
+unter WCAG AA (Bestand); 3D-Szene noch nicht an Tokens angebunden; waagrechte Überbreite
+bei schmalen Fenstern (Bestand, Ursache gemessen). Details: `docs/current-status.md`.
+
+### Nächster sinnvoller Schritt
+
+Prüfung durch den Auftraggeber, dann Commit auf Freigabe. Danach Phase 4c.2 planen.

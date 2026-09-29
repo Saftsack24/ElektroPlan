@@ -4,6 +4,7 @@ import { Dialog } from "../../core/ui/Dialog";
 import { EINGABEHINWEIS, eingabenAusMm, eingabenLesen, eingabenUmrechnen } from "../../core/masse";
 import { Auswahl, Feld } from "../../core/ui/Feld";
 import { useEinheitenwechsel, useMasse } from "../../core/ui/masseinheit";
+import { FORMULARRASTER, KNOPFZEILE, knopf, meldungsflaeche } from "../../core/ui/stil";
 import { OEFFNUNGSARTEN } from "./texte";
 import type { Oeffnungsart } from "./texte";
 
@@ -123,7 +124,7 @@ export function OeffnungDialog({
       onClose={schliessen}
     >
       <form
-        className="form-grid"
+        className={FORMULARRASTER}
         noValidate
         onSubmit={(event) => {
           event.preventDefault();
@@ -197,17 +198,17 @@ export function OeffnungDialog({
         )}
 
         {fehler !== null && (
-          <p className="alert alert--error" role="alert">
+          <p className={meldungsflaeche()} role="alert">
             {fehler}
           </p>
         )}
 
-        <div className="button-row">
-          <button className="button button--primary" type="submit" disabled={laeuft}>
+        <div className={KNOPFZEILE}>
+          <button className={knopf("primaer")} type="submit" disabled={laeuft}>
             {laeuft ? "Wird gespeichert ..." : "Speichern"}
           </button>
           <button
-            className="button button--ghost"
+            className={knopf()}
             type="button"
             disabled={laeuft}
             onClick={schliessen}

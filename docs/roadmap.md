@@ -1,6 +1,6 @@
 # Roadmap
 
-Stand: 2026-09-28 (nach Task 0019 — Bedienungsnacharbeit 2 / Phase 4b.2)
+Stand: 2026-09-29 (nach Task 0020 — Phase 4c.1: Tailwind-Migration und Theme-Grundlage)
 Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 
 ---
@@ -24,6 +24,8 @@ Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 | 4b | 3D-Ansicht | **DONE** (Checkpoint 4b/4b.1/4b.2 committet) | 4a |
 | 4b.1 | Bedienungsnacharbeit 1 (Listen, Kundenfilter, Maßeinheit, Rückfragen) | **DONE** (Checkpoint 4b/4b.1/4b.2 committet) | 4b |
 | 4b.2 | Bedienungsnacharbeit 2 (Tür per Maus, gemeinsame Öffnungen, Teilwände) | **DONE** (Checkpoint 4b/4b.1/4b.2 committet) | 4b.1 |
+| 4c.1 | Frontend auf Tailwind CSS, semantische Theme-Tokens | **DONE** (mit diesem Checkpoint committet) | 4b.2 |
+| 4c.2 | Persönliche Farb- und Darstellungseinstellungen | NOT STARTED | 4c.1 |
 | 5 | Electrical Devices | NOT STARTED | 4a |
 | 6 | Circuits & Cable Routes | NOT STARTED | 5 |
 | 7 | Materials | NOT STARTED | 6 |
@@ -311,6 +313,35 @@ sie abgeleitet beide Räume (ADR 0016, „Präzisierung 4b.2"). Türen werden im
 direkt per Maus platziert und entlang ihrer Wand verschoben (Vorschau, 5-cm-Fang, Escape).
 Maßeinheit je Benutzer. Keine Migration, keine API-Änderung. Ergebnis:
 [`docs/task-history.md`](task-history.md), Task 0019. T10 bleibt vor Phase 6 offen.
+
+## Phase 4c.1 — Tailwind-Migration und Theme-Grundlage · DONE (2026-09-29, mit diesem Checkpoint committet)
+
+Das Frontend ist von der globalen `styles.css` auf Tailwind CSS 4 umgestellt – ohne
+Redesign, ohne Verhaltensänderung. Farben kommen aus semantischen Laufzeit-Tokens
+(`--ep-*`), die Tailwind über `@theme inline` verwendet; die Standardpalette ist
+abgeschaltet. Spezial-CSS bleibt nur für globale Grundregeln und die SVG-Zeichenfläche des
+Electrical-Editors (im Modul). Entscheidung:
+[ADR 0018](decisions/0018-frontend-styling-tailwind-and-theme-tokens.md). Ergebnis:
+[`docs/task-history.md`](task-history.md), Task 0020. Kein Backend, keine Migration, keine
+API-Änderung.
+
+**Exit — erfüllt:**
+
+| Kriterium | Nachweis |
+|---|---|
+| Keine alte globale CSS-Implementierung parallel zu Tailwind | frühere `styles.css`-Regeln vollständig entfernt; keine alte Klasse mehr im Code außer den bewusst verbliebenen `grundriss__*` der SVG-Zeichenfläche |
+| Erscheinungsbild unverändert | berechnete Stile und Positionen aller sichtbaren Elemente vor/nach verglichen (19 Seiten und Zustände, 33 Vergleiche, dunkel und hell, 1280 und 420 px): keine Farb-, Abstands- oder Layoutabweichung; Abweichungen nur durch Messbedingungen und neue Daten |
+| Verhalten unverändert | 622 Frontendtests grün, Modulgrenzen OK, Produktionsbuild; im Browser Anmeldung, Dialoge, Combobox, Navigationsschutz, cm/mm, 2D/3D-Wechsel funktional geprüft |
+| Farben zur Laufzeit änderbar | alle Farben über `var(--ep-…)`; keine dynamischen oder konkreten Farbklassen |
+
+Die abschließende Sichtprüfung hat der Auftraggeber
+vorgenommen; die automatisierte Sichtprüfung war nur teilweise möglich.
+
+## Phase 4c.2 — Persönliche Farb- und Darstellungseinstellungen · NOT STARTED
+
+Benutzer stellen Farben und Darstellungsoptionen persönlich ein; die Tokens aus 4c.1 werden
+zur Laufzeit überschrieben. Die 3D-Szene wird an die Tokens angebunden. Umfang,
+Speicherort der Präferenz und Kontrastregeln werden vor Beginn festgelegt.
 
 ---
 

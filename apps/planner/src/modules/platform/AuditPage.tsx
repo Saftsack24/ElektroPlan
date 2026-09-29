@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { useAuth } from "../../core/auth/AuthProvider";
+import { TABELLE, karte, meldungsflaeche } from "../../core/ui/stil";
 
 export default function AuditListPage() {
   const { api } = useAuth();
@@ -11,16 +12,16 @@ export default function AuditListPage() {
     queryFn: () => api.get("/api/v1/audit", { query: { limit: 50 } }),
   });
 
-  if (isPending) return <p className="muted">Protokoll wird geladen ...</p>;
+  if (isPending) return <p className="text-muted">Protokoll wird geladen ...</p>;
   if (isError) {
-    return <p className="alert alert--error">Das Protokoll konnte nicht geladen werden.</p>;
+    return <p className={meldungsflaeche()}>Das Protokoll konnte nicht geladen werden.</p>;
   }
 
   return (
-    <section className="card">
+    <section className={karte()}>
       <h1>Protokoll</h1>
-      <p className="muted">Kritische Aktionen dieses Betriebs. Einträge sind unveränderlich.</p>
-      <table className="table">
+      <p className="text-muted">Kritische Aktionen dieses Betriebs. Einträge sind unveränderlich.</p>
+      <table className={TABELLE}>
         <thead>
           <tr>
             <th>Zeitpunkt</th>
@@ -42,7 +43,7 @@ export default function AuditListPage() {
           ))}
         </tbody>
       </table>
-      {data.items.length === 0 && <p className="muted">Noch keine Einträge.</p>}
+      {data.items.length === 0 && <p className="text-muted">Noch keine Einträge.</p>}
     </section>
   );
 }

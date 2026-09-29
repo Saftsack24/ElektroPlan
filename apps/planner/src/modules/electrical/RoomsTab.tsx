@@ -9,6 +9,7 @@ import { useAuth, usePermission } from "../../core/auth/AuthProvider";
 import { Auswahl } from "../../core/ui/Feld";
 import { useMasse } from "../../core/ui/masseinheit";
 import { useRueckfrage, verwerfenOptionen } from "../../core/ui/Rueckfrage";
+import { KARTENKOPF, KARTENTITEL, KNOPFZEILE, STAPEL, TABELLE, karte, knopf, meldungsflaeche, reiter } from "../../core/ui/stil";
 import { Ansicht3dLaden } from "./ansicht3d/Ansicht3dLaden";
 import { GrundrissEditor } from "./editor/GrundrissEditor";
 import { planSchluessel } from "./plan";
@@ -233,11 +234,11 @@ export default function RoomsTab() {
   });
 
   if (projekt.isPending || gebaeude.isPending) {
-    return <p className="muted">Grundriss wird geladen ...</p>;
+    return <p className="text-muted">Grundriss wird geladen ...</p>;
   }
   if (projekt.isError || gebaeude.isError) {
     return (
-      <p className="alert alert--error" role="alert">
+      <p className={meldungsflaeche()} role="alert">
         Die Gebäudestruktur dieses Projekts konnte nicht geladen werden.
       </p>
     );
@@ -245,9 +246,9 @@ export default function RoomsTab() {
 
   if (auswahl.length === 0) {
     return (
-      <section className="card">
+      <section className={karte()}>
         <h2>Räume &amp; Grundriss</h2>
-        <p className="muted">
+        <p className="text-muted">
           Für dieses Projekt ist noch kein Geschoss angelegt. Räume hängen an einem
           Geschoss — bitte zuerst im Tab „Gebäude &amp; Geschosse" eines anlegen.
         </p>
@@ -259,13 +260,13 @@ export default function RoomsTab() {
   const geoeffnet = liste.find((raum) => raum.id === offenerRaum) ?? null;
 
   return (
-    <div className="stack">
-      <section className="card">
-        <div className="card__header">
-          <h2>Räume &amp; Grundriss</h2>
+    <div className={STAPEL}>
+      <section className={karte()}>
+        <div className={KARTENKOPF}>
+          <h2 className={KARTENTITEL}>Räume &amp; Grundriss</h2>
           {darfSchreiben && ansicht === "tabelle" && (
             <button
-              className="button button--primary"
+              className={knopf("primaer")}
               type="button"
               onClick={() => setRaumdialog({ raum: null })}
             >
@@ -275,7 +276,7 @@ export default function RoomsTab() {
         </div>
 
         {archiviert && (
-          <p className="alert">
+          <p className={meldungsflaeche("schlicht")}>
             Dieses Projekt ist archiviert und damit <strong>schreibgeschützt</strong>.
             Räume, Wände und Öffnungen lassen sich ansehen, aber nicht mehr ändern.
           </p>
@@ -301,12 +302,12 @@ export default function RoomsTab() {
           ))}
         </Auswahl>
 
-        <div className="ansichtswahl" role="group" aria-label="Ansicht">
+        <div className="my-2 flex gap-1 border-b border-line" role="group" aria-label="Ansicht">
           {ANSICHTEN.map(({ wert, label }) => (
             <button
               key={wert}
               type="button"
-              className={ansicht === wert ? "tabs__tab tabs__tab--active" : "tabs__tab"}
+              className={reiter(ansicht === wert)}
               aria-pressed={ansicht === wert}
               onClick={() => void ansichtWechseln(wert)}
             >
@@ -316,24 +317,24 @@ export default function RoomsTab() {
         </div>
 
         {fehler !== null && (
-          <p className="alert alert--error" role="alert">
+          <p className={meldungsflaeche()} role="alert">
             {fehler}
           </p>
         )}
 
         {ansicht !== "tabelle" ? null : raeume.isPending ? (
-          <p className="muted">Räume werden geladen ...</p>
+          <p className="text-muted">Räume werden geladen ...</p>
         ) : raeume.isError ? (
-          <p className="alert alert--error" role="alert">
+          <p className={meldungsflaeche()} role="alert">
             Die Räume dieses Geschosses konnten nicht geladen werden.
           </p>
         ) : liste.length === 0 ? (
-          <p className="muted">
+          <p className="text-muted">
             Auf diesem Geschoss ist noch kein Raum erfasst.
             {darfSchreiben ? " Mit „Raum anlegen“ geht es los." : ""}
           </p>
         ) : (
-          <table className="table">
+          <table className={TABELLE}>
             <thead>
               <tr>
                 <th>Nummer</th>
@@ -355,9 +356,9 @@ export default function RoomsTab() {
                   <td>{raum.wall_count}</td>
                   <td>{flaecheAnzeigen(raum.area_m2)}</td>
                   <td>
-                    <div className="button-row">
+                    <div className={KNOPFZEILE}>
                       <button
-                        className="button button--ghost"
+                        className={knopf()}
                         type="button"
                         aria-label={`Raum ${raum.name} öffnen`}
                         onClick={() =>
@@ -369,7 +370,7 @@ export default function RoomsTab() {
                       {darfSchreiben && (
                         <>
                           <button
-                            className="button button--ghost"
+                            className={knopf()}
                             type="button"
                             aria-label={`Raum ${raum.name} bearbeiten`}
                             onClick={() => setRaumdialog({ raum })}
@@ -377,7 +378,7 @@ export default function RoomsTab() {
                             Bearbeiten
                           </button>
                           <button
-                            className="button button--ghost"
+                            className={knopf()}
                             type="button"
                             aria-label={`Raum ${raum.name} entfernen`}
                             disabled={raumLoeschen.isPending}
@@ -397,7 +398,7 @@ export default function RoomsTab() {
       </section>
 
       {ansicht === "editor" && aktivesGeschoss !== undefined && (
-        <section className="card card--editor">
+        <section className={karte("kompakt")}>
           <GrundrissEditor
             key={aktivesGeschoss.id}
             floorId={aktivesGeschoss.id}
@@ -411,7 +412,7 @@ export default function RoomsTab() {
       )}
 
       {ansicht === "3d" && aktivesGeschoss !== undefined && (
-        <section className="card card--editor">
+        <section className={karte("kompakt")}>
           <Ansicht3dLaden
             floorId={aktivesGeschoss.id}
             geschossLabel={aktivesGeschoss.label}

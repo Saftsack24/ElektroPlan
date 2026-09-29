@@ -1,7 +1,7 @@
 # Aktueller Projektstand
 
-**Letzte Aktualisierung:** 2026-09-28
-**Aktualisiert nach:** Task 0019 — Bedienungsnacharbeit 2 / Phase 4b.2 (gemeinsame Wandabschnitte, Tür per Maus)
+**Letzte Aktualisierung:** 2026-09-29
+**Aktualisiert nach:** Task 0020 — Phase 4c.1 (Frontend auf Tailwind CSS, Theme-Grundlage)
 
 > Dieses Dokument soll einer neuen Session in wenigen Minuten vermitteln, wo das Projekt
 > steht.
@@ -32,6 +32,11 @@ geprüft) — mit dem gemeinsamen Checkpoint 4b/4b.1/4b.2 committet
 **Phase 4b.2 — Bedienungsnacharbeit 2: ABGESCHLOSSEN** (automatisiert und im Browser
 funktional geprüft, siehe Abschnitt 2) — mit dem gemeinsamen Checkpoint 4b/4b.1/4b.2
 committet
+**Phase 4c.1 — Tailwind-Migration und Theme-Grundlage: ABGESCHLOSSEN** (automatisiert,
+per Stilvergleich und im Browser funktional geprüft, Sichtprüfung durch den Auftraggeber)
+— mit diesem Checkpoint committet
+**Phase 4c.2 — persönliche Farb- und Darstellungseinstellungen: NICHT BEGONNEN**
+**Phase 5 — Electrical Devices: NICHT BEGONNEN**
 
 > Phase 4a und 4a.1 sind als `887f254`, Phase 4.2 als `66cbff3` committet. Die
 > Entscheidungen **T8** (Wandhöhe und Wandtyp) und **T9** (deckungsgleiche Wände) sind
@@ -41,6 +46,33 @@ committet
 ---
 
 ## 2. Zuletzt abgeschlossene Aufgabe
+
+**Task 0020 — Phase 4c.1: Frontend auf Tailwind CSS, Theme-Grundlage**
+([ADR 0018](decisions/0018-frontend-styling-tailwind-and-theme-tokens.md))
+
+1. **Tailwind CSS 4.3.3** über `@tailwindcss/vite`, CSS-first (keine `tailwind.config.js`),
+   **ohne Preflight**, Quellscan `src/` ohne Ausschlussliste für Utilities (Nachkorrektur:
+   die zunächst eingeführte Liste ist entfernt). Docker-Entwicklung geprüft (Image neu gebaut, Linux-Binärdatei im
+   Lockfile).
+2. **Semantische Laufzeit-Tokens** `--ep-*` (`core/theme/tokens.css`), per `@theme inline`
+   als `bg-surface`, `text-muted`, `border-line`, `bg-accent` … nutzbar; Tailwind-
+   Standardpalette abgeschaltet; Werte 1:1 aus dem Bestand (hell und dunkel).
+   Editor-Tokens `--ep-plan-*` im Electrical-Modul.
+3. **Oberfläche vollständig migriert** (Shell, Core-Bausteine, Anmeldung, Kunden,
+   Projekte, Dialoge, Combobox, Seiten, Verwaltung, Projektstruktur, Electrical-Räume,
+   2D-Editor, 3D-Ansicht). Wiederkehrendes in typisierten Rezepten (`core/ui/stil.ts`),
+   neuer Baustein `DialogAktionen`. Die globale `styles.css` (553 Zeilen, ~267
+   Regelblöcke) ist ersetzt; Spezial-CSS nur noch `core/theme/basis.css` und
+   `modules/electrical/editor/grundriss.css` (SVG-Zeichenfläche).
+4. **Erscheinungsbild unverändert**, nachgewiesen durch einen Vergleich der berechneten
+   Stile und Positionen aller sichtbaren Elemente vor/nach (19 Seiten und Zustände, 33
+   Vergleiche). Ein dabei gefundener Migrationsfehler (Fettschrift der aktiven Seitenzahl)
+   ist behoben.
+5. Keine Backend-, API-, Migrations- oder Verhaltensänderung; 622 Frontendtests grün.
+
+**Abnahme:** Die automatisierte Sichtprüfung war nur teilweise möglich (Browserbereich
+verdeckt); die abschließende Sichtprüfung hat der Auftraggeber vorgenommen und ohne
+Befund bestätigt.
 
 **Task 0019 — Bedienungsnacharbeit 2 / Phase 4b.2** (Punkt 9 der Abnahme nach 4b)
 
@@ -729,6 +761,10 @@ was offen ist, ist eine Schuld.
 | ~~3D: teilweise überlappende Wände werden nicht zusammengeführt~~ | **Behoben in 4b.2:** exakte atomare Abschnitte, realer Grundriss ohne doppelte Körper | — |
 | Nachbarschaft von Öffnungen ist nur abgeleitet (4b.2) | Leitungsrouting und Materialermittlung dürfen sich nicht darauf stützen; vorhandene beidseitige Dubletten werden nur gemeldet, kein Bereinigungswerkzeug | mit T10 vor Phase 6 |
 | 3D-Abnahme 4b.2 nicht visuell | Browserbereich war verborgen – WebGL-Bild und 3D-Auswahl der gemeinsamen Tür nur automatisiert und über Texte/Zahlen geprüft | bei der Abnahme durch den Auftraggeber |
+| Kontrast der hellen Warnfarbe `#c77d00` 3,3 : 1 und der Rahmen (~1,3 : 1) | unter WCAG AA für Text bzw. Bedienelement-Umrisse; unverändert aus dem Bestand (4c.1 ist kein Redesign) | mit Phase 4c.2 |
+| 3D-Szene folgt den Theme-Tokens nicht | Three.js-Farben stehen in `ansicht3d/szene.ts` (hell/dunkel über `matchMedia`) | Phase 4c.2 |
+| Waagrechte Überbreite bei schmalen Fenstern | bei 420 px ist die Seite 499 px (Übersicht, Projekte) bzw. 594 px (Benutzer) breit; Bestand vor 4c.1, unverändert | eigene Aufgabe. Gemessen: Der Benutzerblock der Kopfzeile (Betrieb, E-Mail, zwei Knöpfe) bricht nicht um (479 px); die Benutzertabelle (561 px) verbreitert die Seite trotz Scrollhülle |
+| `hover:` nur auf Geräten mit Zeigerhover | Tailwind 4 kapselt Hover in `@media (hover: hover)`; auf Touch entfällt der Hover-Zustand (vorher klebte er nach Antippen) | keine Absicht, das zu ändern |
 | 3D: Ecken bei nicht rechtwinkligen Wänden | Eckschluss über Verlängerung um halbe Stärke; bei spitzen/stumpfen Winkeln kleine Überstände | nur bei Bedarf (reine Darstellung) |
 | 3D: WebGL-Fallback und Kontextverlust nur automatisiert geprüft | im verwendeten Browser nicht auslösbar | bei einem Browser ohne WebGL nachprüfen |
 | 3D: Chunk der 3D-Ansicht ≈ 588 kB (≈ 152 kB gzip) | lazy geladen, Haupt-Bundle unberührt; `chunkSizeWarningLimit` auf 650 kB gesetzt | bei Bedarf Three.js-Teilimporte prüfen |
@@ -813,6 +849,10 @@ HSTS, Virenscan, MFA für administrative Konten.
 
 ## 9. Nächste geplante Aufgabe
 
+**Nach Phase 4c.1 (Stand 2026-09-29):** Phase 4c.1 ist abgenommen und mit diesem
+Checkpoint committet (nicht gepusht). Phase 4c.2 und Phase 5 sind **nicht begonnen**;
+beide erst nach ausdrücklicher Freigabe.
+
 Phase 4b, 4b.1 (Bedienungsnacharbeit 1) und 4b.2 (Bedienungsnacharbeit 2) sind umgesetzt und
 mit einem gemeinsamen Checkpoint-Commit committet (nicht gepusht). Phase 5 ist **nicht begonnen**.
 Weiteres Vorgehen:
@@ -839,7 +879,12 @@ Weiteres Vorgehen:
    Lauf in diesem Fall selbst ab (`tests/datenbankschutz.py`).
 3a. Nach Frontend-Änderungen den Planner-Container neu starten
    (`docker restart elektroplan-planner`); Vite bemerkt die Änderungen über den
-   Windows-Mount nicht.
+   Windows-Mount nicht. Nach Änderungen an `package.json` oder `vite.config.ts` das Image
+   neu bauen (`docker compose build planner`). Läuft zusätzlich ein lokaler Vite auf 5173,
+   bedient er `localhost` über IPv6, der Container `127.0.0.1`.
+3b. Oberfläche mit Tailwind: Farben nur über semantische Tokens, Rezepte aus
+   `core/ui/stil.ts`, Klassen vollständig im Quelltext (ADR 0018,
+   `docs/architecture.md` Abschnitt 13).
 4. Das Backend ist **synchron** (ADR 0011): Endpunkte sind `def`, nicht `async def`.
 5. `electrical` hängt in den Phasen 3–6 **nur** von `core` ab; `materials` kommt erst in
    Phase 7 (siehe `docs/modules.md`).

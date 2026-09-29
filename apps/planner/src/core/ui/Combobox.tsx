@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent, ReactNode } from "react";
 
+import { FELD, FELD_BESCHRIFTUNG, FELD_FEHLER, FELD_HINWEIS, eingabefeld, knopf } from "./stil";
+
+/** Zustands- und Fußzeile der Vorschlagsliste. */
+const STATUSZEILE = "m-0 min-h-[2.4em] px-2.5 py-2 text-small";
+/** Ein Vorschlag; der aktive trägt zusätzlich den Auswahlrahmen. */
+const OPTION = "cursor-pointer border-b border-line px-2.5 py-[7px] last:border-b-0";
+
 export type Comboboxzustand = "laedt" | "fehler" | "bereit";
 
 /** Größte Höhe der Vorschlagsliste; darüber scrollt nur die Liste selbst. */
@@ -198,15 +205,15 @@ export function Combobox<OptionT>({
   const aktiveOption = offen && aktiv >= 0 && zustand === "bereit" ? optionId(aktiv) : undefined;
 
   return (
-    <div className="field combobox">
-      <label className="field__label" htmlFor={id}>
+    <div className={FELD}>
+      <label className={FELD_BESCHRIFTUNG} htmlFor={id}>
         {label}
         {required ? " *" : ""}
       </label>
       <input
         ref={feld}
         id={id}
-        className={fehler ? "field__input field__input--fehler" : "field__input"}
+        className={eingabefeld({ fehler: Boolean(fehler) })}
         type="text"
         role="combobox"
         autoComplete="off"
@@ -229,45 +236,45 @@ export function Combobox<OptionT>({
         onKeyDown={tasten}
       />
       {fehler !== undefined && (
-        <span id={fehlerId} className="field__fehler" role="alert">
+        <span id={fehlerId} className={FELD_FEHLER} role="alert">
           {fehler}
         </span>
       )}
       {hinweis !== undefined && (
-        <span id={hinweisId} className="field__hinweis">
+        <span id={hinweisId} className={FELD_HINWEIS}>
           {hinweis}
         </span>
       )}
 
       {offen && (
         <div
-          className="combobox__popup"
+          className="z-[1000] overflow-y-auto overscroll-contain rounded-ep border border-line bg-raised text-fg shadow-popup"
           style={lage}
           data-testid={`${id}-popup`}
           // Ein Klick in die Liste nimmt dem Feld nicht den Fokus.
           onMouseDown={(event) => event.preventDefault()}
         >
           {zustand === "laedt" && (
-            <p className="combobox__status" role="status">
+            <p className={STATUSZEILE} role="status">
               Wird gesucht …
             </p>
           )}
           {zustand === "fehler" && (
-            <p className="combobox__status combobox__status--fehler" role="alert">
+            <p className={`${STATUSZEILE} text-danger`} role="alert">
               {fehlerText}{" "}
               {onErneut !== undefined && (
-                <button type="button" className="button button--ghost" onClick={onErneut}>
+                <button type="button" className={knopf()} onClick={onErneut}>
                   Erneut versuchen
                 </button>
               )}
             </p>
           )}
           {zustand === "bereit" && optionen.length === 0 && (
-            <p className="combobox__status" role="status">
+            <p className={STATUSZEILE} role="status">
               {leerText}
             </p>
           )}
-          <ul id={listeId} role="listbox" aria-label={label} className="combobox__liste">
+          <ul id={listeId} role="listbox" aria-label={label} className="m-0 list-none p-0 empty:hidden">
             {zustand === "bereit" &&
               optionen.map((option, index) => (
                 <li
@@ -275,7 +282,7 @@ export function Combobox<OptionT>({
                   id={optionId(index)}
                   role="option"
                   aria-selected={index === aktiv}
-                  className={index === aktiv ? "combobox__option combobox__option--aktiv" : "combobox__option"}
+                  className={index === aktiv ? `${OPTION} bg-selected-soft outline-2 -outline-offset-2 outline-selected` : OPTION}
                   onMouseEnter={() => setAktiv(index)}
                   onClick={() => waehlen(option)}
                 >
@@ -284,7 +291,7 @@ export function Combobox<OptionT>({
               ))}
           </ul>
           {zustand === "bereit" && fusszeile !== undefined && fusszeile !== null && (
-            <p className="combobox__status muted">{fusszeile}</p>
+            <p className={`${STATUSZEILE} text-muted`}>{fusszeile}</p>
           )}
         </div>
       )}

@@ -7,6 +7,7 @@ import { Link, useParams } from "react-router-dom";
 import { useAuth, usePermission } from "../../core/auth/AuthProvider";
 import { useProjectTabs } from "../../core/modules/ProjectTabs";
 import { useVerlassenBestaetigen } from "../../core/ui/Rueckfrage";
+import { KNOPFZEILE, REITERLEISTE, STAPEL, karte, knopf, meldungsflaeche, reiter } from "../../core/ui/stil";
 import { ProjectFilesTab } from "./ProjectFilesTab";
 import { ProjectMasterDataTab } from "./ProjectMasterDataTab";
 import { ProjectStructureTab } from "./ProjectStructureTab";
@@ -68,9 +69,9 @@ export default function ProjectDetailPage() {
       setFehler(error instanceof ApiError ? error.userMessage : "Statuswechsel fehlgeschlagen."),
   });
 
-  if (projekt.isPending) return <p className="muted">Projekt wird geladen ...</p>;
+  if (projekt.isPending) return <p className="text-muted">Projekt wird geladen ...</p>;
   if (projekt.isError || !projekt.data) {
-    return <p className="alert alert--error">Dieses Projekt ist nicht verfügbar.</p>;
+    return <p className={meldungsflaeche()}>Dieses Projekt ist nicht verfügbar.</p>;
   }
 
   const daten: ProjectOut = projekt.data;
@@ -80,27 +81,27 @@ export default function ProjectDetailPage() {
   const schreibgeschuetzt = istSchreibgeschuetzt(daten.status);
 
   return (
-    <div className="stack">
-      <section className="card">
-        <p className="muted">
+    <div className={STAPEL}>
+      <section className={karte()}>
+        <p className="text-muted">
           <Link to="/projects">← Alle Projekte</Link>
         </p>
         <h1>{daten.name}</h1>
-        <p className="muted">
+        <p className="text-muted">
           Projektnummer <code>{daten.project_number}</code> · Status{" "}
           <strong>{STATUS_LABEL[daten.status]}</strong> · Version {daten.version}
         </p>
         {schreibgeschuetzt && (
-          <p className="alert">
+          <p className={meldungsflaeche("schlicht")}>
             Dieses Projekt ist archiviert und damit <strong>schreibgeschützt</strong>.
             Stammdaten, Gebäude, Geschosse und Dateien lassen sich nicht mehr ändern, und
             es sind keine neuen Uploads möglich. Lesen und das Herunterladen bestehender
             Dateien bleiben erlaubt.
           </p>
         )}
-        {fehler && <p className="alert alert--error">{fehler}</p>}
+        {fehler && <p className={meldungsflaeche()}>{fehler}</p>}
         {darfSchreiben && (
-          <div className="button-row">
+          <div className={KNOPFZEILE}>
             {UEBERGAENGE.filter(
               (uebergang) =>
                 (uebergang.erlaubtAb === null
@@ -109,7 +110,7 @@ export default function ProjectDetailPage() {
             ).map((uebergang) => (
               <button
                 key={uebergang.ziel}
-                className="button button--ghost"
+                className={knopf()}
                 type="button"
                 disabled={wechseln.isPending}
                 onClick={() => wechseln.mutate({ ziel: uebergang.ziel, version: daten.version })}
@@ -121,12 +122,12 @@ export default function ProjectDetailPage() {
         )}
       </section>
 
-      <nav className="tabs">
+      <nav className={REITERLEISTE}>
         {EIGENE_TABS.map((tab) => (
           <button
             key={tab.id}
             type="button"
-            className={aktiv === tab.id ? "tabs__tab tabs__tab--active" : "tabs__tab"}
+            className={reiter(aktiv === tab.id)}
             onClick={() => setAktiv(tab.id)}
           >
             {tab.label}
@@ -136,7 +137,7 @@ export default function ProjectDetailPage() {
           <button
             key={tab.id}
             type="button"
-            className={aktiv === tab.id ? "tabs__tab tabs__tab--active" : "tabs__tab"}
+            className={reiter(aktiv === tab.id)}
             onClick={() => setAktiv(tab.id)}
           >
             {tab.label}
@@ -157,7 +158,7 @@ export default function ProjectDetailPage() {
         .map((tab) => {
           const Inhalt = tab.element;
           return (
-            <Suspense key={tab.id} fallback={<p className="muted">Wird geladen ...</p>}>
+            <Suspense key={tab.id} fallback={<p className="text-muted">Wird geladen ...</p>}>
               <Inhalt />
             </Suspense>
           );

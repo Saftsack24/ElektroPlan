@@ -6,16 +6,20 @@
  * Keine Eingabefelder, kein Speichern: Die 3D-Ansicht ist schreibgeschützt.
  */
 import { useMasse } from "../../../core/ui/masseinheit";
+import { knopf } from "../../../core/ui/stil";
 import { OEFFNUNGSART_LABEL, flaecheAnzeigen } from "../texte";
 import type { Auswahl, Szenenmodell, Warnung } from "./modell";
 import { auswahlSchluessel, raumBezeichnung } from "./modell";
 import type { Objekt } from "./szenenmodell";
 import { warnungenZu } from "./szenenmodell";
 
+/** Hinweise und ausgelassene Elemente. */
+const LISTE = "m-0 flex list-none flex-col gap-2 p-0 text-[0.88rem]";
+
 
 function Werte({ zeilen }: { zeilen: readonly (readonly [string, string])[] }) {
   return (
-    <dl className="ansicht3d__werte">
+    <dl className="mt-0 mb-2 grid grid-cols-[max-content_1fr] gap-x-3 gap-y-0.5 text-small *:contents [&_dd]:m-0 [&_dd]:wrap-anywhere [&_dt]:text-muted">
       {zeilen.map(([name, wert]) => (
         <div key={name}>
           <dt>{name}</dt>
@@ -36,22 +40,22 @@ function Hinweisliste({
   auswahl?: Auswahl | null;
 }) {
   return (
-    <ul className="ansicht3d__hinweise">
+    <ul className={LISTE}>
       {warnungen.map((w) => {
         const ziel = w.bezug[0];
         const bereitsGewaehlt =
           ziel !== undefined && auswahl != null && auswahlSchluessel(ziel) === auswahlSchluessel(auswahl);
         return (
-          <li key={w.id} className="ansicht3d__hinweis">
+          <li key={w.id} className="border-l-4 border-warning py-0.5 pl-2 [&_p]:mt-0 [&_p]:mb-1">
             <p>
-              <span className="ansicht3d__hinweiszeichen" aria-hidden="true">
+              <span className="text-warning" aria-hidden="true">
                 ⚠
               </span>{" "}
               <strong>Hinweis: {w.titel}</strong>
             </p>
             <p>{w.text}</p>
             {onZeigen !== undefined && ziel !== undefined && !bereitsGewaehlt && (
-              <button type="button" className="button button--ghost" onClick={() => onZeigen(ziel)}>
+              <button type="button" className={knopf()} onClick={() => onZeigen(ziel)}>
                 In der Ansicht zeigen
               </button>
             )}
@@ -74,7 +78,7 @@ function Auswahlinfo({ modell, objekt }: { modell: Szenenmodell; objekt: Objekt 
     const { raum } = objekt;
     return (
       <>
-        <h3>Raum {raumBezeichnung(raum)}</h3>
+        <h3 className="mt-0 mb-1.5 text-[1rem]">Raum {raumBezeichnung(raum)}</h3>
         <Werte
           zeilen={[
             ["Bezeichnung", raum.name],
@@ -99,7 +103,7 @@ function Auswahlinfo({ modell, objekt }: { modell: Szenenmodell; objekt: Objekt 
   if (objekt.art === "wand") {
     return (
       <>
-        <h3>{wand.lage === "gemeinsam" ? "Gemeinsame Wand" : "Wand"}</h3>
+        <h3 className="mt-0 mb-1.5 text-[1rem]">{wand.lage === "gemeinsam" ? "Gemeinsame Wand" : "Wand"}</h3>
         <Werte
           zeilen={[
             ["Länge", mm(wand.laengeMm)],
@@ -132,8 +136,8 @@ function Auswahlinfo({ modell, objekt }: { modell: Szenenmodell; objekt: Objekt 
         : "Nicht eindeutig – siehe Hinweis";
   return (
     <>
-      <h3>{oeffnung.arten.map((a) => OEFFNUNGSART_LABEL[a]).join(" / ")}</h3>
-      <p className="ansicht3d__verbindung">{verbindung}</p>
+      <h3 className="mt-0 mb-1.5 text-[1rem]">{oeffnung.arten.map((a) => OEFFNUNGSART_LABEL[a]).join(" / ")}</h3>
+      <p className="mt-0 mb-1.5 font-semibold">{verbindung}</p>
       <Werte
         zeilen={[
           ["Art", oeffnung.arten.map((a) => OEFFNUNGSART_LABEL[a]).join(" / ")],
@@ -163,11 +167,11 @@ export function Seitenleiste({
 }) {
   const eigene = auswahl !== null && objekt !== null ? warnungenZu(modell, auswahl) : [];
   return (
-    <aside className="ansicht3d__seite" aria-label="Informationen zur 3D-Ansicht">
-      <section className="ansicht3d__abschnitt" aria-live="polite">
-        <h2 className="ansicht3d__titel">Auswahl</h2>
+    <aside className="flex flex-col gap-3 overflow-auto split:max-h-[62vh]" aria-label="Informationen zur 3D-Ansicht">
+      <section className="rounded-ep border border-line px-3 py-2.5" aria-live="polite">
+        <h2 className="mt-0 mb-1.5 text-[0.95rem]">Auswahl</h2>
         {objekt === null ? (
-          <p className="muted">
+          <p className="text-muted">
             Nichts ausgewählt. Einen Raum (Boden), eine Wand oder eine Öffnung in der Ansicht
             anklicken.
           </p>
@@ -175,7 +179,7 @@ export function Seitenleiste({
           <>
             <Auswahlinfo modell={modell} objekt={objekt} />
             {eigene.length > 0 && <Hinweisliste warnungen={eigene} />}
-            <button type="button" className="button button--ghost" onClick={() => onAuswahl(null)}>
+            <button type="button" className={knopf()} onClick={() => onAuswahl(null)}>
               Auswahl aufheben (Esc)
             </button>
           </>
@@ -183,12 +187,12 @@ export function Seitenleiste({
       </section>
 
       {modell.ausgelassen.length > 0 && (
-        <section className="ansicht3d__abschnitt">
-          <h2 className="ansicht3d__titel">Nicht dargestellt ({modell.ausgelassen.length})</h2>
-          <p className="muted">
+        <section className="rounded-ep border border-line px-3 py-2.5">
+          <h2 className="mt-0 mb-1.5 text-[0.95rem]">Nicht dargestellt ({modell.ausgelassen.length})</h2>
+          <p className="text-muted">
             Diese Räume haben noch keine vollständige Geometrie und erscheinen deshalb nicht in 3D:
           </p>
-          <ul className="ansicht3d__ausgelassen">
+          <ul className={LISTE}>
             {modell.ausgelassen.map((raum) => (
               <li key={raum.id}>
                 <strong>{raum.bezeichnung}</strong> – {raum.grund}
@@ -198,13 +202,13 @@ export function Seitenleiste({
         </section>
       )}
 
-      <section className="ansicht3d__abschnitt">
-        <h2 className="ansicht3d__titel">Hinweise zur Darstellung ({modell.warnungen.length})</h2>
+      <section className="rounded-ep border border-line px-3 py-2.5">
+        <h2 className="mt-0 mb-1.5 text-[0.95rem]">Hinweise zur Darstellung ({modell.warnungen.length})</h2>
         {modell.warnungen.length === 0 ? (
-          <p className="muted">Keine Auffälligkeiten in den erfassten Daten.</p>
+          <p className="text-muted">Keine Auffälligkeiten in den erfassten Daten.</p>
         ) : (
           <>
-            <p className="muted">
+            <p className="text-muted">
               Die 3D-Ansicht zeigt die gespeicherten Daten, ohne sie zu ändern. Wo sie sich
               widersprechen, gilt eine Darstellungsregel – korrigiert wird im 2D-Editor.
             </p>

@@ -5,6 +5,37 @@ Einträge entstehen nach relevanten Änderungen, nicht nach jedem Commit.
 
 ---
 
+## 2026-09-29 — Phase 4c.1: Frontend auf Tailwind CSS, Theme-Grundlage
+
+Keine Migration, **keine** API- oder Backendänderung, kein Redesign. Mit diesem Checkpoint committet.
+Entscheidung: [ADR 0018](decisions/0018-frontend-styling-tailwind-and-theme-tokens.md).
+
+### Added
+
+- **Tailwind CSS 4.3.3** über `@tailwindcss/vite` (Build und Docker-Entwicklung), ohne
+  Preflight, Quellscan auf `apps/planner/src`.
+- **Semantische Laufzeit-Tokens** `--ep-*` (`core/theme/tokens.css`) mit Tailwind-Namen
+  (`bg-surface`, `text-muted`, `border-line`, `bg-accent` …); zur Laufzeit überschreibbar –
+  Grundlage für Phase 4c.2. Electrical-Tokens `--ep-plan-*` im Modul.
+- Klassenrezepte `core/ui/stil.ts` und Baustein `DialogAktionen`.
+
+### Changed
+
+- Gesamte Oberfläche von der globalen `styles.css` auf Utilities und Rezepte umgestellt;
+  Erscheinungsbild per Stilvergleich unverändert.
+- SVG-Gestaltung des 2D-Editors liegt jetzt im Electrical-Modul
+  (`modules/electrical/editor/grundriss.css`) und wird mit dem Editor geladen.
+- Primärknöpfe zeigen beim Überfahren die Akzent-Hover-Farbe (neuer Token, vorher kein
+  Hover-Zustand); Hover-Zustände gelten nur noch auf Geräten mit Zeiger.
+- Produktions-CSS: 17,4 kB + 3,8 kB (Editor-Chunk) statt 20,2 kB.
+
+### Removed
+
+- Die globale handgeschriebene `styles.css` mit rund 267 Regelblöcken; die
+  Tailwind-Standardfarbpalette ist abgeschaltet.
+
+---
+
 ## 2026-09-28 — Bedienungsnacharbeit 2: gemeinsame Wandabschnitte, Tür per Maus
 
 Keine Migration, **keine** API- oder Backendänderung. Mit dem gemeinsamen Checkpoint 4b/4b.1/4b.2 committet.

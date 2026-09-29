@@ -1,8 +1,14 @@
 import { useMasse } from "../../../core/ui/masseinheit";
+import { KNOPF_GRUND, eingabefeld } from "../../../core/ui/stil";
 import { ANSICHT_ZURUECKSETZEN, ANSICHT_ZURUECKSETZEN_2D } from "../texte";
 import type { Oeffnungsart } from "./entwurf";
 import { RASTERGROESSEN_MM } from "./fang";
 import type { Werkzeug } from "./zustand";
+
+const GRUPPE = "flex flex-wrap items-center gap-1";
+/** Werkzeugknopf: kleiner als ein Formularknopf, gesperrt deutlich blasser. */
+const WERKZEUG = `${KNOPF_GRUND} border-line bg-surface px-2.5 py-[5px] text-fg disabled:cursor-not-allowed disabled:opacity-45`;
+const WERKZEUG_AKTIV = `${KNOPF_GRUND} border-accent bg-accent px-2.5 py-[5px] text-on-accent disabled:cursor-not-allowed disabled:opacity-45`;
 
 const WERKZEUGE: readonly { wert: Werkzeug; label: string; taste: string; schreibend: boolean }[] = [
   { wert: "auswahl", label: "Auswählen", taste: "V", schreibend: false },
@@ -51,13 +57,13 @@ export function Werkzeugleiste({
 }) {
   const masse = useMasse();
   return (
-    <div className="werkzeugleiste" role="toolbar" aria-label="Werkzeuge des Grundrisseditors">
-      <div className="werkzeugleiste__gruppe">
+    <div className="flex flex-wrap items-center gap-3.5" role="toolbar" aria-label="Werkzeuge des Grundrisseditors">
+      <div className={GRUPPE}>
         {WERKZEUGE.filter((w) => darfSchreiben || !w.schreibend).map((w) => (
           <button
             key={w.wert}
             type="button"
-            className={werkzeug === w.wert ? "button werkzeug werkzeug--aktiv" : "button werkzeug"}
+            className={werkzeug === w.wert ? WERKZEUG_AKTIV : WERKZEUG}
             aria-pressed={werkzeug === w.wert}
             title={`${w.label} (${w.taste})`}
             onClick={() => onWerkzeug(w.wert)}
@@ -68,7 +74,7 @@ export function Werkzeugleiste({
         {darfSchreiben && werkzeug === "oeffnung" && (
           <select
             aria-label="Art der Öffnung"
-            className="field__input werkzeugleiste__auswahl"
+            className={eingabefeld({ kompakt: true })}
             value={oeffnungsart}
             onChange={(event) => onOeffnungsart(event.target.value as Oeffnungsart)}
           >
@@ -80,10 +86,10 @@ export function Werkzeugleiste({
       </div>
 
       {darfSchreiben && (
-        <div className="werkzeugleiste__gruppe">
+        <div className={GRUPPE}>
           <button
             type="button"
-            className="button werkzeug"
+            className={WERKZEUG}
             disabled={!kannRueckgaengig}
             title="Rückgängig (Strg+Z)"
             onClick={onRueckgaengig}
@@ -92,7 +98,7 @@ export function Werkzeugleiste({
           </button>
           <button
             type="button"
-            className="button werkzeug"
+            className={WERKZEUG}
             disabled={!kannWiederholen}
             title="Wiederholen (Strg+Y oder Strg+Umschalt+Z)"
             onClick={onWiederholen}
@@ -102,27 +108,27 @@ export function Werkzeugleiste({
         </div>
       )}
 
-      <div className="werkzeugleiste__gruppe">
-        <button type="button" className="button werkzeug" title="Vergrößern (+)" aria-label="Vergrößern" onClick={() => onZoom(1.25)}>
+      <div className={GRUPPE}>
+        <button type="button" className={WERKZEUG} title="Vergrößern (+)" aria-label="Vergrößern" onClick={() => onZoom(1.25)}>
           +
         </button>
-        <button type="button" className="button werkzeug" title="Verkleinern (−)" aria-label="Verkleinern" onClick={() => onZoom(0.8)}>
+        <button type="button" className={WERKZEUG} title="Verkleinern (−)" aria-label="Verkleinern" onClick={() => onZoom(0.8)}>
           −
         </button>
-        <button type="button" className="button werkzeug" title={`${ANSICHT_ZURUECKSETZEN_2D} (F)`} onClick={onEinpassen}>
+        <button type="button" className={WERKZEUG} title={`${ANSICHT_ZURUECKSETZEN_2D} (F)`} onClick={onEinpassen}>
           {ANSICHT_ZURUECKSETZEN}
         </button>
       </div>
 
-      <div className="werkzeugleiste__gruppe">
-        <label className="werkzeugleiste__schalter">
+      <div className={GRUPPE}>
+        <label className="flex items-center gap-1.5 text-small">
           <input type="checkbox" checked={fangAktiv} onChange={(event) => onFang(event.target.checked)} />
           Fang
         </label>
-        <label className="werkzeugleiste__schalter">
+        <label className="flex items-center gap-1.5 text-small">
           Raster
           <select
-            className="field__input werkzeugleiste__auswahl"
+            className={eingabefeld({ kompakt: true })}
             value={rasterMm}
             onChange={(event) => onRaster(Number(event.target.value))}
           >

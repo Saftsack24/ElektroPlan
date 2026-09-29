@@ -1,6 +1,7 @@
 import { Component, Suspense, lazy, useMemo, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 
+import { KNOPFZEILE, knopf } from "../../../core/ui/stil";
 import type { Ansichtsziel } from "./Ansicht3d";
 
 /**
@@ -39,16 +40,16 @@ export function Ansicht3dLaden({
   const Ansicht = useMemo(() => lazy(laden), [laden, versuch]);
 
   const ersatz = (
-    <div className="ansicht3d__ersatz" role="alert">
+    <div className="p-4" role="alert">
       <p>
         <strong>Die 3D-Ansicht konnte nicht geladen werden.</strong> Möglicherweise ist die
         Verbindung unterbrochen.
       </p>
-      <div className="button-row">
-        <button type="button" className="button button--primary" onClick={() => setVersuch((n) => n + 1)}>
+      <div className={KNOPFZEILE}>
+        <button type="button" className={knopf("primaer")} onClick={() => setVersuch((n) => n + 1)}>
           Erneut versuchen
         </button>
-        <button type="button" className="button" onClick={() => props.onAnsicht("editor")}>
+        <button type="button" className={knopf("einfach")} onClick={() => props.onAnsicht("editor")}>
           Zum 2D-Editor
         </button>
       </div>
@@ -57,7 +58,7 @@ export function Ansicht3dLaden({
 
   return (
     <Ladefehler key={versuch} ersatz={ersatz}>
-      <Suspense fallback={<p className="muted">3D-Ansicht wird geladen …</p>}>
+      <Suspense fallback={<p className="text-muted">3D-Ansicht wird geladen …</p>}>
         <Ansicht {...props} />
       </Suspense>
     </Ladefehler>

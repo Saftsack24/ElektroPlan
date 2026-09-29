@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useNummerierteListe } from "../../core/api/useNummerierteListe";
 import { useAuth } from "../../core/auth/AuthProvider";
 import { Seitennavigation } from "../../core/ui/Seitennavigation";
+import { KARTENKOPF, KARTENTITEL, karte, knopf, meldungsflaeche } from "../../core/ui/stil";
 import { Projekttabelle } from "./Projekttabelle";
 
 const SEITENGROESSE = 25;
@@ -54,25 +55,27 @@ export function KundenProjekte({ kundeId }: { kundeId: string }) {
   });
 
   return (
-    <section className="card" aria-labelledby="kunde-projekte-titel">
-      <div className="card__header">
-        <h2 id="kunde-projekte-titel">Projekte dieses Kunden</h2>
+    <section className={karte()} aria-labelledby="kunde-projekte-titel">
+      <div className={KARTENKOPF}>
+        <h2 id="kunde-projekte-titel" className={KARTENTITEL}>
+          Projekte dieses Kunden
+        </h2>
         <button
           type="button"
-          className="button button--ghost"
+          className={knopf()}
           aria-pressed={gruppe === "closed"}
           onClick={() => setGruppe(gruppe === "current" ? "closed" : "current")}
         >
           {text.umschalten}
         </button>
       </div>
-      <h3 className="kunde-projekte__gruppe">{text.titel}</h3>
+      <h3 className="mt-2 mb-0 text-[1rem]">{text.titel}</h3>
 
-      {liste.laedt && <p className="muted">Projekte werden geladen ...</p>}
+      {liste.laedt && <p className="text-muted">Projekte werden geladen ...</p>}
       {liste.fehlgeschlagen && (
-        <p className="alert alert--error" role="alert">
+        <p className={meldungsflaeche()} role="alert">
           Die Projekte dieses Kunden konnten nicht geladen werden.{" "}
-          <button type="button" className="button button--ghost" onClick={liste.erneutVersuchen}>
+          <button type="button" className={knopf()} onClick={liste.erneutVersuchen}>
             Erneut versuchen
           </button>
         </p>

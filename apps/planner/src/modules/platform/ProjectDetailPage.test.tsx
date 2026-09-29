@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectTabsProvider } from "../../core/modules/ProjectTabs";
 import { useUngespeicherteAenderungen } from "../../core/ui/ungespeichert";
 import { RueckfrageProvider } from "../../core/ui/Rueckfrage";
+import { reiter } from "../../core/ui/stil";
 
 /**
  * Projekt-Tabwechsel bei ungespeicherten Änderungen eines Modul-Tabs.
@@ -91,7 +92,8 @@ describe("Projekt-Tabwechsel", () => {
   it("wechselt ohne Änderungen ohne Rückfrage", async () => {
     zeigen();
     fireEvent.click(await screen.findByRole("button", { name: "Dateien" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Dateien" })).toHaveClass("tabs__tab--active"));
+    // Der gewählte Reiter trägt die hervorgehobene Variante des Reiter-Rezepts.
+    await waitFor(() => expect(screen.getByRole("button", { name: "Dateien" }).className).toBe(reiter(true)));
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

@@ -1,8 +1,9 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
-import { Dialog } from "./Dialog";
+import { Dialog, DialogAktionen } from "./Dialog";
 import { gibtUngespeicherteAenderungen, ungespeichertMeldung } from "./ungespeichert";
+import { knopf } from "./stil";
 
 export type Rueckfrageantwort = "bestaetigt" | "alternative" | "abgebrochen";
 
@@ -62,30 +63,30 @@ export function RueckfrageProvider({ children }: { children: ReactNode }) {
       {children}
       {offen !== null && (
         <Dialog offen titel={offen.titel} onClose={() => antworten("abgebrochen")}>
-          <div className="bestaetigung">
-            <div className="bestaetigung__text">{offen.text}</div>
-            <div className="button-row dialog__aktionen">
+          <div className="flex flex-col gap-2">
+            <div>{offen.text}</div>
+            <DialogAktionen>
               <button
                 type="button"
-                className={offen.gefaehrlich === false ? "button button--primary" : "button button--gefahr"}
+                className={knopf(offen.gefaehrlich === false ? "primaer" : "gefahr")}
                 onClick={() => antworten("bestaetigt")}
               >
                 {offen.bestaetigenLabel}
               </button>
               {offen.alternativeLabel !== undefined && (
-                <button type="button" className="button button--primary" onClick={() => antworten("alternative")}>
+                <button type="button" className={knopf("primaer")} onClick={() => antworten("alternative")}>
                   {offen.alternativeLabel}
                 </button>
               )}
               <button
                 type="button"
-                className="button button--ghost"
+                className={knopf()}
                 data-autofocus
                 onClick={() => antworten("abgebrochen")}
               >
                 {offen.abbrechenLabel ?? "Abbrechen"}
               </button>
-            </div>
+            </DialogAktionen>
           </div>
         </Dialog>
       )}

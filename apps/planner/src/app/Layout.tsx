@@ -4,7 +4,15 @@ import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../core/auth/AuthProvider";
 import { EinstellungenDialog } from "../core/ui/EinstellungenDialog";
 import { useVerlassenBestaetigen } from "../core/ui/Rueckfrage";
+import { knopf } from "../core/ui/stil";
 import { moduleRegistry } from "../modules";
+
+/** Eintrag der Hauptnavigation; der aktive ist hervorgehoben. */
+function navigationslink({ isActive }: { isActive: boolean }): string {
+  return `rounded-ep px-2.5 py-1.5 no-underline hover:bg-page ${
+    isActive ? "font-semibold text-accent" : "text-muted hover:text-fg"
+  }`;
+}
 
 export function Layout() {
   const { me, logout, activeModuleIds, permissions } = useAuth();
@@ -13,27 +21,27 @@ export function Layout() {
   const [einstellungen, setEinstellungen] = useState(false);
 
   return (
-    <div className="shell">
-      <header className="shell__header">
-        <span className="shell__brand">ElektroPlan</span>
-        <nav className="shell__nav">
-          <NavLink to="/" end className="shell__link">
+    <div className="flex min-h-screen flex-col">
+      <header className="flex flex-wrap items-center gap-6 border-b border-line bg-nav px-5 py-3 max-sm:gap-3">
+        <span className="text-[1.05rem] font-semibold">ElektroPlan</span>
+        <nav className="flex flex-1 flex-wrap gap-3">
+          <NavLink to="/" end className={navigationslink}>
             Übersicht
           </NavLink>
           {navigation.map((item) => (
-            <NavLink key={item.id} to={item.to} className="shell__link">
+            <NavLink key={item.id} to={item.to} className={navigationslink}>
               {item.label}
             </NavLink>
           ))}
         </nav>
-        <div className="shell__user">
-          <span className="shell__org">{me?.organization.name}</span>
-          <span className="shell__email">{me?.email}</span>
-          <button className="button button--ghost" type="button" onClick={() => setEinstellungen(true)}>
+        <div className="flex items-center gap-3">
+          <span className="font-semibold">{me?.organization.name}</span>
+          <span className="text-label text-muted">{me?.email}</span>
+          <button className={knopf()} type="button" onClick={() => setEinstellungen(true)}>
             Einstellungen
           </button>
           <button
-            className="button button--ghost"
+            className={knopf()}
             type="button"
             onClick={() => {
               void verlassen("Abmelden?", "Sie wollen sich abmelden.", () => void logout());
@@ -44,8 +52,8 @@ export function Layout() {
         </div>
       </header>
 
-      <main className="shell__main">
-        <Suspense fallback={<p className="muted">Wird geladen ...</p>}>
+      <main className="mx-auto w-full max-w-[1100px] px-5 py-6">
+        <Suspense fallback={<p className="text-muted">Wird geladen ...</p>}>
           <Outlet />
         </Suspense>
       </main>

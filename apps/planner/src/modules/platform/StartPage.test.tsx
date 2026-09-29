@@ -3,6 +3,9 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { knopf } from "../../core/ui/stil";
+
+
 /**
  * Startseite (Phase 4.2): arbeitsorientiert, abhängig von den Rechten, ohne
  * technische Rohdaten.
@@ -108,7 +111,13 @@ describe("Startseite", () => {
       "href",
       "/administration/users?einladen=1",
     );
-    expect(aktionen.querySelectorAll(".button--primary")).toHaveLength(1);
+    // Genau ein Link trägt das Rezept des Hauptknopfs (core/ui/stil.ts).
+    const hauptaktion = knopf("primaer", { link: true });
+    expect(
+      within(aktionen)
+        .getAllByRole("link")
+        .filter((link) => link.className === hauptaktion),
+    ).toHaveLength(1);
     await screen.findAllByText("Neubau Lindenweg");
   });
 

@@ -8,6 +8,7 @@ import { useAuth } from "../../../core/auth/AuthProvider";
 import { Bestaetigung } from "../../../core/ui/Bestaetigung";
 import { Marke } from "../../../core/ui/Marke";
 import { useEntprellt } from "../../../core/ui/useEntprellt";
+import { FELD, FELD_BESCHRIFTUNG, FILTERZEILE, KARTENKOPF, STAPEL, TABELLE, TABELLENRAHMEN, eingabefeld, karte, knopf, meldungsflaeche } from "../../../core/ui/stil";
 import { AdminNavigation } from "./AdminNavigation";
 import { EinladenDialog } from "./EinladenDialog";
 import type { EinladungsWerte } from "./EinladenDialog";
@@ -149,17 +150,17 @@ export default function BenutzerPage() {
   const gefiltert = begriff.length > 0 || status !== "";
 
   return (
-    <div className="stack">
-      <section className="card">
-        <div className="card__header">
+    <div className={STAPEL}>
+      <section className={karte()}>
+        <div className={KARTENKOPF}>
           <div>
-            <p className="bereich">Administration</p>
+            <p className="m-0 text-[0.8rem] tracking-[0.04em] text-muted uppercase">Administration</p>
             <h1>Benutzer</h1>
           </div>
           {darfEinladen && (
             <button
               type="button"
-              className="button button--primary"
+              className={knopf("primaer")}
               onClick={() => {
                 setAusgestellt(null);
                 setDialogOffen(true);
@@ -172,35 +173,35 @@ export default function BenutzerPage() {
         <AdminNavigation />
 
         {ausgestellt !== null && (
-          <div className="alert alert--erfolg" role="status">
+          <div className={meldungsflaeche("erfolg")} role="status">
             <p>{ausgestellt.text}</p>
             <Entwicklungslink link={ausgestellt.link} />
-            <button type="button" className="button button--ghost" onClick={() => setAusgestellt(null)}>
+            <button type="button" className={knopf()} onClick={() => setAusgestellt(null)}>
               Hinweis schließen
             </button>
           </div>
         )}
 
-        <div className="filter-row">
-          <div className="field">
-            <label className="field__label" htmlFor="benutzersuche">
+        <div className={FILTERZEILE}>
+          <div className={FELD}>
+            <label className={FELD_BESCHRIFTUNG} htmlFor="benutzersuche">
               Suche (Name oder E-Mail)
             </label>
             <input
               id="benutzersuche"
-              className="field__input"
+              className={eingabefeld()}
               type="search"
               value={suche}
               onChange={(event) => setSuche(event.target.value)}
             />
           </div>
-          <div className="field">
-            <label className="field__label" htmlFor="benutzerstatus">
+          <div className={FELD}>
+            <label className={FELD_BESCHRIFTUNG} htmlFor="benutzerstatus">
               Status
             </label>
             <select
               id="benutzerstatus"
-              className="field__input"
+              className={eingabefeld()}
               value={status}
               onChange={(event) => {
                 const wert = event.target.value;
@@ -216,18 +217,18 @@ export default function BenutzerPage() {
           </div>
         </div>
 
-        {liste.laedt && <p className="muted">Benutzer werden geladen ...</p>}
+        {liste.laedt && <p className="text-muted">Benutzer werden geladen ...</p>}
         {liste.fehlgeschlagen && (
-          <p className="alert alert--error" role="alert">
+          <p className={meldungsflaeche()} role="alert">
             Die Benutzerliste konnte nicht geladen werden.{" "}
-            <button type="button" className="button button--ghost" onClick={liste.erneutVersuchen}>
+            <button type="button" className={knopf()} onClick={liste.erneutVersuchen}>
               Erneut versuchen
             </button>
           </p>
         )}
         {liste.geladen &&
           (liste.eintraege.length === 0 ? (
-            <p className="leer">
+            <p className="py-3 text-muted *:my-1">
               {gefiltert
                 ? "Keine Treffer für diese Suche oder diesen Filter."
                 : "Noch keine weiteren Benutzer. Laden Sie Kolleginnen und Kollegen ein."}
@@ -244,10 +245,10 @@ export default function BenutzerPage() {
           ))}
 
         {liste.geladen && (liste.hatZurueck || liste.hatWeiter) && (
-          <nav className="seitennavigation" aria-label="Seiten der Benutzerliste">
+          <nav className="mt-3 flex items-center gap-3" aria-label="Seiten der Benutzerliste">
             <button
               type="button"
-              className="button button--ghost"
+              className={knopf()}
               disabled={!liste.hatZurueck || liste.wechselt}
               onClick={liste.zurueck}
             >
@@ -256,7 +257,7 @@ export default function BenutzerPage() {
             <span aria-live="polite">Seite {liste.seite}</span>
             <button
               type="button"
-              className="button button--ghost"
+              className={knopf()}
               disabled={!liste.hatWeiter || liste.wechselt}
               onClick={liste.weiter}
             >
@@ -312,18 +313,21 @@ function Benutzertabelle({
   onAktion: (aktion: Einladungsaktion) => void;
 }) {
   return (
-    <div className="tabellenrahmen">
-      <table className="table table--benutzer">
-        <caption className="visuell-versteckt">Benutzer und offene Einladungen</caption>
+    <div className={TABELLENRAHMEN}>
+      <table className={TABELLE}>
+        <caption className="sr-only">Benutzer und offene Einladungen</caption>
         <thead>
           <tr>
             <th scope="col">Name</th>
             <th scope="col">E-Mail</th>
             <th scope="col">Status</th>
             <th scope="col">Rollen</th>
-            <th scope="col">Letzte Anmeldung</th>
+            {/* Auf schmalen Flächen entfällt die Spalte „Letzte Anmeldung". */}
+            <th scope="col" className="max-sm:hidden">
+              Letzte Anmeldung
+            </th>
             <th scope="col">
-              <span className="visuell-versteckt">Aktionen</span>
+              <span className="sr-only">Aktionen</span>
             </th>
           </tr>
         </thead>
@@ -334,7 +338,7 @@ function Benutzertabelle({
                 {eintrag.kind === "member" ? (
                   <Link to={`/administration/users/${eintrag.id}`}>{eintrag.full_name}</Link>
                 ) : (
-                  (eintrag.full_name ?? <span className="muted">—</span>)
+                  (eintrag.full_name ?? <span className="text-muted">—</span>)
                 )}
               </td>
               <td>{eintrag.email}</td>
@@ -346,33 +350,33 @@ function Benutzertabelle({
                 )}
               </td>
               <td>{eintrag.roles.map((rolle) => rolle.name).join(", ") || "—"}</td>
-              <td>
+              <td className="max-sm:hidden">
                 {eintrag.kind === "invitation"
                   ? `gültig bis ${datum(eintrag.invitation_expires_at)}`
                   : datum(eintrag.last_login_at)}
               </td>
-              <td className="table__aktionen">
+              <td className="flex flex-wrap gap-1.5 whitespace-nowrap">
                 {eintrag.kind === "member" ? (
                   <Link to={`/administration/users/${eintrag.id}`}>
-                    Verwalten<span className="visuell-versteckt"> ({eintrag.full_name})</span>
+                    Verwalten<span className="sr-only"> ({eintrag.full_name})</span>
                   </Link>
                 ) : (
                   darfSchreiben && (
                     <>
                       <button
                         type="button"
-                        className="button button--ghost button--klein"
+                        className={knopf("neutral", { klein: true })}
                         onClick={() => onAktion({ art: "neu", eintrag })}
                       >
                         Neu ausstellen
-                        <span className="visuell-versteckt"> ({eintrag.email})</span>
+                        <span className="sr-only"> ({eintrag.email})</span>
                       </button>
                       <button
                         type="button"
-                        className="button button--ghost button--klein"
+                        className={knopf("neutral", { klein: true })}
                         onClick={() => onAktion({ art: "widerrufen", eintrag })}
                       >
-                        Widerrufen<span className="visuell-versteckt"> ({eintrag.email})</span>
+                        Widerrufen<span className="sr-only"> ({eintrag.email})</span>
                       </button>
                     </>
                   )

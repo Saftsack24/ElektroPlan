@@ -1,7 +1,8 @@
 import { useState } from "react";
 
 import { Auswahl, Feld } from "../../core/ui/Feld";
-import { Dialog } from "../../core/ui/Dialog";
+import { Dialog, DialogAktionen } from "../../core/ui/Dialog";
+import { FORMULARRASTER, KNOPFZEILE, knopf, meldungsflaeche } from "../../core/ui/stil";
 
 export type KundenWerte = {
   kind: "private" | "company";
@@ -99,7 +100,7 @@ export function CustomerFormDialog({
       onClose={schliessen}
     >
       <form
-        className="form-grid"
+        className={FORMULARRASTER}
         noValidate
         onSubmit={(event) => {
           event.preventDefault();
@@ -175,18 +176,18 @@ export function CustomerFormDialog({
           disabled={laeuft}
           onChange={(billing_city) => setWerte({ ...werte, billing_city })}
         />
-        <div className="form-grid__actions dialog__aktionen">
+        <DialogAktionen anordnung="formular">
           {fehler !== null && (
-            <p className="alert alert--error" role="alert">
+            <p className={meldungsflaeche()} role="alert">
               {fehler}
             </p>
           )}
-          <div className="button-row">
-            <button className="button button--primary" type="submit" disabled={laeuft}>
+          <div className={KNOPFZEILE}>
+            <button className={knopf("primaer")} type="submit" disabled={laeuft}>
               {laeuft ? "Wird gespeichert ..." : absendenLabel}
             </button>
             <button
-              className="button button--ghost"
+              className={knopf()}
               type="button"
               disabled={laeuft}
               onClick={schliessen}
@@ -194,7 +195,7 @@ export function CustomerFormDialog({
               Abbrechen
             </button>
           </div>
-        </div>
+        </DialogAktionen>
       </form>
     </Dialog>
   );

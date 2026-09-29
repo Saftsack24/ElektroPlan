@@ -4,6 +4,7 @@ import type { KeyboardEvent } from "react";
 
 import { useAuth } from "../../../core/auth/AuthProvider";
 import { useMasse } from "../../../core/ui/masseinheit";
+import { KNOPFZEILE, knopf } from "../../../core/ui/stil";
 import { planAbfrage } from "../plan";
 import { ANSICHT_ZURUECKSETZEN, ANSICHT_ZURUECKSETZEN_3D } from "../texte";
 import { MESSUNG, messen } from "./messung";
@@ -14,6 +15,10 @@ import { Grundrissszene } from "./szene";
 import type { Rueckmeldung } from "./szene";
 import { objektZu, szenenmodellAus } from "./szenenmodell";
 import { browserUmgebung } from "./umgebung";
+
+/** Lade-, Fehler- und Leerzustände über der Zeichenfläche; die Szene bleibt dahinter erkennbar. */
+const UEBERLAGERUNG =
+  "absolute inset-0 flex flex-col items-center justify-center gap-2 bg-canvas/86 p-4 text-center";
 
 /** Was React von der Szene benutzt - eine Attrappe in Tests erfüllt es. */
 export type Szenensteuerung = Pick<
@@ -144,53 +149,53 @@ export default function Ansicht3d({
   const nichtsDarstellbar = plan.isSuccess && modell.raumanzahlGesamt > 0 && modell.raeume.length === 0;
 
   return (
-    <div className="ansicht3d" onKeyDown={tasten}>
-      <div className="ansicht3d__leiste" role="toolbar" aria-label="Kamera der 3D-Ansicht">
+    <div className="flex flex-col gap-2" onKeyDown={tasten}>
+      <div className="flex flex-wrap gap-1.5" role="toolbar" aria-label="Kamera der 3D-Ansicht">
         <button
           type="button"
-          className="button"
+          className={knopf("einfach")}
           disabled={!bereit}
           title={ANSICHT_ZURUECKSETZEN_3D}
           onClick={() => szene.current?.einpassen()}
         >
           {ANSICHT_ZURUECKSETZEN}
         </button>
-        <button type="button" className="button" disabled={!bereit} onClick={() => szene.current?.standardansicht()}>
+        <button type="button" className={knopf("einfach")} disabled={!bereit} onClick={() => szene.current?.standardansicht()}>
           Isometrische Ansicht
         </button>
-        <button type="button" className="button" disabled={!bereit} onClick={() => szene.current?.draufsicht()}>
+        <button type="button" className={knopf("einfach")} disabled={!bereit} onClick={() => szene.current?.draufsicht()}>
           Draufsicht
         </button>
-        <button type="button" className="button" disabled={!bereit} onClick={() => szene.current?.zoomen(1.25)}>
+        <button type="button" className={knopf("einfach")} disabled={!bereit} onClick={() => szene.current?.zoomen(1.25)}>
           Näher
         </button>
-        <button type="button" className="button" disabled={!bereit} onClick={() => szene.current?.zoomen(0.8)}>
+        <button type="button" className={knopf("einfach")} disabled={!bereit} onClick={() => szene.current?.zoomen(0.8)}>
           Weiter weg
         </button>
       </div>
-      <p className="ansicht3d__hilfe" id={hilfeId}>
+      <p className="m-0 text-label text-muted" id={hilfeId}>
         Drehen: linke Maustaste ziehen · Verschieben: rechte Maustaste, Umschalt + Ziehen oder
         Pfeiltasten · Zoomen: Mausrad · Touch: ein Finger dreht, zwei Finger zoomen und verschieben ·
         Klicken wählt aus, Esc hebt die Auswahl auf. Nur Ansicht – bearbeitet wird im 2D-Editor.
       </p>
 
-      <div className="ansicht3d__arbeitsbereich">
-        <div className="ansicht3d__flaeche">
+      <div className="grid grid-cols-1 gap-3 split:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="relative h-[62vh] min-h-[360px] overflow-hidden rounded-ep border border-line bg-canvas max-sm:h-[55vh] max-sm:min-h-[300px]">
           {stoerung === "kein-webgl" ? (
-            <div className="ansicht3d__ersatz" role="alert">
+            <div className="p-4" role="alert">
               <p>
                 <strong>Die 3D-Ansicht ist in diesem Browser nicht verfügbar.</strong> Sie braucht
                 WebGL, das hier fehlt oder abgeschaltet ist.
               </p>
               <p>Der Grundriss bleibt im 2D-Editor und in „Tabellen &amp; Details“ vollständig nutzbar.</p>
-              <div className="button-row">
-                <button type="button" className="button button--primary" onClick={() => onAnsicht("editor")}>
+              <div className={KNOPFZEILE}>
+                <button type="button" className={knopf("primaer")} onClick={() => onAnsicht("editor")}>
                   Zum 2D-Editor
                 </button>
-                <button type="button" className="button" onClick={() => onAnsicht("tabelle")}>
+                <button type="button" className={knopf("einfach")} onClick={() => onAnsicht("tabelle")}>
                   Zu Tabellen &amp; Details
                 </button>
-                <button type="button" className="button button--ghost" onClick={neuStarten}>
+                <button type="button" className={knopf()} onClick={neuStarten}>
                   Erneut versuchen
                 </button>
               </div>
@@ -198,7 +203,7 @@ export default function Ansicht3d({
           ) : (
             <div
               ref={behaelter}
-              className="ansicht3d__szene"
+              className="absolute inset-0 focus-visible:outline-3 focus-visible:-outline-offset-3"
               tabIndex={0}
               role="application"
               aria-roledescription="3D-Ansicht"
@@ -208,36 +213,36 @@ export default function Ansicht3d({
           )}
 
           {stoerung === "kontext-verloren" && (
-            <div className="ansicht3d__overlay" role="alert">
+            <div className={UEBERLAGERUNG} role="alert">
               <p>Der Browser hat die Grafikausgabe unterbrochen (WebGL-Kontext verloren).</p>
-              <button type="button" className="button button--primary" onClick={neuStarten}>
+              <button type="button" className={knopf("primaer")} onClick={neuStarten}>
                 Ansicht neu starten
               </button>
             </div>
           )}
           {stoerung === null && plan.isPending && (
-            <div className="ansicht3d__overlay">
+            <div className={UEBERLAGERUNG}>
               <p>Plan wird geladen …</p>
             </div>
           )}
           {stoerung === null && plan.isError && (
-            <div className="ansicht3d__overlay" role="alert">
+            <div className={UEBERLAGERUNG} role="alert">
               <p>Der Plan dieses Geschosses konnte nicht geladen werden.</p>
-              <button type="button" className="button" onClick={() => void plan.refetch()}>
+              <button type="button" className={knopf("einfach")} onClick={() => void plan.refetch()}>
                 Erneut laden
               </button>
             </div>
           )}
           {stoerung === null && leer && (
-            <div className="ansicht3d__overlay">
+            <div className={UEBERLAGERUNG}>
               <p>Auf diesem Geschoss ist noch kein Raum erfasst. Räume entstehen im 2D-Editor.</p>
-              <button type="button" className="button" onClick={() => onAnsicht("editor")}>
+              <button type="button" className={knopf("einfach")} onClick={() => onAnsicht("editor")}>
                 Zum 2D-Editor
               </button>
             </div>
           )}
           {stoerung === null && nichtsDarstellbar && (
-            <div className="ansicht3d__overlay">
+            <div className={UEBERLAGERUNG}>
               <p>
                 Kein Raum dieses Geschosses hat eine geschlossene Kontur – deshalb ist nichts
                 darstellbar. Die betroffenen Räume stehen rechts unter „Nicht dargestellt“.
@@ -248,7 +253,7 @@ export default function Ansicht3d({
 
         <Seitenleiste modell={modell} auswahl={gueltig} objekt={objekt} onAuswahl={auswaehlen} />
       </div>
-      <p className="ansicht3d__zusammenfassung muted" id={zusammenfassungId}>
+      <p className="m-0 text-label text-muted" id={zusammenfassungId}>
         {plan.isSuccess ? zusammenfassung(modell) : ""}
       </p>
     </div>

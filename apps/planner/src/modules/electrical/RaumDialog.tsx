@@ -4,6 +4,7 @@ import { Dialog } from "../../core/ui/Dialog";
 import { Feld } from "../../core/ui/Feld";
 import { EINGABEHINWEIS, eingabeUmrechnen, mmAlsEingabeOptional } from "../../core/masse";
 import { useEinheitenwechsel, useMasse } from "../../core/ui/masseinheit";
+import { FORMULARRASTER, KNOPFZEILE, knopf, meldungsflaeche } from "../../core/ui/stil";
 
 export type Raumwerte = {
   name: string;
@@ -110,7 +111,7 @@ export function RaumDialog({
       onClose={schliessen}
     >
       <form
-        className="form-grid"
+        className={FORMULARRASTER}
         noValidate
         onSubmit={(event) => {
           event.preventDefault();
@@ -147,17 +148,17 @@ export function RaumDialog({
         />
 
         {fehler !== null && (
-          <p className="alert alert--error" role="alert">
+          <p className={meldungsflaeche()} role="alert">
             {fehler}
           </p>
         )}
 
-        <div className="button-row">
-          <button className="button button--primary" type="submit" disabled={laeuft}>
+        <div className={KNOPFZEILE}>
+          <button className={knopf("primaer")} type="submit" disabled={laeuft}>
             {laeuft ? "Wird gespeichert ..." : "Speichern"}
           </button>
           <button
-            className="button button--ghost"
+            className={knopf()}
             type="button"
             disabled={laeuft}
             onClick={schliessen}

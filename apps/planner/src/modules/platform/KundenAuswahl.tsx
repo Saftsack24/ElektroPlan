@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Combobox } from "../../core/ui/Combobox";
 import type { Comboboxzustand } from "../../core/ui/Combobox";
 import { useEntprellt } from "../../core/ui/useEntprellt";
+import { FELD, FELD_BESCHRIFTUNG, knopf } from "../../core/ui/stil";
 
 /** Was die Suche zurückliefert. `weitere` meldet abgeschnittene Treffer. */
 export interface Suchergebnis {
@@ -17,7 +18,7 @@ export function KundeKurz({ kunde }: { kunde: CustomerOut }) {
   return (
     <>
       <code>{kunde.customer_number}</code> {kunde.name}
-      {kunde.billing_city !== null && <span className="muted"> · {kunde.billing_city}</span>}
+      {kunde.billing_city !== null && <span className="text-muted"> · {kunde.billing_city}</span>}
     </>
   );
 }
@@ -76,19 +77,21 @@ export function KundenAuswahl({
 
   if (gewaehlt !== null) {
     return (
-      <div className="field">
-        <span className="field__label" id={`${id}-label`}>
+      <div className={FELD}>
+        <span className={FELD_BESCHRIFTUNG} id={`${id}-label`}>
           {label}
           {required ? " *" : ""}
         </span>
-        <div className="auswahl__chip" role="group" aria-labelledby={`${id}-label`}>
-          <span className="auswahl__chip-text" data-testid={`${id}-gewaehlt`}>
+        <div
+          className="flex flex-wrap items-center gap-2 rounded-ep border border-line bg-page px-2 py-1.5"
+          role="group" aria-labelledby={`${id}-label`}>
+          <span className="min-w-0 flex-auto wrap-anywhere" data-testid={`${id}-gewaehlt`}>
             <KundeKurz kunde={gewaehlt} />
           </span>
           <button
             id={`${id}-entfernen`}
             type="button"
-            className="button button--ghost"
+            className={knopf()}
             disabled={disabled}
             onClick={() => {
               setBegriff("");

@@ -6,6 +6,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 
 import { config } from "../config";
 import { Feld } from "../ui/Feld";
+import { KENNWERTE, STAPEL, karte, knopf, meldungsflaeche } from "../ui/stil";
 
 /** Pfad der Annahmeseite - derselbe, den das Backend in den Link schreibt. */
 export const EINLADUNG_PFAD = "/einladung";
@@ -93,31 +94,34 @@ export function EinladungAnnehmenPage() {
   }, [api, token]);
 
   return (
-    <main className="login">
-      <section className="card login__form einladung" aria-labelledby="einladung-titel">
-        <h1 id="einladung-titel" className="login__title">
+    <main className="grid min-h-screen place-items-center p-4">
+      <section
+        className={`${karte()} flex w-[min(460px,100%)] flex-col gap-3.5`}
+        aria-labelledby="einladung-titel"
+      >
+        <h1 id="einladung-titel" className="m-0 text-[1.4rem]">
           Einladung annehmen
         </h1>
-        {zustand.art === "laedt" && <p className="muted">Einladung wird geprüft ...</p>}
+        {zustand.art === "laedt" && <p className="text-muted">Einladung wird geprüft ...</p>}
         {zustand.art === "ohne-token" && (
-          <p className="alert alert--error" role="alert">
+          <p className={meldungsflaeche()} role="alert">
             Der Einladungslink ist unvollständig. Bitte den Link vollständig aus der Einladung
             öffnen.
           </p>
         )}
         {zustand.art === "ungueltig" && (
-          <p className="alert alert--error" role="alert">
+          <p className={meldungsflaeche()} role="alert">
             Diese Einladung ist nicht (mehr) gültig - sie ist abgelaufen, wurde widerrufen oder
             bereits verwendet. Bitte beim Betrieb eine neue Einladung anfordern.
           </p>
         )}
         {zustand.art === "gesperrt" && (
-          <p className="alert alert--error" role="alert">
+          <p className={meldungsflaeche()} role="alert">
             Zu viele Versuche. Bitte später erneut versuchen.
           </p>
         )}
         {zustand.art === "fehler" && (
-          <p className="alert alert--error" role="alert">
+          <p className={meldungsflaeche()} role="alert">
             Die Einladung konnte nicht geprüft werden. Bitte später erneut versuchen.
           </p>
         )}
@@ -142,8 +146,8 @@ export function EinladungAnnehmenPage() {
           />
         )}
         {zustand.art === "angenommen" && (
-          <div className="stack">
-            <p className="alert alert--erfolg" role="status">
+          <div className={STAPEL}>
+            <p className={meldungsflaeche("erfolg")} role="status">
               Willkommen! Sie gehören jetzt zu <strong>{zustand.betrieb}</strong>.
             </p>
             <p>
@@ -152,7 +156,7 @@ export function EinladungAnnehmenPage() {
             </p>
             <button
               type="button"
-              className="button button--primary"
+              className={knopf("primaer")}
               onClick={() => void navigate("/")}
             >
               Zur Anmeldung
@@ -226,11 +230,11 @@ function Annahme({
   };
 
   return (
-    <form className="stack" noValidate onSubmit={(event) => void absenden(event)}>
+    <form className={STAPEL} noValidate onSubmit={(event) => void absenden(event)}>
       <p>
         <strong>{vorschau.organization_name}</strong> lädt Sie zu ElektroPlan ein.
       </p>
-      <dl className="kennwerte">
+      <dl className={KENNWERTE}>
         <dt>E-Mail</dt>
         <dd>{vorschau.email}</dd>
         <dt>Gültig bis</dt>
@@ -238,7 +242,7 @@ function Annahme({
       </dl>
       {weg === "neu" ? (
         <>
-          <p className="muted">Legen Sie Ihr Konto an. Das Passwort braucht mindestens 12 Zeichen.</p>
+          <p className="text-muted">Legen Sie Ihr Konto an. Das Passwort braucht mindestens 12 Zeichen.</p>
           <Feld
             id="einladung-name"
             label="Ihr Name"
@@ -273,7 +277,7 @@ function Annahme({
         </>
       ) : (
         <>
-          <p className="muted">
+          <p className="text-muted">
             Für diese E-Mail-Adresse gibt es bereits ein Konto. Bestätigen Sie die Einladung mit
             Ihrem bisherigen Passwort - es wird dabei nicht geändert.
           </p>
@@ -291,11 +295,11 @@ function Annahme({
         </>
       )}
       {fehler !== null && (
-        <p className="alert alert--error" role="alert">
+        <p className={meldungsflaeche()} role="alert">
           {fehler}
         </p>
       )}
-      <button className="button button--primary" type="submit" disabled={laeuft}>
+      <button className={knopf("primaer")} type="submit" disabled={laeuft}>
         {laeuft ? "Wird gesendet ..." : "Einladung annehmen"}
       </button>
     </form>

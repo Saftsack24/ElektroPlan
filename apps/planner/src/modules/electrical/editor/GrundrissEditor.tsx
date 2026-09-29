@@ -6,6 +6,7 @@ import { alsFormularfehler } from "../../../core/api/fehler";
 import { useAuth } from "../../../core/auth/AuthProvider";
 import { BEHALTEN_LABEL, VERWERFEN_LABEL, useRueckfrage } from "../../../core/ui/Rueckfrage";
 import { useUngespeicherteAenderungen } from "../../../core/ui/ungespeichert";
+import { KNOPFZEILE, knopf, meldungsflaeche } from "../../../core/ui/stil";
 import { planAbfrage, planSchluessel } from "../plan";
 import { RaumDialog } from "../RaumDialog";
 import type { Raumwerte } from "../RaumDialog";
@@ -42,6 +43,17 @@ const STATUS_TEXT: Record<Speicherstatus, string> = {
   konflikt: "Konflikt - nicht gespeichert",
   validierung: "Nicht gespeichert - bitte prüfen",
   fehler: "Nicht gespeichert",
+};
+
+// Vollständige Klassen je Status: Tailwind erkennt nur statisch ausgeschriebene Namen.
+const STATUS_FARBE: Record<Speicherstatus, string> = {
+  sauber: "",
+  geaendert: "text-warning",
+  speichert: "",
+  gespeichert: "text-success",
+  konflikt: "text-danger",
+  validierung: "text-danger",
+  fehler: "text-danger",
 };
 
 const RAUM_MELDUNG =
@@ -528,10 +540,10 @@ export function GrundrissEditor({
 
   // ------------------------------------------------------------------ Ansicht
 
-  if (plan.isPending) return <p className="muted">Grundriss wird geladen ...</p>;
+  if (plan.isPending) return <p className="text-muted">Grundriss wird geladen ...</p>;
   if (plan.isError) {
     return (
-      <p className="alert alert--error" role="alert">
+      <p className={meldungsflaeche()} role="alert">
         Der Grundriss dieses Geschosses konnte nicht geladen werden.
       </p>
     );
@@ -541,7 +553,7 @@ export function GrundrissEditor({
   const aktiverName = zustand.basis?.raum.name;
 
   return (
-    <div className="grundriss">
+    <div className="flex flex-col gap-2.5">
       <Werkzeugleiste
         werkzeug={zustand.werkzeug}
         onWerkzeug={werkzeugWaehlen}
@@ -560,8 +572,8 @@ export function GrundrissEditor({
         darfSchreiben={schreibbar}
       />
 
-      <div className="grundriss__speicherleiste" role="status" aria-live="polite">
-        <span className={`grundriss__status grundriss__status--${status}`}>
+      <div className="flex min-h-10 flex-wrap items-center justify-between gap-3" role="status" aria-live="polite">
+        <span className={`font-semibold ${STATUS_FARBE[status]}`}>
           {!schreibbar
             ? "Nur Ansicht - Bearbeiten ist hier nicht möglich"
             : aktiverName === undefined
@@ -571,31 +583,41 @@ export function GrundrissEditor({
         {/* Immer vorhanden, nur deaktiviert: Die Leiste behält ihre Höhe, und
             die Zeichenfläche springt beim Aktivieren eines Raums nicht. */}
         {schreibbar && (
-          <span className="button-row grundriss__speicheraktionen">
+          <span className="flex flex-wrap gap-2">
             <button
               type="button"
-              className="button button--primary"
+              className={knopf("primaer")}
               disabled={!offen || status === "speichert"}
               onClick={() => void speichern()}
               title="Speichern (Strg+S)"
             >
               Speichern
             </button>
-            <button type="button" className="button button--ghost" disabled={!offen || status === "speichert"} onClick={() => void verwerfen()}>
+            <button type="button" className={knopf()} disabled={!offen || status === "speichert"} onClick={() => void verwerfen()}>
               Änderungen verwerfen
             </button>
           </span>
         )}
       </div>
 
-      <div className="grundriss__arbeitsbereich">
+      <div className="grid grid-cols-1 gap-3 split:grid-cols-[minmax(0,1fr)_300px]">
         {/* Hinweise liegen über der Zeichenfläche statt darüber: Die Fläche
             darf nicht springen, während jemand zeichnet. */}
-        <div className="grundriss__buehne">
+        <div className="relative min-w-0">
         {hinweis !== null && (
-          <p className="grundriss__hinweis" role="status">
+          // Klicks gehen durch den Hinweis hindurch auf die Zeichenfläche - nur
+          // das Schließen-Kreuz fängt sie ab. Sonst verdeckte er den oberen Zeichenrand.
+          <p
+            className="pointer-events-none absolute top-2 right-2 z-[1] m-0 flex max-w-[min(420px,calc(100%-16px))] items-center justify-between gap-2 rounded-ep border border-line bg-surface py-1 pr-1 pl-2.5 text-[0.88rem] shadow-hint"
+            role="status"
+          >
             <span>{hinweis}</span>
-            <button type="button" className="button button--ghost" aria-label="Hinweis schließen" onClick={() => setHinweis(null)}>
+            <button
+              type="button"
+              className={`${knopf()} pointer-events-auto`}
+              aria-label="Hinweis schließen"
+              onClick={() => setHinweis(null)}
+            >
               ✕
             </button>
           </p>
@@ -626,28 +648,28 @@ export function GrundrissEditor({
         </div>
         {/* Rückmeldungen des Servers stehen in der Seitenleiste: Die
             Zeichenfläche bleibt an ihrem Platz, während korrigiert wird. */}
-        <div className="grundriss__seite">
+        <div className="flex min-w-0 flex-col gap-2">
         {zustand.serverFehler !== null && (
-          <div className="alert alert--error grundriss__serverfehler" role="alert">
+          <div className={`${meldungsflaeche()} text-[0.88rem]`} role="alert">
             <p>{zustand.serverFehler.meldung}</p>
             {zustand.serverFehler.eintraege.length > 0 && (
-              <ul>
+              <ul className="my-1 pl-[18px]">
                 {zustand.serverFehler.eintraege.map((e, i) => (
                   <li key={`${e.code}-${i}`}>{e.meldung}</li>
                 ))}
               </ul>
             )}
-            <div className="button-row">
+            <div className={KNOPFZEILE}>
               {status === "konflikt" && (
                 <button
                   type="button"
-                  className="button button--ghost"
+                  className={knopf()}
                   onClick={() => void serverstandBestaetigen()}
                 >
                   Serverstand laden (lokale Änderungen verwerfen)
                 </button>
               )}
-              <button type="button" className="button button--ghost" onClick={() => dispatch({ typ: "hinweis-schliessen" })}>
+              <button type="button" className={knopf()} onClick={() => dispatch({ typ: "hinweis-schliessen" })}>
                 {status === "konflikt" ? "Entwurf vorerst behalten" : "Hinweis schließen"}
               </button>
             </div>
@@ -668,8 +690,8 @@ export function GrundrissEditor({
         </div>
       </div>
 
-      <details className="grundriss__hilfe">
-        <summary>Bedienung und Tastenkürzel</summary>
+      <details className="text-[0.88rem] text-muted">
+        <summary className="cursor-pointer">Bedienung und Tastenkürzel</summary>
         <ul>
           <li>Rechteckraum (R): erste Ecke klicken, gegenüberliegende Ecke klicken, Namen vergeben.</li>
           <li>Polygonraum (P): Punkte nacheinander klicken; Klick auf den Startpunkt, Doppelklick oder Enter schließt. Rücktaste oder Strg+Z entfernt den letzten Punkt, Escape bricht ab.</li>

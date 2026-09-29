@@ -5,6 +5,7 @@ import { useState } from "react";
 
 import { useAuth, usePermission } from "../../core/auth/AuthProvider";
 import { Feld } from "../../core/ui/Feld";
+import { FORMULARRASTER, FORMULARRASTER_AKTIONEN, karte, knopf, meldungsflaeche } from "../../core/ui/stil";
 
 type Bearbeitbar = {
   name: string;
@@ -57,10 +58,10 @@ export function ProjectMasterDataTab({ projekt }: { projekt: ProjectOut }) {
   const werte = entwurf ?? ausProjekt(projekt);
 
   return (
-    <section className="card">
+    <section className={karte()}>
       <h2>Stammdaten</h2>
       <form
-        className="form-grid"
+        className={FORMULARRASTER}
         onSubmit={(event) => {
           event.preventDefault();
           speichern.mutate(werte);
@@ -91,10 +92,10 @@ export function ProjectMasterDataTab({ projekt }: { projekt: ProjectOut }) {
           value={werte.site_city}
           onChange={(site_city) => setEntwurf({ ...werte, site_city })}
         />
-        <div className="form-grid__actions">
-          {fehler && <p className="alert alert--error">{fehler}</p>}
+        <div className={FORMULARRASTER_AKTIONEN}>
+          {fehler && <p className={meldungsflaeche()}>{fehler}</p>}
           <button
-            className="button button--primary"
+            className={knopf("primaer")}
             type="submit"
             disabled={gesperrt || speichern.isPending || entwurf === null}
           >

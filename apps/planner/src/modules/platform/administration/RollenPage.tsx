@@ -2,7 +2,9 @@ import type { PermissionInfo, SystemRoleOut } from "@elektroplan/api-client";
 import { useQuery } from "@tanstack/react-query";
 
 import { useAuth } from "../../../core/auth/AuthProvider";
+import { STAPEL, karte, meldungsflaeche } from "../../../core/ui/stil";
 import { AdminNavigation } from "./AdminNavigation";
+import { RECHTE_BEREICH_TITEL, RECHTE_LISTE, RECHTE_RASTER, RECHTE_SCHLUESSEL } from "./rechtedarstellung";
 
 /**
  * Administration → Rollen und Rechte.
@@ -16,24 +18,24 @@ export default function RollenPage() {
   const rollen = useQuery({ queryKey: ["roles"], queryFn: () => api.get("/api/v1/roles") });
 
   return (
-    <div className="stack">
-      <section className="card">
-        <p className="bereich">Administration</p>
+    <div className={STAPEL}>
+      <section className={karte()}>
+        <p className="m-0 text-[0.8rem] tracking-[0.04em] text-muted uppercase">Administration</p>
         <h1>Rollen und Rechte</h1>
         <AdminNavigation />
-        <p className="muted">
+        <p className="text-muted">
           Jede Person erhält eine oder mehrere feste Rollen. Die Rollen und ihre Berechtigungen sind
           vorgegeben und hier nicht änderbar.
         </p>
       </section>
-      {rollen.isPending && <p className="muted">Rollen werden geladen ...</p>}
+      {rollen.isPending && <p className="text-muted">Rollen werden geladen ...</p>}
       {rollen.isError && (
-        <p className="alert alert--error" role="alert">
+        <p className={meldungsflaeche()} role="alert">
           Die Rollen konnten nicht geladen werden.
         </p>
       )}
       {rollen.isSuccess && (
-        <div className="rollenkarten">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-4">
           {rollen.data.map((rolle) => (
             <Rollenkarte key={rolle.key} rolle={rolle} />
           ))}
@@ -49,20 +51,22 @@ function Rollenkarte({ rolle }: { rolle: SystemRoleOut }) {
     bereiche.set(recht.area, [...(bereiche.get(recht.area) ?? []), recht]);
   }
   return (
-    <section className="card" aria-labelledby={`rolle-${rolle.key}`}>
-      <h2 id={`rolle-${rolle.key}`}>{rolle.name}</h2>
+    <section className={karte()} aria-labelledby={`rolle-${rolle.key}`}>
+      <h2 id={`rolle-${rolle.key}`} className="mt-0">
+        {rolle.name}
+      </h2>
       <p>{rolle.description}</p>
       <details>
-        <summary className="details__titel">{rolle.permissions.length} Berechtigungen</summary>
-        <div className="rechte">
+        <summary className="cursor-pointer font-semibold">{rolle.permissions.length} Berechtigungen</summary>
+        <div className={RECHTE_RASTER}>
           {[...bereiche.entries()].map(([bereich, rechte]) => (
-            <section key={bereich} className="rechte__bereich" aria-label={bereich}>
-              <h3>{bereich}</h3>
-              <ul className="rechte__liste">
+            <section key={bereich} aria-label={bereich}>
+              <h3 className={RECHTE_BEREICH_TITEL}>{bereich}</h3>
+              <ul className={RECHTE_LISTE}>
                 {rechte.map((recht) => (
                   <li key={recht.key}>
                     <span>{recht.description || recht.key}</span>
-                    <code className="rechte__schluessel">{recht.key}</code>
+                    <code className={RECHTE_SCHLUESSEL}>{recht.key}</code>
                   </li>
                 ))}
               </ul>

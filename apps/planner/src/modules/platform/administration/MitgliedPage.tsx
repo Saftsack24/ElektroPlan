@@ -11,8 +11,10 @@ import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../../../core/auth/AuthProvider";
 import { Bestaetigung } from "../../../core/ui/Bestaetigung";
 import { Marke } from "../../../core/ui/Marke";
+import { FELD_FEHLER, KARTENKOPF, KENNWERTE, KNOPFZEILE, STAPEL, karte, knopf, meldungsflaeche } from "../../../core/ui/stil";
 import { AdminNavigation } from "./AdminNavigation";
 import { STATUS_ART, STATUS_TEXT, datum, verwaltungsfehler } from "./texte";
+import { RECHTE_BEREICH_TITEL, RECHTE_LISTE, RECHTE_RASTER, RECHTE_SCHLUESSEL } from "./rechtedarstellung";
 
 const ADMIN_ROLLE = "admin";
 
@@ -49,16 +51,16 @@ export default function MitgliedPage() {
   };
 
   return (
-    <div className="stack">
-      <section className="card">
-        <p className="bereich">Administration</p>
+    <div className={STAPEL}>
+      <section className={karte()}>
+        <p className="m-0 text-[0.8rem] tracking-[0.04em] text-muted uppercase">Administration</p>
         <AdminNavigation />
         <p>
           <Link to="/administration/users">← Zur Benutzerliste</Link>
         </p>
-        {mitglied.isPending && <p className="muted">Mitglied wird geladen ...</p>}
+        {mitglied.isPending && <p className="text-muted">Mitglied wird geladen ...</p>}
         {mitglied.isError && (
-          <p className="alert alert--error" role="alert">
+          <p className={meldungsflaeche()} role="alert">
             Dieses Mitglied wurde nicht gefunden oder ist nicht mehr erreichbar.
           </p>
         )}
@@ -94,12 +96,12 @@ export default function MitgliedPage() {
 
 function Kopf({ mitglied, betrieb }: { mitglied: MemberOut; betrieb: string }) {
   return (
-    <div className="stack">
-      <div className="card__header">
+    <div className={STAPEL}>
+      <div className={KARTENKOPF}>
         <h1>{mitglied.full_name}</h1>
         <Marke art={STATUS_ART[mitglied.status]}>{STATUS_TEXT[mitglied.status]}</Marke>
       </div>
-      <dl className="kennwerte">
+      <dl className={KENNWERTE}>
         <dt>E-Mail</dt>
         <dd>{mitglied.email}</dd>
         <dt>Mitglied seit</dt>
@@ -107,7 +109,7 @@ function Kopf({ mitglied, betrieb }: { mitglied: MemberOut; betrieb: string }) {
         <dt>Letzte Anmeldung in {betrieb}</dt>
         <dd>{datum(mitglied.last_login_at)}</dd>
       </dl>
-      <p className="muted">
+      <p className="text-muted">
         Name, E-Mail-Adresse und Passwort gehören zum persönlichen Konto der Person und lassen sich
         hier nicht ändern.
       </p>
@@ -159,25 +161,25 @@ function Zugang({
   };
 
   return (
-    <section className="card" aria-labelledby="zugang-titel">
+    <section className={karte()} aria-labelledby="zugang-titel">
       <h2 id="zugang-titel">Zugang zu {betrieb}</h2>
       {meldung !== null && (
-        <p className="alert alert--erfolg" role="status">
+        <p className={meldungsflaeche("erfolg")} role="status">
           {meldung}
         </p>
       )}
-      <p className="muted">
+      <p className="text-muted">
         {aktiv
           ? "Eine Sperre gilt nur für diesen Betrieb. Das persönliche Konto und Zugänge zu anderen Betrieben bleiben bestehen."
           : "Der Zugang ist gesperrt. Nach der Freigabe meldet sich die Person neu an."}
       </p>
       {darfSchreiben &&
         (mitglied.is_self ? (
-          <p className="muted">Den eigenen Zugang kann niemand selbst sperren.</p>
+          <p className="text-muted">Den eigenen Zugang kann niemand selbst sperren.</p>
         ) : (
           <button
             type="button"
-            className={aktiv ? "button button--gefahr" : "button button--primary"}
+            className={knopf(aktiv ? "gefahr" : "primaer")}
             onClick={() => {
               setFehler(null);
               setMeldung(null);
@@ -203,7 +205,7 @@ function Zugang({
               <strong>{mitglied.full_name}</strong> kann danach nicht mehr in {betrieb} arbeiten.
               Angemeldete Sitzungen in diesem Betrieb enden sofort.
             </p>
-            <p className="muted">
+            <p className="text-muted">
               Das persönliche Konto und Zugänge zu anderen Betrieben bleiben bestehen. Die Sperre
               lässt sich jederzeit aufheben.
             </p>
@@ -278,28 +280,28 @@ function Rollen({
   };
 
   return (
-    <section className="card" aria-labelledby="rollen-titel">
+    <section className={karte()} aria-labelledby="rollen-titel">
       <h2 id="rollen-titel">Rollen</h2>
-      <p className="muted">
+      <p className="text-muted">
         Rollen bündeln feste Berechtigungen. Einzelne Rechte lassen sich nicht vergeben -{" "}
         <Link to="/administration/roles">Übersicht der Rollen</Link>.
       </p>
       {meldung !== null && (
-        <p className="alert alert--erfolg" role="status">
+        <p className={meldungsflaeche("erfolg")} role="status">
           {meldung}
         </p>
       )}
       {rollen === undefined ? (
-        <p className="muted">Rollen werden geladen ...</p>
+        <p className="text-muted">Rollen werden geladen ...</p>
       ) : (
-        <fieldset className="rollenwahl" disabled={!darfSchreiben || laeuft}>
-          <legend className="visuell-versteckt">Rollen von {mitglied.full_name}</legend>
+        <fieldset className="flex flex-col gap-2.5 rounded-ep border border-line p-3" disabled={!darfSchreiben || laeuft}>
+          <legend className="sr-only">Rollen von {mitglied.full_name}</legend>
           {rollen.map((rolle) => {
             const id = `rolle-${rolle.key}`;
             const eigeneAdminrolle =
               mitglied.is_self && rolle.key === ADMIN_ROLLE && bisher.includes(ADMIN_ROLLE);
             return (
-              <div key={rolle.key} className="rollenwahl__eintrag">
+              <div key={rolle.key} className="flex items-start gap-2.5 [&_input]:mt-1">
                 <input
                   id={id}
                   type="checkbox"
@@ -309,9 +311,9 @@ function Rollen({
                   aria-describedby={`${id}-zweck`}
                   onChange={(event) => umschalten(rolle.key, event.target.checked)}
                 />
-                <label htmlFor={id}>
+                <label htmlFor={id} className="flex flex-col">
                   <strong id={`${id}-name`}>{rolle.name}</strong>
-                  <span id={`${id}-zweck`} className="muted rollenwahl__zweck">
+                  <span id={`${id}-zweck`} className="text-label text-muted">
                     {eigeneAdminrolle
                       ? "Die eigene Administratorrolle kann hier niemand selbst entfernen."
                       : rolle.description}
@@ -323,15 +325,15 @@ function Rollen({
         </fieldset>
       )}
       {fehler !== null && !frage && (
-        <p className="alert alert--error" role="alert">
+        <p className={meldungsflaeche()} role="alert">
           {fehler}
         </p>
       )}
       {darfSchreiben && (
-        <div className="button-row">
+        <div className={KNOPFZEILE}>
           <button
             type="button"
-            className="button button--primary"
+            className={knopf("primaer")}
             disabled={!geaendert || gewaehlt.length === 0 || laeuft}
             onClick={() => {
               setFehler(null);
@@ -343,7 +345,7 @@ function Rollen({
           {geaendert && (
             <button
               type="button"
-              className="button button--ghost"
+              className={knopf()}
               disabled={laeuft}
               onClick={() => setAuswahl({ version: mitglied.version, keys: bisher })}
             >
@@ -351,7 +353,7 @@ function Rollen({
             </button>
           )}
           {gewaehlt.length === 0 && (
-            <span className="field__fehler">Mindestens eine Rolle ist nötig.</span>
+            <span className={FELD_FEHLER}>Mindestens eine Rolle ist nötig.</span>
           )}
         </div>
       )}
@@ -372,7 +374,7 @@ function Rollen({
           {hinzu.length > 0 && <li>Neu: {hinzu.map(name).join(", ")}</li>}
           {weg.length > 0 && <li>Entfernt: {weg.map(name).join(", ")}</li>}
         </ul>
-        <p className="muted">Die Änderung gilt sofort, ohne neue Anmeldung.</p>
+        <p className="text-muted">Die Änderung gilt sofort, ohne neue Anmeldung.</p>
       </Bestaetigung>
     </section>
   );
@@ -385,25 +387,25 @@ export function EffektiveRechte({ daten }: { daten: MemberPermissionsOut }) {
     bereiche.set(recht.area, [...(bereiche.get(recht.area) ?? []), recht]);
   }
   return (
-    <section className="card" aria-labelledby="rechte-titel">
+    <section className={karte()} aria-labelledby="rechte-titel">
       <h2 id="rechte-titel">Was diese Person darf</h2>
-      <p className="muted">Ergibt sich aus den Rollen. Steht mehr als eine Rolle dahinter, sind alle genannt.</p>
+      <p className="text-muted">Ergibt sich aus den Rollen. Steht mehr als eine Rolle dahinter, sind alle genannt.</p>
       {daten.permissions.length === 0 ? (
-        <p className="leer">Keine Berechtigungen - der Person ist keine Rolle zugewiesen.</p>
+        <p className="py-3 text-muted *:my-1">Keine Berechtigungen - der Person ist keine Rolle zugewiesen.</p>
       ) : (
-        <div className="rechte">
+        <div className={RECHTE_RASTER}>
           {[...bereiche.entries()].map(([bereich, rechte]) => (
-            <section key={bereich} className="rechte__bereich" aria-label={bereich}>
-              <h3>{bereich}</h3>
-              <ul className="rechte__liste">
+            <section key={bereich} aria-label={bereich}>
+              <h3 className={RECHTE_BEREICH_TITEL}>{bereich}</h3>
+              <ul className={RECHTE_LISTE}>
                 {rechte.map((recht) => (
                   <li key={recht.key}>
                     <span>{recht.description || recht.key}</span>
-                    <span className="muted rechte__herkunft">
+                    <span className="text-label text-muted">
                       {" "}
                       über {recht.granted_by.map((rolle) => rolle.name).join(", ")}
                     </span>
-                    <code className="rechte__schluessel">{recht.key}</code>
+                    <code className={RECHTE_SCHLUESSEL}>{recht.key}</code>
                   </li>
                 ))}
               </ul>

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 
 import { useAuth, usePermission } from "../../core/auth/AuthProvider";
+import { FELD, FELD_BESCHRIFTUNG, FELDREIHE, TABELLE, eingabefeld, karte, knopf, meldungsflaeche } from "../../core/ui/stil";
 
 const KB = 1024;
 
@@ -69,31 +70,31 @@ export function ProjectFilesTab({
   });
 
   return (
-    <section className="card">
+    <section className={karte()}>
       <h2>Dateien</h2>
-      <p className="muted">
+      <p className="text-muted">
         Erlaubt sind PDF, PNG, JPEG, WebP, CSV und Text. Der Inhalt wird geprüft, nicht nur
         die Dateiendung.
       </p>
 
-      {fehler && <p className="alert alert--error">{fehler}</p>}
+      {fehler && <p className={meldungsflaeche()}>{fehler}</p>}
       {schreibgeschuetzt && (
-        <p className="muted">
+        <p className="text-muted">
           Das Projekt ist archiviert — neue Uploads sind nicht möglich. Bestehende
           Dateien lassen sich weiterhin herunterladen.
         </p>
       )}
 
       {darfHochladen && (
-        <div className="inline-form">
-          <div className="field">
-            <label className="field__label" htmlFor="datei-upload">
+        <div className={FELDREIHE}>
+          <div className={FELD}>
+            <label className={FELD_BESCHRIFTUNG} htmlFor="datei-upload">
               Datei hochladen
             </label>
             <input
               id="datei-upload"
               ref={eingabe}
-              className="field__input"
+              className={eingabefeld()}
               type="file"
               disabled={hochladen.isPending}
               onChange={(event) => {
@@ -102,18 +103,18 @@ export function ProjectFilesTab({
               }}
             />
           </div>
-          {hochladen.isPending && <p className="muted">Wird hochgeladen ...</p>}
+          {hochladen.isPending && <p className="text-muted">Wird hochgeladen ...</p>}
         </div>
       )}
 
-      {dateien.isPending && <p className="muted">Dateien werden geladen ...</p>}
+      {dateien.isPending && <p className="text-muted">Dateien werden geladen ...</p>}
       {dateien.isError && (
-        <p className="alert alert--error">Die Dateiliste konnte nicht geladen werden.</p>
+        <p className={meldungsflaeche()}>Die Dateiliste konnte nicht geladen werden.</p>
       )}
-      {dateien.data?.length === 0 && <p className="muted">Noch keine Datei hinterlegt.</p>}
+      {dateien.data?.length === 0 && <p className="text-muted">Noch keine Datei hinterlegt.</p>}
 
       {dateien.data && dateien.data.length > 0 && (
-        <table className="table">
+        <table className={TABELLE}>
           <thead>
             <tr>
               <th>Dateiname</th>
@@ -134,7 +135,7 @@ export function ProjectFilesTab({
                 <td>{new Date(datei.created_at).toLocaleString("de-DE")}</td>
                 <td>
                   <button
-                    className="button button--ghost"
+                    className={knopf()}
                     type="button"
                     disabled={herunterladen.isPending}
                     onClick={() => herunterladen.mutate(datei.id)}

@@ -3,6 +3,7 @@ import type { ProblemDetail } from "@elektroplan/api-client";
 import { useState } from "react";
 import type { FormEvent } from "react";
 
+import { FELD, FELD_BESCHRIFTUNG, STAPEL, eingabefeld, karte, knopf, meldungsflaeche } from "../ui/stil";
 import { useAuth } from "./AuthProvider";
 
 type OrganizationChoice = NonNullable<ProblemDetail["organizations"]>[number];
@@ -42,15 +43,15 @@ export function LoginPage() {
   }
 
   return (
-    <main className="login">
-      <form className="card login__form" onSubmit={handleSubmit}>
-        <h1 className="login__title">ElektroPlan</h1>
-        <p className="login__subtitle">Anmeldung</p>
+    <main className="grid min-h-screen place-items-center p-4">
+      <form className={`${karte()} flex w-[min(380px,100%)] flex-col gap-3.5`} onSubmit={handleSubmit}>
+        <h1 className="m-0 text-[1.4rem]">ElektroPlan</h1>
+        <p className="m-0 text-muted">Anmeldung</p>
 
-        <label className="field">
-          <span className="field__label">E-Mail</span>
+        <label className={FELD}>
+          <span className={FELD_BESCHRIFTUNG}>E-Mail</span>
           <input
-            className="field__input"
+            className={eingabefeld()}
             type="email"
             autoComplete="username"
             required
@@ -59,10 +60,10 @@ export function LoginPage() {
           />
         </label>
 
-        <label className="field">
-          <span className="field__label">Passwort</span>
+        <label className={FELD}>
+          <span className={FELD_BESCHRIFTUNG}>Passwort</span>
           <input
-            className="field__input"
+            className={eingabefeld()}
             type="password"
             autoComplete="current-password"
             required
@@ -72,18 +73,18 @@ export function LoginPage() {
         </label>
 
         {error !== null && (
-          <p className="alert alert--error" role="alert">
+          <p className={meldungsflaeche()} role="alert">
             {error}
           </p>
         )}
 
         {choices.length > 0 && (
-          <div className="stack">
-            <span className="field__label">Betrieb wählen</span>
+          <div className={STAPEL}>
+            <span className={FELD_BESCHRIFTUNG}>Betrieb wählen</span>
             {choices.map((choice) => (
               <button
                 key={choice.id}
-                className="button button--ghost"
+                className={knopf()}
                 type="button"
                 disabled={busy}
                 onClick={() => void anmelden(choice.id)}
@@ -94,7 +95,7 @@ export function LoginPage() {
           </div>
         )}
 
-        <button className="button button--primary" type="submit" disabled={busy}>
+        <button className={knopf("primaer")} type="submit" disabled={busy}>
           {busy ? "Anmeldung läuft ..." : "Anmelden"}
         </button>
       </form>

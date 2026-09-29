@@ -10,6 +10,7 @@ import { useEntprellt } from "../../core/ui/useEntprellt";
 import { CustomerFormDialog } from "./CustomerFormDialog";
 import type { KundenWerte } from "./CustomerFormDialog";
 import { alsFormularfehler } from "../../core/api/fehler";
+import { FELD, FELD_BESCHRIFTUNG, KARTENKOPF, STAPEL, TABELLE, eingabefeld, karte, knopf, meldungsflaeche } from "../../core/ui/stil";
 
 const SEITENGROESSE = 25;
 
@@ -86,13 +87,13 @@ export default function CustomersPage() {
   };
 
   return (
-    <div className="stack">
-      <section className="card">
-        <div className="card__header">
+    <div className={STAPEL}>
+      <section className={karte()}>
+        <div className={KARTENKOPF}>
           <h1>Kunden</h1>
           {darfSchreiben && (
             <button
-              className="button button--primary"
+              className={knopf("primaer")}
               type="button"
               onClick={() => {
                 setErfolg(null);
@@ -105,18 +106,18 @@ export default function CustomersPage() {
         </div>
 
         {erfolg !== null && (
-          <p className="alert alert--erfolg" role="status">
+          <p className={meldungsflaeche("erfolg")} role="status">
             {erfolg}
           </p>
         )}
 
-        <div className="field">
-          <label className="field__label" htmlFor="kundensuche">
+        <div className={FELD}>
+          <label className={FELD_BESCHRIFTUNG} htmlFor="kundensuche">
             Suche (Name, Kundennummer, Ort)
           </label>
           <input
             id="kundensuche"
-            className="field__input"
+            className={eingabefeld()}
             type="search"
             value={suche}
             placeholder="z. B. Schmidt"
@@ -127,12 +128,12 @@ export default function CustomersPage() {
           />
         </div>
 
-        {liste.laedt && <p className="muted">Kunden werden geladen ...</p>}
+        {liste.laedt && <p className="text-muted">Kunden werden geladen ...</p>}
         {liste.fehlgeschlagen && (
-          <p className="alert alert--error" role="alert">
+          <p className={meldungsflaeche()} role="alert">
             Die Kundenliste konnte nicht geladen werden.{" "}
             <button
-              className="button button--ghost"
+              className={knopf()}
               type="button"
               onClick={liste.erneutVersuchen}
             >
@@ -174,10 +175,10 @@ function Kundentabelle({
   hervorgehoben: string | null;
 }) {
   if (kunden.length === 0) {
-    return <p className="muted">Keine Kunden gefunden.</p>;
+    return <p className="text-muted">Keine Kunden gefunden.</p>;
   }
   return (
-    <table className="table">
+    <table className={TABELLE}>
       <thead>
         <tr>
           <th>Nummer</th>
@@ -188,7 +189,7 @@ function Kundentabelle({
       </thead>
       <tbody>
         {kunden.map((kunde) => (
-          <tr key={kunde.id} className={kunde.id === hervorgehoben ? "table__zeile--neu" : ""}>
+          <tr key={kunde.id} className={kunde.id === hervorgehoben ? "*:bg-selected-soft" : ""}>
             <td>
               <code>{kunde.customer_number}</code>
             </td>

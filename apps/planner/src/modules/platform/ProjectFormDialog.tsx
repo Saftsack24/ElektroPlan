@@ -1,9 +1,10 @@
 import type { CustomerOut } from "@elektroplan/api-client";
 import { useState } from "react";
 
-import { Dialog } from "../../core/ui/Dialog";
+import { Dialog, DialogAktionen } from "../../core/ui/Dialog";
 import { Feld, Schalter } from "../../core/ui/Feld";
 import { useMasse } from "../../core/ui/masseinheit";
+import { FELDZEILE, FORMULARRASTER, FORMULARRASTER_BLOCK, FORMULARRASTER_LEGENDE, KNOPFZEILE, knopf, meldungsflaeche } from "../../core/ui/stil";
 import {
   ANFANGSHERKUNFT,
   STANDARD_LAENDERCODE,
@@ -163,7 +164,7 @@ export function ProjectFormDialog({
       onClose={schliessen}
     >
       <form
-        className="form-grid"
+        className={FORMULARRASTER}
         noValidate
         onSubmit={(event) => {
           event.preventDefault();
@@ -190,9 +191,9 @@ export function ProjectFormDialog({
           onChange={(name) => setWerte({ ...werte, name })}
         />
 
-        <fieldset className="form-grid__block">
-          <legend>Baustellenadresse</legend>
-          <p className="muted">
+        <fieldset className={FORMULARRASTER_BLOCK}>
+          <legend className={FORMULARRASTER_LEGENDE}>Baustellenadresse</legend>
+          <p className="text-muted">
             {kunde === null
               ? "Nach der Kundenwahl wird die Rechnungsadresse des Kunden vorgeschlagen. Die Projektadresse bleibt davon unabhängig."
               : "Vorschlag aus der Rechnungsadresse des Kunden. Die Projektadresse ist eine eigene Angabe - spätere Änderungen am Kunden ändern sie nicht."}
@@ -200,14 +201,14 @@ export function ProjectFormDialog({
           {kunde !== null && hatAdresse(kunde) && (
             <button
               type="button"
-              className="button button--ghost"
+              className={knopf()}
               disabled={laeuft}
               onClick={adresseUebernehmen}
             >
               Kundenadresse übernehmen
             </button>
           )}
-          <div className="feldzeile">
+          <div className={FELDZEILE}>
             <Feld
               id="projekt-street"
               label="Straße"
@@ -247,8 +248,8 @@ export function ProjectFormDialog({
           </div>
         </fieldset>
 
-        <fieldset className="form-grid__block">
-          <legend>Startstruktur</legend>
+        <fieldset className={FORMULARRASTER_BLOCK}>
+          <legend className={FORMULARRASTER_LEGENDE}>Startstruktur</legend>
           <Schalter
             id="projekt-startstruktur"
             label="Gebäude und Geschoss gleich mit anlegen"
@@ -256,12 +257,12 @@ export function ProjectFormDialog({
             disabled={laeuft}
             onChange={(startstruktur) => setWerte({ ...werte, startstruktur })}
           />
-          <p className="muted">
+          <p className="text-muted">
             Für den Regelfall. Bei einem Serviceauftrag ohne Raumplanung einfach
             abwählen — Gebäude und Geschosse lassen sich später jederzeit ergänzen.
           </p>
           {werte.startstruktur && (
-            <div className="feldzeile">
+            <div className={FELDZEILE}>
               <Feld
                 id="projekt-gebaeude"
                 label="Gebäude"
@@ -283,18 +284,18 @@ export function ProjectFormDialog({
           )}
         </fieldset>
 
-        <div className="form-grid__actions dialog__aktionen">
+        <DialogAktionen anordnung="formular">
           {fehler !== null && (
-            <p className="alert alert--error" role="alert">
+            <p className={meldungsflaeche()} role="alert">
               {fehler}
             </p>
           )}
-          <div className="button-row">
-            <button className="button button--primary" type="submit" disabled={laeuft}>
+          <div className={KNOPFZEILE}>
+            <button className={knopf("primaer")} type="submit" disabled={laeuft}>
               {laeuft ? "Wird angelegt ..." : "Projekt anlegen"}
             </button>
             <button
-              className="button button--ghost"
+              className={knopf()}
               type="button"
               disabled={laeuft}
               onClick={schliessen}
@@ -302,7 +303,7 @@ export function ProjectFormDialog({
               Abbrechen
             </button>
           </div>
-        </div>
+        </DialogAktionen>
       </form>
     </Dialog>
   );

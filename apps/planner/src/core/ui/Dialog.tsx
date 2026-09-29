@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 
 import { seitenScrollSperren } from "./scrollsperre";
+import { knopf } from "./stil";
 
 /**
  * Modaler Dialog auf Basis des nativen `<dialog>`-Elements.
@@ -26,9 +27,9 @@ import { seitenScrollSperren } from "./scrollsperre";
  * Fläche — eine eigene Vollbildvariante ist dafür nicht nötig.
  *
  * **Genau ein Scrollbereich.** Der Dialog selbst scrollt nicht; Kopf mit
- * Titel und Schließen-Knopf steht fest, darunter scrollt allein
- * `.dialog__inhalt`. Aktionen mit `.dialog__aktionen` bleiben dort unten
- * angeheftet sichtbar. Solange ein Dialog offen ist, ist die Seite dahinter
+ * Titel und Schließen-Knopf steht fest, darunter scrollt allein der Inhalt
+ * (`data-dialog-scrollbereich`). Aktionen in `<DialogAktionen>` bleiben dort
+ * unten angeheftet sichtbar. Solange ein Dialog offen ist, ist die Seite dahinter
  * gesperrt (`scrollsperre.ts`).
  */
 export function Dialog({
@@ -112,7 +113,7 @@ export function Dialog({
   return (
     <dialog
       ref={element}
-      className="dialog"
+      className="max-h-[calc(100dvh-32px)] w-[min(720px,calc(100vw-32px))] overflow-hidden rounded-ep border border-line bg-raised p-0 text-fg open:flex open:flex-col max-sm:h-dvh max-sm:max-h-dvh max-sm:w-screen max-sm:max-w-screen max-sm:rounded-none"
       aria-labelledby={titelId.current}
       onCancel={(event) => {
         // Escape: Der Browser würde das Element ohne unser Wissen schließen.
@@ -124,21 +125,52 @@ export function Dialog({
         if (event.target === element.current) onClose();
       }}
     >
-      <div className="dialog__kopf">
-        <h2 id={titelId.current}>{titel}</h2>
+      <div className="flex flex-none items-center justify-between gap-3 px-5 pt-4 pb-2">
+        <h2 id={titelId.current} className="m-0">
+          {titel}
+        </h2>
         <button
           type="button"
-          className="button button--ghost"
+          className={knopf()}
           aria-label="Dialog schließen"
           onClick={onClose}
         >
           ✕
         </button>
       </div>
-      <div className="dialog__inhalt" data-dialog-scrollbereich>
-        {beschreibung !== undefined && <p className="muted">{beschreibung}</p>}
+      <div
+        className="min-h-0 flex-auto overflow-y-auto overscroll-contain px-5 after:block after:h-4 after:content-['']"
+        data-dialog-scrollbereich
+      >
+        {beschreibung !== undefined && <p className="text-muted">{beschreibung}</p>}
         {children}
       </div>
     </dialog>
+  );
+}
+
+/**
+ * Aktionsleiste am unteren Rand eines Dialogs: bleibt beim Scrollen des
+ * Inhalts angeheftet sichtbar.
+ *
+ * `anordnung="formular"` stapelt Knöpfe und Hinweise linksbündig und nimmt
+ * in einem Formularraster die volle Breite ein.
+ */
+export function DialogAktionen({
+  anordnung = "zeile",
+  children,
+}: {
+  anordnung?: "zeile" | "formular";
+  children: ReactNode;
+}) {
+  const layout =
+    anordnung === "formular" ? "col-span-full flex flex-col items-start gap-2" : "flex flex-wrap gap-2";
+  return (
+    <div
+      className={`sticky bottom-0 z-[1] mt-1 border-t border-line bg-raised pt-3 ${layout}`}
+      data-dialog-aktionen
+    >
+      {children}
+    </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { config } from "../../../core/config";
+import { eingabefeld, knopf } from "../../../core/ui/stil";
 
 /**
  * Zeigt einen Einladungslink **nur in der Entwicklungsumgebung**.
@@ -15,17 +16,19 @@ export function Entwicklungslink({ link }: { link: string | null | undefined }) 
   const [kopiert, setKopiert] = useState(false);
   if (!config.entwicklungsfunktionen || !link) return null;
   return (
-    <div className="entwicklungslink" role="group" aria-labelledby="entwicklungslink-titel">
-      <p id="entwicklungslink-titel" className="entwicklungslink__titel">
+    <div
+      className="my-2 rounded-ep border-2 border-dashed border-warning p-2.5"
+      role="group" aria-labelledby="entwicklungslink-titel">
+      <p id="entwicklungslink-titel" className="m-0 font-bold text-warning">
         Entwicklungsfunktion: Einladungslink
       </p>
-      <p className="muted">
+      <p className="text-muted">
         In dieser Umgebung wird keine E-Mail verschickt. Der Link wird nur jetzt angezeigt und
         ist später nicht mehr abrufbar. Nicht in Produktion verfügbar.
       </p>
-      <div className="entwicklungslink__zeile">
+      <div className="flex gap-2">
         <input
-          className="field__input"
+          className={`${eingabefeld()} min-w-0 flex-1`}
           readOnly
           value={link}
           aria-label="Einladungslink"
@@ -33,7 +36,7 @@ export function Entwicklungslink({ link }: { link: string | null | undefined }) 
         />
         <button
           type="button"
-          className="button button--ghost"
+          className={knopf()}
           onClick={() => {
             void navigator.clipboard?.writeText(link).then(() => setKopiert(true));
           }}

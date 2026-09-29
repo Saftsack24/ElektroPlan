@@ -429,6 +429,9 @@ apps/backend/
 apps/planner/src/
   app/            Bootstrap, Router, Providers, Layout-Shell
   core/           Auth, API-Client-Wrapper, Registry, gemeinsame UI
+    theme/        semantische Laufzeit-Tokens und Grundregeln (Phase 4c.1, ADR 0018)
+    ui/stil.ts    Tailwind-Klassenrezepte für wiederkehrende Muster
+  styles.css      Einstiegspunkt: Tailwind (Theme + Utilities, ohne Preflight) + Theme
   modules/
     electrical/   index.ts exportiert PlannerModule-Descriptor
       editor/     grafischer 2D-Editor (Phase 4a): reine Geometrie-, Viewport-,
@@ -478,6 +481,43 @@ ohne Toleranz in atomare Abschnitte zerlegt, jede gespeicherte Öffnung wird ein
 Fachmodul, ohne Core-Abhängigkeit und ohne Persistenz – eine Öffnung bleibt genau eine
 Zeile an ihrer Wand; die Nachbarschaft ist Ansicht, kein Datum. Eine physische
 Wandidentität (T10) ist vor Phase 6 neu zu bewerten.
+
+**Gestaltung mit Tailwind (Phase 4c.1, ADR 0018).** Tailwind CSS 4 ist über das
+offizielle Vite-Plugin eingebunden, CSS-first ohne `tailwind.config.js` und **ohne
+Preflight** (sonst änderten sich Überschriften, Listen und Knöpfe). Zwischen Tailwind und
+den Komponenten liegen semantische CSS-Variablen:
+
+```
+Komponente  className="bg-surface text-muted border-line"
+    │
+    ▼
+@theme inline { --color-surface: var(--ep-surface); … }     core/theme/tokens.css
+    │
+    ▼
+:root { --ep-surface: #ffffff }  (dunkel über prefers-color-scheme)   ◀ Laufzeit
+```
+
+*So wird ein Token verwendet:* Utility mit dem semantischen Namen schreiben –
+`bg-page`, `bg-surface`, `bg-raised`, `bg-nav`, `border-line`, `text-fg`, `text-muted`,
+`bg-accent`/`hover:bg-accent-hover`/`text-on-accent`, `outline-focus`, `border-selected`,
+`bg-selected-soft`, `text-success`, `text-warning`, `text-danger`/`bg-danger-soft`,
+`bg-canvas`; Radius `rounded-ep`. In eigenem CSS (SVG) direkt `var(--ep-…)`. Wiederkehrende
+Muster kommen aus `core/ui/stil.ts` (`knopf("primaer")`, `eingabefeld()`, `karte()` …).
+Fehlt eine Bedeutung, wird ein Token in `tokens.css` ergänzt (fachliche Tokens im
+Fachmodul), nie ein Farbwert in die Komponente geschrieben.
+
+*Ausnahmen:* Die Tailwind-Standardpalette ist abgeschaltet; zulässig sind nur die
+farbneutralen Schlüsselwörter `transparent` und `current` (`bg-transparent`,
+`border-transparent`) sowie farbunabhängige Schatten (`shadow-popup`, `shadow-hint`).
+Berechnete Werte – Popup-Lage, SVG-Cursor, Three.js-Materialien – werden weiter
+programmatisch gesetzt; die 3D-Szene hat eigene Farbwerte und ist noch nicht an die
+Tokens angebunden (Phase 4c.2).
+
+*Regeln:* Klassen vollständig und statisch im Quelltext (Varianten über
+`Record<Art, string>`), keine Benutzerwerte in Klassennamen, keine Inline-Styles für
+gewöhnliches Layout oder Farben. Spezial-CSS nur in `core/theme/basis.css` (globale
+Grundregeln, Dialog-Backdrop) und in `modules/electrical/editor/grundriss.css`
+(SVG-Zeichenfläche).
 
 ---
 

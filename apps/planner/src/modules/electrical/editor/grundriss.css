@@ -1,0 +1,93 @@
+/*
+ * Gestaltung der SVG-Zeichenfläche des Grundrisseditors (ADR 0014, ADR 0018).
+ *
+ * Bewusst CSS statt Tailwind-Utilities: Die Regeln hängen am Zustand der
+ * umgebenden Raumgruppe (`.grundriss__raum--aktiv .grundriss__wand`), nutzen
+ * SVG-Eigenschaften wie `paint-order` und `vector-effect` und gelten für
+ * hunderte gleichartige Elemente. Als Utilities an jedem Element wären sie
+ * schwerer zu lesen und zu prüfen. Die Klassennamen sind zugleich die
+ * Prüfpunkte der Editor-Tests.
+ *
+ * Farben kommen ausschließlich aus Tokens: den fachneutralen aus
+ * core/theme/tokens.css und den fachlichen `--ep-plan-*` dieses Moduls.
+ */
+
+:root {
+  --ep-plan-wall: #6b7482;
+  --ep-plan-wall-active: #1c2430;
+  --ep-plan-door: #b35c00;
+  --ep-plan-window: #1f7ab8;
+  --ep-plan-passage: var(--ep-text-muted);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ep-plan-wall: #7d8896;
+    --ep-plan-wall-active: #dfe5ec;
+    --ep-plan-door: #f0a35a;
+    --ep-plan-window: #6cb8ea;
+  }
+}
+
+@layer components {
+  .grundriss__svg { display: block; user-select: none; touch-action: none; }
+
+  /* Raster */
+  .grundriss__raster { fill: none; stroke: var(--ep-canvas-grid); stroke-width: 0.5; shape-rendering: crispEdges; }
+  .grundriss__raster--haupt { stroke-width: 1; }
+
+  /* Räume und Wände */
+  .grundriss__raumflaeche { fill: var(--ep-accent); fill-opacity: 0.035; stroke: none; cursor: pointer; }
+  .grundriss__raum--aktiv .grundriss__raumflaeche { fill-opacity: 0.09; }
+  .grundriss__raum--ausgewaehlt .grundriss__raumflaeche { fill-opacity: 0.14; }
+  .grundriss__wand { fill: none; stroke: var(--ep-plan-wall); stroke-linecap: square; }
+  .grundriss__raum--aktiv .grundriss__wand { stroke: var(--ep-plan-wall-active); }
+  .grundriss__raum .grundriss__wand--warnung { stroke: var(--ep-warning); }
+  .grundriss__raum .grundriss__wand--fehler { stroke: var(--ep-danger); }
+  .grundriss__raum .grundriss__wand--ausgewaehlt { stroke: var(--ep-selected); }
+  .grundriss__treffer {
+    fill: none; stroke: transparent; stroke-width: 14px; vector-effect: non-scaling-stroke;
+    pointer-events: stroke; cursor: pointer;
+  }
+  .grundriss__treffer--oeffnung { stroke-width: 16px; cursor: ew-resize; }
+
+  /* Öffnungen */
+  .grundriss__oeffnung-luecke { stroke: var(--ep-canvas); stroke-linecap: butt; }
+  .grundriss__oeffnung-symbol { fill: none; stroke-width: 3px; vector-effect: non-scaling-stroke; stroke-linecap: butt; }
+  .grundriss__oeffnung--door .grundriss__oeffnung-symbol { stroke: var(--ep-plan-door); }
+  .grundriss__oeffnung--window .grundriss__oeffnung-symbol { stroke: var(--ep-plan-window); stroke-width: 5px; stroke-dasharray: 2 2; }
+  .grundriss__oeffnung--passage .grundriss__oeffnung-symbol { stroke: var(--ep-plan-passage); stroke-dasharray: 6 4; }
+  .grundriss__oeffnung--warnung .grundriss__oeffnung-symbol { stroke: var(--ep-warning); }
+  .grundriss__oeffnung--fehler .grundriss__oeffnung-symbol { stroke: var(--ep-danger); stroke-width: 5px; }
+  .grundriss__oeffnung--ausgewaehlt .grundriss__oeffnung-symbol { stroke: var(--ep-selected); stroke-width: 6px; }
+  /* Abgeleitete Seite einer gemeinsamen Öffnung: gestrichelt, keine zweite Speicherung. */
+  .grundriss__oeffnung--abgeleitet .grundriss__oeffnung-symbol { stroke-dasharray: 5 3; opacity: 0.85; }
+  .grundriss__oeffnung--konflikt .grundriss__oeffnung-symbol { stroke: var(--ep-warning); }
+  .grundriss__oeffnungsvorschau { pointer-events: none; }
+  .grundriss__oeffnungsvorschau-flaeche { stroke: var(--ep-accent); stroke-opacity: 0.45; stroke-linecap: butt; }
+  .grundriss__oeffnungsvorschau--fehler .grundriss__oeffnungsvorschau-flaeche { stroke: var(--ep-danger); stroke-opacity: 0.4; }
+  .grundriss__oeffnungsvorschau-text {
+    font-size: 12px; font-weight: 600; fill: var(--ep-text); paint-order: stroke; stroke: var(--ep-canvas); stroke-width: 4px;
+  }
+  .grundriss__oeffnungsvorschau--fehler .grundriss__oeffnungsvorschau-text { fill: var(--ep-danger); }
+
+  /* Griffe, Beschriftungen, Vorschau */
+  .grundriss__ecke { fill: var(--ep-canvas); stroke: var(--ep-selected); stroke-width: 1.5; cursor: move; }
+  .grundriss__ecke--ausgewaehlt { fill: var(--ep-selected); }
+  .grundriss__beschriftung text, .grundriss__mass, .grundriss__raumname { pointer-events: none; }
+  .grundriss__mass {
+    font-size: 11px; fill: var(--ep-text-muted); paint-order: stroke; stroke: var(--ep-canvas); stroke-width: 3px;
+    font-variant-numeric: tabular-nums;
+  }
+  .grundriss__raumname {
+    font-size: 13px; font-weight: 600; fill: var(--ep-text); paint-order: stroke; stroke: var(--ep-canvas); stroke-width: 3px;
+  }
+  .grundriss__raumflaeche-text { font-weight: 400; fill: var(--ep-text-muted); }
+  .grundriss__vorschau {
+    fill: var(--ep-accent); fill-opacity: 0.06; stroke: var(--ep-accent); stroke-width: 1.5; stroke-dasharray: 6 4;
+  }
+  polyline.grundriss__vorschau { fill: none; }
+  .grundriss__vorschau--fehler { stroke: var(--ep-danger); }
+  .grundriss__startpunkt { fill: none; stroke: var(--ep-accent); stroke-width: 2; }
+  .grundriss__fangziel { fill: none; stroke: var(--ep-warning); stroke-width: 2; }
+}

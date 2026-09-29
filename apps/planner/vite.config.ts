@@ -1,10 +1,14 @@
 import { fileURLToPath, URL } from "node:url";
 
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  plugins: [react()],
+  // Tailwind CSS 4 wird als offizielles Vite-Plugin eingebunden (ADR 0018);
+  // eine eigene tailwind.config.js gibt es nicht, die Konfiguration steht
+  // CSS-first in src/styles.css und src/core/theme/.
+  plugins: [tailwindcss(), react()],
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),

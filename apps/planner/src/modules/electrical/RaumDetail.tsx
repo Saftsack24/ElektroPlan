@@ -6,6 +6,7 @@ import { useState } from "react";
 import { useAuth } from "../../core/auth/AuthProvider";
 import { alsFormularfehler } from "../../core/api/fehler";
 import { useMasse } from "../../core/ui/masseinheit";
+import { KARTENKOPF, KNOPFZEILE, STAPEL, TABELLE, karte, knopf, meldungsflaeche } from "../../core/ui/stil";
 import { OeffnungDialog } from "./OeffnungDialog";
 import type { Oeffnungswerte } from "./OeffnungDialog";
 import { WandDialog } from "./WandDialog";
@@ -153,11 +154,11 @@ export function RaumDetail({
   };
 
   if (waende.isPending || kontur.isPending) {
-    return <p className="muted">Raum wird geladen ...</p>;
+    return <p className="text-muted">Raum wird geladen ...</p>;
   }
   if (waende.isError || kontur.isError) {
     return (
-      <p className="alert alert--error" role="alert">
+      <p className={meldungsflaeche()} role="alert">
         Die Wände dieses Raums konnten nicht geladen werden.
       </p>
     );
@@ -168,18 +169,18 @@ export function RaumDetail({
   const zustand = bericht.contour_status;
 
   return (
-    <div className="stack">
-      <section className="card">
+    <div className={STAPEL}>
+      <section className={karte()}>
         <h3>Raumkontur</h3>
         <p>
           <strong>{KONTURZUSTAND_LABEL[zustand]}</strong> · {bericht.wall_count} Wände ·
           Fläche {flaecheAnzeigen(bericht.area_m2)} · Umfang{" "}
           {masse.anzeigenOptional(bericht.perimeter_mm)}
         </p>
-        <p className="muted">{KONTURZUSTAND_ERKLAERUNG[zustand]}</p>
+        <p className="text-muted">{KONTURZUSTAND_ERKLAERUNG[zustand]}</p>
 
         {bericht.problems.length > 0 && (
-          <div className="alert" role="status">
+          <div className={meldungsflaeche("schlicht")} role="status">
             <p>Damit die Kontur geschlossen ist, fehlt noch:</p>
             <ul>
               {bericht.problems.map((problem, index) => (
@@ -190,12 +191,12 @@ export function RaumDetail({
         )}
       </section>
 
-      <section className="card">
-        <div className="card__header">
-          <h3>Wände</h3>
+      <section className={karte()}>
+        <div className={KARTENKOPF}>
+          <h3 className="m-0">Wände</h3>
           {darfSchreiben && (
             <button
-              className="button button--primary"
+              className={knopf("primaer")}
               type="button"
               onClick={() => setWanddialog({ wand: null })}
             >
@@ -205,17 +206,17 @@ export function RaumDetail({
         </div>
 
         {fehler !== null && (
-          <p className="alert alert--error" role="alert">
+          <p className={meldungsflaeche()} role="alert">
             {fehler}
           </p>
         )}
 
         {liste.length === 0 ? (
-          <p className="muted">
+          <p className="text-muted">
             Noch keine Wand erfasst. Eine geschlossene Kontur braucht mindestens drei.
           </p>
         ) : (
-          <table className="table">
+          <table className={TABELLE}>
             <thead>
               <tr>
                 <th>Nr.</th>
@@ -242,9 +243,9 @@ export function RaumDetail({
                   <td>{wand.opening_count}</td>
                   {darfSchreiben && (
                     <td>
-                      <div className="button-row">
+                      <div className={KNOPFZEILE}>
                         <button
-                          className="button button--ghost"
+                          className={knopf()}
                           type="button"
                           aria-label={`Wand ${index + 1} bearbeiten`}
                           onClick={() => setWanddialog({ wand })}
@@ -252,7 +253,7 @@ export function RaumDetail({
                           Bearbeiten
                         </button>
                         <button
-                          className="button button--ghost"
+                          className={knopf()}
                           type="button"
                           aria-label={`Wand ${index + 1} nach oben`}
                           disabled={index === 0 || umordnen.isPending}
@@ -261,7 +262,7 @@ export function RaumDetail({
                           ↑
                         </button>
                         <button
-                          className="button button--ghost"
+                          className={knopf()}
                           type="button"
                           aria-label={`Wand ${index + 1} nach unten`}
                           disabled={index === liste.length - 1 || umordnen.isPending}
@@ -270,7 +271,7 @@ export function RaumDetail({
                           ↓
                         </button>
                         <button
-                          className="button button--ghost"
+                          className={knopf()}
                           type="button"
                           aria-label={`Wand ${index + 1} entfernen`}
                           disabled={wandLoeschen.isPending}
@@ -411,14 +412,14 @@ function Oeffnungen({
   const liste: OpeningOut[] = oeffnungen.data ?? [];
 
   return (
-    <section className="card card--eingerueckt">
-      <div className="card__header">
+    <section className={karte("eingerueckt")}>
+      <div className={KARTENKOPF}>
         <h4>
           Öffnungen in Wand {nummer} ({masse.anzeigen(wand.length_mm)})
         </h4>
         {darfSchreiben && (
           <button
-            className="button button--ghost"
+            className={knopf()}
             type="button"
             onClick={() => setDialog({ oeffnung: null })}
           >
@@ -428,21 +429,21 @@ function Oeffnungen({
       </div>
 
       {fehler !== null && (
-        <p className="alert alert--error" role="alert">
+        <p className={meldungsflaeche()} role="alert">
           {fehler}
         </p>
       )}
 
       {oeffnungen.isPending ? (
-        <p className="muted">Öffnungen werden geladen ...</p>
+        <p className="text-muted">Öffnungen werden geladen ...</p>
       ) : oeffnungen.isError ? (
-        <p className="alert alert--error" role="alert">
+        <p className={meldungsflaeche()} role="alert">
           Die Öffnungen konnten nicht geladen werden.
         </p>
       ) : liste.length === 0 ? (
-        <p className="muted">Keine Öffnung in dieser Wand.</p>
+        <p className="text-muted">Keine Öffnung in dieser Wand.</p>
       ) : (
-        <table className="table">
+        <table className={TABELLE}>
           <thead>
             <tr>
               <th>Art</th>
@@ -463,16 +464,16 @@ function Oeffnungen({
                 <td>{masse.anzeigen(oeffnung.sill_height_mm)}</td>
                 {darfSchreiben && (
                   <td>
-                    <div className="button-row">
+                    <div className={KNOPFZEILE}>
                       <button
-                        className="button button--ghost"
+                        className={knopf()}
                         type="button"
                         onClick={() => setDialog({ oeffnung })}
                       >
                         Bearbeiten
                       </button>
                       <button
-                        className="button button--ghost"
+                        className={knopf()}
                         type="button"
                         disabled={loeschen.isPending}
                         onClick={() => loeschen.mutate(oeffnung)}

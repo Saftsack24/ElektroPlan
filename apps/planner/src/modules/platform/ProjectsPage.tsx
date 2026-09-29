@@ -8,6 +8,7 @@ import { useNummerierteListe } from "../../core/api/useNummerierteListe";
 import { useAuth, usePermission } from "../../core/auth/AuthProvider";
 import { Seitennavigation } from "../../core/ui/Seitennavigation";
 import { useEntprellt } from "../../core/ui/useEntprellt";
+import { FELD, FELD_BESCHRIFTUNG, FILTERZEILE, KARTENKOPF, STAPEL, eingabefeld, karte, knopf, meldungsflaeche } from "../../core/ui/stil";
 import { KundenAuswahl } from "./KundenAuswahl";
 import { kundenSuchen } from "./kundensuche";
 import { ProjectFormDialog } from "./ProjectFormDialog";
@@ -147,13 +148,13 @@ export default function ProjectsPage() {
   const gefiltert = suchbegriff !== "" || status !== "" || kunde !== null;
 
   return (
-    <div className="stack">
-      <section className="card">
-        <div className="card__header">
+    <div className={STAPEL}>
+      <section className={karte()}>
+        <div className={KARTENKOPF}>
           <h1>Projekte</h1>
           {darfSchreiben && darfKundenLesen && (
             <button
-              className="button button--primary"
+              className={knopf("primaer")}
               type="button"
               onClick={() => {
                 setHinweis(null);
@@ -166,19 +167,19 @@ export default function ProjectsPage() {
         </div>
 
         {hinweis !== null && (
-          <p className={hinweisVollstaendig ? "alert alert--erfolg" : "alert alert--error"} role="status">
+          <p className={meldungsflaeche(hinweisVollstaendig ? "erfolg" : "fehler")} role="status">
             {hinweis}
           </p>
         )}
 
-        <div className="filter-row">
-          <div className="field">
-            <label className="field__label" htmlFor="projektsuche">
+        <div className={FILTERZEILE}>
+          <div className={FELD}>
+            <label className={FELD_BESCHRIFTUNG} htmlFor="projektsuche">
               Suche (Bezeichnung, Projektnummer, Baustellenort)
             </label>
             <input
               id="projektsuche"
-              className="field__input"
+              className={eingabefeld()}
               type="search"
               value={suche}
               placeholder="z. B. Neubau"
@@ -202,13 +203,13 @@ export default function ProjectsPage() {
               }}
             />
           )}
-          <div className="field">
-            <label className="field__label" htmlFor="projektstatus">
+          <div className={FELD}>
+            <label className={FELD_BESCHRIFTUNG} htmlFor="projektstatus">
               Status
             </label>
             <select
               id="projektstatus"
-              className="field__input"
+              className={eingabefeld()}
               value={status}
               onChange={(event) => {
                 setStatus(event.target.value as ProjectStatus | "");
@@ -225,12 +226,12 @@ export default function ProjectsPage() {
           </div>
         </div>
 
-        {liste.laedt && <p className="muted">Projekte werden geladen ...</p>}
+        {liste.laedt && <p className="text-muted">Projekte werden geladen ...</p>}
         {liste.fehlgeschlagen && (
-          <p className="alert alert--error" role="alert">
+          <p className={meldungsflaeche()} role="alert">
             Die Projektliste konnte nicht geladen werden.{" "}
             <button
-              className="button button--ghost"
+              className={knopf()}
               type="button"
               onClick={liste.erneutVersuchen}
             >

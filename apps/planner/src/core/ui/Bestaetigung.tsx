@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
-import { Dialog } from "./Dialog";
+import { Dialog, DialogAktionen } from "./Dialog";
+import { knopf, meldungsflaeche } from "./stil";
 
 /**
  * Rückfrage vor einer folgenreichen Aktion - Sperren, Widerrufen,
@@ -38,17 +39,17 @@ export function Bestaetigung({
   };
   return (
     <Dialog offen={offen} titel={titel} onClose={abbrechen}>
-      <div className="bestaetigung">
-        <div className="bestaetigung__text">{children}</div>
+      <div className="flex flex-col gap-2">
+        <div>{children}</div>
         {fehler !== null && (
-          <p className="alert alert--error" role="alert">
+          <p className={meldungsflaeche()} role="alert">
             {fehler}
           </p>
         )}
-        <div className="button-row dialog__aktionen">
+        <DialogAktionen>
           <button
             type="button"
-            className={gefaehrlich ? "button button--gefahr" : "button button--primary"}
+            className={knopf(gefaehrlich ? "gefahr" : "primaer")}
             disabled={laeuft}
             onClick={onBestaetigen}
           >
@@ -56,14 +57,14 @@ export function Bestaetigung({
           </button>
           <button
             type="button"
-            className="button button--ghost"
+            className={knopf()}
             data-autofocus
             disabled={laeuft}
             onClick={abbrechen}
           >
             Abbrechen
           </button>
-        </div>
+        </DialogAktionen>
       </div>
     </Dialog>
   );

@@ -1,6 +1,7 @@
 import { EINHEIT_NAME, MASSEINHEITEN, mmAnzeigen } from "../masse";
-import { Dialog } from "./Dialog";
+import { Dialog, DialogAktionen } from "./Dialog";
 import { masseinheitSetzen, useMasseinheit } from "./masseinheit";
+import { FORMULARRASTER_BLOCK, FORMULARRASTER_LEGENDE, SCHALTERFELD, knopf } from "./stil";
 
 /**
  * Persönliche Anzeigeeinstellungen. Derzeit nur die Maßeinheit.
@@ -13,10 +14,10 @@ export function EinstellungenDialog({ offen, onClose }: { offen: boolean; onClos
   const einheit = useMasseinheit();
   return (
     <Dialog offen={offen} titel="Einstellungen" onClose={onClose}>
-      <fieldset className="form-grid__block einstellungen__gruppe">
-        <legend>Maßeinheit für Längen</legend>
+      <fieldset className={FORMULARRASTER_BLOCK}>
+        <legend className={FORMULARRASTER_LEGENDE}>Maßeinheit für Längen</legend>
         {MASSEINHEITEN.map((wert) => (
-          <div key={wert} className="field field--schalter">
+          <div key={wert} className={SCHALTERFELD}>
             <input
               id={`masseinheit-${wert}`}
               type="radio"
@@ -31,17 +32,17 @@ export function EinstellungenDialog({ offen, onClose }: { offen: boolean; onClos
             </label>
           </div>
         ))}
-        <p className="muted">
+        <p className="text-muted">
           Die Einstellung gilt nur für Sie und nur in diesem Browser. Sie ändert ausschließlich
           Anzeige und Eingabe - die gespeicherten Planmaße bleiben unverändert in ganzen
           Millimetern. Flächen werden weiter in m² angezeigt.
         </p>
       </fieldset>
-      <div className="button-row dialog__aktionen">
-        <button type="button" className="button button--primary" onClick={onClose}>
+      <DialogAktionen>
+        <button type="button" className={knopf("primaer")} onClick={onClose}>
           Schließen
         </button>
-      </div>
+      </DialogAktionen>
     </Dialog>
   );
 }

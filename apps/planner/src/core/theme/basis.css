@@ -1,0 +1,55 @@
+/*
+ * Minimale Grundregeln (ADR 0018).
+ *
+ * Tailwinds Preflight ist bewusst nicht eingebunden: Er setzt Überschriften,
+ * Absätze, Listen und Knöpfe zurück und hätte das bestehende Erscheinungsbild
+ * geändert. Hier steht nur, was global gelten muss und sich nicht sinnvoll an
+ * einzelne Elemente hängen lässt.
+ */
+@layer base {
+  *,
+  ::before,
+  ::after {
+    box-sizing: border-box;
+  }
+
+  /* Kein Springen des Layouts, wenn eine Seite scrollbar wird. */
+  html {
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    margin: 0;
+    background: var(--ep-page);
+    color: var(--ep-text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  /* Formularelemente übernehmen die Schrift der Seite statt der Browservorgabe.
+     Als Grundregel statt Utility: Eine Kurzschreibweise `font` im Rezept würde
+     `font-semibold` und andere Schrift-Utilities überschreiben. */
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  code {
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 0.9em;
+  }
+
+  /* Sichtbarer Tastaturfokus für jedes Element. */
+  :focus-visible {
+    outline: 2px solid var(--ep-focus);
+    outline-offset: 2px;
+  }
+
+  /* Pseudoelement des nativen <dialog>; per Utility nicht erreichbar. */
+  dialog::backdrop {
+    background: var(--ep-backdrop);
+  }
+}

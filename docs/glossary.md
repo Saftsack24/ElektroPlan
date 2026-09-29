@@ -43,6 +43,8 @@ Dokumentation und Oberfläche auf Deutsch, Code und API auf Englisch.
 | Anzeigeeinheit (Maßeinheit) | `masseinheit` (nur Oberfläche): `cm`, `mm` | persönliche Darstellung von Längen; gespeichert wird immer in Millimetern |
 | Adressvorschlag | – (nur Oberfläche) | Rechnungsadresse des Kunden als Vorschlag für die Baustellenadresse; keine Verknüpfung |
 | Rückfrage | – (nur Oberfläche, `Rueckfrage`) | eigener Bestätigungsdialog der Anwendung statt `window.confirm` |
+| Design-Token (Theme-Token) | CSS Custom Property `--ep-*`, Tailwind-Name z. B. `bg-surface` | benannte Bedeutung einer Farbe oder Form („Oberfläche", „Akzent"), zur Laufzeit überschreibbar (ADR 0018) |
+| Klassenrezept | – (nur Oberfläche, `core/ui/stil.ts`) | typisierte Zusammenstellung von Tailwind-Klassen für ein wiederkehrendes Muster, etwa `knopf("primaer")` |
 
 ## Elektroplanung
 

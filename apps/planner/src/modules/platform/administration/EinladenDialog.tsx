@@ -1,8 +1,9 @@
 import type { InvitationPolicy, SystemRoleOut } from "@elektroplan/api-client";
 import { useState } from "react";
 
-import { Dialog } from "../../../core/ui/Dialog";
+import { Dialog, DialogAktionen } from "../../../core/ui/Dialog";
 import { Feld } from "../../../core/ui/Feld";
+import { FELD_FEHLER, FORMULARRASTER, FORMULARRASTER_LEGENDE, KNOPFZEILE, knopf, meldungsflaeche } from "../../../core/ui/stil";
 
 export type EinladungsWerte = { email: string; name: string; rollen: string[] };
 
@@ -91,7 +92,7 @@ export function EinladenDialog({
       onClose={schliessen}
     >
       <form
-        className="form-grid"
+        className={FORMULARRASTER}
         noValidate
         onSubmit={(event) => {
           event.preventDefault();
@@ -118,16 +119,16 @@ export function EinladenDialog({
           onChange={(name) => setWerte({ ...werte, name })}
         />
         <fieldset
-          className="form-grid__block rollenwahl"
+          className="col-span-full flex flex-col gap-2.5 rounded-ep border border-line p-3"
           aria-describedby={felder.role_keys ? "einladung-rollen-fehler" : undefined}
           aria-invalid={felder.role_keys ? true : undefined}
         >
-          <legend>Rollen *</legend>
-          {rollen === undefined && <p className="muted">Rollen werden geladen ...</p>}
+          <legend className={FORMULARRASTER_LEGENDE}>Rollen *</legend>
+          {rollen === undefined && <p className="text-muted">Rollen werden geladen ...</p>}
           {rollen?.map((rolle) => {
             const id = `einladung-rolle-${rolle.key}`;
             return (
-              <div key={rolle.key} className="rollenwahl__eintrag">
+              <div key={rolle.key} className="flex items-start gap-2.5 [&_input]:mt-1">
                 <input
                   id={id}
                   type="checkbox"
@@ -137,9 +138,9 @@ export function EinladenDialog({
                   aria-describedby={`${id}-zweck`}
                   onChange={(event) => rolleUmschalten(rolle.key, event.target.checked)}
                 />
-                <label htmlFor={id}>
+                <label htmlFor={id} className="flex flex-col">
                   <strong id={`${id}-name`}>{rolle.name}</strong>
-                  <span id={`${id}-zweck`} className="muted rollenwahl__zweck">
+                  <span id={`${id}-zweck`} className="text-label text-muted">
                     {rolle.description}
                   </span>
                 </label>
@@ -147,40 +148,40 @@ export function EinladenDialog({
             );
           })}
           {felder.role_keys !== undefined && (
-            <span id="einladung-rollen-fehler" className="field__fehler" role="alert">
+            <span id="einladung-rollen-fehler" className={FELD_FEHLER} role="alert">
               {felder.role_keys}
             </span>
           )}
         </fieldset>
-        <div className="form-grid__actions dialog__aktionen">
+        <DialogAktionen anordnung="formular">
           {richtlinie !== undefined && !ohneZustellung && (
-            <p className="muted">
+            <p className="text-muted">
               Die Einladung ist {richtlinie.valid_hours} Stunden gültig und nur einmal verwendbar.
               {richtlinie.delivery === "development_link" &&
                 " Entwicklungsumgebung: Es wird keine E-Mail verschickt; der Link erscheint einmalig nach dem Anlegen."}
             </p>
           )}
           {ohneZustellung && (
-            <p className="alert alert--error" role="alert">
+            <p className={meldungsflaeche()} role="alert">
               Für Einladungen ist noch kein Zustellweg eingerichtet. Einladungen können derzeit
               nicht verschickt werden.
             </p>
           )}
           {fehler !== null && (
-            <p className="alert alert--error" role="alert">
+            <p className={meldungsflaeche()} role="alert">
               {fehler}
             </p>
           )}
-          <div className="button-row">
+          <div className={KNOPFZEILE}>
             <button
-              className="button button--primary"
+              className={knopf("primaer")}
               type="submit"
               disabled={laeuft || ohneZustellung}
             >
               {laeuft ? "Einladung wird erstellt ..." : "Einladung erstellen"}
             </button>
             <button
-              className="button button--ghost"
+              className={knopf()}
               type="button"
               disabled={laeuft}
               onClick={schliessen}
@@ -188,7 +189,7 @@ export function EinladenDialog({
               Abbrechen
             </button>
           </div>
-        </div>
+        </DialogAktionen>
       </form>
     </Dialog>
   );

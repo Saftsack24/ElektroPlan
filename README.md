@@ -47,6 +47,7 @@ Ausführlich: [`docs/architecture.md`](docs/architecture.md)
 |---|---|
 | Backend | Python 3.12+, FastAPI, SQLAlchemy 2.0, Alembic, PostgreSQL 17 |
 | Frontend | TypeScript (strict), React, Vite, TanStack Query, Zod |
+| Gestaltung | Tailwind CSS 4 (Vite-Plugin, ohne Preflight) über semantische Laufzeit-Tokens `--ep-*` ([ADR 0018](docs/decisions/0018-frontend-styling-tailwind-and-theme-tokens.md)) |
 | 3D | Three.js (reine Ansicht seit Phase 4b; Browser mit WebGL 2 nötig, sonst Hinweis und 2D/Tabelle) |
 | Mobil | React + Capacitor, später ARCore (ab Phase 13) |
 | Dateien | S3-kompatibler Object Storage (lokal MinIO) |
@@ -124,6 +125,16 @@ Türen, Fenster und Durchgänge werden im 2D-Editor direkt mit der Maus auf eine
 gesetzt und entlang der Wand verschoben (Vorschau mit verbundenen Räumen, 5-cm-Fang,
 Escape bricht ab); genaue Werte weiter in der Seitenleiste. Eine Öffnung auf einer
 gemeinsamen Wand wird nur **einmal** gespeichert und gilt – abgeleitet – für beide Räume.
+
+**Phase 4c.1 — Tailwind-Migration und Theme-Grundlage — abgeschlossen** (mit diesem Checkpoint committet).
+Die Oberfläche ist vollständig auf Tailwind CSS 4 umgestellt; das Erscheinungsbild ist
+bewusst unverändert. Farben kommen ausschließlich aus semantischen Tokens, die zur
+Laufzeit überschreibbar sind – die Grundlage für persönliche Farbeinstellungen in Phase
+4c.2. Neue Oberfläche: Utilities und die Rezepte aus `apps/planner/src/core/ui/stil.ts`;
+Regeln in [ADR 0018](docs/decisions/0018-frontend-styling-tailwind-and-theme-tokens.md)
+und `docs/architecture.md`, Abschnitt 13. Nach dem Aktualisieren das Planner-Image neu
+bauen (`docker compose build planner`), weil `package.json` und `vite.config.ts` darin
+enthalten sind.
 
 > **Einladungen in der Entwicklung:** Es gibt noch keinen E-Mail-Versand. Mit
 > `ELEKTROPLAN_INVITATION_DELIVERY=development_link` (in `docker-compose.yml` gesetzt)

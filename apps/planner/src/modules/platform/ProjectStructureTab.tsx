@@ -7,6 +7,7 @@ import { useAuth, usePermission } from "../../core/auth/AuthProvider";
 import { eingabenAusMm, eingabenLesen, eingabenUmrechnen } from "../../core/masse";
 import { Feld } from "../../core/ui/Feld";
 import { useEinheitenwechsel, useMasse } from "../../core/ui/masseinheit";
+import { FELDREIHE, KARTENKOPF, STAPEL, TABELLE, karte, knopf, meldungsflaeche } from "../../core/ui/stil";
 
 /**
  * Gebäude und Geschosse eines Projekts.
@@ -46,10 +47,10 @@ export function ProjectStructureTab({
     })),
   });
 
-  if (gebaeude.isPending) return <p className="muted">Struktur wird geladen ...</p>;
+  if (gebaeude.isPending) return <p className="text-muted">Struktur wird geladen ...</p>;
   if (gebaeude.isError) {
     return (
-      <p className="alert alert--error" role="alert">
+      <p className={meldungsflaeche()} role="alert">
         Die Gebäude konnten nicht geladen werden.
       </p>
     );
@@ -58,21 +59,21 @@ export function ProjectStructureTab({
   const haeuser = gebaeude.data;
 
   return (
-    <div className="stack">
-      <section className="card">
+    <div className={STAPEL}>
+      <section className={karte()}>
         <h2>Gebäude und Geschosse</h2>
         {schreibgeschuetzt && (
-          <p className="muted">
+          <p className="text-muted">
             Das Projekt ist archiviert — die Struktur ist schreibgeschützt.
           </p>
         )}
         {haeuser.length === 0 ? (
-          <p className="muted">
+          <p className="text-muted">
             Noch kein Gebäude erfasst. Beim Anlegen eines Projekts wird auf Wunsch
             gleich eines mit angelegt; hier lässt es sich jederzeit nachtragen.
           </p>
         ) : (
-          <table className="table">
+          <table className={TABELLE}>
             <thead>
               <tr>
                 <th>Gebäude</th>
@@ -89,7 +90,7 @@ export function ProjectStructureTab({
                   return [
                     <tr key={haus.id}>
                       <td>{haus.name}</td>
-                      <td colSpan={4} className="muted">
+                      <td colSpan={4} className="text-muted">
                         noch kein Geschoss
                       </td>
                     </tr>,
@@ -111,9 +112,9 @@ export function ProjectStructureTab({
       </section>
 
       {darfSchreiben && (
-        <details className="card">
-          <summary className="details__titel">Gebäudestruktur verwalten</summary>
-          <p className="muted">
+        <details className={karte()}>
+          <summary className="cursor-pointer font-semibold">Gebäudestruktur verwalten</summary>
+          <p className="text-muted">
             Gebäude und Geschosse anlegen, umbenennen oder entfernen. Für den
             Regelfall ist das nicht nötig.
           </p>
@@ -169,15 +170,15 @@ function Verwaltung({
   });
 
   return (
-    <div className="stack">
+    <div className={STAPEL}>
       {fehler !== null && (
-        <p className="alert alert--error" role="alert">
+        <p className={meldungsflaeche()} role="alert">
           {fehler}
         </p>
       )}
 
       <form
-        className="inline-form"
+        className={FELDREIHE}
         onSubmit={(event) => {
           event.preventDefault();
           if (!anlegen.isPending) anlegen.mutate(neuesGebaeude);
@@ -191,7 +192,7 @@ function Verwaltung({
           onChange={setNeuesGebaeude}
         />
         <button
-          className="button button--primary"
+          className={knopf("primaer")}
           type="submit"
           disabled={anlegen.isPending || neuesGebaeude.trim().length === 0}
         >
@@ -272,22 +273,22 @@ function GebaeudeKarte({
   });
 
   return (
-    <section className="card card--eingerueckt">
-      <div className="card__header">
-        <h3>{gebaeude.name}</h3>
-        <button className="button button--ghost" type="button" onClick={onLoeschen}>
+    <section className={karte("eingerueckt")}>
+      <div className={KARTENKOPF}>
+        <h3 className="m-0">{gebaeude.name}</h3>
+        <button className={knopf()} type="button" onClick={onLoeschen}>
           Gebäude löschen
         </button>
       </div>
 
       {fehler !== null && (
-        <p className="alert alert--error" role="alert">
+        <p className={meldungsflaeche()} role="alert">
           {fehler}
         </p>
       )}
 
       {geschosse.data && geschosse.data.length > 0 ? (
-        <table className="table">
+        <table className={TABELLE}>
           <thead>
             <tr>
               <th>Ebene</th>
@@ -306,7 +307,7 @@ function GebaeudeKarte({
                 <td>{masse.anzeigen(geschoss.default_ceiling_height_mm)}</td>
                 <td>
                   <button
-                    className="button button--ghost"
+                    className={knopf()}
                     type="button"
                     onClick={() =>
                       loeschenGeschoss.mutate({ id: geschoss.id, version: geschoss.version })
@@ -320,11 +321,11 @@ function GebaeudeKarte({
           </tbody>
         </table>
       ) : (
-        <p className="muted">Noch kein Geschoss erfasst.</p>
+        <p className="text-muted">Noch kein Geschoss erfasst.</p>
       )}
 
       <form
-        className="inline-form"
+        className={FELDREIHE}
         onSubmit={(event) => {
           event.preventDefault();
           if (anlegen.isPending) return;
@@ -377,7 +378,7 @@ function GebaeudeKarte({
           }
         />
         <button
-          className="button button--primary"
+          className={knopf("primaer")}
           type="submit"
           disabled={anlegen.isPending || formular.name.trim().length === 0}
         >

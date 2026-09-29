@@ -6,6 +6,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../../core/auth/AuthProvider";
 import { Marke } from "../../core/ui/Marke";
 import type { MarkenArt } from "../../core/ui/Marke";
+import { KARTENKOPF, KARTENTITEL, STAPEL, karte, knopf, meldungsflaeche } from "../../core/ui/stil";
 import { STATUS_LABEL } from "./status";
 import type { ProjectStatus } from "./status";
 
@@ -49,30 +50,33 @@ export default function StartPage() {
   const hatArbeitsbereich = darfProjekteLesen || darfKundenLesen;
 
   return (
-    <div className="stack">
-      <section className="card begruessung" aria-labelledby="begruessung-titel">
+    <div className={STAPEL}>
+      <section
+        className={`${karte()} flex flex-wrap items-center justify-between gap-4`}
+        aria-labelledby="begruessung-titel"
+      >
         <div>
-          <h1 id="begruessung-titel">
+          <h1 id="begruessung-titel" className="m-0 text-[1.5rem]">
             {begruessung(new Date().getHours())}, {me?.full_name}
           </h1>
-          <p className="muted begruessung__betrieb">
+          <p className="mt-1 mb-0 text-muted">
             Betrieb: <strong>{me?.organization.name}</strong>
           </p>
         </div>
         {(darfProjektAnlegen || darfKundeAnlegen || darfEinladen) && (
-          <div className="schnellaktionen" role="group" aria-label="Schnellaktionen">
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Schnellaktionen">
             {darfProjektAnlegen && (
-              <Link className="button button--primary" to="/projects?neu=1">
+              <Link className={knopf("primaer", { link: true })} to="/projects?neu=1">
                 Neues Projekt
               </Link>
             )}
             {darfKundeAnlegen && (
-              <Link className="button button--ghost" to="/customers?neu=1">
+              <Link className={knopf("neutral", { link: true })} to="/customers?neu=1">
                 Neuer Kunde
               </Link>
             )}
             {darfEinladen && (
-              <Link className="button button--ghost" to="/administration/users?einladen=1">
+              <Link className={knopf("neutral", { link: true })} to="/administration/users?einladen=1">
                 Benutzer einladen
               </Link>
             )}
@@ -83,7 +87,7 @@ export default function StartPage() {
       {darfBenutzerSehen && <OffeneEinladungen />}
 
       {darfProjekteLesen && (
-        <div className="kacheln">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))] gap-4">
           <Projektkarte
             titel="Zuletzt geändert"
             beschreibung="Projekte, deren Stammdaten oder Status zuletzt geändert wurden."
@@ -92,7 +96,7 @@ export default function StartPage() {
             leer={
               <>
                 <p>Noch keine Projekte.</p>
-                <p className="muted">
+                <p className="text-muted">
                   {darfKundeAnlegen
                     ? "Legen Sie zuerst einen Kunden an, danach das erste Projekt."
                     : "Sobald im Betrieb Projekte angelegt sind, erscheinen sie hier."}
@@ -105,37 +109,37 @@ export default function StartPage() {
             beschreibung="Aktive Projekte, zuletzt geänderte zuerst."
             schluessel="aktiv"
             status="active"
-            leer={<p className="muted">Derzeit ist kein Projekt in Bearbeitung.</p>}
+            leer={<p className="text-muted">Derzeit ist kein Projekt in Bearbeitung.</p>}
           />
         </div>
       )}
 
       {hatArbeitsbereich ? (
-        <nav className="card" aria-labelledby="einstiege-titel">
+        <nav className={karte()} aria-labelledby="einstiege-titel">
           <h2 id="einstiege-titel">Weiterarbeiten</h2>
-          <ul className="einstiege">
+          <ul className="mt-2 mb-0 pl-[18px] *:my-1">
             {darfProjekteLesen && (
               <li>
                 <Link to="/projects">Alle Projekte</Link>
-                <span className="muted"> - suchen, filtern, Gebäude und Pläne verwalten</span>
+                <span className="text-muted"> - suchen, filtern, Gebäude und Pläne verwalten</span>
               </li>
             )}
             {darfKundenLesen && (
               <li>
                 <Link to="/customers">Kunden</Link>
-                <span className="muted"> - Kundenstamm und Ansprechpartner</span>
+                <span className="text-muted"> - Kundenstamm und Ansprechpartner</span>
               </li>
             )}
           </ul>
         </nav>
       ) : (
-        <section className="card">
+        <section className={karte()}>
           <h2>Ihre Aufgaben</h2>
           <p>
             Für Ihre Rolle ({me?.roles.map((role) => role.name).join(", ") || "keine"}) gibt es in
             ElektroPlan derzeit noch keine eigenen Arbeitsbereiche.
           </p>
-          <p className="muted">Bei Fragen zu Ihrem Zugang wenden Sie sich an die Büroleitung.</p>
+          <p className="text-muted">Bei Fragen zu Ihrem Zugang wenden Sie sich an die Büroleitung.</p>
         </section>
       )}
     </div>
@@ -166,26 +170,28 @@ function Projektkarte({
   });
 
   return (
-    <section className="card" aria-labelledby={titelId}>
-      <div className="card__header">
-        <h2 id={titelId}>{titel}</h2>
+    <section className={karte()} aria-labelledby={titelId}>
+      <div className={KARTENKOPF}>
+        <h2 id={titelId} className={KARTENTITEL}>
+          {titel}
+        </h2>
         <Link to="/projects">Alle anzeigen</Link>
       </div>
-      <p className="muted karte__beschreibung">{beschreibung}</p>
-      {abfrage.isPending && <p className="muted">Wird geladen ...</p>}
+      <p className="mt-1 mb-2 text-[0.88rem] text-muted">{beschreibung}</p>
+      {abfrage.isPending && <p className="text-muted">Wird geladen ...</p>}
       {abfrage.isError && (
-        <p className="alert alert--error" role="alert">
+        <p className={meldungsflaeche()} role="alert">
           Die Projekte konnten nicht geladen werden.{" "}
-          <button type="button" className="button button--ghost" onClick={() => void abfrage.refetch()}>
+          <button type="button" className={knopf()} onClick={() => void abfrage.refetch()}>
             Erneut versuchen
           </button>
         </p>
       )}
       {abfrage.isSuccess &&
         (abfrage.data.items.length === 0 ? (
-          <div className="leer">{leer}</div>
+          <div className="py-3 text-muted *:my-1">{leer}</div>
         ) : (
-          <ul className="projektliste">
+          <ul className="m-0 list-none p-0">
             {abfrage.data.items.map((projekt) => (
               <Projektzeile key={projekt.id} projekt={projekt} />
             ))}
@@ -197,19 +203,19 @@ function Projektkarte({
 
 function Projektzeile({ projekt }: { projekt: ProjectSummary }) {
   return (
-    <li className="projektliste__eintrag">
+    <li className="flex justify-between gap-3 border-b border-line py-2 last:border-b-0 max-sm:flex-col">
       <div>
-        <Link to={`/projects/${projekt.id}`} className="projektliste__name">
+        <Link to={`/projects/${projekt.id}`} className="font-semibold">
           {projekt.name}
         </Link>
-        <div className="muted projektliste__details">
+        <div className="text-label text-muted">
           <code>{projekt.project_number}</code> · {projekt.customer_name}
           {projekt.site_city ? ` · ${projekt.site_city}` : ""}
         </div>
       </div>
-      <div className="projektliste__rechts">
+      <div className="flex flex-col items-end gap-0.5 max-sm:items-start">
         <Marke art={STATUS_ART[projekt.status]}>{STATUS_LABEL[projekt.status]}</Marke>
-        <span className="muted projektliste__zeit">
+        <span className="text-[0.8rem] whitespace-nowrap text-muted">
           geändert {new Date(projekt.updated_at).toLocaleDateString("de-DE")}
         </span>
       </div>
@@ -234,7 +240,10 @@ function OffeneEinladungen() {
   const abgelaufen = abfrage.data.items.filter((eintrag) => eintrag.invitation_expired).length;
   const mehr = abfrage.data.has_more ? "Mehr als " : "";
   return (
-    <p className="hinweisleiste" role="status">
+    <p
+      className="m-0 rounded-ep border border-l-4 border-line border-l-accent bg-surface px-3.5 py-2.5"
+      role="status"
+    >
       {mehr}
       {anzahl} {anzahl === 1 && !mehr ? "Einladung ist" : "Einladungen sind"} noch nicht
       angenommen

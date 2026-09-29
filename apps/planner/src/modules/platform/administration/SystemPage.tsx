@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { useAuth } from "../../../core/auth/AuthProvider";
+import { STAPEL, TABELLE, TABELLENRAHMEN, karte, meldungsflaeche } from "../../../core/ui/stil";
 import { AdminNavigation } from "./AdminNavigation";
 
 const ART: Record<string, string> = {
@@ -21,22 +22,22 @@ export default function SystemPage() {
   const module = useQuery({ queryKey: ["modules"], queryFn: () => api.get("/api/v1/modules") });
 
   return (
-    <div className="stack">
-      <section className="card">
-        <p className="bereich">Administration</p>
+    <div className={STAPEL}>
+      <section className={karte()}>
+        <p className="m-0 text-[0.8rem] tracking-[0.04em] text-muted uppercase">Administration</p>
         <h1>Systeminformationen</h1>
         <AdminNavigation />
-        <p className="muted">Technische Angaben für Support und Wartung.</p>
-        {module.isPending && <p className="muted">Wird geladen ...</p>}
+        <p className="text-muted">Technische Angaben für Support und Wartung.</p>
+        {module.isPending && <p className="text-muted">Wird geladen ...</p>}
         {module.isError && (
-          <p className="alert alert--error" role="alert">
+          <p className={meldungsflaeche()} role="alert">
             Die Systeminformationen konnten nicht geladen werden.
           </p>
         )}
         {module.isSuccess && (
-          <div className="tabellenrahmen">
-            <table className="table">
-              <caption className="visuell-versteckt">Geladene Module</caption>
+          <div className={TABELLENRAHMEN}>
+            <table className={TABELLE}>
+              <caption className="sr-only">Geladene Module</caption>
               <thead>
                 <tr>
                   <th scope="col">Modul</th>
