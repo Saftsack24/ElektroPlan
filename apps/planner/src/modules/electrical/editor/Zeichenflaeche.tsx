@@ -8,6 +8,7 @@ import type {
 } from "react";
 
 import { useMasse } from "../../../core/ui/masseinheit";
+import "../darstellung.css";
 import "./grundriss.css";
 import type { EntwurfWand, Oeffnungsart, Raumentwurf } from "./entwurf";
 import { ende, start } from "./entwurf";

@@ -7,7 +7,7 @@ import type { Werkzeug } from "./zustand";
 
 const GRUPPE = "flex flex-wrap items-center gap-1";
 /** Werkzeugknopf: kleiner als ein Formularknopf, gesperrt deutlich blasser. */
-const WERKZEUG = `${KNOPF_GRUND} border-line bg-surface px-2.5 py-[5px] text-fg disabled:cursor-not-allowed disabled:opacity-45`;
+const WERKZEUG = `${KNOPF_GRUND} border-control bg-surface px-2.5 py-[5px] text-fg disabled:cursor-not-allowed disabled:opacity-45`;
 const WERKZEUG_AKTIV = `${KNOPF_GRUND} border-accent bg-accent px-2.5 py-[5px] text-on-accent disabled:cursor-not-allowed disabled:opacity-45`;
 
 const WERKZEUGE: readonly { wert: Werkzeug; label: string; taste: string; schreibend: boolean }[] = [

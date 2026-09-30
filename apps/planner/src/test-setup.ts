@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { afterEach } from "vitest";
 
+import { darstellungZuruecksetzen } from "./core/theme/darstellung";
 import { MASSEINHEIT_SCHLUESSEL_ALT, masseinheitZuruecksetzen } from "./core/ui/masseinheit";
 
 // Jeder Test beginnt mit der Standard-Maßeinheit (cm) und ohne angemeldeten
@@ -9,7 +10,11 @@ import { MASSEINHEIT_SCHLUESSEL_ALT, masseinheitZuruecksetzen } from "./core/ui/
 afterEach(() => {
   try {
     for (const schluessel of Object.keys(window.localStorage)) {
-      if (schluessel === MASSEINHEIT_SCHLUESSEL_ALT || schluessel.startsWith(`${MASSEINHEIT_SCHLUESSEL_ALT}.`)) {
+      if (
+        schluessel === MASSEINHEIT_SCHLUESSEL_ALT ||
+        schluessel.startsWith(`${MASSEINHEIT_SCHLUESSEL_ALT}.`) ||
+        schluessel.startsWith("elektroplan.darstellung.")
+      ) {
         window.localStorage.removeItem(schluessel);
       }
     }
@@ -17,6 +22,7 @@ afterEach(() => {
     // ohne Speicher gibt es nichts zurückzusetzen
   }
   masseinheitZuruecksetzen();
+  darstellungZuruecksetzen();
 });
 
 /**

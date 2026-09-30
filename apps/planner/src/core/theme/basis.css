@@ -37,6 +37,12 @@
     font: inherit;
   }
 
+  /* Native Kontrollkästchen und Optionsfelder in der Akzentfarbe. */
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--ep-accent);
+  }
+
   code {
     font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
     font-size: 0.9em;

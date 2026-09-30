@@ -1,9 +1,9 @@
 import type { Material, Mesh, Object3D } from "three";
-import { BufferGeometry, Material as MaterialKlasse, Vector3 } from "three";
+import { BufferGeometry, Color, Material as MaterialKlasse, Vector3 } from "three";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Auswahl } from "./modell";
-import { Grundrissszene, WebGLNichtVerfuegbar } from "./szene";
+import { Grundrissszene, STANDARD_SZENENFARBEN, WebGLNichtVerfuegbar } from "./szene";
 import { szenenmodellAus } from "./szenenmodell";
 import { testumgebung } from "./szenentest";
 import { einfamilienhaus, plan, rechteck } from "./testplan";
@@ -376,5 +376,76 @@ describe("Pause, Kontextverlust und Entsorgen", () => {
     expect(rueckmeldung.auswahl).not.toHaveBeenCalled();
     szene.entsorgen();
     expect(test.renderer.dispose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Theme (Phase 4c.2)", () => {
+  /** Alle Materialfarben der zuletzt gerenderten Szene als Hex. */
+  function materialfarben(wurzel: Object3D | undefined): Set<string> {
+    const farben = new Set<string>();
+    wurzel?.traverse((o) => {
+      const roh = (o as Mesh).material as Material | Material[] | undefined;
+      for (const material of Array.isArray(roh) ? roh : roh === undefined ? [] : [roh]) {
+        const farbe = (material as Material & { color?: unknown }).color;
+        if (farbe instanceof Color) farben.add(`#${farbe.getHexString()}`);
+      }
+    });
+    return farben;
+  }
+
+  it("übernimmt die Theme-Farben beim Start", () => {
+    const { test } = erzeugen();
+    expect(test.renderer.setClearColor).toHaveBeenCalledWith(new Color(STANDARD_SZENENFARBEN.hintergrund), 1);
+    expect(test.farbbeobachter).toBe(1);
+  });
+
+  it("ändert bei einem Theme-Wechsel nur Farben - keine neue Szene, kein neuer Canvas, ein Bild", () => {
+    const geometrien = vi.spyOn(BufferGeometry.prototype, "dispose");
+    const { test, szene } = erzeugen();
+    szene.setzePlan(einRaum(), { einpassen: true });
+    test.bild();
+    const vorher = szene.statistik();
+    const rendererAufrufe = test.rendererErzeugen.mock.calls.length;
+
+    test.farbwechsel({ hintergrund: "#1d232b", wandAussen: "#123456", raster: "#4a5663", rasterFein: "#2f3842" });
+
+    expect(test.renderer.setClearColor).toHaveBeenLastCalledWith(new Color("#1d232b"), 1);
+    expect(test.offeneBilder).toBe(1);
+    test.bild();
+    expect(materialfarben(test.letzteSzene())).toContain("#123456");
+    expect(test.rendererErzeugen.mock.calls.length).toBe(rendererAufrufe);
+    expect(behaelter.querySelectorAll("canvas")).toHaveLength(1);
+    // Plangeometrien und Materialien bleiben; nur das Raster wird ersetzt.
+    expect(szene.statistik()).toMatchObject({
+      planGeometrien: vorher.planGeometrien,
+      materialien: vorher.materialien,
+      raster: 1,
+    });
+    expect(geometrien).toHaveBeenCalledTimes(1);
+  });
+
+  it("wächst bei vielen Theme-Wechseln nicht und fordert je Frame nur ein Bild an", () => {
+    const { test, szene } = erzeugen();
+    szene.setzePlan(szenenmodellAus(einfamilienhaus()), { einpassen: true });
+    test.bild();
+    const vorher = szene.statistik();
+    for (let i = 0; i < 20; i += 1) {
+      test.farbwechsel({ hintergrund: i % 2 === 0 ? "#1d232b" : "#f4f6f8", raster: i % 2 === 0 ? "#4a5663" : "#b8c1cb" });
+    }
+    expect(test.offeneBilder).toBe(1);
+    expect(szene.statistik()).toMatchObject({
+      planGeometrien: vorher.planGeometrien,
+      materialien: vorher.materialien,
+      raster: 1,
+    });
+    expect(behaelter.querySelectorAll("canvas")).toHaveLength(1);
+  });
+
+  it("meldet sich beim Entsorgen vom Theme ab", () => {
+    const { test, szene } = erzeugen();
+    szene.entsorgen();
+    expect(test.farbbeobachter).toBe(0);
+    test.farbwechsel({ hintergrund: "#000000" });
+    expect(test.offeneBilder).toBe(0);
   });
 });

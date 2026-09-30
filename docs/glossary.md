@@ -44,6 +44,9 @@ Dokumentation und Oberfläche auf Deutsch, Code und API auf Englisch.
 | Adressvorschlag | – (nur Oberfläche) | Rechnungsadresse des Kunden als Vorschlag für die Baustellenadresse; keine Verknüpfung |
 | Rückfrage | – (nur Oberfläche, `Rueckfrage`) | eigener Bestätigungsdialog der Anwendung statt `window.confirm` |
 | Design-Token (Theme-Token) | CSS Custom Property `--ep-*`, Tailwind-Name z. B. `bg-surface` | benannte Bedeutung einer Farbe oder Form („Oberfläche", „Akzent"), zur Laufzeit überschreibbar (ADR 0018) |
+| Darstellungsmodus | `modus`: `system`, `light`, `dark` | „Wie das System", Hell, Dunkel; aufgelöst als `data-theme` am Wurzelelement |
+| Akzentfarbschema | `akzent`: `blue`, `teal`, `green`, `violet`, `orange` | kuratierter, auf Kontrast geprüfter Satz aus Akzent, Hover, Fokus, Auswahl (ADR 0018) |
+| Vorschau (Einstellungen) | `vorschau` (nur Oberfläche) | Entwurf sofort sichtbar, aber nicht gespeichert; „Übernehmen" speichert, Abbrechen stellt her |
 | Klassenrezept | – (nur Oberfläche, `core/ui/stil.ts`) | typisierte Zusammenstellung von Tailwind-Klassen für ein wiederkehrendes Muster, etwa `knopf("primaer")` |
 
 ## Elektroplanung

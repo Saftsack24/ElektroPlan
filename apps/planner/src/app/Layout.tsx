@@ -34,9 +34,10 @@ export function Layout() {
             </NavLink>
           ))}
         </nav>
-        <div className="flex items-center gap-3">
-          <span className="font-semibold">{me?.organization.name}</span>
-          <span className="text-label text-muted">{me?.email}</span>
+        {/* Bricht auf schmalen Flächen um, statt die Seite zu verbreitern. */}
+        <div className="flex max-w-full min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+          <span className="min-w-0 font-semibold wrap-anywhere">{me?.organization.name}</span>
+          <span className="min-w-0 text-label text-muted wrap-anywhere">{me?.email}</span>
           <button className={knopf()} type="button" onClick={() => setEinstellungen(true)}>
             Einstellungen
           </button>
@@ -52,7 +53,7 @@ export function Layout() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-[1100px] px-5 py-6">
+      <main className="mx-auto w-full max-w-[1100px] min-w-0 px-5 py-6">
         <Suspense fallback={<p className="text-muted">Wird geladen ...</p>}>
           <Outlet />
         </Suspense>

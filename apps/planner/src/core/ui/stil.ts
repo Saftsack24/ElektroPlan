@@ -11,7 +11,10 @@
  *   Tailwind findet Klassen durch Lesen des Quelltexts; ein zusammengesetzter
  *   Name wie `bg-${farbe}` würde im Produktionsbuild fehlen.
  * * Farben nur über semantische Tokens (`bg-accent`, `text-muted`,
- *   `border-line` …), siehe core/theme/tokens.css.
+ *   `border-line`, `border-control` …), siehe core/theme/tokens.css.
+ * * Bedienelemente (Eingabefelder, Knöpfe) tragen den Kontrollrahmen
+ *   `border-control` (≥ 3 : 1); Karten und Trennlinien den dezenten
+ *   `border-line`.
  * * Rezepte liefern sich gegenseitig ausschließende Varianten, nie zwei
  *   Klassen für dieselbe Eigenschaft: Bei Tailwind entscheidet die Reihenfolge
  *   im Stylesheet, nicht die im `className`.
@@ -25,7 +28,7 @@ export type KnopfArt = "primaer" | "neutral" | "gewaehlt" | "gefahr" | "einfach"
 const KNOPF_ART: Record<KnopfArt, string> = {
   primaer:
     "border-transparent bg-accent text-on-accent enabled:hover:bg-accent-hover disabled:cursor-progress disabled:opacity-60",
-  neutral: "border-line bg-transparent text-fg",
+  neutral: "border-control bg-transparent text-fg",
   // Wie `neutral`, der Rahmen markiert den gewählten Eintrag einer Liste.
   gewaehlt: "border-selected bg-transparent text-fg",
   gefahr: "border-transparent bg-danger text-surface disabled:cursor-progress disabled:opacity-60",
@@ -69,7 +72,7 @@ export const SCHALTERFELD = "flex items-center gap-2";
 export function eingabefeld({ fehler = false, kompakt = false }: { fehler?: boolean; kompakt?: boolean } = {}): string {
   const mass = kompakt ? "w-auto px-1.5 py-1" : "px-[11px] py-[9px]";
   return `rounded-ep border bg-page text-fg focus-visible:outline-offset-1 ${mass} ${
-    fehler ? "border-danger" : "border-line"
+    fehler ? "border-danger" : "border-control"
   }`;
 }
 
@@ -126,8 +129,8 @@ export function karte(art: KartenArt = "normal"): string {
   return `rounded-ep border border-line bg-surface ${KARTEN_ART[art]}`;
 }
 
-/** Kopfzeile einer Karte: Titel links, Aktionen rechts. */
-export const KARTENKOPF = "flex items-center justify-between gap-3";
+/** Kopfzeile einer Karte: Titel links, Aktionen rechts; bricht schmal um. */
+export const KARTENKOPF = "flex flex-wrap items-center justify-between gap-3";
 /** Überschrift einer Karte. */
 export const KARTENTITEL = "m-0 text-[1.1rem]";
 
@@ -138,7 +141,7 @@ export const TABELLE =
   "mt-3 w-full border-collapse text-small [&_:is(th,td)]:border-b [&_:is(th,td)]:border-line [&_:is(th,td)]:px-2 [&_:is(th,td)]:py-[7px] [&_:is(th,td)]:text-left [&_th]:font-semibold [&_th]:text-muted";
 
 /** Hülle einer breiten Tabelle: scrollt waagrecht statt die Seite zu verbreitern. */
-export const TABELLENRAHMEN = "overflow-x-auto";
+export const TABELLENRAHMEN = "max-w-full min-w-0 overflow-x-auto";
 
 /** Reiterleiste über einem Bereich. */
 export const REITERLEISTE = "flex flex-wrap gap-1 border-b border-line";

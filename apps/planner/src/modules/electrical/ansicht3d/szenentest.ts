@@ -7,7 +7,8 @@ import type { Object3D, PerspectiveCamera } from "three";
 import { Vector3 } from "three";
 import { vi } from "vitest";
 
-import type { ControlsPort, RendererPort, Umgebung } from "./szene";
+import type { ControlsPort, RendererPort, Szenenfarben, Umgebung } from "./szene";
+import { STANDARD_SZENENFARBEN } from "./szene";
 
 export class TestControls implements ControlsPort {
   readonly target = new Vector3();
@@ -53,6 +54,8 @@ export function testumgebung(optionen: { webgl?: boolean; groesse?: [number, num
   const bilder = new Map<number, () => void>();
   let naechsteId = 1;
   let groesseMelden: ((b: number, h: number) => void) | null = null;
+  const farben: { aktuell: Szenenfarben } = { aktuell: STANDARD_SZENENFARBEN };
+  const farbhoerer = new Set<() => void>();
   const beobachtung = { aktiv: false };
   const canvas = document.createElement("canvas");
   const renderer = {
@@ -97,12 +100,27 @@ export function testumgebung(optionen: { webgl?: boolean; groesse?: [number, num
       };
     }),
     pixelRatio: () => 3,
-    dunkel: () => false,
+    farben: vi.fn(() => farben.aktuell),
+    farbwechselBeobachten: vi.fn((rueckruf: () => void) => {
+      farbhoerer.add(rueckruf);
+      return () => {
+        farbhoerer.delete(rueckruf);
+      };
+    }),
     dokument: document,
   };
 
   return {
     umgebung,
+    /** Simuliert einen Theme-Wechsel: neue Farben, dann Meldung wie im Browser. */
+    farbwechsel(neu: Partial<Szenenfarben>) {
+      farben.aktuell = { ...farben.aktuell, ...neu };
+      for (const h of [...farbhoerer]) h();
+    },
+    /** Anzahl angemeldeter Farbwechsel-Beobachter. */
+    get farbbeobachter() {
+      return farbhoerer.size;
+    },
     rendererErzeugen,
     controlsErzeugen,
     renderer,

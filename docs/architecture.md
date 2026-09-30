@@ -494,11 +494,12 @@ Komponente  className="bg-surface text-muted border-line"
 @theme inline { --color-surface: var(--ep-surface); … }     core/theme/tokens.css
     │
     ▼
-:root { --ep-surface: #ffffff }  (dunkel über prefers-color-scheme)   ◀ Laufzeit
+:root { --ep-surface: #ffffff }  :root[data-theme="dark"] { … }    ◀ Laufzeit
 ```
 
 *So wird ein Token verwendet:* Utility mit dem semantischen Namen schreiben –
 `bg-page`, `bg-surface`, `bg-raised`, `bg-nav`, `border-line`, `text-fg`, `text-muted`,
+`border-control` (Umriss von Bedienelementen),
 `bg-accent`/`hover:bg-accent-hover`/`text-on-accent`, `outline-focus`, `border-selected`,
 `bg-selected-soft`, `text-success`, `text-warning`, `text-danger`/`bg-danger-soft`,
 `bg-canvas`; Radius `rounded-ep`. In eigenem CSS (SVG) direkt `var(--ep-…)`. Wiederkehrende
@@ -510,14 +511,41 @@ Fachmodul), nie ein Farbwert in die Komponente geschrieben.
 farbneutralen Schlüsselwörter `transparent` und `current` (`bg-transparent`,
 `border-transparent`) sowie farbunabhängige Schatten (`shadow-popup`, `shadow-hint`).
 Berechnete Werte – Popup-Lage, SVG-Cursor, Three.js-Materialien – werden weiter
-programmatisch gesetzt; die 3D-Szene hat eigene Farbwerte und ist noch nicht an die
-Tokens angebunden (Phase 4c.2).
+programmatisch gesetzt; die 3D-Szene liest ihre Farben dafür aus den berechneten
+`--ep-plan3d-*`-Tokens (siehe unten).
 
 *Regeln:* Klassen vollständig und statisch im Quelltext (Varianten über
 `Record<Art, string>`), keine Benutzerwerte in Klassennamen, keine Inline-Styles für
 gewöhnliches Layout oder Farben. Spezial-CSS nur in `core/theme/basis.css` (globale
 Grundregeln, Dialog-Backdrop) und in `modules/electrical/editor/grundriss.css`
-(SVG-Zeichenfläche).
+(SVG-Zeichenfläche); fachliche Tokens des Electrical-Moduls in
+`modules/electrical/darstellung.css`.
+
+**Persönliche Darstellung (Phase 4c.2, ADR 0018 präzisiert, ADR 0019).** Benutzer wählen
+Darstellungsmodus (Wie das System, Hell, Dunkel), eines von fünf geprüften
+Akzentfarbschemata und die Maßeinheit. `core/theme/darstellung.ts` ist die einzige Stelle,
+die Hell/Dunkel und Akzent entscheidet:
+
+```
+Einstellungsdialog ─ Vorschau/Übernehmen ─▶ core/theme/darstellung.ts
+                                              │ setzt data-theme, data-theme-mode,
+                                              │ data-accent, color-scheme an <html>
+                                              ▼
+       CSS-Tokens (tokens.css, akzente.css, electrical/darstellung.css) reagieren
+                                              │
+         useDarstellung() (React) ◀───────────┼──────────▶ darstellungAbonnieren()
+                                                            └▶ 3D: Grundrissszene.setzeFarben()
+```
+
+* Gespeichert wird lokal je Benutzer (`elektroplan.darstellung.<user_id>`, versioniert);
+  `AuthProvider` meldet nur die `user_id`. Ohne Anmeldung gilt der Standard.
+* Im Modus „Wie das System" folgt die Anwendung `prefers-color-scheme` auch zur Laufzeit.
+* Die 3D-Szene erhält Theme-Wechsel über die Umgebung (`ansicht3d/umgebung.ts`), liest die
+  berechneten Tokens vom Wurzelelement und ändert nur Materialfarben, Hintergrund und
+  Raster – ohne neue Szene und mit höchstens einem Bild.
+* Fachmodule binden eigene Farben als Tokens an `data-theme` (hell auf `:root`, dunkel auf
+  `:root[data-theme="dark"]`); Akzent über `--ep-accent`/`--ep-selected`, wo die Farbe
+  keine fachliche Bedeutung trägt.
 
 ---
 

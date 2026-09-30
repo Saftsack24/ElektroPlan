@@ -5,6 +5,7 @@ import type { KeyboardEvent } from "react";
 import { useAuth } from "../../../core/auth/AuthProvider";
 import { useMasse } from "../../../core/ui/masseinheit";
 import { KNOPFZEILE, knopf } from "../../../core/ui/stil";
+import "../darstellung.css";
 import { planAbfrage } from "../plan";
 import { ANSICHT_ZURUECKSETZEN, ANSICHT_ZURUECKSETZEN_3D } from "../texte";
 import { MESSUNG, messen } from "./messung";

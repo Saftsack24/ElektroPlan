@@ -1,47 +1,52 @@
 /*
- * Semantische Design-Tokens (ADR 0018).
+ * Semantische Design-Tokens (ADR 0018, Phase 4c.2).
  *
  * Zwei Ebenen:
  *
- * 1. Laufzeit-Tokens `--ep-*` auf :root. Sie tragen die eigentlichen Werte
- *    und sind zur Laufzeit überschreibbar (etwa über
- *    `document.documentElement.style.setProperty("--ep-accent", …)`),
- *    ohne Tailwind neu zu bauen und ohne Komponenten anzufassen.
+ * 1. Laufzeit-Tokens `--ep-*` auf :root. Sie tragen die eigentlichen Werte.
  * 2. `@theme inline` ordnet sie Tailwind-Namen zu. `inline` sorgt dafür, dass
  *    jede Utility direkt `var(--ep-…)` verwendet - `bg-accent` folgt damit
- *    jeder Laufzeitänderung.
+ *    jeder Laufzeitänderung, ohne Neubau.
+ *
+ * Welcher Satz gilt, bestimmen Attribute am Wurzelelement, gesetzt von
+ * `core/theme/darstellung.ts`:
+ *
+ * * `data-theme="light" | "dark"` - das aufgelöste Farbschema (auch im
+ *   Modus „Wie das System"). Helle Werte stehen auf :root, dunkle auf
+ *   `:root[data-theme="dark"]`.
+ * * `data-accent` - das Akzentfarbschema, Werte in `akzente.css`.
  *
  * Komponenten verwenden ausschließlich die semantischen Namen (`bg-surface`,
- * `text-muted`, `border-line` …), nie konkrete Farbwerte. Die Standardpalette
- * von Tailwind ist abgeschaltet; `bg-gray-500` existiert nicht.
+ * `text-muted`, `border-line`, `border-control` …), nie konkrete Farbwerte und
+ * nie eine eigene Hell/Dunkel-Abfrage. Die Standardpalette von Tailwind ist
+ * abgeschaltet; `bg-gray-500` existiert nicht.
  *
- * Fachneutral: Tokens für Wände, Türen und Fenster gehören dem Fachmodul
- * electrical (modules/electrical/editor/grundriss.css).
+ * Neue Tokens: nur mit Bedeutung („Kontrollrahmen"), nicht mit Aussehen
+ * („grau-400"); immer hell **und** dunkel; Kontrast gegen die Flächen, auf
+ * denen er erscheint, messen (Text ≥ 4,5 : 1, Bedienelement-Umriss und Fokus
+ * ≥ 3 : 1). Fachliche Tokens gehören ins Fachmodul.
  */
 
+/* Helles Farbschema (Standard). */
 :root {
   /* Flächen */
   --ep-page: #f5f6f8;
   --ep-surface: #ffffff;
   --ep-surface-raised: #ffffff;
   --ep-nav: #ffffff;
+
+  /* Rahmen: dezente Trennlinie und deutlicher Umriss von Bedienelementen
+     (Eingabefelder, Knöpfe) - WCAG 1.4.11 verlangt für Letztere ≥ 3 : 1. */
   --ep-border: #d8dce3;
+  --ep-border-control: #848e9c;
 
   /* Text */
   --ep-text: #1c2430;
   --ep-text-muted: #5b6676;
 
-  /* Akzent, Fokus, Auswahl */
-  --ep-accent: #14507d;
-  --ep-accent-hover: #0f3e61;
-  --ep-on-accent: #ffffff;
-  --ep-focus: #14507d;
-  --ep-selected: #14507d;
-  --ep-selected-surface: #f5f6f8;
-
   /* Zustände */
   --ep-success: #2f7a3e;
-  --ep-warning: #c77d00;
+  --ep-warning: #946000;
   --ep-danger: #8c1d1d;
   --ep-danger-surface: #fdecec;
 
@@ -56,31 +61,35 @@
   --ep-radius: 8px;
 }
 
+/* Dunkles Farbschema. */
+:root[data-theme="dark"] {
+  --ep-page: #14181d;
+  --ep-surface: #1d232b;
+  --ep-surface-raised: #1d232b;
+  --ep-nav: #1d232b;
+
+  --ep-border: #2e3742;
+  --ep-border-control: #687585;
+
+  --ep-text: #e8ecf1;
+  --ep-text-muted: #9aa6b4;
+
+  --ep-success: #7cc98a;
+  --ep-warning: #f0b44a;
+  --ep-danger: #ffb4b4;
+  --ep-danger-surface: #3a1f1f;
+
+  --ep-canvas: #1d232b;
+  --ep-canvas-grid: #2e3742;
+}
+
+/* Vor dem Start des Skripts ist `data-theme` noch nicht gesetzt: Seite und
+   Text folgen dann dem System, damit ein dunkles System nicht kurz hell
+   aufblitzt. Alles Weitere setzt `darstellungStarten()` in main.tsx. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme]) {
     --ep-page: #14181d;
-    --ep-surface: #1d232b;
-    --ep-surface-raised: #1d232b;
-    --ep-nav: #1d232b;
-    --ep-border: #2e3742;
-
     --ep-text: #e8ecf1;
-    --ep-text-muted: #9aa6b4;
-
-    --ep-accent: #4a9fd8;
-    --ep-accent-hover: #6cb2e2;
-    --ep-on-accent: #0d1216;
-    --ep-focus: #4a9fd8;
-    --ep-selected: #4a9fd8;
-    --ep-selected-surface: #14181d;
-
-    --ep-success: #7cc98a;
-    --ep-warning: #f0b44a;
-    --ep-danger: #ffb4b4;
-    --ep-danger-surface: #3a1f1f;
-
-    --ep-canvas: #1d232b;
-    --ep-canvas-grid: #2e3742;
   }
 }
 
@@ -93,6 +102,7 @@
   --color-raised: var(--ep-surface-raised);
   --color-nav: var(--ep-nav);
   --color-line: var(--ep-border);
+  --color-control: var(--ep-border-control);
 
   --color-fg: var(--ep-text);
   --color-muted: var(--ep-text-muted);

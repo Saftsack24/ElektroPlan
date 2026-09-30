@@ -245,7 +245,7 @@ export default function BenutzerPage() {
           ))}
 
         {liste.geladen && (liste.hatZurueck || liste.hatWeiter) && (
-          <nav className="mt-3 flex items-center gap-3" aria-label="Seiten der Benutzerliste">
+          <nav className="mt-3 flex flex-wrap items-center gap-3" aria-label="Seiten der Benutzerliste">
             <button
               type="button"
               className={knopf()}

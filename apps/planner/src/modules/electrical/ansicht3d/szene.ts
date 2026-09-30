@@ -89,7 +89,10 @@ export interface Umgebung {
   /** Meldet die Größe des Behälters; liefert die Abmeldung. */
   groesseBeobachten(element: HTMLElement, rueckruf: (breite: number, hoehe: number) => void): () => void;
   pixelRatio(): number;
-  dunkel(): boolean;
+  /** Aktuelle Szenenfarben aus dem Theme (ADR 0018, Phase 4c.2). */
+  farben(): Szenenfarben;
+  /** Meldet jeden Wechsel von Farbschema oder Akzent; liefert die Abmeldung. */
+  farbwechselBeobachten(rueckruf: () => void): () => void;
   /** Für `visibilitychange`; ohne Dokument pausiert die Szene nie von selbst. */
   readonly dokument: Document | null;
 }
@@ -113,17 +116,39 @@ export class WebGLNichtVerfuegbar extends Error {
 /** Ruhige, unterscheidbare Bodenfarben - kein Signal, nur Orientierung. */
 const BODENFARBEN = [0xd9e6d3, 0xd6e1ec, 0xeee2cc, 0xe4d9ea, 0xd2e9e3, 0xf0dad3, 0xe0e5c9, 0xd8dde9];
 
-const FARBE = {
-  wandAussen: 0x9aa6b3,
-  wandGemeinsam: 0xe6e0d2,
-  krone: 0x56616d,
-  auswahl: 0xf0a030,
-  auswahlKrone: 0xb86d12,
-  glas: 0x8cc4ec,
-  umriss: 0x45505c,
-  hell: { hintergrund: 0xf4f6f8, raster: 0xb8c1cb, rasterFein: 0xdce1e7 },
-  dunkel: { hintergrund: 0x1d232b, raster: 0x4a5663, rasterFein: 0x2f3842 },
-} as const;
+/**
+ * Farben der Szene - CSS-Farbwerte, gelesen aus den `--ep-plan3d-*`-Tokens
+ * (modules/electrical/darstellung.css). Die Bodenfarben bleiben feste,
+ * ruhige Orientierungsfarben und gehören nicht zum Theme.
+ */
+export interface Szenenfarben {
+  readonly hintergrund: string;
+  readonly raster: string;
+  readonly rasterFein: string;
+  readonly wandAussen: string;
+  readonly wandGemeinsam: string;
+  readonly krone: string;
+  readonly umriss: string;
+  readonly glas: string;
+  readonly auswahl: string;
+  readonly auswahlKrone: string;
+  readonly bodenAuswahl: string;
+}
+
+/** Helle Standardwerte - Rückfall, falls ein Token (noch) nicht gesetzt ist. */
+export const STANDARD_SZENENFARBEN: Szenenfarben = Object.freeze({
+  hintergrund: "#f4f6f8",
+  raster: "#b8c1cb",
+  rasterFein: "#dce1e7",
+  wandAussen: "#9aa6b3",
+  wandGemeinsam: "#e6e0d2",
+  krone: "#56616d",
+  umriss: "#45505c",
+  glas: "#8cc4ec",
+  auswahl: "#f0a030",
+  auswahlKrone: "#b86d12",
+  bodenAuswahl: "#f7c67a",
+});
 
 const SICHTFELD_GRAD = 45;
 const ISO_RICHTUNG = new Vector3(0.9, 1.1, 1.3);
@@ -145,17 +170,18 @@ interface Materialien {
   readonly umriss: LineBasicMaterial;
 }
 
-function materialienErzeugen(): Materialien {
+/** Materialien einmal je Szene; ein Farbwechsel ändert nur ihre Farbe. */
+function materialienErzeugen(farben: Szenenfarben = STANDARD_SZENENFARBEN): Materialien {
   return {
     boden: BODENFARBEN.map((color) => new MeshLambertMaterial({ color })),
-    bodenAuswahl: new MeshLambertMaterial({ color: 0xf7c67a, emissive: 0x3a2600 }),
-    wandAussen: new MeshLambertMaterial({ color: FARBE.wandAussen }),
-    wandGemeinsam: new MeshLambertMaterial({ color: FARBE.wandGemeinsam }),
-    krone: new MeshLambertMaterial({ color: FARBE.krone }),
-    wandAuswahl: new MeshLambertMaterial({ color: FARBE.auswahl, emissive: 0x402200 }),
-    kroneAuswahl: new MeshLambertMaterial({ color: FARBE.auswahlKrone }),
+    bodenAuswahl: new MeshLambertMaterial({ color: farben.bodenAuswahl, emissive: 0x3a2600 }),
+    wandAussen: new MeshLambertMaterial({ color: farben.wandAussen }),
+    wandGemeinsam: new MeshLambertMaterial({ color: farben.wandGemeinsam }),
+    krone: new MeshLambertMaterial({ color: farben.krone }),
+    wandAuswahl: new MeshLambertMaterial({ color: farben.auswahl, emissive: 0x402200 }),
+    kroneAuswahl: new MeshLambertMaterial({ color: farben.auswahlKrone }),
     glas: new MeshLambertMaterial({
-      color: FARBE.glas,
+      color: farben.glas,
       transparent: true,
       opacity: 0.35,
       side: DoubleSide,
@@ -164,14 +190,27 @@ function materialienErzeugen(): Materialien {
     // Tür und Durchgang: treffbar, aber nicht gezeichnet.
     unsichtbar: new MeshBasicMaterial({ colorWrite: false, depthWrite: false, side: DoubleSide }),
     oeffnungAuswahl: new MeshBasicMaterial({
-      color: FARBE.auswahl,
+      color: farben.auswahl,
       transparent: true,
       opacity: 0.6,
       side: DoubleSide,
       depthWrite: false,
     }),
-    umriss: new LineBasicMaterial({ color: FARBE.umriss }),
+    umriss: new LineBasicMaterial({ color: farben.umriss }),
   };
+}
+
+/** Farben vorhandener Materialien ändern - ohne neue GPU-Ressourcen. */
+function materialfarbenSetzen(m: Materialien, farben: Szenenfarben) {
+  m.bodenAuswahl.color.set(farben.bodenAuswahl);
+  m.wandAussen.color.set(farben.wandAussen);
+  m.wandGemeinsam.color.set(farben.wandGemeinsam);
+  m.krone.color.set(farben.krone);
+  m.wandAuswahl.color.set(farben.auswahl);
+  m.kroneAuswahl.color.set(farben.auswahlKrone);
+  m.glas.color.set(farben.glas);
+  m.oeffnungAuswahl.color.set(farben.auswahl);
+  m.umriss.color.set(farben.umriss);
 }
 
 function alleMaterialien(m: Materialien): Material[] {
@@ -207,7 +246,7 @@ export class Grundrissszene {
   private readonly materialien = materialienErzeugen();
   private readonly planGruppe = new Group();
   private readonly lichter: Object3D[];
-  private readonly dunkel: boolean;
+  private farben: Szenenfarben;
   private raster: GridHelper | null = null;
   private readonly planGeometrien = new Set<BufferGeometry>();
   private auswaehlbar: Mesh[] = [];
@@ -235,10 +274,10 @@ export class Grundrissszene {
       this.materialienFreigeben();
       throw fehler instanceof WebGLNichtVerfuegbar ? fehler : new WebGLNichtVerfuegbar(fehler);
     }
-    this.dunkel = umgebung.dunkel();
-    const farben = this.dunkel ? FARBE.dunkel : FARBE.hell;
+    this.farben = umgebung.farben();
+    materialfarbenSetzen(this.materialien, this.farben);
     this.renderer.setPixelRatio(Math.min(Math.max(umgebung.pixelRatio(), 1), 2));
-    this.renderer.setClearColor(new Color(farben.hintergrund), 1);
+    this.renderer.setClearColor(new Color(this.farben.hintergrund), 1);
 
     const canvas = this.renderer.domElement;
     canvas.style.display = "block";
@@ -308,6 +347,7 @@ export class Grundrissszene {
     canvas.addEventListener("webglcontextlost", this.beiKontextverlust);
     this.umgebung.dokument?.addEventListener("visibilitychange", this.beiSichtbarkeit);
     const groesseAbmelden = this.umgebung.groesseBeobachten(this.behaelter, (b, h) => this.groesseSetzen(b, h));
+    const farbwechselAbmelden = this.umgebung.farbwechselBeobachten(this.beiFarbwechsel);
     this.abmeldungen.push(
       () => this.controls.removeEventListener("change", this.beiAenderung),
       () => canvas.removeEventListener("pointerdown", this.beiZeigerRunter),
@@ -315,8 +355,11 @@ export class Grundrissszene {
       () => canvas.removeEventListener("webglcontextlost", this.beiKontextverlust),
       () => this.umgebung.dokument?.removeEventListener("visibilitychange", this.beiSichtbarkeit),
       groesseAbmelden,
+      farbwechselAbmelden,
     );
   }
+
+  private readonly beiFarbwechsel = () => this.setzeFarben(this.umgebung.farben());
 
   // ------------------------------------------------------------ Bildtakt
 
@@ -454,8 +497,7 @@ export class Grundrissszene {
     const groesse = Math.max(10, Math.ceil(ausdehnungM + 6));
     if (this.raster !== null && this.raster.userData["groesse"] === groesse) return;
     this.rasterEntfernen();
-    const farben = this.dunkel ? FARBE.dunkel : FARBE.hell;
-    const raster = new GridHelper(groesse, groesse, farben.raster, farben.rasterFein);
+    const raster = new GridHelper(groesse, groesse, this.farben.raster, this.farben.rasterFein);
     raster.userData = { groesse };
     // Zuerst und ohne Tiefe zeichnen: Böden und Wände überdecken das Raster
     // immer - sonst scheinen Rasterlinien durch die knapp darüber liegenden Böden.
@@ -572,6 +614,25 @@ export class Grundrissszene {
 
   private materialienFreigeben() {
     for (const material of alleMaterialien(this.materialien)) material.dispose();
+  }
+
+  /**
+   * Neue Theme-Farben übernehmen (Hell/Dunkel, Akzent). Ändert nur
+   * Materialfarben und Hintergrund; das Raster wird ersetzt, weil seine
+   * Farben in den Eckpunkten stehen. Keine neue Szene, kein neuer Canvas,
+   * höchstens ein angefordertes Bild.
+   */
+  setzeFarben(farben: Szenenfarben) {
+    if (this.entsorgt) return;
+    const alt = this.farben;
+    this.farben = farben;
+    materialfarbenSetzen(this.materialien, farben);
+    this.renderer.setClearColor(new Color(farben.hintergrund), 1);
+    if (this.raster !== null && (alt.raster !== farben.raster || alt.rasterFein !== farben.rasterFein)) {
+      this.rasterEntfernen();
+      this.rasterSetzen(this.modell);
+    }
+    this.anfordern();
   }
 
   /** Alles freigeben. Mehrfacher Aufruf ist unschädlich. */

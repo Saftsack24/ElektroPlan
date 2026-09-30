@@ -2208,3 +2208,67 @@ bei schmalen Fenstern (Bestand, Ursache gemessen). Details: `docs/current-status
 ### Nächster sinnvoller Schritt
 
 Prüfung durch den Auftraggeber, dann Commit auf Freigabe. Danach Phase 4c.2 planen.
+
+---
+
+## Task 0021 – Phase 4c.2: persönliche Darstellung, Laufzeitthemes, responsive Nachkorrektur
+
+**Datum:** 2026-09-30 · **Stand:** umgesetzt, **nicht committet** (Ausgangsstand `02e4017`
+= `origin/main`, Arbeitsbaum sauber; Sicherung als Archiv im Scratchpad)
+
+### Umsetzung
+
+1. **Core-Modell** `core/theme/darstellung.ts`: `modus` (`system`/`light`/`dark`), `akzent`
+   (`blue`/`teal`/`green`/`violet`/`orange`), Speicherformat
+   `{"version":1,"modus":…,"akzent":…}` unter `elektroplan.darstellung.<user_id>`,
+   Validierung je Feld, Vorschau-Schicht, `useDarstellung` (`useSyncExternalStore`) und
+   `darstellungAbonnieren`. Wurzelattribute `data-theme`, `data-theme-mode`, `data-accent`,
+   `color-scheme`. `darstellungStarten()` in `main.tsx` beobachtet `prefers-color-scheme`
+   und `storage`. `AuthProvider` meldet nur die `user_id` (wie bei der Maßeinheit).
+2. **CSS:** dunkle Werte an `:root[data-theme="dark"]`, minimaler Rückfall vor dem
+   Skriptstart; `akzente.css` mit fünf Schemata für jedes Element mit `data-accent`
+   (Farbmuster im Dialog nutzen dieselben Regeln); neuer Token `--ep-border-control`;
+   Warnfarbe `#946000`; `accent-color` für Kontrollkästchen.
+3. **Dialog:** Darstellung, Akzentfarbe, Maßeinheit; Vorschau, Übernehmen, Abbrechen
+   (auch Escape/✕), Auf Standard zurücksetzen. **Entscheidung:** Die Maßeinheit verhält
+   sich wie die übrigen Einstellungen (Vorschau, Speichern mit „Übernehmen") – dafür hat
+   `masseinheit.ts` eine Vorschau-Schicht erhalten.
+4. **Electrical:** `modules/electrical/darstellung.css` bündelt 2D- und 3D-Tokens (hell und
+   dunkel über `data-theme`). 3D: `Umgebung.dunkel()` ersetzt durch `farben()` und
+   `farbwechselBeobachten()`; `Grundrissszene.setzeFarben()` ändert Materialfarben und
+   Hintergrund, ersetzt nur das Raster, fordert höchstens ein Bild an.
+5. **Responsiv:** Benutzerblock der Kopfzeile bricht um, Hauptbereich `min-w-0`,
+   Kartenköpfe und Blätterleiste der Benutzerliste umbrechend, Tabellenhülle
+   `max-w-full min-w-0`.
+
+### Tests
+
+31 neue bzw. angepasste Prüfungen: Speicherformat und Validierung, zwei Benutzer,
+Abmelden, Tab-Synchronisierung, gesperrter Speicher, System/Hell/Dunkel mit `matchMedia`,
+Akzent, Vorschau; Dialog (Gliederung, Vorschau, Abbrechen mit Fokusrückgabe, Escape,
+Übernehmen, Zurücksetzen, erneutes Öffnen); Maßeinheit-Vorschau; 3D (Farben beim Start,
+Wechsel ohne neue Szene/Canvas mit einem Bild, 20 Wechsel ohne Wachstum, Abmeldung beim
+Entsorgen); 3D-Komponente mit echter Core-Schnittstelle (kein React-Render, ein Canvas);
+Tabellenhülle der Benutzerliste. Ein bestehender Test (Maßeinheit sofort gespeichert) an
+das neue Übernehmen-Verhalten angepasst. Gesamt **653** Frontendtests grün; TypeScript,
+ESLint, Modulgrenzen, API-Drift, Produktionsbuild grün. Backend unverändert, kein
+Backendlauf.
+
+### Messwerte
+
+| Messung | vorher (4c.1) | nachher |
+|---|---|---|
+| Produktions-CSS Haupt | 17,37 kB (4,22 kB gzip) | 19,66 kB (4,67 kB gzip) |
+| Electrical-Chunk-CSS | 3,75 kB (0,94 kB gzip) | 4,17 kB (1,08 kB gzip) |
+| Warnung hell / Oberfläche | 3,3 : 1 | 5,3 : 1 |
+| Kontrollrahmen hell / dunkel | ~1,3 : 1 | 3,3 : 1 / 3,4 : 1 |
+
+### Browserabnahme
+
+**Nicht durchgeführt.** Der Browserbereich war verdeckt, und die Navigation zu
+`localhost:5173` wurde abgelehnt (Freigabe nicht erteilt). Keine Vergleichsbilder, keine
+Messung bei 320/360/420 px. Offene Prüfliste: `docs/current-status.md`, Technische Schulden.
+
+### Nächster sinnvoller Schritt
+
+Sichtbare Browserabnahme; danach Commit auf Freigabe.

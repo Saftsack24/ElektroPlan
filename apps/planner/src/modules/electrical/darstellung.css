@@ -1,0 +1,51 @@
+/*
+ * Fachliche Darstellungstokens der Elektroplanung (ADR 0018, Phase 4c.2).
+ *
+ * Geladen vom 2D-Editor (editor/Zeichenflaeche.tsx) und von der 3D-Ansicht
+ * (ansicht3d/Ansicht3d.tsx). Hell auf :root, dunkel auf
+ * `:root[data-theme="dark"]` - dasselbe Attribut wie die Core-Tokens, gesetzt
+ * von `core/theme/darstellung.ts`.
+ *
+ * Tür, Fenster, Durchgang, Warnung und Fehler sind bewusst **nicht** an die
+ * Akzentfarbe gebunden: Sie müssen in jedem Farbschema sicher unterscheidbar
+ * bleiben. Auswahl, Vorschau und Griffe im 2D-Editor folgen dem Akzent über
+ * `--ep-selected` / `--ep-accent`.
+ *
+ * Die 3D-Szene liest die `--ep-plan3d-*`-Werte berechnet vom Wurzelelement
+ * (ansicht3d/umgebung.ts) und erhält jede Änderung über
+ * `darstellungAbonnieren`. Die 3D-Auswahl bleibt orange: Sie muss sich von
+ * allen Bodenfarben und von jedem Akzent abheben.
+ */
+
+:root {
+  /* 2D */
+  --ep-plan-wall: #6b7482;
+  --ep-plan-wall-active: #1c2430;
+  --ep-plan-door: #b35c00;
+  --ep-plan-window: #1f7ab8;
+  --ep-plan-passage: var(--ep-text-muted);
+
+  /* 3D */
+  --ep-plan3d-background: #f4f6f8;
+  --ep-plan3d-grid: #b8c1cb;
+  --ep-plan3d-grid-fine: #dce1e7;
+  --ep-plan3d-wall-exterior: #9aa6b3;
+  --ep-plan3d-wall-shared: #e6e0d2;
+  --ep-plan3d-wall-top: #56616d;
+  --ep-plan3d-outline: #45505c;
+  --ep-plan3d-glass: #8cc4ec;
+  --ep-plan3d-selection: #f0a030;
+  --ep-plan3d-selection-top: #b86d12;
+  --ep-plan3d-selection-floor: #f7c67a;
+}
+
+:root[data-theme="dark"] {
+  --ep-plan-wall: #7d8896;
+  --ep-plan-wall-active: #dfe5ec;
+  --ep-plan-door: #f0a35a;
+  --ep-plan-window: #6cb8ea;
+
+  --ep-plan3d-background: #1d232b;
+  --ep-plan3d-grid: #4a5663;
+  --ep-plan3d-grid-fine: #2f3842;
+}

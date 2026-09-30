@@ -47,7 +47,7 @@ Ausführlich: [`docs/architecture.md`](docs/architecture.md)
 |---|---|
 | Backend | Python 3.12+, FastAPI, SQLAlchemy 2.0, Alembic, PostgreSQL 17 |
 | Frontend | TypeScript (strict), React, Vite, TanStack Query, Zod |
-| Gestaltung | Tailwind CSS 4 (Vite-Plugin, ohne Preflight) über semantische Laufzeit-Tokens `--ep-*` ([ADR 0018](docs/decisions/0018-frontend-styling-tailwind-and-theme-tokens.md)) |
+| Gestaltung | Tailwind CSS 4 (Vite-Plugin, ohne Preflight) über semantische Laufzeit-Tokens `--ep-*`; Hell/Dunkel/System und Akzentschemata über Wurzelattribute ([ADR 0018](docs/decisions/0018-frontend-styling-tailwind-and-theme-tokens.md), [ADR 0019](docs/decisions/0019-personal-display-preferences-local-storage.md)) |
 | 3D | Three.js (reine Ansicht seit Phase 4b; Browser mit WebGL 2 nötig, sonst Hinweis und 2D/Tabelle) |
 | Mobil | React + Capacitor, später ARCore (ab Phase 13) |
 | Dateien | S3-kompatibler Object Storage (lokal MinIO) |
@@ -135,6 +135,15 @@ Regeln in [ADR 0018](docs/decisions/0018-frontend-styling-tailwind-and-theme-tok
 und `docs/architecture.md`, Abschnitt 13. Nach dem Aktualisieren das Planner-Image neu
 bauen (`docker compose build planner`), weil `package.json` und `vite.config.ts` darin
 enthalten sind.
+
+**Phase 4c.2 — Persönliche Darstellung — abgeschlossen** (mit diesem Checkpoint committet).
+Unter „Einstellungen" wählt jeder Benutzer **Darstellung** (Wie das System, Hell, Dunkel),
+**Akzentfarbe** (ElektroPlan Blau, Türkis, Grün, Violett, Orange) und **Maßeinheit**
+(cm/mm). Jede Wahl wirkt sofort als Vorschau – auch im 2D-Editor und in einer geöffneten
+3D-Ansicht – und wird erst mit „Übernehmen" gespeichert; Abbrechen stellt den vorherigen
+Stand her. Gespeichert wird **nur in diesem Browser, je Benutzer**
+(`elektroplan.darstellung.<user_id>`); auf einem anderen Gerät gilt der Standard.
+Warnfarbe und Umrisse von Eingabefeldern und Knöpfen erfüllen jetzt WCAG AA bzw. 3 : 1.
 
 > **Einladungen in der Entwicklung:** Es gibt noch keinen E-Mail-Versand. Mit
 > `ELEKTROPLAN_INVITATION_DELIVERY=development_link` (in `docker-compose.yml` gesetzt)

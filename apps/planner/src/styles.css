@@ -12,4 +12,5 @@
 @import "tailwindcss/utilities.css" layer(utilities) source("./");
 
 @import "./core/theme/tokens.css";
+@import "./core/theme/akzente.css";
 @import "./core/theme/basis.css";

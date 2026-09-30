@@ -1,0 +1,125 @@
+/*
+ * Akzentfarbschemata (Phase 4c.2, ADR 0018).
+ *
+ * Ein Schema setzt Akzent, Hover, Text auf Akzent, Fokus, Auswahl und die
+ * weiche Auswahlfläche - hell und dunkel. Aktiviert wird es über
+ * `data-accent` am Wurzelelement (`core/theme/darstellung.ts`).
+ *
+ * Die Selektoren gelten bewusst für jedes Element mit `data-accent`, nicht
+ * nur für :root: So zeigt ein Farbmuster im Einstellungsdialog
+ * (`<span data-accent="teal" class="bg-accent">`) sein Schema mit denselben
+ * Werten, ohne sie zu wiederholen.
+ *
+ * Gemessene Kontraste (WCAG): Text auf Akzent hell 5,6-8,5 : 1, dunkel
+ * 6,5-8,2 : 1; Akzent auf der Seite hell 5,2-7,9 : 1, dunkel 6,2-7,8 : 1;
+ * Akzent auf der weichen Auswahlfläche ≥ 5,0 : 1. Beliebige Farben sind nicht
+ * vorgesehen - nur geprüfte Schemata.
+ *
+ * Reihenfolge: erst alle hellen, dann alle dunklen Regeln.
+ */
+
+/* ElektroPlan Blau (Standard) - hell */
+:root,
+[data-accent="blue"] {
+  --ep-accent: #14507d;
+  --ep-accent-hover: #0f3e61;
+  --ep-on-accent: #ffffff;
+  --ep-focus: #14507d;
+  --ep-selected: #14507d;
+  --ep-selected-surface: #ecf1f5;
+}
+
+/* Türkis - hell */
+[data-accent="teal"] {
+  --ep-accent: #0e6e6e;
+  --ep-accent-hover: #0a5454;
+  --ep-on-accent: #ffffff;
+  --ep-focus: #0e6e6e;
+  --ep-selected: #0e6e6e;
+  --ep-selected-surface: #ecf3f3;
+}
+
+/* Grün - hell */
+[data-accent="green"] {
+  --ep-accent: #2d6a2e;
+  --ep-accent-hover: #225222;
+  --ep-on-accent: #ffffff;
+  --ep-focus: #2d6a2e;
+  --ep-selected: #2d6a2e;
+  --ep-selected-surface: #eef3ee;
+}
+
+/* Violett - hell */
+[data-accent="violet"] {
+  --ep-accent: #5b3fa8;
+  --ep-accent-hover: #472f88;
+  --ep-on-accent: #ffffff;
+  --ep-focus: #5b3fa8;
+  --ep-selected: #5b3fa8;
+  --ep-selected-surface: #f2f0f8;
+}
+
+/* Orange - hell */
+[data-accent="orange"] {
+  --ep-accent: #b0460a;
+  --ep-accent-hover: #8f3808;
+  --ep-on-accent: #ffffff;
+  --ep-focus: #b0460a;
+  --ep-selected: #b0460a;
+  --ep-selected-surface: #f9f0eb;
+}
+
+/* ElektroPlan Blau (Standard) - dunkel */
+[data-theme="dark"],
+[data-theme="dark"] [data-accent="blue"] {
+  --ep-accent: #4a9fd8;
+  --ep-accent-hover: #6cb2e2;
+  --ep-on-accent: #0d1216;
+  --ep-focus: #4a9fd8;
+  --ep-selected: #4a9fd8;
+  --ep-selected-surface: #1c2b37;
+}
+
+/* Türkis - dunkel */
+[data-theme="dark"][data-accent="teal"],
+[data-theme="dark"] [data-accent="teal"] {
+  --ep-accent: #35b8b1;
+  --ep-accent-hover: #5ccbc5;
+  --ep-on-accent: #0d1216;
+  --ep-focus: #35b8b1;
+  --ep-selected: #35b8b1;
+  --ep-selected-surface: #192e32;
+}
+
+/* Grün - dunkel */
+[data-theme="dark"][data-accent="green"],
+[data-theme="dark"] [data-accent="green"] {
+  --ep-accent: #62bf6a;
+  --ep-accent-hover: #82cf88;
+  --ep-on-accent: #0d1216;
+  --ep-focus: #62bf6a;
+  --ep-selected: #62bf6a;
+  --ep-selected-surface: #1f2f28;
+}
+
+/* Violett - dunkel */
+[data-theme="dark"][data-accent="violet"],
+[data-theme="dark"] [data-accent="violet"] {
+  --ep-accent: #a58cf0;
+  --ep-accent-hover: #bba7f5;
+  --ep-on-accent: #0d1216;
+  --ep-focus: #a58cf0;
+  --ep-selected: #a58cf0;
+  --ep-selected-surface: #28283b;
+}
+
+/* Orange - dunkel */
+[data-theme="dark"][data-accent="orange"],
+[data-theme="dark"] [data-accent="orange"] {
+  --ep-accent: #f08a4b;
+  --ep-accent-hover: #f4a473;
+  --ep-on-accent: #0d1216;
+  --ep-focus: #f08a4b;
+  --ep-selected: #f08a4b;
+  --ep-selected-surface: #332823;
+}

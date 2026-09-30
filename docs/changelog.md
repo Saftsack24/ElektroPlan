@@ -5,6 +5,34 @@ Einträge entstehen nach relevanten Änderungen, nicht nach jedem Commit.
 
 ---
 
+## 2026-09-30 — Phase 4c.2: persönliche Darstellung, Laufzeitthemes, responsive Nachkorrektur
+
+Keine Migration, **keine** API- oder Backendänderung. Mit diesem Checkpoint committet.
+Entscheidungen: ADR 0018 (präzisiert), [ADR 0019](decisions/0019-personal-display-preferences-local-storage.md).
+
+### Added
+
+- Einstellungen: **Darstellung** (Wie das System, Hell, Dunkel) und **Akzentfarbe**
+  (ElektroPlan Blau, Türkis, Grün, Violett, Orange) mit Farbmuster und Namen.
+- Live-Vorschau in der ganzen Anwendung; **Übernehmen**, **Abbrechen** (auch Escape/✕)
+  und **Auf Standard zurücksetzen**.
+- Speicherung je Benutzer im Browser (`elektroplan.darstellung.<user_id>`, versioniert),
+  Synchronisierung zwischen Tabs, Standard beim Laden und nach dem Abmelden.
+- 3D-Ansicht folgt Hell/Dunkel ohne Neuladen; 2D-Auswahl folgt der Akzentfarbe.
+
+### Changed
+
+- Maßeinheit wird wie die übrigen Einstellungen erst mit „Übernehmen" gespeichert
+  (vorher sofort).
+- Kontraste: helle Warnfarbe `#946000` (5,3 : 1 statt 3,3 : 1); Eingabefelder und Knöpfe
+  mit eigenem Kontrollrahmen (3,3 : 1 hell, 3,4 : 1 dunkel statt ~1,3 : 1); native
+  Kontrollkästchen in der Akzentfarbe; weiche Auswahlfläche leicht im Akzent getönt.
+- Hell/Dunkel über das Wurzelattribut `data-theme` statt `prefers-color-scheme`.
+- Schmale Bildschirme: Benutzerblock der Kopfzeile, Kartenköpfe und die Blätterleiste der
+  Benutzerliste brechen um; Tabellenhüllen sind auf die Seitenbreite begrenzt.
+
+---
+
 ## 2026-09-29 — Phase 4c.1: Frontend auf Tailwind CSS, Theme-Grundlage
 
 Keine Migration, **keine** API- oder Backendänderung, kein Redesign. Mit diesem Checkpoint committet.

@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import type { ReactNode } from "react";
 
 import { config } from "../config";
+import { darstellungBenutzerSetzen } from "../theme/darstellung";
 import { masseinheitBenutzerSetzen } from "../ui/masseinheit";
 
 interface AuthState {
@@ -194,7 +195,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // eines anderen Benutzers aufblitzt; beim Laden und nach dem Abmelden gilt
   // der Standard. Ein Betriebswechsel behält dieselbe `user_id`.
   const benutzerId = state.status === "authenticated" ? (state.me?.user_id ?? null) : null;
-  useLayoutEffect(() => masseinheitBenutzerSetzen(benutzerId), [benutzerId]);
+  useLayoutEffect(() => {
+    masseinheitBenutzerSetzen(benutzerId);
+    darstellungBenutzerSetzen(benutzerId);
+  }, [benutzerId]);
 
   const value = useMemo<AuthContextValue>(
     () => ({ ...state, api, login, logout, switchOrganization, aktualisieren }),

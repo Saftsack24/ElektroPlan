@@ -4,6 +4,8 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { TABELLENRAHMEN } from "../../../core/ui/stil";
+
 /**
  * Administration → Benutzer: Liste, Suche, Statusfilter, Blättern,
  * Einladen, Widerrufen und der Entwicklungslink.
@@ -124,6 +126,12 @@ describe("Benutzerliste", () => {
     expect(within(zeilen[2]!).getByText("Zugang gesperrt")).toBeInTheDocument();
     expect(within(zeilen[1]!).getByText("Planer")).toBeInTheDocument();
     expect(mitgliederAufrufe()[0]).toEqual({ limit: 25 });
+  });
+
+  it("scrollt eine breite Tabelle in ihrer eigenen Hülle statt die Seite zu verbreitern", async () => {
+    zeigen();
+    const tabelle = await screen.findByRole("table", { name: "Benutzer und offene Einladungen" });
+    expect(tabelle.parentElement?.className).toBe(TABELLENRAHMEN);
   });
 
   it("blättert vor und zurück - mit dem Cursor des Servers", async () => {

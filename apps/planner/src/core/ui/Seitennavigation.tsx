@@ -1,7 +1,7 @@
 import { seitenfolge } from "./seitenfolge";
 import { KNOPF_GRUND } from "./stil";
 
-const SEITENKNOPF = `${KNOPF_GRUND} min-w-[2.4em] px-2 py-1.5 border-line bg-transparent text-fg`;
+const SEITENKNOPF = `${KNOPF_GRUND} min-w-[2.4em] px-2 py-1.5 border-control bg-transparent text-fg`;
 const SEITENKNOPF_AKTIV = `${KNOPF_GRUND} min-w-[2.4em] px-2 py-1.5 border-transparent bg-accent font-semibold text-on-accent`;
 
 /**

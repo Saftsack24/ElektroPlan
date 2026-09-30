@@ -168,6 +168,10 @@ describe("Anwendungswurzel", () => {
     expect(within(dialog).getByText(/gespeicherten Planmaße bleiben unverändert/)).toBeInTheDocument();
     fireEvent.click(within(dialog).getByLabelText(/Millimeter/));
     expect(within(dialog).getByLabelText(/Millimeter/)).toBeChecked();
+    // Seit Phase 4c.2 zunächst nur Vorschau - gespeichert wird mit „Übernehmen".
+    expect(window.localStorage.getItem("elektroplan.masseinheit.33333333-3333-4333-8333-333333333333")).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Übernehmen" }));
+    expect(screen.queryByRole("dialog", { name: "Einstellungen" })).toBeNull();
     expect(window.localStorage.getItem("elektroplan.masseinheit.33333333-3333-4333-8333-333333333333")).toBe("mm");
     expect(window.localStorage.getItem("elektroplan.masseinheit")).toBeNull();
   });

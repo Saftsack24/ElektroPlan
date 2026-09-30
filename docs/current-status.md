@@ -1,7 +1,7 @@
 # Aktueller Projektstand
 
-**Letzte Aktualisierung:** 2026-09-29
-**Aktualisiert nach:** Task 0020 — Phase 4c.1 (Frontend auf Tailwind CSS, Theme-Grundlage)
+**Letzte Aktualisierung:** 2026-09-30
+**Aktualisiert nach:** Task 0021 — Phase 4c.2 (persönliche Darstellung, Laufzeitthemes, responsive Nachkorrektur)
 
 > Dieses Dokument soll einer neuen Session in wenigen Minuten vermitteln, wo das Projekt
 > steht.
@@ -35,7 +35,9 @@ committet
 **Phase 4c.1 — Tailwind-Migration und Theme-Grundlage: ABGESCHLOSSEN** (automatisiert,
 per Stilvergleich und im Browser funktional geprüft, Sichtprüfung durch den Auftraggeber)
 — mit diesem Checkpoint committet
-**Phase 4c.2 — persönliche Farb- und Darstellungseinstellungen: NICHT BEGONNEN**
+**Phase 4c.2 — persönliche Darstellung, Laufzeitthemes, responsive Nachkorrektur: ABGESCHLOSSEN**
+(automatisiert geprüft, manuell durch den Auftraggeber abgenommen) — mit diesem Checkpoint
+committet
 **Phase 5 — Electrical Devices: NICHT BEGONNEN**
 
 > Phase 4a und 4a.1 sind als `887f254`, Phase 4.2 als `66cbff3` committet. Die
@@ -46,6 +48,33 @@ per Stilvergleich und im Browser funktional geprüft, Sichtprüfung durch den Au
 ---
 
 ## 2. Zuletzt abgeschlossene Aufgabe
+
+**Task 0021 — Phase 4c.2: persönliche Darstellung** (ADR 0018 präzisiert,
+[ADR 0019](decisions/0019-personal-display-preferences-local-storage.md))
+
+1. **Einstellungen:** Darstellung (Wie das System, Hell, Dunkel), Akzentfarbe (ElektroPlan
+   Blau – Standard, Türkis, Grün, Violett, Orange) und Maßeinheit. Alle drei wirken sofort
+   als Vorschau und werden erst mit „Übernehmen" gespeichert; Abbrechen, Escape und ✕
+   stellen den gespeicherten Stand her; „Auf Standard zurücksetzen" setzt den Entwurf auf
+   System, Blau, cm.
+2. **Speicherung:** `elektroplan.darstellung.<user_id>` =
+   `{"version":1,"modus":…,"akzent":…}`, nur in diesem Browser. Ungültige Werte → Standard.
+   Beim Laden und nach dem Abmelden gilt der Standard; Betriebswechsel behält die Wahl;
+   andere Tabs desselben Benutzers ziehen über `storage` nach.
+3. **Anwendung:** `core/theme/darstellung.ts` setzt `data-theme`, `data-theme-mode`,
+   `data-accent` und `color-scheme` am Wurzelelement; Tokens reagieren darauf. Systemmodus
+   folgt einem Wechsel des Betriebssystems zur Laufzeit.
+4. **Kontraste:** Warnfarbe hell `#946000` (5,3 : 1), neuer Kontrollrahmen für
+   Eingabefelder und Knöpfe (3,3 : 1 hell, 3,4 : 1 dunkel); alle Schemata AA.
+5. **2D/3D:** Fachfarben akzentunabhängig, Auswahl im 2D-Editor im Akzent; die 3D-Szene
+   liest `--ep-plan3d-*` und übernimmt Wechsel ohne neue Szene (höchstens ein Bild).
+6. **Responsiv:** Benutzerblock, Kartenköpfe und Blätterleiste brechen um, Hauptbereich und
+   Tabellenhüllen `min-w-0`/`max-w-full`.
+7. 653 Frontendtests (vorher 622), kein Backend, keine API, keine Migration.
+
+**Abnahme:** manuell durch den Auftraggeber geprüft und freigegeben. Eine automatisierte
+Browserabnahme mit Bildschirmfotos fand nicht statt; die Dokumentbreiten bei
+320/360/420 px wurden nicht automatisiert gemessen.
 
 **Task 0020 — Phase 4c.1: Frontend auf Tailwind CSS, Theme-Grundlage**
 ([ADR 0018](decisions/0018-frontend-styling-tailwind-and-theme-tokens.md))
@@ -761,9 +790,12 @@ was offen ist, ist eine Schuld.
 | ~~3D: teilweise überlappende Wände werden nicht zusammengeführt~~ | **Behoben in 4b.2:** exakte atomare Abschnitte, realer Grundriss ohne doppelte Körper | — |
 | Nachbarschaft von Öffnungen ist nur abgeleitet (4b.2) | Leitungsrouting und Materialermittlung dürfen sich nicht darauf stützen; vorhandene beidseitige Dubletten werden nur gemeldet, kein Bereinigungswerkzeug | mit T10 vor Phase 6 |
 | 3D-Abnahme 4b.2 nicht visuell | Browserbereich war verborgen – WebGL-Bild und 3D-Auswahl der gemeinsamen Tür nur automatisiert und über Texte/Zahlen geprüft | bei der Abnahme durch den Auftraggeber |
-| Kontrast der hellen Warnfarbe `#c77d00` 3,3 : 1 und der Rahmen (~1,3 : 1) | unter WCAG AA für Text bzw. Bedienelement-Umrisse; unverändert aus dem Bestand (4c.1 ist kein Redesign) | mit Phase 4c.2 |
-| 3D-Szene folgt den Theme-Tokens nicht | Three.js-Farben stehen in `ansicht3d/szene.ts` (hell/dunkel über `matchMedia`) | Phase 4c.2 |
-| Waagrechte Überbreite bei schmalen Fenstern | bei 420 px ist die Seite 499 px (Übersicht, Projekte) bzw. 594 px (Benutzer) breit; Bestand vor 4c.1, unverändert | eigene Aufgabe. Gemessen: Der Benutzerblock der Kopfzeile (Betrieb, E-Mail, zwei Knöpfe) bricht nicht um (479 px); die Benutzertabelle (561 px) verbreitert die Seite trotz Scrollhülle |
+| ~~Kontrast der hellen Warnfarbe und der Rahmen~~ | **Behoben in 4c.2:** Warnung 5,3 : 1, Kontrollrahmen 3,3/3,4 : 1 | — |
+| ~~3D-Szene folgt den Theme-Tokens nicht~~ | **Behoben in 4c.2:** Farben aus `--ep-plan3d-*`, Wechsel über `darstellungAbonnieren` | — |
+| ~~Waagrechte Überbreite bei schmalen Fenstern~~ | **Behoben in 4c.2** und manuell abgenommen: Kopfzeile bricht um; Tabellenhüllen, Kartenköpfe und Blätterleiste begrenzt. Die Dokumentbreiten bei 320/360/420 px wurden nicht automatisiert gemessen | — |
+| 4c.2 ohne automatisierte Browserabnahme | Browserbereich war nicht erreichbar; Abnahme manuell durch den Auftraggeber. Keine Bildschirmfotos, keine automatisierte Breitenmessung | bei der nächsten Browserabnahme mitprüfen (kein Blocker) |
+| Kurzes Standard-Theme beim Laden | Vor der Sitzungsprüfung gilt „Wie das System", Blau; eine abweichende Wahl erscheint erst nach der Anmeldung (ADR 0019) | bewusst so |
+| 3D-Szene erst nach dem Laden des Electrical-Chunks eingefärbt | Die 3D-Tokens liegen im Electrical-CSS-Chunk, der vor der 3D-Ansicht geladen wird; fehlt ein Token, gilt der helle Standard | nur bei Umbau der Chunks |
 | `hover:` nur auf Geräten mit Zeigerhover | Tailwind 4 kapselt Hover in `@media (hover: hover)`; auf Touch entfällt der Hover-Zustand (vorher klebte er nach Antippen) | keine Absicht, das zu ändern |
 | 3D: Ecken bei nicht rechtwinkligen Wänden | Eckschluss über Verlängerung um halbe Stärke; bei spitzen/stumpfen Winkeln kleine Überstände | nur bei Bedarf (reine Darstellung) |
 | 3D: WebGL-Fallback und Kontextverlust nur automatisiert geprüft | im verwendeten Browser nicht auslösbar | bei einem Browser ohne WebGL nachprüfen |
@@ -849,9 +881,9 @@ HSTS, Virenscan, MFA für administrative Konten.
 
 ## 9. Nächste geplante Aufgabe
 
-**Nach Phase 4c.1 (Stand 2026-09-29):** Phase 4c.1 ist abgenommen und mit diesem
-Checkpoint committet (nicht gepusht). Phase 4c.2 und Phase 5 sind **nicht begonnen**;
-beide erst nach ausdrücklicher Freigabe.
+**Nach Phase 4c.2 (Stand 2026-09-30):** Phase 4c.2 ist abgenommen und mit diesem
+Checkpoint committet (nicht gepusht). Phase 5 ist **nicht begonnen** und erst nach
+ausdrücklicher Freigabe.
 
 Phase 4b, 4b.1 (Bedienungsnacharbeit 1) und 4b.2 (Bedienungsnacharbeit 2) sind umgesetzt und
 mit einem gemeinsamen Checkpoint-Commit committet (nicht gepusht). Phase 5 ist **nicht begonnen**.
@@ -884,7 +916,8 @@ Weiteres Vorgehen:
    bedient er `localhost` über IPv6, der Container `127.0.0.1`.
 3b. Oberfläche mit Tailwind: Farben nur über semantische Tokens, Rezepte aus
    `core/ui/stil.ts`, Klassen vollständig im Quelltext (ADR 0018,
-   `docs/architecture.md` Abschnitt 13).
+   `docs/architecture.md` Abschnitt 13). Keine eigene Hell/Dunkel-Abfrage in Komponenten –
+   Farbschema und Akzent setzt allein `core/theme/darstellung.ts` (ADR 0019).
 4. Das Backend ist **synchron** (ADR 0011): Endpunkte sind `def`, nicht `async def`.
 5. `electrical` hängt in den Phasen 3–6 **nur** von `core` ab; `materials` kommt erst in
    Phase 7 (siehe `docs/modules.md`).

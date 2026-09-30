@@ -8,6 +8,8 @@ import {
   masseinheitBenutzerSetzen,
   masseinheitSchluessel,
   masseinheitSetzen,
+  masseinheitVorschauBeenden,
+  masseinheitVorschauen,
   masseinheitZuruecksetzen,
   useMasse,
 } from "./masseinheit";
@@ -162,5 +164,27 @@ describe("Maßeinheit je Benutzer im selben Browser", () => {
     masseinheitBenutzerSetzen(ANNA);
     expect(masseinheit()).toBe("cm");
     expect(window.localStorage.getItem(MASSEINHEIT_SCHLUESSEL_ALT)).toBeNull();
+  });
+
+  it("zeigt eine Vorschau sofort, speichert sie aber nicht", () => {
+    masseinheitBenutzerSetzen(ANNA);
+    render(<Anzeige />);
+    act(() => masseinheitVorschauen("mm"));
+    expect(screen.getByText("2.500 mm")).toBeInTheDocument();
+    expect(window.localStorage.getItem(masseinheitSchluessel(ANNA))).toBeNull();
+    act(() => masseinheitVorschauBeenden());
+    expect(screen.getByText("250 cm")).toBeInTheDocument();
+  });
+
+  it("speichert eine Vorschau mit masseinheitSetzen und beendet sie beim Benutzerwechsel", () => {
+    masseinheitBenutzerSetzen(ANNA);
+    masseinheitVorschauen("mm");
+    masseinheitSetzen("mm");
+    expect(window.localStorage.getItem(masseinheitSchluessel(ANNA))).toBe("mm");
+    masseinheitVorschauen("cm");
+    masseinheitBenutzerSetzen(BERT);
+    expect(masseinheit()).toBe("cm");
+    masseinheitBenutzerSetzen(ANNA);
+    expect(masseinheit()).toBe("mm");
   });
 });

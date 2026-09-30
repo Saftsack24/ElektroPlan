@@ -9,25 +9,9 @@
  * Prüfpunkte der Editor-Tests.
  *
  * Farben kommen ausschließlich aus Tokens: den fachneutralen aus
- * core/theme/tokens.css und den fachlichen `--ep-plan-*` dieses Moduls.
+ * core/theme/tokens.css (Hell/Dunkel und Akzent über Wurzelattribute) und den
+ * fachlichen `--ep-plan-*` aus modules/electrical/darstellung.css.
  */
-
-:root {
-  --ep-plan-wall: #6b7482;
-  --ep-plan-wall-active: #1c2430;
-  --ep-plan-door: #b35c00;
-  --ep-plan-window: #1f7ab8;
-  --ep-plan-passage: var(--ep-text-muted);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ep-plan-wall: #7d8896;
-    --ep-plan-wall-active: #dfe5ec;
-    --ep-plan-door: #f0a35a;
-    --ep-plan-window: #6cb8ea;
-  }
-}
 
 @layer components {
   .grundriss__svg { display: block; user-select: none; touch-action: none; }

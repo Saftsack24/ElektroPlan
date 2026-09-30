@@ -31,6 +31,9 @@ import type { Masseinheit } from "../masse";
  *   das `storage`-Ereignis nach.
  * * Ohne nutzbaren Speicher (privates Fenster, gesperrt) gilt die Wahl bis
  *   zum Neuladen - kein Fehler.
+ * * Der Einstellungsdialog zeigt eine Wahl zunächst nur als Vorschau
+ *   ({@link masseinheitVorschauen}); gespeichert wird erst mit „Übernehmen"
+ *   ({@link masseinheitSetzen}), Abbrechen beendet die Vorschau.
  *
  * Die eigentliche Umrechnung steht in `core/masse.ts`.
  */
@@ -48,6 +51,7 @@ export function masseinheitSchluessel(benutzerId: string): string {
 
 let benutzer: string | null = null;
 let aktuell: Masseinheit | null = null;
+let vorschau: Masseinheit | null = null;
 const hoerer = new Set<() => void>();
 
 function gespeichert(): Masseinheit {
@@ -69,8 +73,9 @@ function speicherGeaendert(event: StorageEvent) {
   if (event.key !== masseinheitSchluessel(benutzer) && event.key !== null) return;
   const neu = gespeichert();
   if (neu === aktuell) return;
+  const vorher = masseinheit();
   aktuell = neu;
-  benachrichtigen();
+  if (masseinheit() !== vorher) benachrichtigen();
 }
 
 /** Einmalige Übernahme der früheren, browserweiten Wahl für den ersten Benutzer. */
@@ -96,19 +101,48 @@ export function masseinheitBenutzerSetzen(benutzerId: string | null) {
   if (benutzerId === benutzer) return;
   benutzer = benutzerId;
   if (benutzerId !== null) altenWertUebernehmen(benutzerId);
-  const neu = gespeichert();
-  const vorher = aktuell;
-  aktuell = neu;
-  if (neu !== vorher) benachrichtigen();
+  const vorher = aktuell === null ? null : masseinheit();
+  vorschau = null;
+  aktuell = gespeichert();
+  if (aktuell !== vorher) benachrichtigen();
 }
 
+/** Die wirksame Einheit - während einer Vorschau die Vorschau. */
 export function masseinheit(): Masseinheit {
+  if (vorschau !== null) return vorschau;
   if (aktuell === null) aktuell = gespeichert();
   return aktuell;
 }
 
+/** Die für den Benutzer gespeicherte Einheit, unabhängig von einer Vorschau. */
+export function gespeicherteMasseinheit(): Masseinheit {
+  if (aktuell === null) aktuell = gespeichert();
+  return aktuell;
+}
+
+/** Zeigt eine Einheit sofort an, ohne sie zu speichern. */
+export function masseinheitVorschauen(einheit: Masseinheit) {
+  const vorher = masseinheit();
+  vorschau = einheit;
+  if (einheit !== vorher) benachrichtigen();
+}
+
+/** Beendet eine Vorschau; es gilt wieder die gespeicherte Einheit. */
+export function masseinheitVorschauBeenden() {
+  if (vorschau === null) return;
+  const vorher = masseinheit();
+  vorschau = null;
+  if (masseinheit() !== vorher) benachrichtigen();
+}
+
+/** Speichert die Einheit und beendet eine Vorschau. */
 export function masseinheitSetzen(einheit: Masseinheit) {
-  if (einheit === masseinheit()) return;
+  const vorher = masseinheit();
+  vorschau = null;
+  if (einheit === gespeicherteMasseinheit()) {
+    if (einheit !== vorher) benachrichtigen();
+    return;
+  }
   aktuell = einheit;
   if (benutzer !== null) {
     try {
@@ -131,9 +165,10 @@ function abonnieren(hoerer_: () => void): () => void {
   };
 }
 
-/** Nur für Tests: vergisst Benutzer und gelesenen Wert (ohne Benachrichtigung). */
+/** Nur für Tests: vergisst Benutzer, Vorschau und gelesenen Wert (ohne Benachrichtigung). */
 export function masseinheitZuruecksetzen() {
   aktuell = null;
+  vorschau = null;
   benutzer = null;
 }
 

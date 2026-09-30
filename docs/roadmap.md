@@ -1,6 +1,6 @@
 # Roadmap
 
-Stand: 2026-09-29 (nach Task 0020 — Phase 4c.1: Tailwind-Migration und Theme-Grundlage)
+Stand: 2026-09-30 (nach Task 0021 — Phase 4c.2: persönliche Darstellung, abgeschlossen)
 Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 
 ---
@@ -25,7 +25,7 @@ Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 | 4b.1 | Bedienungsnacharbeit 1 (Listen, Kundenfilter, Maßeinheit, Rückfragen) | **DONE** (Checkpoint 4b/4b.1/4b.2 committet) | 4b |
 | 4b.2 | Bedienungsnacharbeit 2 (Tür per Maus, gemeinsame Öffnungen, Teilwände) | **DONE** (Checkpoint 4b/4b.1/4b.2 committet) | 4b.1 |
 | 4c.1 | Frontend auf Tailwind CSS, semantische Theme-Tokens | **DONE** (mit diesem Checkpoint committet) | 4b.2 |
-| 4c.2 | Persönliche Farb- und Darstellungseinstellungen | NOT STARTED | 4c.1 |
+| 4c.2 | Persönliche Darstellung, Laufzeitthemes, responsive Nachkorrektur | **DONE** (mit diesem Checkpoint committet) | 4c.1 |
 | 5 | Electrical Devices | NOT STARTED | 4a |
 | 6 | Circuits & Cable Routes | NOT STARTED | 5 |
 | 7 | Materials | NOT STARTED | 6 |
@@ -337,11 +337,22 @@ API-Änderung.
 Die abschließende Sichtprüfung hat der Auftraggeber
 vorgenommen; die automatisierte Sichtprüfung war nur teilweise möglich.
 
-## Phase 4c.2 — Persönliche Farb- und Darstellungseinstellungen · NOT STARTED
+## Phase 4c.2 — Persönliche Darstellung, Laufzeitthemes, responsive Nachkorrektur · DONE (2026-09-30, mit diesem Checkpoint committet)
 
-Benutzer stellen Farben und Darstellungsoptionen persönlich ein; die Tokens aus 4c.1 werden
-zur Laufzeit überschrieben. Die 3D-Szene wird an die Tokens angebunden. Umfang,
-Speicherort der Präferenz und Kontrastregeln werden vor Beginn festgelegt.
+Darstellungsmodus (System/Hell/Dunkel), fünf kuratierte Akzentfarbschemata und die
+Maßeinheit im Einstellungsdialog mit Live-Vorschau, Übernehmen, Abbrechen und Zurücksetzen;
+lokal je Benutzer gespeichert, zwischen Tabs synchronisiert. 2D und 3D folgen dem Theme,
+Warnfarbe und Kontrollrahmen erfüllen die Kontrastvorgaben, Kopfzeile und Tabellen
+verbreitern schmale Seiten nicht mehr. Entscheidungen: ADR 0018 (präzisiert) und
+[ADR 0019](decisions/0019-personal-display-preferences-local-storage.md). Ergebnis:
+[`docs/task-history.md`](task-history.md), Task 0021. Kein Backend, keine API, keine
+Migration.
+
+**Stand:** umgesetzt; 653 Frontendtests, TypeScript, ESLint, Modulgrenzen, API-Drift und
+Build grün. **Abnahme:** Die Funktionen hat der Auftraggeber manuell geprüft und
+freigegeben. Die Dokumentbreiten bei 320/360/420 px wurden nicht automatisiert gemessen;
+eine automatisierte Browserabnahme mit Bildschirmfotos fand nicht statt (Browserbereich
+nicht erreichbar).
 
 ---
 

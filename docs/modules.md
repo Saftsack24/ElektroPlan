@@ -362,14 +362,14 @@ Sie sind Core, fachneutral und dürfen von jedem Modul importiert werden:
 | `Feld`, `Auswahl`, `Schalter` | beschriftete Formularfelder mit Fehler und Hinweis |
 | `Dialog`, `DialogAktionen` | natives `<dialog>`; genau ein Scrollbereich (`data-dialog-scrollbereich`), fester Kopf, angeheftete Aktionsleiste `<DialogAktionen>` (`anordnung="zeile"` oder `"formular"`, `data-dialog-aktionen`), referenzgezählte Seiten-Sperre (`scrollsperre.ts`) |
 | `stil.ts` (Klassenrezepte) | Tailwind-Rezepte für wiederkehrende Muster (ADR 0018): `knopf()`, `eingabefeld()`, `meldungsflaeche()`, `karte()`, `reiter()`, `TABELLE`, `FELD*`, `FORMULARRASTER*`, `FELDZEILE` (Felder nebeneinander, oben bündig), `KENNWERTE` … |
-| `core/theme/` | fachneutrale Laufzeit-Tokens `--ep-*` und ihre Tailwind-Namen (`tokens.css`), minimale Grundregeln (`basis.css`) |
+| `core/theme/` | fachneutrale Laufzeit-Tokens `--ep-*` und ihre Tailwind-Namen (`tokens.css`), Akzentfarbschemata (`akzente.css`), minimale Grundregeln (`basis.css`), persönliche Darstellung (`darstellung.ts`: `useDarstellung`, `darstellungAbonnieren`, Wurzelattribute `data-theme`/`data-accent`) |
 | `Combobox` | Suchfeld mit schwebender, `position: fixed` verankerter Vorschlagsliste (WAI-ARIA Combobox/Listbox); sucht nicht selbst |
 | `Seitennavigation`, `seitenfolge` | nummerierte Seiten mit erster/letzter, voriger/nächster Seite und Ellipsen |
 | `useNummerierteListe` | Liste mit echten Serverseiten (ADR 0017); Filterwechsel → Seite 1, ungültige Seite → letzte gültige |
 | `RueckfrageProvider`, `useRueckfrage`, `useVerlassenBestaetigen` | eigene Rückfrage statt `window.confirm`; eine Frage zur Zeit, Antwort genau einmal |
 | `Navigationsschutz`, `useUngespeicherteAenderungen` | Router-Blocker und Meldestelle für ungespeicherte Änderungen; `beforeunload` bleibt browsernativ |
 | `core/masse.ts`, `masseinheit.ts` (`useMasse`) | persönliche Anzeigeeinheit für Längen (cm/mm); einzige Stelle der Umrechnung, gespeichert wird in Millimetern |
-| `EinstellungenDialog` | persönliche Anzeigeeinstellungen (Maßeinheit), lokal im Browser |
+| `EinstellungenDialog` | persönliche Einstellungen: Darstellung, Akzentfarbe, Maßeinheit – sofort als Vorschau, gespeichert mit „Übernehmen", lokal je Benutzer (ADR 0019) |
 
 Die Cursor-Bausteine `useCursorListe`, `WeitereLaden` und `eintraegeAus` sind mit der
 Umstellung von Kunden- und Projektliste entfallen; die Benutzerverwaltung blättert
@@ -400,6 +400,11 @@ Die Gestaltung folgt denselben Grenzen wie der Code ([ADR 0018](decisions/0018-f
   (`Record<Art, string>`), nie über zusammengesetzte Namen.
 * Die Frontend-Grenzprüfung (`npm run check:boundaries`) gilt unverändert; CSS-Importe
   eines Moduls sind modulinterne relative Importe.
+* **Theme-Schnittstelle (Phase 4c.2):** Ein Fachmodul fragt nie selbst nach Hell/Dunkel.
+  Es definiert fachliche Tokens hell auf `:root` und dunkel auf `:root[data-theme="dark"]`
+  (Electrical: `modules/electrical/darstellung.css`) und nutzt für Auswahl/Fokus die
+  Core-Tokens. Nicht-CSS-Darstellungen (Three.js) lesen berechnete Token-Werte und
+  beobachten Wechsel über `darstellungAbonnieren` aus `core/theme/darstellung.ts`.
 
 ### Projekt-Tabs und die Grenze zur Composition Root
 

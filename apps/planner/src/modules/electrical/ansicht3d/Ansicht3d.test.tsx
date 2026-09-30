@@ -4,6 +4,7 @@ import { Profiler, StrictMode } from "react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { darstellungAbonnieren, darstellungBenutzerSetzen, darstellungSpeichern, darstellungVorschauen } from "../../../core/theme/darstellung";
 import { masseinheitSetzen } from "../../../core/ui/masseinheit";
 import type { Auswahl, Geschossplan, Szenenmodell } from "./modell";
 import { Grundrissszene } from "./szene";
@@ -177,6 +178,40 @@ describe("Lebenszyklus", () => {
       for (let i = 0; i < 40; i += 1) t.bild();
     });
     expect(t.renderer.render.mock.calls.length).toBeGreaterThan(30);
+    expect(commits.mock.calls.length).toBe(vorher);
+  });
+  it("Theme-Wechsel bei geöffneter Ansicht: dieselbe Szene, ein Canvas, kein React-Render", async () => {
+    const umgebungen: ReturnType<typeof testumgebung>[] = [];
+    const echte = (b: HTMLElement, r: Rueckmeldung) => {
+      const t = testumgebung();
+      // Die echte Core-Schnittstelle meldet den Wechsel - wie im Browser.
+      t.umgebung.farbwechselBeobachten = darstellungAbonnieren;
+      umgebungen.push(t);
+      return new Grundrissszene(b, t.umgebung, r);
+    };
+    const commits = vi.fn();
+    darstellungBenutzerSetzen("11111111-1111-4111-8111-111111111111");
+    zeigen({ szeneErzeugen: echte }, (kind) => (
+      <Profiler id="3d" onRender={commits}>
+        {kind}
+      </Profiler>
+    ));
+    await geladen();
+    const t = umgebungen[0]!;
+    act(() => t.bild());
+    const farben = vi.spyOn(t.umgebung, "farben");
+    const vorher = commits.mock.calls.length;
+    act(() => {
+      darstellungVorschauen({ modus: "dark", akzent: "teal" });
+      darstellungSpeichern({ modus: "light", akzent: "orange" });
+      darstellungSpeichern({ modus: "dark", akzent: "green" });
+    });
+    // Jeder Wechsel liest die Farben neu; gezeichnet wird höchstens ein Bild.
+    expect(farben).toHaveBeenCalledTimes(3);
+    expect(t.offeneBilder).toBe(1);
+    expect(umgebungen).toHaveLength(1);
+    expect(t.rendererErzeugen).toHaveBeenCalledTimes(1);
+    expect(document.querySelectorAll("canvas")).toHaveLength(1);
     expect(commits.mock.calls.length).toBe(vorher);
   });
 });
