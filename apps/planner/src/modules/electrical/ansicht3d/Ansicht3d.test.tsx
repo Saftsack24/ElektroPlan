@@ -4,7 +4,7 @@ import { Profiler, StrictMode } from "react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { darstellungAbonnieren, darstellungBenutzerSetzen, darstellungSpeichern, darstellungVorschauen } from "../../../core/theme/darstellung";
+import { darstellungAbonnieren, darstellungSetzen, darstellungVorschauen } from "../../../core/theme/darstellung";
 import { masseinheitSetzen } from "../../../core/ui/masseinheit";
 import type { Auswahl, Geschossplan, Szenenmodell } from "./modell";
 import { Grundrissszene } from "./szene";
@@ -190,7 +190,6 @@ describe("Lebenszyklus", () => {
       return new Grundrissszene(b, t.umgebung, r);
     };
     const commits = vi.fn();
-    darstellungBenutzerSetzen("11111111-1111-4111-8111-111111111111");
     zeigen({ szeneErzeugen: echte }, (kind) => (
       <Profiler id="3d" onRender={commits}>
         {kind}
@@ -203,8 +202,8 @@ describe("Lebenszyklus", () => {
     const vorher = commits.mock.calls.length;
     act(() => {
       darstellungVorschauen({ modus: "dark", akzent: "teal" });
-      darstellungSpeichern({ modus: "light", akzent: "orange" });
-      darstellungSpeichern({ modus: "dark", akzent: "green" });
+      darstellungSetzen({ modus: "light", akzent: "orange" });
+      darstellungSetzen({ modus: "dark", akzent: "green" });
     });
     // Jeder Wechsel liest die Farben neu; gezeichnet wird höchstens ein Bild.
     expect(farben).toHaveBeenCalledTimes(3);

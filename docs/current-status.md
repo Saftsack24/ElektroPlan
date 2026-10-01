@@ -1,7 +1,7 @@
 # Aktueller Projektstand
 
-**Letzte Aktualisierung:** 2026-09-30
-**Aktualisiert nach:** Task 0022 — Phase 4d (Datenlebenszyklus, Löschregeln, Bearbeitungsmetadaten, Aktions-UX)
+**Letzte Aktualisierung:** 2026-10-01
+**Aktualisiert nach:** Task 0023 — Phase 4e (Benutzerlebenszyklus, serverseitige Einstellungen) – abgeschlossen, mit diesem Checkpoint committet
 
 > Dieses Dokument soll einer neuen Session in wenigen Minuten vermitteln, wo das Projekt
 > steht.
@@ -41,6 +41,10 @@ committet
 **Phase 4d — Datenlebenszyklus, Löschregeln, Bearbeitungsmetadaten, Aktions-UX: ABGESCHLOSSEN**
 (automatisiert, per API und im Browser geprüft, vom Auftraggeber geprüft) — mit diesem
 Checkpoint committet
+**Phase 4e — Benutzerlebenszyklus und serverseitige Einstellungen: ABGESCHLOSSEN**
+(automatisiert, per API und im Browser geprüft, vom Auftraggeber geprüft) — mit diesem
+Checkpoint committet
+**Phase 4f — Wand- und Deckenansicht: NICHT BEGONNEN**
 **Phase 5 — Electrical Devices: NICHT BEGONNEN**
 
 > Phase 4a und 4a.1 sind als `887f254`, Phase 4.2 als `66cbff3` committet. Die
@@ -51,6 +55,47 @@ Checkpoint committet
 ---
 
 ## 2. Zuletzt abgeschlossene Aufgabe
+
+**Task 0023 — Phase 4e: Benutzerlebenszyklus und serverseitige Einstellungen**
+([ADR 0021](decisions/0021-user-lifecycle-account-locks-password-reset-preferences.md),
+Migration `0007`) — **ABGESCHLOSSEN**, mit diesem Checkpoint committet
+
+1. **Kontohoheit (mit dem Auftraggeber entschieden):** Name, E-Mail, Passwortreset und die
+   Bereinigung beim Entfernen nur für Konten, die keinem anderen Betrieb angehören
+   (`409 account-shared`); Sperren/Entfernen der Mitgliedschaft immer möglich. ADR 0015
+   präzisiert, nicht aufgehoben.
+2. **Zustände** an der Mitgliedschaft: `active ↔ disabled → removed` (endgültig), optionaler
+   Sperrgrund. „Einladung“ bleibt eigener Datensatz.
+3. **Sitzungsversion** in Access und Refresh Token; Sperren, Entsperren, Entfernen, E-Mail,
+   Passwort zählen hoch. Behebt: Ein vor der Sperre ausgestelltes Access Token wurde nach dem
+   Entsperren wieder gültig.
+4. **Passwortreset:** Einmal-Link (nur Hash, 60 min, einmalig, neuer ersetzt alten,
+   begrenzt), Ausgabe genau einmal an den Administrator (`admin_link`, in Produktion
+   verboten), öffentliche Seite `/passwort-zuruecksetzen`; atomare Einlösung. **Eine Sperre
+   entwertet alle zuvor ausgestellten Links** (Nachkorrektur); ein danach bewusst neu
+   erzeugter Link wirkt, die Sperre bleibt bis zum Entsperren.
+   **Neutrale Anmeldeablehnung** (Nachkorrektur): gesperrt, entfernt, ohne aktive
+   Mitgliedschaft, deaktiviert, fremder Betrieb gewählt – dieselbe `401` wie ein
+   falsches Passwort, und jeder Versuch zählt für die Begrenzung.
+5. **Entfernen:** Tombstone (`removed-<id>@removed.invalid`, „Entfernter Benutzer“),
+   Rollen/Einstellungen/Links gelöscht, Bearbeiterangaben `kind=removed`, Adresse wieder
+   einladbar.
+6. **Einstellungen serverseitig** (`/me/preferences`, je Mitgliedschaft, versioniert), Cache
+   je Mitgliedschaft, einmalige Übernahme der alten lokalen Werte; **Maßeinheit `m`**.
+7. **Letzter Administrator:** gemeinsame Sperrwurzel und Reihenfolge `Organisation →
+   Mitgliedschaft → Konto → Reset-Link` (`members/guard.py`), `FOR NO KEY UPDATE`. Dabei
+   gefunden und behoben: **Deadlock** Erneuerung ↔ Sperren (latent seit 4.2).
+8. **Oberfläche:** Ansichten Aktiv/Gesperrt/Einladungen/Entfernt, Dialoge für Bearbeiten,
+   Sperren, Entsperren, Reset (Link einmalig, Kopieren mit Rückfallweg), Entfernen mit
+   E-Mail-Bestätigung; gesperrte Aktionen mit Erklärung.
+9. **Tests:** 875 Backend (vorher 792, 0 übersprungen), 744 Frontend (vorher 681); 12
+   Nebenläufigkeitsfälle gegen PostgreSQL, „Reset gegen Sperren“ in vier Varianten.
+
+**Abnahme:** Compose frisch (Migration leer → `0007`, zweimal; Seed 27/0) und Upgrade des
+Entwicklungsbestands `0006 → 0007`; Browserabnahme 23 Punkte im Claude-Browserbereich
+(Details: `docs/task-history.md`, Task 0023). Zweiter Browserkontext emuliert (Speicher
+geleert), Zwischenablage im verdeckten Bereich nicht erlaubt (Rückfallweg geprüft),
+Browserzoom nicht geprüft.
 
 **Task 0022 — Phase 4d: Datenlebenszyklus**
 ([ADR 0020](decisions/0020-data-lifecycle-deletion-and-reopen.md), Migration `0006`)
@@ -849,7 +894,12 @@ was offen ist, ist eine Schuld.
 | 3D: WebGL-Fallback und Kontextverlust nur automatisiert geprüft | im verwendeten Browser nicht auslösbar | bei einem Browser ohne WebGL nachprüfen |
 | 3D: Chunk der 3D-Ansicht ≈ 588 kB (≈ 152 kB gzip) | lazy geladen, Haupt-Bundle unberührt; `chunkSizeWarningLimit` auf 650 kB gesetzt | bei Bedarf Three.js-Teilimporte prüfen |
 | Vite im Planner-Container bemerkt Dateiänderungen unter Windows nicht | nach Frontend-Änderungen `docker restart elektroplan-planner` | Polling (`server.watch.usePolling`) prüfen |
-| Anmeldung mit ausschließlich gesperrter Mitgliedschaft antwortet `404` „Keine aktive Mitgliedschaft in diesem Betrieb“ | Bestand seit Phase 1; verrät nach richtigem Passwort, dass das Konto existiert. Kein Sicherheitsverlust gegenüber vorher | bei der Überarbeitung der Anmeldung (Phase 4.2 hat den Refresh, nicht den Login angepasst) |
+| Kein E-Mail-Versand für Reset-Links (4e) | Der Administrator übergibt den Einmal-Link selbst und könnte ihn missbrauchen; nur außerhalb der Produktion zulässig, im Audit sichtbar | mit dem E-Mail-Versand vor Produktivbetrieb |
+| Abgelaufene Reset-Links werden nicht aufgeräumt (4e) | Zeilen ohne Personendaten bleiben bis zum nächsten Link oder zur Entfernung stehen | mit dem ersten Betriebs-Scheduler (z. B. in `purge-invitations`) |
+| `account-shared`/`email-unavailable` verraten einem Administrator, dass ein Konto anderswo existiert bzw. eine Adresse vergeben ist (4e) | Restrisiko, nur mit Administratorrechten | bei einer Überarbeitung der Kontohoheit |
+| Konto in mehreren Betrieben hat je Betrieb eigene Einstellungen (4e) | bewusste Folge der Mandantenbindung | bei Bedarf |
+| Alte Anmelde-Audit-Einträge enthalten noch die E-Mail (`Anmeldung <email>`) (vor 4e) | Audit ist unveränderlich; seit 4e nur „Anmeldung“ | mit dem Aufbewahrungskonzept fürs Audit |
+| Letzter-Administrator-Schutz gegenüber einem **anderen** Handelnden nur automatisiert und per API geprüft (4e) | mit festen Systemrollen hat nur ein Administrator die Rechte – im Browser ist nur der Selbstschutz erreichbar | – |
 | `purge-invitations` ist ein Werkzeug, kein geplanter Job | Abgeschlossene Einladungen bleiben bis zum manuellen Lauf gespeichert | mit dem ersten Betriebs-Scheduler |
 | Benutzerliste sortiert mit Datenbank-Collation `C` | Namen mit Umlaut am Anfang stehen hinter „Z“ | bei Bedarf ICU-Collation |
 | Rechtebeschreibung der Elektroplanung in ASCII („Raeume, Waende") | kosmetisch, Teil der bekannten ASCII-Schuld | mit der Entscheidung zur Schreibweise der Servermeldungen |
@@ -932,6 +982,11 @@ HSTS, Virenscan, MFA für administrative Konten.
 ---
 
 ## 9. Nächste geplante Aufgabe
+
+**Nach Phase 4e (Stand 2026-10-01):** Phase 4e ist abgeschlossen und mit diesem Checkpoint
+committet (nicht gepusht). Nach dem
+Aktualisieren anderer Umgebungen: Migration `0007`, dann **zwingend** Seed. Phase 4f und
+Phase 5 sind **nicht begonnen**.
 
 **Nach Phase 4d (Stand 2026-10-01):** Phase 4d ist abgeschlossen und mit diesem Checkpoint
 committet (nicht gepusht). Nach dem Aktualisieren anderer Umgebungen: Migration `0006`,

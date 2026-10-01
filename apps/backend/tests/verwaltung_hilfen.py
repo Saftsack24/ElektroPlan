@@ -116,6 +116,8 @@ def rollen_fuer_tests_anlegen(engine: Engine, organization_id: uuid.UUID) -> Non
             (
                 "user.account.read",
                 "user.account.write",
+                # Seit Phase 4e ein eigenes Recht fuer Sperren und Entsperren.
+                "user.account.lock",
                 "role.assignment.read",
                 "role.assignment.write",
             ),

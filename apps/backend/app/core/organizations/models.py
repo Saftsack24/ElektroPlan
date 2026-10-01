@@ -7,7 +7,18 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, String, UniqueConstraint, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -26,9 +37,27 @@ MEMBER_STATUS_ACTIVE = "active"
 #: keine Mitgliedschaft, sondern ein eigener Datensatz
 #: (``organization_invitations``, ADR 0015).
 MEMBER_STATUS_INVITED = "invited"
-#: Zugang zu **diesem** Betrieb gesperrt. Das globale Konto bleibt unberuehrt.
+#: Zugang zu **diesem** Betrieb gesperrt ("gesperrt"). Das globale Konto bleibt
+#: unberuehrt; Rollen, Praeferenzen und Bearbeiterreferenzen bleiben bestehen.
 MEMBER_STATUS_DISABLED = "disabled"
-MEMBER_STATUSES = (MEMBER_STATUS_ACTIVE, MEMBER_STATUS_INVITED, MEMBER_STATUS_DISABLED)
+#: Endgueltig entfernt (Phase 4e, ADR 0021). Ein Tombstone, kein Soft Delete:
+#: Rollen, Praeferenzen, Sitzungen und Reset-Links sind geloescht bzw.
+#: widerrufen; gehoert das Konto keinem anderen Betrieb, sind auch Name und
+#: E-Mail des Kontos durch neutrale Platzhalter ersetzt. Es gibt keinen Weg
+#: zurueck - die Person kann nur neu eingeladen werden.
+MEMBER_STATUS_REMOVED = "removed"
+MEMBER_STATUSES = (
+    MEMBER_STATUS_ACTIVE,
+    MEMBER_STATUS_INVITED,
+    MEMBER_STATUS_DISABLED,
+    MEMBER_STATUS_REMOVED,
+)
+#: Hoechstens eine **nicht entfernte** Mitgliedschaft je Betrieb und Konto.
+#: Eine entfernte bleibt als Tombstone stehen; eine erneute Einladung derselben
+#: Person legt daneben eine neue Mitgliedschaft an (ADR 0021).
+CURRENT_MEMBERSHIP_INDEX = "uq_organization_members_current_user"
+#: Laenge eines optionalen Sperrgrunds - bewusst kurz (Datenminimierung).
+LOCK_REASON_MAX_LENGTH = 200
 
 
 class Organization(UUIDPrimaryKey, Timestamped, SoftDeletable, Base):
@@ -62,12 +91,38 @@ class OrganizationMember(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, B
     ``last_login_at`` gehoert bewusst nicht dazu und wird ohne
     Versionszaehlung geschrieben - sonst machte jede Anmeldung die geoeffnete
     Verwaltungsansicht eines Administrators ungueltig.
+
+    **Kontostatus (Phase 4e, ADR 0021).** ``status`` ist die einzige
+    Zustandsmaschine des Benutzerlebenszyklus in einem Betrieb:
+    ``active <-> disabled`` (sperren/entsperren), ``active|disabled -> removed``
+    (endgueltig). "Einladung ausstehend" ist keine Mitgliedschaft, sondern ein
+    Datensatz in ``member_invitations``.
+
+    **Sitzungsversion.** ``session_version`` steht in jedem Access Token und in
+    jedem Refresh Token dieser Mitgliedschaft. Jede sicherheitsrelevante
+    Aenderung (Sperren, Entsperren, Entfernen, neue E-Mail, neues Passwort)
+    zaehlt sie hoch - danach ist **jedes** zuvor ausgestellte Token wertlos,
+    auch eines, das eine gleichzeitige Erneuerung noch mit dem alten Stand
+    ausgestellt hat. Keine prozesslokale Sperrliste.
     """
 
     __tablename__ = "organization_members"
     __table_args__ = (
         tenant_identity(),
-        UniqueConstraint("organization_id", "user_id"),
+        Index(
+            CURRENT_MEMBERSHIP_INDEX,
+            "organization_id",
+            "user_id",
+            unique=True,
+            postgresql_where=text("status <> 'removed'"),
+        ),
+        CheckConstraint(
+            "status IN ('active', 'invited', 'disabled', 'removed')", name="status_known"
+        ),
+        CheckConstraint(
+            "lock_reason IS NULL OR status = 'disabled'", name="lock_reason_only_when_disabled"
+        ),
+        CheckConstraint("session_version >= 1", name="session_version_positive"),
     )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -79,10 +134,22 @@ class OrganizationMember(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, B
     last_login_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None
     )
+    #: Optionaler, kurzer Sperrgrund - nur solange gesperrt. Keine sensiblen
+    #: Angaben; die Oberflaeche weist darauf hin.
+    lock_reason: Mapped[str | None] = mapped_column(
+        String(LOCK_REASON_MAX_LENGTH), nullable=True, default=None
+    )
+    session_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default=text("1")
+    )
 
     @property
     def is_active(self) -> bool:
         return self.status == MEMBER_STATUS_ACTIVE
+
+    @property
+    def is_removed(self) -> bool:
+        return self.status == MEMBER_STATUS_REMOVED
 
 
 class OrganizationModule(Timestamped, Base):

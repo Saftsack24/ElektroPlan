@@ -675,7 +675,9 @@ export interface paths {
          * Benutzer des Betriebs
          * @description Mitgliedschaften und offene Einladungen, nach Name sortiert, seitenweise.
          *
-         *     ``status=invited`` zeigt nur offene (auch abgelaufene) Einladungen.
+         *     Ohne ``status``: aktive und gesperrte Mitglieder sowie offene Einladungen.
+         *     ``status=invited`` zeigt nur offene (auch abgelaufene) Einladungen,
+         *     ``status=removed`` nur entfernte Konten - neutral, ohne Name und E-Mail.
          */
         get: operations["listMembers"];
         put?: never;
@@ -703,7 +705,17 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Name und E-Mail-Adresse eines Mitglieds aendern
+         * @description Aendert Name und/oder E-Mail-Adresse des Kontos.
+         *
+         *     Nur fuer Konten, die keinem anderen Betrieb angehoeren (``409
+         *     account-shared``). Eine neue E-Mail-Adresse beendet jede Sitzung der
+         *     Person; anmelden kann sie sich danach nur noch mit der neuen Adresse.
+         *     Ist die Adresse bereits einem Konto oder einer offenen Einladung dieses
+         *     Betriebs zugeordnet: ``409 email-unavailable``.
+         */
+        patch: operations["updateMemberProfile"];
         trace?: never;
     };
     "/api/v1/members/{member_id}/suspend": {
@@ -720,7 +732,10 @@ export interface paths {
          * @description Sperrt den Zugang des Mitglieds zu **diesem** Betrieb.
          *
          *     Das globale Konto und Mitgliedschaften in anderen Betrieben bleiben
-         *     unberuehrt. Offene Sitzungen in diesem Betrieb enden sofort.
+         *     unberuehrt. Jede Sitzung in diesem Betrieb endet sofort: Refresh Tokens
+         *     werden widerrufen, und bereits ausgestellte Access Tokens scheitern ab
+         *     dem Commit an der Sitzungsversion. Der Koerper ist Pflicht (``{}`` genuegt);
+         *     ein Sperrgrund darin ist optional und kurz.
          */
         post: operations["suspendMember"];
         delete?: never;
@@ -741,8 +756,65 @@ export interface paths {
         /**
          * Zugang zu diesem Betrieb wieder freigeben
          * @description Gibt den Zugang zu diesem Betrieb wieder frei.
+         *
+         *     Alte Sitzungen bleiben ungueltig; die Person meldet sich neu an. Ein
+         *     entferntes Konto laesst sich nicht reaktivieren (``409 member-removed``).
          */
         post: operations["reactivateMember"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/members/{member_id}/password-reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Einmal-Link zum Zuruecksetzen des Passworts erzeugen
+         * @description Erzeugt einen Einmal-Link; ein bisher offener Link wird ungueltig.
+         *
+         *     Kein ``If-Match``: Der Vorgang aendert die Mitgliedschaft nicht, er legt
+         *     nur einen neuen Link an. Der Link steht **nur in dieser Antwort**
+         *     (``ELEKTROPLAN_PASSWORD_RESET_DELIVERY=admin_link``); er wird nicht
+         *     gespeichert, nicht protokolliert und ist spaeter nicht abrufbar. Das
+         *     Passwort setzt ausschliesslich die Person selbst.
+         */
+        post: operations["issueMemberPasswordReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/members/{member_id}/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mitglied endgueltig entfernen
+         * @description Entfernt ein Mitglied endgueltig - ein Tombstone, keine Wiederherstellung.
+         *
+         *     Bestaetigt wird mit der aktuellen E-Mail-Adresse des Kontos
+         *     (``confirm_email``). Rollen, Einstellungen, Reset-Links und Sitzungen
+         *     enden; Bearbeiterangaben zeigen danach "Entfernter Benutzer". Gehoert das
+         *     Konto keinem anderen Betrieb an, werden Name und E-Mail durch neutrale
+         *     Platzhalter ersetzt, und die Adresse ist fuer eine neue Einladung frei.
+         *     Eine **offene Einladung** wird nicht hier, sondern ueber ihren Widerruf
+         *     entfernt.
+         */
+        post: operations["removeMember"];
         delete?: never;
         options?: never;
         head?: never;
@@ -959,6 +1031,83 @@ export interface paths {
          *     nicht veraendert.
          */
         post: operations["acceptInvitationWithExistingAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/password-reset/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset-Link pruefen
+         * @description Prueft den Link, ohne etwas zu aendern. Verraet nur die Ablaufzeit.
+         */
+        post: operations["previewPasswordReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/password-reset/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Neues Passwort mit dem Einmal-Link setzen
+         * @description Setzt das Passwort, verbraucht den Link und beendet alle Sitzungen - atomar.
+         *
+         *     Es gelten die Passwortregeln der Anmeldung. Ein zu schwaches Passwort
+         *     verbraucht den Link nicht.
+         */
+        post: operations["completePasswordReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Eigene Einstellungen
+         * @description Der gespeicherte Stand - oder die Standardwerte mit ``stored=false``.
+         *
+         *     Bewusst ``200`` statt ``404``: "noch nichts gespeichert" ist der
+         *     regulaere Zustand nach der ersten Anmeldung, kein Fehler.
+         */
+        get: operations["getMyPreferences"];
+        /**
+         * Eigene Einstellungen aendern
+         * @description Ersetzt den Serverstand als Ganzes - nur mit der aktuellen Version.
+         */
+        put: operations["replaceMyPreferences"];
+        /**
+         * Eigene Einstellungen erstmalig speichern
+         * @description Legt den Serverstand an - nur, solange es noch keinen gibt.
+         *
+         *     Fuer die einmalige Uebernahme eines alten lokalen Stands und fuer das
+         *     erste Speichern. Existiert bereits einer, gewinnt er (``409``).
+         */
+        post: operations["createMyPreferences"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1533,7 +1682,8 @@ export interface components {
          * @description Eintrag der Benutzerliste: Mitgliedschaft **oder** offene Einladung.
          *
          *     ``kind`` unterscheidet beides. ``id`` ist je nach Art die ID der
-         *     Mitgliedschaft oder der Einladung.
+         *     Mitgliedschaft oder der Einladung. Ein entferntes Konto (``removed``)
+         *     erscheint nur mit ``status=removed`` und **ohne** Name und E-Mail.
          */
         DirectoryEntryOut: {
             /**
@@ -1549,12 +1699,12 @@ export interface components {
             /** Full Name */
             full_name: string | null;
             /** Email */
-            email: string;
+            email: string | null;
             /**
              * Status
              * @enum {string}
              */
-            status: "active" | "disabled" | "invited";
+            status: "active" | "disabled" | "invited" | "removed";
             /** Roles */
             roles: components["schemas"]["RoleRef"][];
             /** Last Login At */
@@ -1563,6 +1713,16 @@ export interface components {
             invitation_expires_at: string | null;
             /** Invitation Expired */
             invitation_expired: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
             /** Version */
             version: number;
         };
@@ -1876,8 +2036,9 @@ export interface components {
          * MemberOut
          * @description Eine Mitgliedschaft im aktuellen Betrieb.
          *
-         *     Enthaelt vom globalen Konto nur Name und E-Mail - beide sind hier nicht
-         *     aenderbar (ADR 0015).
+         *     Enthaelt vom globalen Konto nur Name und E-Mail. Aenderbar sind sie nur,
+         *     wenn das Konto keinem anderen Betrieb angehoert (``account_shared``,
+         *     ADR 0021). Bei einem entfernten Konto sind beide ``None``.
          */
         MemberOut: {
             /**
@@ -1886,25 +2047,36 @@ export interface components {
              */
             id: string;
             /** Full Name */
-            full_name: string;
+            full_name: string | null;
             /** Email */
-            email: string;
+            email: string | null;
             /**
              * Status
              * @enum {string}
              */
-            status: "active" | "disabled";
+            status: "active" | "disabled" | "removed";
+            /** Lock Reason */
+            lock_reason: string | null;
             /** Roles */
             roles: components["schemas"]["RoleRef"][];
             /** Is Administrator */
             is_administrator: boolean;
             /** Is Self */
             is_self: boolean;
+            /** Is Last Active Administrator */
+            is_last_active_administrator: boolean;
+            /** Account Shared */
+            account_shared: boolean;
             /**
              * Joined At
              * Format: date-time
              */
             joined_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
             /** Last Login At */
             last_login_at: string | null;
             /** Version */
@@ -1925,12 +2097,38 @@ export interface components {
             permissions: components["schemas"]["EffectivePermissionOut"][];
         };
         /**
+         * MemberProfileUpdate
+         * @description Name und/oder E-Mail-Adresse. Mindestens ein Feld.
+         */
+        MemberProfileUpdate: {
+            /** Full Name */
+            full_name?: string | null;
+            /** Email */
+            email?: string | null;
+        };
+        /**
+         * MemberRemove
+         * @description Bestaetigung: die aktuelle E-Mail-Adresse des Kontos.
+         */
+        MemberRemove: {
+            /** Confirm Email */
+            confirm_email: string;
+        };
+        /**
          * MemberRolesUpdate
          * @description Vollstaendige Liste der Systemrollen - ersetzt die bisherigen als Ganzes.
          */
         MemberRolesUpdate: {
             /** Role Keys */
             role_keys: string[];
+        };
+        /**
+         * MemberSuspend
+         * @description Optionaler, kurzer Sperrgrund - ohne sensible Angaben.
+         */
+        MemberSuspend: {
+            /** Reason */
+            reason?: string | null;
         };
         /**
          * ModuleInfo
@@ -2119,6 +2317,55 @@ export interface components {
              */
             has_more: boolean;
         };
+        /** PasswordResetComplete */
+        PasswordResetComplete: {
+            /** Token */
+            token: string;
+            /** Password */
+            password: string;
+        };
+        /**
+         * PasswordResetIssued
+         * @description Ergebnis eines vom Administrator ausgeloesten Resets.
+         *
+         *     ``reset_url`` steht **nur in dieser Antwort** - er wird nicht gespeichert
+         *     und ist spaeter nicht erneut abrufbar. Ein neuer Link macht ihn ungueltig.
+         */
+        PasswordResetIssued: {
+            /**
+             * Member Id
+             * Format: uuid
+             */
+            member_id: string;
+            /**
+             * Delivery
+             * @constant
+             */
+            delivery: "admin_link";
+            /** Reset Url */
+            reset_url: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
+        /**
+         * PasswordResetPreview
+         * @description Was der Inhaber eines gueltigen Links erfaehrt: nur die Ablaufzeit.
+         */
+        PasswordResetPreview: {
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
+        /** PasswordResetTokenIn */
+        PasswordResetTokenIn: {
+            /** Token */
+            token: string;
+        };
         /** PermissionInfo */
         PermissionInfo: {
             /** Key */
@@ -2127,6 +2374,60 @@ export interface components {
             description: string;
             /** Area */
             area: string;
+        };
+        /**
+         * PreferencesIn
+         * @description Vollstaendiger Stand - ersetzt den gespeicherten als Ganzes.
+         *
+         *     Unbekannte Werte und zusaetzliche Felder werden abgelehnt (``422``).
+         */
+        PreferencesIn: {
+            /**
+             * Theme Mode
+             * @enum {string}
+             */
+            theme_mode: "system" | "light" | "dark";
+            /**
+             * Accent
+             * @enum {string}
+             */
+            accent: "blue" | "teal" | "green" | "violet" | "orange";
+            /**
+             * Length Unit
+             * @enum {string}
+             */
+            length_unit: "mm" | "cm" | "m";
+        };
+        /**
+         * PreferencesOut
+         * @description Eigene Einstellungen im aktuellen Betrieb.
+         *
+         *     ``stored`` sagt, ob es bereits einen Serverstand gibt. Ohne ihn stehen hier
+         *     die dokumentierten Standardwerte (``system``, ``blue``, ``cm``) und
+         *     ``version`` ist ``0``; der Client darf dann einmalig einen alten lokalen
+         *     Stand uebertragen (``POST``). Mit ihm ist der Server die Wahrheit, und
+         *     Aenderungen laufen ueber ``PUT`` mit ``If-Match`` (ADR 0021).
+         */
+        PreferencesOut: {
+            /** Stored */
+            stored: boolean;
+            /**
+             * Theme Mode
+             * @enum {string}
+             */
+            theme_mode: "system" | "light" | "dark";
+            /**
+             * Accent
+             * @enum {string}
+             */
+            accent: "blue" | "teal" | "green" | "violet" | "orange";
+            /**
+             * Length Unit
+             * @enum {string}
+             */
+            length_unit: "mm" | "cm" | "m";
+            /** Version */
+            version: number;
         };
         /**
          * ProblemDetail
@@ -2624,7 +2925,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "member" | "unknown" | "system";
+            kind: "member" | "removed" | "unknown" | "system";
             /** User Id */
             user_id?: string | null;
             /** Display Name */
@@ -4506,7 +4807,7 @@ export interface operations {
             query?: {
                 /** @description Name oder E-Mail */
                 q?: string | null;
-                status?: ("active" | "disabled" | "invited") | null;
+                status?: ("active" | "disabled" | "invited" | "removed") | null;
                 limit?: number;
                 cursor?: string | null;
             };
@@ -4576,6 +4877,70 @@ export interface operations {
             };
         };
     };
+    updateMemberProfile: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                member_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemberProfileUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberOut"];
+                };
+            };
+            /** @description Nicht gefunden (auch fremder Betrieb) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, letzter Administrator (last-administrator), eigenes Konto (self-lockout), entferntes Konto (member-removed), Konto eines weiteren Betriebs (account-shared) oder E-Mail-Adresse vergeben (email-unavailable) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Ungueltige Eingabe oder Bestaetigung */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
     suspendMember: {
         parameters: {
             query?: never;
@@ -4587,7 +4952,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemberSuspend"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -4677,6 +5046,146 @@ export interface operations {
                 };
             };
             /** @description Unbekannte oder nicht vergebbare Rolle */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    issueMemberPasswordReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                member_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordResetIssued"];
+                };
+            };
+            /** @description Nicht gefunden (auch fremder Betrieb) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, letzter Administrator (last-administrator), eigenes Konto (self-lockout), entferntes Konto (member-removed), Konto eines weiteren Betriebs (account-shared) oder E-Mail-Adresse vergeben (email-unavailable) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Ungueltige Eingabe oder Bestaetigung */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Zu viele Links in kurzer Zeit */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Kein Zustellweg eingerichtet */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    removeMember: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                member_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemberRemove"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberOut"];
+                };
+            };
+            /** @description Nicht gefunden (auch fremder Betrieb) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, letzter Administrator (last-administrator), eigenes Konto (self-lockout), entferntes Konto (member-removed), Konto eines weiteren Betriebs (account-shared) oder E-Mail-Adresse vergeben (email-unavailable) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Ungueltige Eingabe oder Bestaetigung */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -5229,6 +5738,230 @@ export interface operations {
             };
             /** @description Zu viele Versuche */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    previewPasswordReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetTokenIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordResetPreview"];
+                };
+            };
+            /** @description Link ungueltig (password-reset-invalid) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Zu viele Versuche */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    completePasswordReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetComplete"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Link ungueltig (password-reset-invalid) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Passwortregeln nicht erfuellt */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Zu viele Versuche */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    getMyPreferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreferencesOut"];
+                };
+            };
+        };
+    };
+    replaceMyPreferences: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreferencesIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreferencesOut"];
+                };
+            };
+            /** @description Noch kein Serverstand */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt (anderes Geraet) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Unbekannter Wert */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    createMyPreferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreferencesIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreferencesOut"];
+                };
+            };
+            /** @description Es gibt bereits einen Serverstand (preferences-exist) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Unbekannter Wert */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

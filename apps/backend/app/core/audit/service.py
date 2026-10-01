@@ -43,6 +43,13 @@ ACTION_INVITATION_ACCEPTED = "invitation.accepted"
 ACTION_MEMBER_SUSPENDED = "member.suspended"
 ACTION_MEMBER_REACTIVATED = "member.reactivated"
 ACTION_MEMBER_ROLES_CHANGED = "member.roles_changed"
+#: Benutzerlebenszyklus (Phase 4e, ADR 0021). Ziel-ID und Aktionsart, bei
+#: Profilaenderungen die **Namen** der geaenderten Felder - nie alte oder neue
+#: Werte, nie Sperrgrund, Token, Link oder Passwort.
+ACTION_MEMBER_PROFILE_UPDATED = "member.profile_updated"
+ACTION_MEMBER_REMOVED = "member.removed"
+ACTION_PASSWORD_RESET_ISSUED = "member.password_reset_issued"  # noqa: S105 - Aktionsname
+ACTION_PASSWORD_RESET_COMPLETED = "member.password_reset_completed"  # noqa: S105 - Aktionsname
 ACTION_FILE_UPLOADED = "file.uploaded"
 ACTION_FILE_DOWNLOADED = "file.downloaded"
 

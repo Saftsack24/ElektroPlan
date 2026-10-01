@@ -215,6 +215,70 @@ class SelfLockoutError(ConflictError):
     title = "Eigene Mitgliedschaft"
 
 
+class MemberRemovedError(ConflictError):
+    """Die Mitgliedschaft ist endgueltig entfernt (ADR 0021).
+
+    Ein entferntes Konto laesst sich weder bearbeiten noch sperren, entsperren,
+    zuruecksetzen oder wieder aktivieren.
+    """
+
+    error_type = "member-removed"
+    title = "Benutzer entfernt"
+
+
+class AccountSharedError(ConflictError):
+    """Das Konto gehoert noch einem anderen Betrieb an (ADR 0021, ADR 0015).
+
+    Name, E-Mail und Passwort eines solchen Kontos aendert kein
+    Betriebsadministrator - sonst koennte er ein Konto uebernehmen, das auch
+    anderswo arbeitet. Welcher Betrieb das ist, verraet die Antwort nicht.
+    """
+
+    error_type = "account-shared"
+    title = "Konto wird auch anderswo verwendet"
+
+
+class EmailUnavailableError(ConflictError):
+    """Die E-Mail-Adresse ist bereits einem Konto oder einer offenen Einladung zugeordnet.
+
+    Bewusst **eine** Meldung fuer beide Faelle und ohne Hinweis, wem die
+    Adresse gehoert.
+    """
+
+    error_type = "email-unavailable"
+    title = "E-Mail-Adresse nicht verfuegbar"
+
+
+class PasswordResetInvalidError(AppError):
+    """Reset-Link unbekannt, abgelaufen, bereits verwendet oder ersetzt.
+
+    Wie bei Einladungen **ein** Fehler fuer alle Faelle.
+    """
+
+    error_type = "password-reset-invalid"
+    title = "Link ungueltig"
+    status_code = status.HTTP_404_NOT_FOUND
+
+
+class PasswordResetDeliveryUnavailableError(AppError):
+    """Es ist kein Zustellweg fuer Reset-Links eingerichtet - nichts wurde angelegt."""
+
+    error_type = "password-reset-delivery-unavailable"
+    title = "Zuruecksetzen nicht verfuegbar"
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+
+
+class PreferencesExistError(ConflictError):
+    """Fuer diese Mitgliedschaft gibt es bereits gespeicherte Einstellungen.
+
+    Der Serverstand gewinnt: Der Client laedt ihn und aendert danach mit
+    ``If-Match`` (ADR 0021).
+    """
+
+    error_type = "preferences-exist"
+    title = "Einstellungen bereits gespeichert"
+
+
 class InvitationInvalidError(AppError):
     """Einladung unbekannt, abgelaufen, widerrufen oder bereits verwendet.
 

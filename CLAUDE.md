@@ -237,6 +237,18 @@ Für die Arbeit am Code wichtig:
   `ModuleDescriptor.provides` – sonst würde eine Projektlöschung an seinen Daten scheitern
   oder sie übersehen. Schreibvorgänge am Projekt melden den Bearbeiter über
   `FloorPlanningAccess.record_project_change`.
+- Seit Phase 4e (ADR 0021): Access und Refresh Token tragen die **Sitzungsversion** der
+  Mitgliedschaft (`organization_members.session_version`). Wer etwas Sicherheitsrelevantes
+  an einem Benutzer ändert (Sperre, Entsperren, Entfernen, E-Mail, Passwort), zählt sie mit
+  `bump_session_version` hoch – nur Refresh Tokens zu widerrufen genügt nicht.
+  Lebenszyklusvorgänge sperren in der Reihenfolge `organizations → organization_members →
+  users → password_reset_tokens` über `app/core/members/guard.py` und mit
+  `FOR NO KEY UPDATE` (`key_share=True`), sonst blockieren sie Fremdschlüsselprüfungen und
+  erzeugen Deadlocks mit der Sitzungserneuerung. Kontoänderungen durch einen Betrieb nur bei
+  exklusiven Konten; „Entfernen“ ist ein endgültiger Tombstone, kein Soft Delete.
+  Persönliche Einstellungen: der Server ist die Wahrheit (`/me/preferences`), der Browser
+  nur Cache – Theme und Maßeinheit bleiben in `core/theme/darstellung.ts` bzw.
+  `core/ui/masseinheit.ts`, der Abgleich in `core/einstellungen/persoenlich.ts`.
 - Nach einer Migration, die Berechtigungen betrifft, den Seed ausführen
   (`.\tasks.ps1 seed`) – neue Rechte und Rollenzuordnungen legt nur der Seed an.
 - Neues Backend-Modul: `ModuleDescriptor` anlegen und in

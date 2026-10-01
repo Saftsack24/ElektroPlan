@@ -17,6 +17,8 @@ from app.core.invitations.api import router as invitation_acceptance_router
 from app.core.members.api import router as members_router
 from app.core.module_registry.api import router as modules_router
 from app.core.module_registry.descriptor import ModuleDescriptor, ModuleKind
+from app.core.password_reset.api import router as password_reset_router
+from app.core.preferences.api import router as preferences_router
 from app.core.projects.api import router as projects_router
 
 core_router = APIRouter()
@@ -28,6 +30,8 @@ core_router.include_router(projects_router)
 core_router.include_router(files_router)
 core_router.include_router(members_router)
 core_router.include_router(invitation_acceptance_router)
+core_router.include_router(password_reset_router)
+core_router.include_router(preferences_router)
 
 #: Tabellen des Core. Als Positivliste gefuehrt, weil der Core kein
 #: Tabellenpraefix hat und ein Praefix wie ``core_`` in der Praxis nur
@@ -46,6 +50,8 @@ CORE_TABLES: tuple[str, ...] = (
     "role_permissions",
     "member_roles",
     "refresh_tokens",
+    "password_reset_tokens",
+    "user_preferences",
     "number_sequences",
     "customers",
     "projects",

@@ -13,7 +13,8 @@ import { Bestaetigung } from "../../../core/ui/Bestaetigung";
 import { Marke } from "../../../core/ui/Marke";
 import { FELD_FEHLER, KARTENKOPF, KENNWERTE, KNOPFZEILE, STAPEL, karte, knopf, meldungsflaeche } from "../../../core/ui/stil";
 import { AdminNavigation } from "./AdminNavigation";
-import { STATUS_ART, STATUS_TEXT, datum, verwaltungsfehler } from "./texte";
+import { Kontoaktionen } from "./Kontoaktionen";
+import { ENTFERNTER_BENUTZER, STATUS_ART, STATUS_TEXT, datum, verwaltungsfehler } from "./texte";
 import { RECHTE_BEREICH_TITEL, RECHTE_LISTE, RECHTE_RASTER, RECHTE_SCHLUESSEL } from "./rechtedarstellung";
 import { AKTION } from "../../../core/ui/aktionssymbole";
 import { MitSymbol } from "../../../core/ui/Symbol";
@@ -21,10 +22,11 @@ import { MitSymbol } from "../../../core/ui/Symbol";
 const ADMIN_ROLLE = "admin";
 
 /**
- * Detailansicht eines Mitglieds: Zugang, Rollen, effektive Rechte.
+ * Detailansicht eines Mitglieds: Konto und Zugang, Rollen, effektive Rechte.
  *
- * Name, E-Mail und Passwort gehören zum persönlichen Konto und sind hier
- * nicht änderbar - ein Betrieb verwaltet nur die Mitgliedschaft bei sich.
+ * Name und E-Mail sind seit Phase 4e hier änderbar - aber nur bei Konten,
+ * die keinem anderen Betrieb angehören (ADR 0021). Ein Passwort setzt nie
+ * der Administrator, sondern die Person selbst über einen Einmal-Link.
  */
 export default function MitgliedPage() {
   const { memberId = "" } = useParams();
@@ -74,14 +76,14 @@ export default function MitgliedPage() {
       </section>
 
       {mitglied.isSuccess && (
-        <Zugang
+        <Kontoaktionen
           mitglied={mitglied.data}
           betrieb={me?.organization.name ?? "diesem Betrieb"}
           onGeaendert={neuLaden}
         />
       )}
 
-      {mitglied.isSuccess && darfRollenSehen && (
+      {mitglied.isSuccess && darfRollenSehen && mitglied.data.status !== "removed" && (
         <Rollen
           mitglied={mitglied.data}
           rollen={rollen.data}
@@ -93,135 +95,40 @@ export default function MitgliedPage() {
         />
       )}
 
-      {darfRollenSehen && rechte.isSuccess && <EffektiveRechte daten={rechte.data} />}
+      {darfRollenSehen && rechte.isSuccess && mitglied.data?.status !== "removed" && (
+        <EffektiveRechte daten={rechte.data} />
+      )}
     </div>
   );
 }
 
 function Kopf({ mitglied, betrieb }: { mitglied: MemberOut; betrieb: string }) {
+  const entfernt = mitglied.status === "removed";
   return (
     <div className={STAPEL}>
       <div className={KARTENKOPF}>
-        <h1>{mitglied.full_name}</h1>
+        <h1 className={entfernt ? "text-muted" : undefined}>{mitglied.full_name ?? ENTFERNTER_BENUTZER}</h1>
         <Marke art={STATUS_ART[mitglied.status]}>{STATUS_TEXT[mitglied.status]}</Marke>
       </div>
       <dl className={KENNWERTE}>
-        <dt>E-Mail</dt>
-        <dd>{mitglied.email}</dd>
+        {!entfernt && (
+          <>
+            <dt>E-Mail</dt>
+            <dd className="wrap-anywhere">{mitglied.email}</dd>
+          </>
+        )}
         <dt>Mitglied seit</dt>
         <dd>{datum(mitglied.joined_at)}</dd>
-        <dt>Letzte Anmeldung in {betrieb}</dt>
-        <dd>{datum(mitglied.last_login_at)}</dd>
-      </dl>
-      <p className="text-muted">
-        Name, E-Mail-Adresse und Passwort gehören zum persönlichen Konto der Person und lassen sich
-        hier nicht ändern.
-      </p>
-    </div>
-  );
-}
-
-function Zugang({
-  mitglied,
-  betrieb,
-  onGeaendert,
-}: {
-  mitglied: MemberOut;
-  betrieb: string;
-  onGeaendert: () => Promise<void>;
-}) {
-  const { api, permissions } = useAuth();
-  const darfSchreiben = permissions.has("user.account.write");
-  const [frage, setFrage] = useState(false);
-  const [laeuft, setLaeuft] = useState(false);
-  const [fehler, setFehler] = useState<string | null>(null);
-  const [meldung, setMeldung] = useState<string | null>(null);
-  const aktiv = mitglied.status === "active";
-
-  const ausfuehren = async () => {
-    if (laeuft) return;
-    setLaeuft(true);
-    setFehler(null);
-    try {
-      const pfad = { member_id: mitglied.id };
-      if (aktiv) {
-        await api.post("/api/v1/members/{member_id}/suspend", { path: pfad, ifMatch: mitglied.version });
-        setMeldung(`Der Zugang von ${mitglied.full_name} zu ${betrieb} ist gesperrt.`);
-      } else {
-        await api.post("/api/v1/members/{member_id}/reactivate", {
-          path: pfad,
-          ifMatch: mitglied.version,
-        });
-        setMeldung(`Der Zugang von ${mitglied.full_name} zu ${betrieb} ist wieder freigegeben.`);
-      }
-      setFrage(false);
-      await onGeaendert();
-    } catch (error) {
-      setFehler(verwaltungsfehler(error));
-      await onGeaendert();
-    } finally {
-      setLaeuft(false);
-    }
-  };
-
-  return (
-    <section className={karte()} aria-labelledby="zugang-titel">
-      <h2 id="zugang-titel">Zugang zu {betrieb}</h2>
-      {meldung !== null && (
-        <p className={meldungsflaeche("erfolg")} role="status">
-          {meldung}
-        </p>
-      )}
-      <p className="text-muted">
-        {aktiv
-          ? "Eine Sperre gilt nur für diesen Betrieb. Das persönliche Konto und Zugänge zu anderen Betrieben bleiben bestehen."
-          : "Der Zugang ist gesperrt. Nach der Freigabe meldet sich die Person neu an."}
-      </p>
-      {darfSchreiben &&
-        (mitglied.is_self ? (
-          <p className="text-muted">Den eigenen Zugang kann niemand selbst sperren.</p>
-        ) : (
-          <button
-            type="button"
-            className={knopf(aktiv ? "gefahr" : "primaer")}
-            onClick={() => {
-              setFehler(null);
-              setMeldung(null);
-              setFrage(true);
-            }}
-          >
-            {aktiv ? "Zugang zu diesem Betrieb sperren" : "Zugang wieder freigeben"}
-          </button>
-        ))}
-      <Bestaetigung
-        offen={frage}
-        titel={aktiv ? "Zugang sperren?" : "Zugang freigeben?"}
-        bestaetigenLabel={aktiv ? "Zugang sperren" : "Zugang freigeben"}
-        gefaehrlich={aktiv}
-        laeuft={laeuft}
-        fehler={fehler}
-        onBestaetigen={() => void ausfuehren()}
-        onAbbrechen={() => setFrage(false)}
-      >
-        {aktiv ? (
+        <dt>Zuletzt geändert</dt>
+        <dd>{datum(mitglied.updated_at)}</dd>
+        {!entfernt && (
           <>
-            <p>
-              <strong>{mitglied.full_name}</strong> kann danach nicht mehr in {betrieb} arbeiten.
-              Angemeldete Sitzungen in diesem Betrieb enden sofort.
-            </p>
-            <p className="text-muted">
-              Das persönliche Konto und Zugänge zu anderen Betrieben bleiben bestehen. Die Sperre
-              lässt sich jederzeit aufheben.
-            </p>
+            <dt>Letzte Anmeldung in {betrieb}</dt>
+            <dd>{datum(mitglied.last_login_at)}</dd>
           </>
-        ) : (
-          <p>
-            <strong>{mitglied.full_name}</strong> kann sich danach wieder in {betrieb} anmelden -
-            mit den bisherigen Rollen.
-          </p>
         )}
-      </Bestaetigung>
-    </section>
+      </dl>
+    </div>
   );
 }
 
@@ -304,13 +211,18 @@ function Rollen({
             const id = `rolle-${rolle.key}`;
             const eigeneAdminrolle =
               mitglied.is_self && rolle.key === ADMIN_ROLLE && bisher.includes(ADMIN_ROLLE);
+            const letzteAdminrolle =
+              !mitglied.is_self &&
+              mitglied.is_last_active_administrator &&
+              rolle.key === ADMIN_ROLLE &&
+              bisher.includes(ADMIN_ROLLE);
             return (
               <div key={rolle.key} className="flex items-start gap-2.5 [&_input]:mt-1">
                 <input
                   id={id}
                   type="checkbox"
                   checked={gewaehlt.includes(rolle.key)}
-                  disabled={eigeneAdminrolle}
+                  disabled={eigeneAdminrolle || letzteAdminrolle}
                   aria-labelledby={`${id}-name`}
                   aria-describedby={`${id}-zweck`}
                   onChange={(event) => umschalten(rolle.key, event.target.checked)}
@@ -320,7 +232,9 @@ function Rollen({
                   <span id={`${id}-zweck`} className="text-label text-muted">
                     {eigeneAdminrolle
                       ? "Die eigene Administratorrolle kann hier niemand selbst entfernen."
-                      : rolle.description}
+                      : letzteAdminrolle
+                        ? "Einziger aktiver Administrator: Bitte zuerst einem anderen Mitglied die Administratorrolle geben."
+                        : rolle.description}
                   </span>
                 </label>
               </div>

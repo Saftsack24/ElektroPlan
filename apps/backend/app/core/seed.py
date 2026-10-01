@@ -19,6 +19,7 @@ from app.core.authorization.service import assign_role, ensure_system_roles, syn
 from app.core.module_registry.registry import ModuleRegistry
 from app.core.organizations.models import (
     MEMBER_STATUS_ACTIVE,
+    MEMBER_STATUS_REMOVED,
     Organization,
     OrganizationMember,
 )
@@ -85,10 +86,13 @@ def seed_initial_data(
         session.add(user)
         session.flush()
 
+    # Eine entfernte Mitgliedschaft ist ein Tombstone (ADR 0021) und zaehlt
+    # nicht; der Seed legt dann eine neue an.
     member = session.execute(
         select(OrganizationMember).where(
             OrganizationMember.organization_id == organization.id,
             OrganizationMember.user_id == user.id,
+            OrganizationMember.status != MEMBER_STATUS_REMOVED,
         )
     ).scalar_one_or_none()
     if member is None:

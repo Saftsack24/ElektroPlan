@@ -6,6 +6,7 @@ import type { RouteObject } from "react-router-dom";
 import { AuthProvider, useAuth } from "../core/auth/AuthProvider";
 import { EINLADUNG_PFAD, EinladungAnnehmenPage } from "../core/auth/EinladungAnnehmenPage";
 import { LoginPage } from "../core/auth/LoginPage";
+import { PASSWORT_ZURUECKSETZEN_PFAD, PasswortZuruecksetzenPage } from "../core/auth/PasswortZuruecksetzenPage";
 import { ProjectTabsProvider } from "../core/modules/ProjectTabs";
 import { Navigationsschutz } from "../core/ui/Navigationsschutz";
 import { RueckfrageProvider } from "../core/ui/Rueckfrage";
@@ -82,6 +83,8 @@ export function Anwendung() {
           So rendert eine Navigation nicht die ganze Anwendung neu. */}
       <Routes>
         <Route path={EINLADUNG_PFAD} element={<EinladungAnnehmenPage />} />
+        {/* Ebenso das Setzen eines neuen Passworts über einen Einmal-Link (Phase 4e). */}
+        <Route path={PASSWORT_ZURUECKSETZEN_PFAD} element={<PasswortZuruecksetzenPage />} />
         <Route path="*" element={<Gate />} />
       </Routes>
       </RueckfrageProvider>

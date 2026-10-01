@@ -46,6 +46,11 @@ export type InvitationOut = Schemas["InvitationOut"];
 export type InvitationIssued = Schemas["InvitationIssued"];
 export type InvitationPolicy = Schemas["InvitationPolicy"];
 export type InvitationPreview = Schemas["InvitationPreview"];
+// Benutzerlebenszyklus und persönliche Einstellungen (Phase 4e)
+export type PasswordResetIssued = Schemas["PasswordResetIssued"];
+export type PasswordResetPreview = Schemas["PasswordResetPreview"];
+export type PreferencesOut = Schemas["PreferencesOut"];
+export type PreferencesIn = Schemas["PreferencesIn"];
 
 /** Fehlerantwort des Servers im Format RFC 9457. */
 export class ApiError extends Error {

@@ -30,15 +30,17 @@ const ADMIN_RECHTE = [
   "role.assignment.write",
 ];
 
-function eintrag(teil: Partial<DirectoryEntryOut> & { id: string; email: string }): DirectoryEntryOut {
+function eintrag(teil: Partial<DirectoryEntryOut> & { id: string; email: string | null }): DirectoryEntryOut {
   return {
     kind: "member",
-    full_name: teil.email.split("@")[0] ?? null,
+    full_name: teil.email?.split("@")[0] ?? null,
     status: "active",
     roles: [{ key: "planer", name: "Planer" }],
     last_login_at: null,
     invitation_expires_at: null,
     invitation_expired: false,
+    created_at: "2026-09-01T08:00:00Z",
+    updated_at: "2026-09-02T08:00:00Z",
     version: 1,
     ...teil,
   };
@@ -123,7 +125,7 @@ describe("Benutzerliste", () => {
       "href",
       "/administration/users/m1",
     );
-    expect(within(zeilen[2]!).getByText("Zugang gesperrt")).toBeInTheDocument();
+    expect(within(zeilen[2]!).getByText("Gesperrt")).toBeInTheDocument();
     expect(within(zeilen[1]!).getByText("Planer")).toBeInTheDocument();
     expect(mitgliederAufrufe()[0]).toEqual({ limit: 25 });
   });
@@ -164,6 +166,37 @@ describe("Benutzerliste", () => {
     expect(await screen.findByText("Keine Treffer für diese Suche oder diesen Filter.")).toBeInTheDocument();
     expect(mitgliederAufrufe().at(-1)).toEqual({ limit: 25, q: "niemand" });
     expect(screen.queryByText(/^Seite /)).toBeNull();
+  });
+
+  it("bietet die Ansichten Aktiv, Gesperrt, Einladungen und Entfernt an", async () => {
+    zeigen();
+    await screen.findByText("Anna Albrecht");
+    const optionen = within(screen.getByLabelText("Status"))
+      .getAllByRole("option")
+      .map((option) => option.textContent);
+    expect(optionen).toEqual(["Alle (ohne Entfernte)", "Aktiv", "Gesperrt", "Einladungen", "Entfernt"]);
+  });
+
+  it("zeigt entfernte Konten neutral - ohne Name, ohne E-Mail, ohne Verwalten", async () => {
+    api.get.mockImplementation((pfad: string, optionen?: { query?: Record<string, unknown> }) => {
+      if (pfad === "/api/v1/members" && optionen?.query?.["status"] === "removed") {
+        return Promise.resolve({
+          items: [eintrag({ id: "m9", email: null, full_name: null, status: "removed", roles: [] })],
+          next_cursor: null,
+          has_more: false,
+        });
+      }
+      return Promise.resolve(SEITE_1);
+    });
+    zeigen("/administration/users?status=removed");
+    const tabelle = await screen.findByRole("table", { name: "Benutzer und offene Einladungen" });
+    const zeile = within(tabelle).getAllByRole("row")[1]!;
+    expect(within(zeile).getByRole("link", { name: "Entfernter Benutzer" })).toBeInTheDocument();
+    expect(within(zeile).getByText("Entfernt")).toBeInTheDocument();
+    expect(within(zeile).getByText(/nicht mehr gespeichert/)).toBeInTheDocument();
+    expect(within(zeile).queryByRole("link", { name: /Verwalten/ })).toBeNull();
+    expect(within(tabelle).getByRole("columnheader", { name: "Erstellt am" })).toBeInTheDocument();
+    expect(within(tabelle).getByRole("columnheader", { name: "Zuletzt geändert" })).toBeInTheDocument();
   });
 
   it("filtert nach Status", async () => {

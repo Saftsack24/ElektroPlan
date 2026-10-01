@@ -3,6 +3,13 @@
 Status: accepted
 Datum: 2026-09-27
 
+> **Präzisiert durch [ADR 0021](0021-user-lifecycle-account-locks-password-reset-preferences.md)
+> (Phase 4e):** Entscheidung 1 gilt weiter für Konten, die auch einem anderen Betrieb
+> angehören. Gehört ein Konto **ausschließlich** diesem Betrieb, darf dessen Administrator
+> Name und E-Mail ändern, einen Passwort-Reset-Link auslösen (das Passwort setzt die Person)
+> und das Konto beim Entfernen bereinigen. Zustände der Mitgliedschaft: `active`,
+> `disabled`, `removed`. Sperren verlangt seit 4e `user.account.lock`.
+
 ## Context
 
 Bis Phase 4a entstanden Benutzer ausschließlich über den Seed. Phase 4.2 führt eine

@@ -159,6 +159,15 @@ Core-intern: Kein Fachmodul erhält Zugang, `CORE_PUBLIC_SURFACE` ist unverände
 Richtung innerhalb des Core: `members → invitations → auth/authorization/organizations`,
 nie umgekehrt. Die Benutzerverwaltung erzeugt **keine** Domain Events.
 
+**Seit Phase 4e (ADR 0021)** zusätzlich `app/core/members/guard.py` (gemeinsame
+Sperrwurzel, Handelndenprüfung, Administratorregel, Exklusivität eines Kontos),
+`app/core/password_reset` (Einmal-Links, öffentliche Einlösung) und
+`app/core/preferences` (eigene Einstellungen). Alle Core-intern, keine Erweiterung von
+`CORE_PUBLIC_SURFACE`; Fachmodule erhalten Bearbeiterangaben weiter nur über
+`UserReference` (neu: `kind=removed`). Richtung: `members → password_reset/preferences/
+invitations → members.guard → auth/authorization/organizations`; `invitations` benutzt
+`members.guard` nur für die Organisationssperre.
+
 Der Core ist selbst geschichtet: `app/core/projects` kennt `app/core/customers`
 (ein Projekt braucht einen Auftraggeber), **nicht umgekehrt**. Die Prüfung, ob an einem
 Kunden noch Projekte hängen, liegt deshalb in `projects/service.py` und wird vom
@@ -409,8 +418,10 @@ Sie sind Core, fachneutral und dürfen von jedem Modul importiert werden:
 | `useNummerierteListe` | Liste mit echten Serverseiten (ADR 0017); Filterwechsel → Seite 1, ungültige Seite → letzte gültige |
 | `RueckfrageProvider`, `useRueckfrage`, `useVerlassenBestaetigen` | eigene Rückfrage statt `window.confirm`; eine Frage zur Zeit, Antwort genau einmal |
 | `Navigationsschutz`, `useUngespeicherteAenderungen` | Router-Blocker und Meldestelle für ungespeicherte Änderungen; `beforeunload` bleibt browsernativ |
-| `core/masse.ts`, `masseinheit.ts` (`useMasse`) | persönliche Anzeigeeinheit für Längen (cm/mm); einzige Stelle der Umrechnung, gespeichert wird in Millimetern |
-| `EinstellungenDialog` | persönliche Einstellungen: Darstellung, Akzentfarbe, Maßeinheit – sofort als Vorschau, gespeichert mit „Übernehmen", lokal je Benutzer (ADR 0019) |
+| `core/masse.ts`, `masseinheit.ts` (`useMasse`) | persönliche Anzeigeeinheit für Längen (mm/cm/m); einzige Stelle der Umrechnung, gespeichert wird in Millimetern |
+| `core/einstellungen/persoenlich.ts` | Abgleich der persönlichen Einstellungen mit dem Server, Cache je Mitgliedschaft, einmalige Übernahme alter lokaler Werte (seit 4e, ADR 0021) |
+| `EinstellungenDialog` | persönliche Einstellungen: Darstellung, Akzentfarbe, Maßeinheit – sofort als Vorschau, gespeichert mit „Übernehmen" auf dem Server, je Benutzer und Betrieb (ADR 0021) |
+| `core/auth/PasswortZuruecksetzenPage` | öffentliche Seite für den Einmal-Link zum Zurücksetzen (seit 4e) |
 
 Die Cursor-Bausteine `useCursorListe`, `WeitereLaden` und `eintraegeAus` sind mit der
 Umstellung von Kunden- und Projektliste entfallen; die Benutzerverwaltung blättert

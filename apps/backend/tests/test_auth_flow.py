@@ -146,6 +146,7 @@ def test_unbekanntes_konto_gibt_dieselbe_meldung(api: TestClient, betrieb: uuid.
     )
     assert unbekannt.status_code == falsch.status_code == 401
     assert unbekannt.json()["title"] == falsch.json()["title"]
+    assert unbekannt.json()["detail"] == falsch.json()["detail"]
 
 
 def test_email_ist_nicht_case_sensitiv(api: TestClient, betrieb: uuid.UUID) -> None:
@@ -586,7 +587,10 @@ def test_ohne_mitgliedschaft_kein_login(
     response = api.post(
         "/api/v1/auth/login", json={"email": "ohne@test.example", "password": ADMIN_PASSWORD}
     )
-    assert response.status_code == 404
+    # Keine aktive Mitgliedschaft: dieselbe neutrale Ablehnung wie ein falsches
+    # Passwort - kein 404, das bestaetigen wuerde, dass das Passwort stimmte.
+    assert response.status_code == 401
+    assert response.json()["type"].endswith("/authentication-failed")
 
 
 def test_deaktivierte_mitgliedschaft_zaehlt_nicht(

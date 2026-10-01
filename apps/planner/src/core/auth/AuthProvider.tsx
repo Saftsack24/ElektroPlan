@@ -4,8 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import type { ReactNode } from "react";
 
 import { config } from "../config";
-import { darstellungBenutzerSetzen } from "../theme/darstellung";
-import { masseinheitBenutzerSetzen } from "../ui/masseinheit";
+import { einstellungenAnmelden, einstellungenLaden } from "../einstellungen/persoenlich";
 
 interface AuthState {
   status: "loading" | "anonymous" | "authenticated";
@@ -190,15 +189,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [api, loadSession],
   );
 
-  // Persönliche Anzeigeeinstellungen gehören dem angemeldeten Benutzer -
-  // nicht dem Browser. Vor dem ersten Bild umschalten, damit nie die Wahl
-  // eines anderen Benutzers aufblitzt; beim Laden und nach dem Abmelden gilt
-  // der Standard. Ein Betriebswechsel behält dieselbe `user_id`.
+  // Persönliche Einstellungen gehören dem angemeldeten Benutzer in diesem
+  // Betrieb - der Server ist die Wahrheit (ADR 0021). Vor dem ersten Bild
+  // gilt der Cache genau dieser Mitgliedschaft (oder der Standard), damit nie
+  // die Wahl eines anderen Benutzers aufblitzt; danach der Serverstand. Beim
+  // Laden und nach dem Abmelden gilt der Standard.
   const benutzerId = state.status === "authenticated" ? (state.me?.user_id ?? null) : null;
+  const mitgliedId = state.status === "authenticated" ? (state.me?.member_id ?? null) : null;
   useLayoutEffect(() => {
-    masseinheitBenutzerSetzen(benutzerId);
-    darstellungBenutzerSetzen(benutzerId);
-  }, [benutzerId]);
+    einstellungenAnmelden(
+      benutzerId !== null && mitgliedId !== null ? { benutzerId, mitgliedId } : null,
+    );
+  }, [benutzerId, mitgliedId]);
+  useEffect(() => {
+    if (mitgliedId !== null) void einstellungenLaden(api);
+  }, [mitgliedId, api]);
 
   const value = useMemo<AuthContextValue>(
     () => ({ ...state, api, login, logout, switchOrganization, aktualisieren }),

@@ -215,11 +215,17 @@ Das endgültige Löschen von Projekten und Kunden sowie die Wiedereröffnung wer
 ungeeignet (*at most once*, erst nach dem Commit). Ein späteres `core.project.deleted`
 dürfte eine erfolgte Löschung melden, nie entscheiden; seine Nutzlast enthielte nur IDs.
 
-### Benutzerverwaltung erzeugt keine Events (Phase 4.2)
+### Benutzerverwaltung erzeugt keine Events (Phase 4.2, bestätigt 4e)
 
 Einladen, Annehmen, Sperren und Rollenvergabe sind synchrone Core-Vorgänge ohne
 Empfänger in anderen Modulen. Sie werden im **Audit-Protokoll** festgehalten, nicht als
 Domain Event. Ein Event entsteht erst, wenn ein Modul tatsächlich reagieren muss.
+
+Das gilt auch für Phase 4e: Profiländerung, Entsperren, Passwortreset, Entfernen und das
+Speichern persönlicher Einstellungen erzeugen **keine** Events. Die Wirkung auf Sitzungen
+entsteht synchron in derselben Transaktion (Sitzungsversion, Widerruf) – ein Event käme
+erst nach dem Commit und dürfte verloren gehen (ADR 0012); für Sicherheit wäre das zu spät
+und zu unzuverlässig.
 
 ## 7. Persistenz
 

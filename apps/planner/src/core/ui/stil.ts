@@ -140,8 +140,14 @@ export const KARTENTITEL = "m-0 text-[1.1rem]";
 export const TABELLE =
   "mt-3 w-full border-collapse text-small [&_:is(th,td)]:border-b [&_:is(th,td)]:border-line [&_:is(th,td)]:px-2 [&_:is(th,td)]:py-[7px] [&_:is(th,td)]:text-left [&_th]:font-semibold [&_th]:text-muted";
 
-/** Hülle einer breiten Tabelle: scrollt waagrecht statt die Seite zu verbreitern. */
-export const TABELLENRAHMEN = "max-w-full min-w-0 overflow-x-auto";
+/**
+ * Hülle einer breiten Tabelle: scrollt waagrecht statt die Seite zu verbreitern.
+ *
+ * `relative`, damit absolut positionierte, nur für Screenreader sichtbare Texte
+ * (`sr-only`) in der Tabelle sich auf diese Hülle beziehen - sonst ragen sie aus
+ * ihr heraus und verbreitern doch die Seite (gemessen in Phase 4e bei 320 px).
+ */
+export const TABELLENRAHMEN = "relative max-w-full min-w-0 overflow-x-auto";
 
 /** Reiterleiste über einem Bereich. */
 export const REITERLEISTE = "flex flex-wrap gap-1 border-b border-line";

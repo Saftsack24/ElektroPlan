@@ -54,24 +54,48 @@ def test_passwortregeln() -> None:
 def test_access_token_enthaelt_keine_berechtigungen() -> None:
     """Berechtigungen werden pro Request geladen, damit Entzug sofort wirkt."""
     token, _ = create_access_token(
-        user_id=uuid.uuid4(), organization_id=uuid.uuid4(), member_id=uuid.uuid4()
+        user_id=uuid.uuid4(),
+        organization_id=uuid.uuid4(),
+        member_id=uuid.uuid4(),
+        session_version=1,
     )
     claims = jwt.decode(token, options={"verify_signature": False})
     assert "permissions" not in claims
-    assert set(claims) == {"sub", "org", "mid", "iat", "exp", "jti"}
+    # ``sv``: Sitzungsversion der Mitgliedschaft (Phase 4e, ADR 0021).
+    assert set(claims) == {"sub", "org", "mid", "sv", "iat", "exp", "jti"}
 
 
 def test_access_token_roundtrip() -> None:
     user_id, org_id, member_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     token, expires_in = create_access_token(
-        user_id=user_id, organization_id=org_id, member_id=member_id
+        user_id=user_id, organization_id=org_id, member_id=member_id, session_version=7
     )
     payload = decode_access_token(token)
 
     assert payload.user_id == user_id
     assert payload.organization_id == org_id
     assert payload.member_id == member_id
+    assert payload.session_version == 7
     assert expires_in == get_settings().access_token_minutes * 60
+
+
+@pytest.mark.parametrize("sitzungsversion", [None, "1", 1.0, True])
+def test_access_token_ohne_gueltige_sitzungsversion_wird_abgelehnt(
+    sitzungsversion: object,
+) -> None:
+    """Tokens von vor Phase 4e (ohne ``sv``) oder mit fremdem Typ gelten nicht."""
+    settings = get_settings()
+    claims: dict[str, object] = {
+        "sub": str(uuid.uuid4()),
+        "org": str(uuid.uuid4()),
+        "mid": str(uuid.uuid4()),
+        "exp": int(datetime.now(tz=UTC).timestamp()) + 300,
+    }
+    if sitzungsversion is not None:
+        claims["sv"] = sitzungsversion
+    token = jwt.encode(claims, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    with pytest.raises(AuthenticationError):
+        decode_access_token(token)
 
 
 def test_abgelaufener_token_wird_abgelehnt() -> None:

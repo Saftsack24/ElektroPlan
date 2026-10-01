@@ -103,15 +103,19 @@ def altbestand() -> Iterator[Altbestand]:
         connection.execute(text(f'DROP DATABASE IF EXISTS "{DB_NAME}" WITH (FORCE)'))
         connection.execute(text(f'CREATE DATABASE "{DB_NAME}"'))
 
-    command.upgrade(_config(), "0005_member_administration")
+    # Der Seed benutzt die aktuellen ORM-Modelle. Er laeuft deshalb auf dem
+    # aktuellen Schema; danach geht es zurueck auf 0005, wo der ausgeblendete
+    # Altbestand entsteht (seit Phase 4e kennt das Modell Spalten, die es in
+    # 0005 noch nicht gibt).
+    command.upgrade(_config(), "head")
     engine = create_engine(_url(DB_NAME), future=True)
 
-    # Seed nutzt nur Tabellen, die sich zwischen 0005 und 0006 nicht aendern.
     from app.main import build_registry
 
     registry = build_registry()
     org_a = _seed(engine, registry, "Altbestand A GmbH", ADMIN_A)
     _seed(engine, registry, "Altbestand B GmbH", ADMIN_B)
+    command.downgrade(_config(), "0005_member_administration")
 
     kunde, laufend, abgeschlossen, archiviert, kunde2, projekt2 = (uuid.uuid4() for _ in range(6))
     with engine.begin() as connection:

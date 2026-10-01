@@ -24,6 +24,8 @@ os.environ.setdefault("ELEKTROPLAN_S3_SECRET_KEY", "elektroplan-dev-secret")
 # Einladungen brauchen einen Zustellweg; in Tests der Entwicklungslink. Der
 # Fall "kein Zustellweg" wird gezielt per monkeypatch geprueft.
 os.environ.setdefault("ELEKTROPLAN_INVITATION_DELIVERY", "development_link")
+# Ebenso der Reset-Link (Phase 4e); "kein Zustellweg" prueft ein eigener Test.
+os.environ.setdefault("ELEKTROPLAN_PASSWORD_RESET_DELIVERY", "admin_link")
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient

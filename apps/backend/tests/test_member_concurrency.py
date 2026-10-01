@@ -36,6 +36,7 @@ from app.core.invitations.service import (
     InvitationService,
     reset_acceptance_limiter,
 )
+from app.core.members.guard import MembershipGuard
 from app.core.members.service import Actor, MemberAdminService
 from app.core.module_registry.registry import ModuleRegistry
 from app.core.organizations.models import OrganizationMember
@@ -59,7 +60,8 @@ from tests.verwaltung_hilfen import (
 pytestmark = [requires_database, pytest.mark.database]
 
 ROLLEN_SCHREIBEN = "role.assignment.write"
-KONTEN_SCHREIBEN = "user.account.write"
+#: Sperren verlangt seit Phase 4e ``user.account.lock`` (ADR 0021).
+KONTEN_SCHREIBEN = "user.account.lock"
 #: So lange wartet eine Seite an der Barriere auf die andere. Haelt die andere
 #: die Organisationssperre nicht, sondern wartet selbst darauf, kommt sie nie
 #: an - die Barriere bricht dann ab, und jede Seite committet fuer sich.
@@ -253,7 +255,7 @@ def test_gegenprobe_ohne_organisationssperre_gehen_beide_durch(
     factory: sessionmaker[Session], aufbau: Aufbau, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Beweist, dass der Test die Luecke erkennt: ohne Sperre null Administratoren."""
-    monkeypatch.setattr(MemberAdminService, "_lock_organization", lambda self: None)
+    monkeypatch.setattr(MembershipGuard, "lock_organization", lambda self: None)
     lauf = gleichzeitig(
         factory,
         {

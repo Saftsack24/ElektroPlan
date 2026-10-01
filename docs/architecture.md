@@ -282,6 +282,13 @@ Unterressourcen.
 
 ## 8. Mandantenfähigkeit
 
+> **Seit Phase 4e (ADR 0021):** Persönliche Einstellungen und Reset-Links sind
+> mandantenbezogene Tabellen je Mitgliedschaft (`organization_id`, zusammengesetzte
+> Fremdschlüssel). Der Lebenszustand eines Benutzers (`active`, `disabled`, `removed`) hängt
+> an der Mitgliedschaft; Kontoänderungen durch einen Betrieb nur bei Konten, die keinem
+> anderen Betrieb angehören. Access und Refresh Token tragen die Sitzungsversion der
+> Mitgliedschaft.
+
 Vier Ebenen, bewusst redundant — ein einzelner Fehler soll keinen Datenabfluss verursachen.
 
 1. **Schema:** Jede mandantenbezogene Tabelle hat `organization_id NOT NULL`.
@@ -552,8 +559,17 @@ Einstellungsdialog ─ Vorschau/Übernehmen ─▶ core/theme/darstellung.ts
                                                             └▶ 3D: Grundrissszene.setzeFarben()
 ```
 
-* Gespeichert wird lokal je Benutzer (`elektroplan.darstellung.<user_id>`, versioniert);
-  `AuthProvider` meldet nur die `user_id`. Ohne Anmeldung gilt der Standard.
+* **Seit Phase 4e (ADR 0021) ist der Server die Wahrheit:** `GET/POST/PUT
+  /me/preferences` je Mitgliedschaft. `core/einstellungen/persoenlich.ts` gleicht ab:
+  Cache je Mitgliedschaft (`elektroplan.einstellungen.<member_id>`) sofort nach der
+  Anmeldung, dann der Serverstand; einmalige Übernahme der alten lokalen Schlüssel, wenn der
+  Server noch nichts hat; Speichern mit `If-Match`, ein Konflikt mit einem anderen Gerät wird
+  erklärt. `darstellung.ts` und `masseinheit.ts` halten nur noch den wirksamen Zustand
+  (`darstellungSetzen`, `masseinheitSetzen`) und lesen/schreiben keinen Speicher.
+  `AuthProvider` meldet `user_id` und `member_id`. Ohne Anmeldung gilt der Standard.
+  (Bis 4d: lokal je Benutzer, `elektroplan.darstellung.<user_id>`, ADR 0019.)
+* Maßeinheiten `mm`, `cm`, `m` (seit 4e); umgerechnet wird ausschließlich in
+  `core/masse.ts` ohne Fließkomma, gespeichert und übertragen immer ganze Millimeter.
 * Im Modus „Wie das System" folgt die Anwendung `prefers-color-scheme` auch zur Laufzeit.
 * Die 3D-Szene erhält Theme-Wechsel über die Umgebung (`ansicht3d/umgebung.ts`), liest die
   berechneten Tokens vom Wurzelelement und ändert nur Materialfarben, Hintergrund und

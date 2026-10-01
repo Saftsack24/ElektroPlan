@@ -2,7 +2,11 @@ import {
   ArchiveIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
+  CopyIcon,
   DownloadIcon,
+  KeyRoundIcon,
+  LockIcon,
+  LockOpenIcon,
   PencilIcon,
   PlusIcon,
   RotateCcwIcon,
@@ -11,6 +15,7 @@ import {
   Trash2Icon,
   UploadIcon,
   UserPlusIcon,
+  UserXIcon,
   XIcon,
 } from "lucide-react";
 
@@ -35,4 +40,10 @@ export const AKTION = {
   zurueck: ArrowLeftIcon,
   weiter: ArrowRightIcon,
   schliessen: XIcon,
+  // Benutzerlebenszyklus (Phase 4e)
+  sperren: LockIcon,
+  entsperren: LockOpenIcon,
+  passwortZuruecksetzen: KeyRoundIcon,
+  entfernen: UserXIcon,
+  kopieren: CopyIcon,
 } as const;

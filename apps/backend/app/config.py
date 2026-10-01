@@ -94,6 +94,20 @@ class Settings(BaseSettings):
     #: Adresse der Weboberflaeche. Grundlage des Aktivierungslinks.
     public_app_url: str = "http://localhost:5173"
 
+    # --- Passwortzuruecksetzung (Phase 4e, ADR 0021) ---
+    #: Wie ein Reset-Link die Person erreicht. ``none``: kein Zustellweg -
+    #: ein Reset wird mit ``503`` abgelehnt, nichts wird angelegt.
+    #: ``admin_link``: Der Link geht genau einmal in der Antwort an den
+    #: ausloesenden Administrator, der ihn persoenlich uebergibt. Wie der
+    #: Einladungslink nur ausserhalb der Produktion zulaessig.
+    password_reset_delivery: Literal["none", "admin_link"] = "none"  # noqa: S105 - Zustellweg
+    password_reset_valid_minutes: int = Field(default=60, ge=5, le=1440)
+    #: Ausgestellte Links je Mitgliedschaft und Zeitfenster.
+    password_reset_issue_per_window: int = Field(default=5, ge=1)
+    #: Fehlgeschlagene Einloeseversuche je IP und Zeitfenster.
+    password_reset_attempts_per_window: int = Field(default=20, ge=1)
+    password_reset_window_seconds: int = Field(default=900, ge=1)
+
     # --- CORS ---
     cors_origins: str = "http://localhost:5173"
 
@@ -136,6 +150,12 @@ class Settings(BaseSettings):
             # Entwicklungshilfe. In Produktion wuerde er dem Einladenden ein
             # fremdes Einmal-Token in die Hand geben.
             msg = "ELEKTROPLAN_INVITATION_DELIVERY=development_link ist in Produktion verboten."
+            raise ValueError(msg)
+        if self.is_production and self.password_reset_delivery == "admin_link":  # noqa: S105
+            # Der Administrator hielte einen Einmal-Link fuer ein fremdes Konto
+            # in der Hand und koennte dessen Passwort selbst setzen. Bis es
+            # einen Versand an die Person gibt, nur ausserhalb der Produktion.
+            msg = "ELEKTROPLAN_PASSWORD_RESET_DELIVERY=admin_link ist in Produktion verboten."
             raise ValueError(msg)
         if self.environment in ("development", "test"):
             if not self.jwt_secret:

@@ -1,6 +1,6 @@
 # Roadmap
 
-Stand: 2026-10-01 (nach Task 0022 — Phase 4d: Datenlebenszyklus, abgeschlossen)
+Stand: 2026-10-01 (nach Task 0023 — Phase 4e: Benutzerlebenszyklus, abgeschlossen)
 Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 
 ---
@@ -27,6 +27,8 @@ Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 | 4c.1 | Frontend auf Tailwind CSS, semantische Theme-Tokens | **DONE** (mit diesem Checkpoint committet) | 4b.2 |
 | 4c.2 | Persönliche Darstellung, Laufzeitthemes, responsive Nachkorrektur | **DONE** (mit diesem Checkpoint committet) | 4c.1 |
 | 4d | Datenlebenszyklus: Löschregeln, Wiedereröffnung, Bearbeiter, Icons | **DONE** (mit diesem Checkpoint committet) | 4c.2 |
+| 4e | Benutzerlebenszyklus, Kontosperren, Passwortzurücksetzung, serverseitige Einstellungen, Maßeinheit m | **DONE** (mit diesem Checkpoint committet) | 4d |
+| 4f | Wand- und Deckenansicht | NICHT BEGONNEN | 4e |
 | 5 | Electrical Devices | NOT STARTED | 4a |
 | 6 | Circuits & Cable Routes | NOT STARTED | 5 |
 | 7 | Materials | NOT STARTED | 6 |
@@ -373,6 +375,27 @@ Ergebnis: [`docs/task-history.md`](task-history.md), Task 0022.
 **Stand:** 792 Backendtests (0 übersprungen), 681 Frontendtests, alle Qualitätsschranken
 grün; API-Abnahme im Compose-System 14/14, Browserabnahme durchgeführt, Soft Delete für
 Kunden und Projekte abgeschafft. Vom Auftraggeber geprüft und freigegeben.
+
+---
+
+## Phase 4e — Benutzerlebenszyklus und serverseitige Einstellungen · DONE (2026-10-01)
+
+Persönliche Einstellungen serverseitig je Benutzer und Betrieb (Cache im Browser, einmalige
+Übernahme alter lokaler Werte), Maßeinheit Meter; Name/E-Mail ändern, sperren/entsperren
+mit Sitzungsversion, Passwortzurücksetzung per Einmal-Link, Entfernen als Tombstone; letzte-
+Administrator-Invariante unter Parallelität; vier neue Administratorrechte. Entscheidung:
+[ADR 0021](decisions/0021-user-lifecycle-account-locks-password-reset-preferences.md).
+Migration `0007`. Ergebnis: [`docs/task-history.md`](task-history.md), Task 0023.
+
+**Stand:** 875 Backendtests (0 übersprungen), 744 Frontendtests, alle Qualitätsschranken
+grün, Compose frisch, Browserabnahme 23 Punkte und beide Sicherheitsnachkorrekturen im
+Browser geprüft. Vom Auftraggeber geprüft; mit diesem Checkpoint committet.
+
+---
+
+## Phase 4f — Wand- und Deckenansicht · NICHT BEGONNEN
+
+Erst nach ausdrücklicher Freigabe.
 
 ---
 

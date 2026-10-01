@@ -2422,3 +2422,181 @@ vollständig. Archivierung ist ausschließlich der Projektstatus `archived`.
 
 **Checkpoint (2026-10-01):** Phase 4d vom Auftraggeber geprüft und mit diesem Checkpoint
 committet (nicht gepusht). Phase 5 nicht begonnen.
+
+---
+
+## Task 0023 – Phase 4e: Benutzerlebenszyklus und serverseitige persönliche Einstellungen
+
+**Datum:** 2026-10-01
+**Status:** umgesetzt, **nicht committet** – wartet auf Prüfung und Freigabe.
+
+**Ziel:** Einstellungen serverseitig und geräteübergreifend (mit Maßeinheit `m`);
+Administratoren ändern Name/E-Mail, sperren und entsperren mit sofortiger Wirkung, lösen
+eine Passwortzurücksetzung aus und entfernen Benutzer endgültig; letzter Administrator
+geschützt; alles serverseitig erzwungen.
+
+**Ausgangslage geprüft:** Arbeitsbaum sauber, `main` = `origin/main` = `c7ff4c0`, ein Head
+`0006_data_lifecycle`; Sicherung als Git-Bundle im Scratchpad, vor dem frischen Compose ein
+`pg_dump` der Entwicklungsdatenbank.
+
+**Gemeldeter Widerspruch, entschieden vom Auftraggeber:** ADR 0015 schloss Kontoänderungen
+durch Betriebsadministratoren aus (globale Konten, Mehrfachmitgliedschaft). Entscheidung:
+**exklusive Konten** – Kontoänderungen nur, wenn das Konto keinem anderen Betrieb angehört;
+Reset-Link-Ausgabe **wie Einladungen** (in Produktion verboten).
+
+**Durchgeführte Änderungen:**
+
+1. Modell/Migration `0007`: `organization_members.lock_reason`, `.session_version`, CHECKs,
+   partieller Eindeutigkeitsindex (nur nicht entfernte Mitgliedschaften);
+   `refresh_tokens.session_version`; Tabellen `password_reset_tokens`, `user_preferences`.
+2. Auth: Claim `sv`, Prüfung je Anfrage und bei der Erneuerung, neue Widerrufsgründe
+   (`membership_removed`, `credentials_changed`, `session_outdated`), `revoke_user_sessions`,
+   `bump_session_version`; Anmeldeprotokoll ohne E-Mail.
+3. `members/guard.py`: Sperrwurzel, Handelndenprüfung, Administratorregel, Exklusivität,
+   `FOR NO KEY UPDATE`. `MemberAdminService`: `update_profile`, `remove`, Sperrgrund,
+   Sitzungsversion; Liste mit `status=removed` (neutral, ohne Personensortierung).
+4. `password_reset`: Auslösen, öffentliche Vorschau und Einlösung. `preferences`: Lesen,
+   Anlegen, versioniertes Ändern. Einladungen: Organisationssperre bei der Anlage,
+   Kontosperre bei der Annahme mit bestehendem Konto, entfernte Mitglieder zählen nicht.
+5. Rechte: vier Administratorrechte, `user.preferences.write` für alle Rollen; Sperren nur
+   noch mit `user.account.lock`.
+6. Frontend: `core/masse.ts` mit `m` und Einheitenzeichen; `core/einstellungen/persoenlich.ts`
+   (Server, Cache, Übernahme, Konflikt); `darstellung.ts`/`masseinheit.ts` ohne Speicher;
+   Einstellungsdialog speichert auf dem Server; Benutzerverwaltung mit Ansichten, Spalten und
+   `Kontoaktionen` (fünf Dialoge); öffentliche Seite `PasswortZuruecksetzenPage`; Anmeldung
+   mit Erfolgshinweis; „Entfernter Benutzer“ in den Bearbeiterangaben; Tabellenhülle
+   `relative`.
+
+**Befunde unterwegs, behoben:**
+* **Deadlock** Sitzungserneuerung ↔ Sperren: Die Erneuerung hielt die Token-Zeile und
+  brauchte für den Fremdschlüssel des Nachfolgers `KEY SHARE` auf der Organisationszeile,
+  die das Sperren mit `FOR UPDATE` hielt und auf die Token-Zeile wartete. Bestand latent seit
+  4.2; Test `test_10_erneuerung_gegen_sperren` schlug vor der Korrektur mit
+  `DeadlockDetected` fehl. Lösung: `FOR NO KEY UPDATE`.
+* Benutzerliste bei 320 px 174 px zu breit: `sr-only`-Texte in der Tabelle ragten aus der
+  nicht positionierten Scrollhülle. Lösung: `TABELLENRAHMEN` mit `relative`.
+* Erfolgsmeldung nach der E-Mail-Änderung nannte den alten Namen – neutral formuliert.
+* Docker Desktop startete nicht (unzugängliche Unix-Socket-Dateien, Windows-Fehler 1920);
+  nach Rücksprache Verzeichnisse beiseitegelegt, behoben erst durch einen Windows-Neustart.
+
+**Tests (Erststand):** 860 Backendtests, 0 übersprungen (vorher 792; nach den Nachkorrekturen 866 bzw. 875): neu `test_user_lifecycle.py` (26),
+`test_preferences.py` (17), `test_lifecycle_concurrency.py` (16, darunter die 12 geforderten
+Parallelfälle), `test_migration_user_lifecycle.py` (5) und 4 Token-Tests (Sitzungsversion); angepasst die
+Bestandstests (Pflichtkörper beim Sperren, neues Recht, neue Felder, Migrationstest 4d
+seedet jetzt auf dem aktuellen Schema). 744 Frontendtests (vorher 681): neu
+`persoenlich.test.ts` (14), `Kontoaktionen.test.tsx` (16),
+`PasswortZuruecksetzenPage.test.tsx` (4), Meter-/Suffix-Tests in `masse.test.ts`;
+umgeschrieben `EinstellungenDialog`, `AuthProvider`, `darstellung`, `masseinheit`.
+Ruff (Lint und Format), mypy `--strict` (108 Dateien), import-linter 4/4 (lokal lauffähig),
+ein Head, `uv lock --check`, `alembic check` ohne Unterschied, OpenAPI-Drift, TypeScript,
+ESLint, Modulgrenzen, Build.
+
+**Compose:** Upgrade des bestehenden Entwicklungsbestands `0006 → 0007` (4 Mitglieder
+unverändert aktiv, Seed 5 neue Rechte, dann 0), danach `down -v`, frisch gebaut, Migration
+leer → `0007` (zweiter Lauf ohne Änderung), Seed 27/0.
+
+**Browserabnahme (Claude-Browserbereich, synthetische Konten Anna, Bert, Carla):**
+1–3 Dunkel/Türkis/m gespeichert, nach Neuladen und Ab-/Anmelden erhalten (`data-theme-mode`
+statt `data-theme` geprüft, weil das System dunkel ist). 4 **emuliert**: Abmelden und
+lokalen Speicher vollständig geleert → Serverstand erscheint. 5 Bert: eigene Standardwerte,
+Annas Cache bleibt unbenutzt. 6 Raumhöhe `2,375`, Wand `4.255` und Stärke `11,5 cm` im
+Metermodus → Datenbank exakt 2375/4255/115 mm, erneutes Öffnen zeigt `4,255`/`0,115`,
+unverändertes Speichern ohne Versionssprung; Raster `0,010 m…`. 7–8 Konflikt mit Annas
+Adresse am Feld gemeldet; Name/E-Mail geändert, offene Sitzung `401`/`401`, alte Adresse
+`401`, neue `200`. 9–12 Sperre (per API, damit Berts Tab offen bleibt; danach per Dialog mit
+Sperrgrund): offener Tab erhält `401`, Erneuerung `401`, zurück zur Anmeldung; Anmeldung
+abgelehnt; Entsperren per Dialog, alte Sitzung bleibt `401`/`401`, neue Anmeldung `200`.
+13–15 Reset-Link per Dialog (Ablauf, einmalig, Fokus auf „Link kopieren“); Zwischenablage im
+verdeckten Bereich verweigert → Rückfallweg (markiert, Strg+C); nach „Fertig“ kein Token im
+DOM; Seite entfernt das Token aus der Adresszeile; schwaches Passwort `422`; Erfolg;
+alte Sitzung `401`/`401`, altes Passwort `401`, neues `200`; erneuter und abgelaufener Link:
+neutrale Meldung; kein Token/Passwort in Audit oder Backend-Log. 16–19 Carla per Dialog mit
+E-Mail-Bestätigung entfernt (Knopf bis zur passenden Eingabe gesperrt), aus „Aktiv“
+verschwunden, unter „Entfernt“ neutral, Kunde KD-00001 „Erstellt von: Entfernter Benutzer“,
+Tombstone ohne Personendaten, Audit ohne „carla“, Adresse erneut eingeladen. 20–21 eigene
+Seite: Sperren/Entfernen gesperrt mit Erklärung, eigene Adminrolle gesperrt; per API
+Selbstsperre, -entfernung und -herabstufung `409 self-lockout`. Letzter Administrator gegen
+einen **anderen** Handelnden nur automatisiert/API (mit Systemrollen im Browser nicht
+herstellbar). 22 320/360/420 px: Liste, „Entfernt“, Detailseite, Entfernen-, Bearbeiten-,
+Sperr- und Einstellungsdialog, Reset-Seite – 0 px Überbreite, höchstens ein Scrollbereich.
+23 Konsole: keine Skriptfehler; nur die bewusst ausgelösten `401/404/409/422` und
+Vite-WebSocket-Meldungen nach Planner-Neustarts.
+
+**Nicht geprüft:** echter zweiter Browser, echter Browserzoom, Touchgerät; das Bild des
+Browserbereichs (verdeckt, geprüft über DOM, Netzwerk und Datenbank).
+
+**Offene Punkte:** siehe `docs/current-status.md`, technische Schulden (4e).
+
+**Nächster sinnvoller Schritt:** Prüfung durch den Auftraggeber; danach Commit. Phase 4f
+und Phase 5 erst nach ausdrücklicher Freigabe.
+
+### Nachkorrektur vor dem Commit: Sperre entwertet Reset-Links
+
+**Problem:** Ein bereits ausgestellter Reset-Link blieb gültig, wenn die Mitgliedschaft
+danach gesperrt wurde; `test_9b_reset_gegen_sperren` schrieb das fest.
+
+**Regel jetzt:** Eine Sperre ist ein Sicherheitsstopp. `MemberAdminService.suspend` löscht
+in derselben Transaktion alle offenen `PasswordResetToken` der Mitgliedschaft – nach
+Organisations- und Mitgliedschaftssperre, ohne neue Sperrreihenfolge. Entsperren belebt
+weder Links noch Sitzungen. Für gesperrte Mitglieder darf ein Administrator bewusst einen
+neuen Link erzeugen; das Passwort wird gesetzt, die Sperre bleibt, die Anmeldung gelingt erst
+nach dem Entsperren und dann nur mit dem neuen Passwort. Der Sperrdialog nennt das.
+
+**Tests:** `test_9b_reset_gegen_sperren` ersetzt durch vier Fälle:
+`9b` Sperre hält die Mitgliedschaft, die Einlösung wartet und findet keinen Link (neutraler
+Fehler, Passwort unverändert); `9c` Einlösung committet zuerst, die Sperre wartet und gelingt
+(neues Passwort, gesperrt, Anmeldung unmöglich); `9d` echte Gleichzeitigkeit ohne Deadlock,
+Sperre gelingt immer, kein Link bleibt; `9e` Entsperren belebt weder Link noch Sitzung.
+API-Tests: Sperre entwertet Links (Vorschau und Einlösung neutral, auch nach Entsperren);
+nach der Sperre neu erzeugter Link wirkt, Konto bleibt gesperrt, nach dem Entsperren gilt
+nur das neue Passwort, alte Sitzung und beide Links ungültig, kein Token/Link/Passwort in
+Audit oder Log; Sperre entwertet nur Links dieser Mitgliedschaft, ein fremder Betrieb erreicht
+nichts. **Gegenprobe:** Ohne das Löschen scheitern 4 der neuen Tests. Backend 866 (vorher
+860), Frontend 744 (Sperrdialog-Hinweis im bestehenden Test geprüft).
+
+**Browser (Anna, synthetisch):** Link erzeugt → gesperrt (Dialog nennt die Entwertung) →
+alter Link neutral ungültig → neuer Link für die Gesperrte erzeugt → Passwort gesetzt →
+Anmeldung mit neuem Passwort `404` (keine aktive Mitgliedschaft), altes `401` → entsperrt →
+neues Passwort `200`, altes `401` → alte Sitzung `401`/`401`, beide Links ungültig; kein
+offener Link für Anna, nichts davon in Audit oder Backend-Log; keine Skriptfehler.
+
+### Nachkorrektur vor dem Commit: neutrale Ablehnung der Anmeldung
+
+**Problem:** Mit richtigem Passwort, aber gesperrter, entfernter oder fehlender
+Mitgliedschaft antwortete `/auth/login` mit `404` „Keine aktive Mitgliedschaft in diesem
+Betrieb“, ein deaktiviertes Konto mit „Dieses Konto ist deaktiviert.“ – beides bestätigte das
+Passwort und zählte nicht als Fehlversuch (unbegrenztes Prüfen gegen gesperrte Konten).
+
+**Lösung:** `AuthService.login` führt jede Ablehnung über `_reject_login`: Fehlversuch je
+normalisierter E-Mail und IP, bei vorhandenem Konto Audit `auth.login_failed` nur mit
+Konto-ID und „Fehlgeschlagene Anmeldung“, Log `login_rejected` ohne E-Mail, dann
+`401 authentication-failed` mit „Anmeldung nicht möglich. Bitte Zugangsdaten prüfen oder die Administration kontaktieren.“ (`LOGIN_REJECTED`). `NotFoundError` aus der
+Mitgliedschaftswahl wird im Login abgefangen; `verify_credentials` (Einladungsannahme)
+antwortet ebenso. Unverändert: Auswahl bei mehreren aktiven Betrieben (`409`), die
+`404`-Semantik der Mandantenendpunkte und von `/auth/switch-organization`, die Sperre. Das
+Frontend zeigt die Servermeldung bereits unverändert an – keine Änderung nötig.
+
+**Tests:** neu `test_login_neutral.py` (8): sieben Ablehnungsfälle mit identischem Körper
+(ohne `instance`/`request_id`), ohne Token und Cookie, ohne E-Mail in Audit und Log;
+Audit nur mit Konto-ID; gesperrtes Konto mit richtigem Passwort erreicht dieselbe `429` wie
+ein falsches Passwort; Begrenzung je IP über wechselnde gesperrte Konten; nach dem
+Entsperren gelingt die Anmeldung, alte Sitzung bleibt ungültig; aktiv in A, gesperrt in B
+(ohne Wahl → A, B gewählt → neutral); mehrere aktive Betriebe → weiter `409`-Auswahl;
+`switch-organization` und Mitgliederendpunkt behalten `404`. Einladungsannahme: deaktiviertes
+Konto mit richtigem und falschem Passwort identisch. Angepasst:
+`test_ohne_mitgliedschaft_kein_login` (`404` → `401`), `test_9c` (`AuthenticationError`),
+Meldungsvergleich in `test_invitations.py`. **Gegenprobe:** Mit dem alten Verhalten
+(`_select_member` ohne Abfangen) scheitern 8 Tests (6 neue, `test_ohne_mitgliedschaft_kein_login`,
+`test_9c`). Backend 875 (vorher 866), Frontend unverändert 744.
+
+**API/Browser (Anna, synthetisch):** gesperrt + richtiges Passwort, gesperrt + falsches
+Passwort und unbekannte Adresse → identisch `401`, ohne Token und Cookie; Login-Seite zeigt in
+beiden Fällen nur die neutrale Meldung; nach dem Entsperren Anmeldung `200`, alte Sitzung
+`401`; Backend-Log `login_rejected` ohne E-Mail; keine Skriptfehler.
+
+### Checkpoint
+
+Phase 4e nach Prüfung durch den Auftraggeber als ein Commit
+`feat(platform): add user lifecycle and server preferences` festgehalten (nicht gepusht).
+Prüfgrundlage: die zuletzt grünen Läufe (Backend 875, Frontend 744); vor dem Commit nur
+Statusformulierungen geändert, daher kein erneuter Volltestlauf.

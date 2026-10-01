@@ -28,6 +28,10 @@ const { default: MitgliedPage } = await import("./MitgliedPage");
 const ADMIN_RECHTE = [
   "user.account.read",
   "user.account.write",
+  "user.account.lock",
+  "user.profile.write",
+  "user.password.reset",
+  "user.account.remove",
   "role.assignment.read",
   "role.assignment.write",
 ];
@@ -38,10 +42,14 @@ function mitglied(teil: Partial<MemberOut> = {}): MemberOut {
     full_name: "Paul Planer",
     email: "paul@test.example",
     status: "active",
+    lock_reason: null,
     roles: [{ key: "planer", name: "Planer" }],
     is_administrator: false,
     is_self: false,
+    is_last_active_administrator: false,
+    account_shared: false,
     joined_at: "2026-09-01T08:00:00Z",
+    updated_at: "2026-09-20T08:00:00Z",
     last_login_at: null,
     version: 4,
     ...teil,
@@ -119,7 +127,7 @@ describe("Mitglied verwalten", () => {
     expect(within(rechte).getByText(/über Planer, Kalkulator/)).toBeInTheDocument();
     expect(within(rechte).getByText("customer.record.read").tagName).toBe("CODE");
     expect(screen.getByRole("region", { name: "Projekte" })).toBeInTheDocument();
-    expect(screen.getByText(/lassen sich\s+hier nicht ändern/)).toBeInTheDocument();
+    expect(screen.getByText("Zuletzt geändert")).toBeInTheDocument();
   });
 
   it("ändert Rollen erst nach Rückfrage, atomar mit If-Match", async () => {
@@ -172,7 +180,7 @@ describe("Mitglied verwalten", () => {
     ).toBeInTheDocument();
   });
 
-  it("sperrt den Zugang nach Rückfrage und kann ihn wieder freigeben", async () => {
+  it("sperrt nach Rückfrage (mit optionalem Grund) und entsperrt wieder", async () => {
     api.post.mockImplementation((pfad: string) => {
       aktuell = mitglied({
         status: pfad.endsWith("/suspend") ? "disabled" : "active",
@@ -181,24 +189,29 @@ describe("Mitglied verwalten", () => {
       return Promise.resolve(aktuell);
     });
     zeigen();
-    fireEvent.click(await screen.findByRole("button", { name: "Zugang zu diesem Betrieb sperren" }));
-    const frage = screen.getByRole("dialog", { name: "Zugang sperren?" });
-    expect(within(frage).getByText(/Zugänge zu anderen Betrieben bleiben bestehen/)).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Sperren" }));
+    const frage = screen.getByRole("dialog", { name: "Benutzer sperren?" });
+    expect(within(frage).getByText(/Alle Sitzungen enden sofort/)).toBeInTheDocument();
+    expect(within(frage).getByText(/Offene Links zum Zurücksetzen des Passworts werden ungültig/)).toBeInTheDocument();
     expect(within(frage).getByRole("button", { name: "Abbrechen" })).toHaveFocus();
-    fireEvent.click(within(frage).getByRole("button", { name: "Zugang sperren" }));
+    fireEvent.change(within(frage).getByLabelText("Sperrgrund (optional)"), {
+      target: { value: "  Elternzeit  " },
+    });
+    fireEvent.click(within(frage).getByRole("button", { name: "Sperren" }));
 
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith("/api/v1/members/{member_id}/suspend", {
         path: { member_id: "m1" },
         ifMatch: 4,
+        body: { reason: "Elternzeit" },
       }),
     );
     expect(await screen.findByText(/ist gesperrt/)).toBeInTheDocument();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Zugang wieder freigeben" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Entsperren" }));
     fireEvent.click(
-      within(screen.getByRole("dialog", { name: "Zugang freigeben?" })).getByRole("button", {
-        name: "Zugang freigeben",
+      within(screen.getByRole("dialog", { name: "Benutzer entsperren?" })).getByRole("button", {
+        name: "Entsperren",
       }),
     );
     await waitFor(() =>
@@ -216,8 +229,9 @@ describe("Mitglied verwalten", () => {
       roles: [{ key: "admin", name: "Administrator" }],
     });
     zeigen();
-    expect(await screen.findByText("Den eigenen Zugang kann niemand selbst sperren.")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /sperren/ })).toBeNull();
+    expect(await screen.findByText("Das eigene Konto kann niemand selbst sperren oder entfernen.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sperren" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Benutzer entfernen" })).toBeDisabled();
     expect(await screen.findByRole("checkbox", { name: /Administrator/ })).toBeDisabled();
   });
 
@@ -226,6 +240,9 @@ describe("Mitglied verwalten", () => {
     zeigen();
     expect(await screen.findByRole("checkbox", { name: /Planer/ })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Rollen speichern" })).toBeNull();
-    expect(screen.queryByRole("button", { name: /sperren/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Sperren/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /entfernen/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Passwort/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /bearbeiten/ })).toBeNull();
   });
 });

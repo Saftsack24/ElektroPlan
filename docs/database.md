@@ -58,7 +58,7 @@ Organisation B verweisen. Voraussetzung: jede referenzierte Tabelle hat zusätzl
 
 | Modul | Präfix | Tabellen |
 |---|---|---|
-| Core | — | `organizations`, `users`, `organization_members`, `member_invitations`, `member_invitation_roles`, `roles`, `permissions`, `role_permissions`, `member_roles`, `refresh_tokens`, `organization_modules`, `customers`, `projects`, `buildings`, `floors`, `files`, `storage_cleanup_jobs`, `audit_entries`, `number_sequences`, `domain_events` |
+| Core | — | `organizations`, `users`, `organization_members`, `member_invitations`, `member_invitation_roles`, `roles`, `permissions`, `role_permissions`, `member_roles`, `refresh_tokens`, `password_reset_tokens`, `user_preferences`, `organization_modules`, `customers`, `projects`, `buildings`, `floors`, `files`, `storage_cleanup_jobs`, `audit_entries`, `number_sequences`, `domain_events` |
 | materials | `material_` | `material_categories`, `materials`, `material_prices`, `material_rules`, `service_templates`, `service_template_items`, `material_requirement_runs`, `material_requirements`, `labor_requirements` |
 | inventory | `inventory_` | `inventory_locations`, `inventory_stocks`, `inventory_transactions`, `inventory_reservations` |
 | calculation | `calculation_` | `calculation_labor_rates`, `calculations`, `calculation_items`, `calculation_surcharges` |
@@ -83,6 +83,8 @@ erDiagram
     PERMISSIONS   ||--o{ ROLE_PERMISSIONS : wird_gewaehrt
     ORGANIZATION_MEMBERS ||--o{ MEMBER_ROLES : besitzt
     ORGANIZATIONS ||--o{ MEMBER_INVITATIONS : laedt_ein
+    ORGANIZATION_MEMBERS ||--o| USER_PREFERENCES : hat
+    ORGANIZATION_MEMBERS ||--o| PASSWORD_RESET_TOKENS : offener_link
     MEMBER_INVITATIONS ||--o{ MEMBER_INVITATION_ROLES : sieht_vor
     ROLES         ||--o{ MEMBER_INVITATION_ROLES : vorgesehen
     ROLES         ||--o{ MEMBER_ROLES : zugewiesen
@@ -118,10 +120,29 @@ erDiagram
         uuid id PK
         uuid organization_id FK
         uuid user_id FK
-        text status
+        text status "active|disabled|removed"
+        text lock_reason "nur bei disabled"
+        int session_version
         int version
         timestamptz last_login_at
         timestamptz created_at
+    }
+    USER_PREFERENCES {
+        uuid id PK
+        uuid organization_id FK
+        uuid member_id FK "UNIQUE"
+        text theme_mode
+        text accent
+        text length_unit
+        int version
+    }
+    PASSWORD_RESET_TOKENS {
+        uuid id PK
+        uuid organization_id FK
+        uuid member_id FK "UNIQUE"
+        text token_hash UK
+        timestamptz expires_at
+        uuid created_by_user_id FK
     }
     MEMBER_INVITATIONS {
         uuid id PK
@@ -242,9 +263,24 @@ erDiagram
 
 - `organizations.slug` UNIQUE
 - `users.email` UNIQUE (immer klein geschrieben gespeichert)
-- `organization_members` UNIQUE `(organization_id, user_id)`; `version` für `If-Match`
-  auf Status und Rollen (seit `0005`). `last_login_at` gilt nur für diesen Betrieb und
-  wird ohne Versionszählung geschrieben.
+- `organization_members`: partieller UNIQUE-Index `uq_organization_members_current_user`
+  `(organization_id, user_id) WHERE status <> 'removed'` (seit `0007`; vorher UNIQUE
+  ohne Bedingung) – höchstens eine nicht entfernte Mitgliedschaft je Konto und Betrieb, ein
+  entferntes Mitglied kann erneut beitreten. CHECK `status IN ('active', 'invited',
+  'disabled', 'removed')`, CHECK `lock_reason IS NULL OR status = 'disabled'`, CHECK
+  `session_version >= 1`. `version` für `If-Match` auf Status, Rollen und (seit 4e) Profil.
+  `last_login_at` gilt nur für diesen Betrieb und wird – wie `session_version` – ohne
+  Versionszählung geschrieben.
+- `refresh_tokens.session_version` (seit `0007`): Sitzungsversion der Mitgliedschaft bei der
+  Ausstellung; weicht sie ab, ist der Token wertlos (ADR 0021).
+- `password_reset_tokens` (seit `0007`): `token_hash` UNIQUE (nur SHA-256), `member_id`
+  UNIQUE (höchstens ein offener Link), zusammengesetzter FK auf `organization_members`
+  (`CASCADE`), `created_by_user_id` → `users` (`SET NULL`). Verwendete oder ersetzte Links
+  werden gelöscht, nicht markiert.
+- `user_preferences` (seit `0007`): `member_id` UNIQUE, zusammengesetzter FK auf
+  `organization_members` (`CASCADE`), CHECKs `theme_mode IN ('system','light','dark')`,
+  `accent IN ('blue','teal','green','violet','orange')`, `length_unit IN ('mm','cm','m')`,
+  `version` für `If-Match`.
 - `member_invitations`: `token_hash` UNIQUE (nur SHA-256, nie das Token);
   `uq_member_invitations_open_email` = partieller UNIQUE-Index
   `(organization_id, email) WHERE accepted_at IS NULL AND revoked_at IS NULL` – je
@@ -366,7 +402,28 @@ Die **Organisationszeile** ist die Sperrwurzel aller Mitgliedschaftsänderungen
 
 Sperrreihenfolge `Organisation → Mitgliedschaft`. Kein anderer Pfad hält eine
 Mitgliedschaftszeile und wartet danach auf die Organisation; die Anmeldung aktualisiert
-`last_login_at` ohne Organisationssperre. Zwei gleichzeitige Anfragen, die zusammen den
+`last_login_at` ohne Organisationssperre.
+
+**Seit Phase 4e (ADR 0021)** gilt für alle Lebenszyklusvorgänge die erweiterte Reihenfolge
+
+```
+organizations → organization_members → users → password_reset_tokens
+```
+
+| Vorgang | Ablauf innerhalb einer Transaktion |
+|---|---|
+| Name/E-Mail ändern | Organisation → Handelnden prüfen → Mitgliedschaft (Version, nicht entfernt) → Konto sperren → exklusiv? → Eindeutigkeit (Konten, offene Einladungen) → schreiben, Version + 1; bei neuer E-Mail Refresh Tokens widerrufen, Sitzungsversion + 1 |
+| Sperren / Entsperren | wie oben bis Mitgliedschaft → Selbst-/Administratorregel → Status, Sperrgrund → Refresh Tokens widerrufen (Sperren) → Sitzungsversion + 1 |
+| Reset-Link auslösen | Organisation → Handelnden prüfen → Mitgliedschaft → exklusiv? → alten Link löschen → neuen anlegen |
+| Reset-Link einlösen (öffentlich) | Link per Hash lesen (ohne Sperre) → Mitgliedschaft sperren → Konto sperren → Link sperren und erneut prüfen → Passwort, Link löschen, alle Refresh Tokens widerrufen, Sitzungsversion + 1 |
+| Entfernen | Organisation → Handelnden prüfen → Mitgliedschaft → Konto sperren → Bestätigung → Administratorregel → Rollen, Einstellungen, Links löschen → Status `removed`, ggf. Konto bereinigen → Sitzungen widerrufen, Sitzungsversion + 1 |
+| Einladung anlegen | **seit 4e** Organisation sperren → Mitglied/offene Einladung prüfen → anlegen |
+| Einladung mit bestehendem Konto annehmen | Einladung sperren → Anmeldedaten → **seit 4e** Konto sperren, E-Mail erneut prüfen → Mitgliedschaft anlegen |
+| Einstellungen ändern | `user_preferences … FOR UPDATE` → Version prüfen → schreiben (anlegen: eindeutige Constraint entscheidet) |
+
+Die Erneuerung einer Sitzung sperrt nur die Refresh-Token-Zeile. Sie braucht keine
+weitere Sperre: Stellt sie gleichzeitig mit einer Sperre noch einen Nachfolger aus, trägt
+der die alte Sitzungsversion und ist ab dem Commit der Sperre wertlos. Zwei gleichzeitige Anfragen, die zusammen den
 letzten Administrator entfernen würden, laufen nacheinander – die zweite zählt neu und
 erhält `409 last-administrator` (Paralleltest samt Gegenprobe ohne Sperre).
 
@@ -1010,6 +1067,7 @@ Weitere Indizes erst nach Messung (`EXPLAIN ANALYZE`), nicht auf Verdacht.
 | `0003_core_business_data` | Kunden, Projekte, Gebäude, Geschosse, Dateien |
 | `0004_electrical_room_model` | Räume, Wände, Öffnungen |
 | `0005_member_administration` | `organization_members.version` und `last_login_at`, `member_invitations`, `member_invitation_roles` (Phase 4.2, keine Datenmigration) |
+| `0007_user_lifecycle_preferences` | `organization_members.lock_reason`, `.session_version`, CHECKs für Status/Sperrgrund/Sitzungsversion, Eindeutigkeit nur für nicht entfernte Mitgliedschaften (partieller Index); `refresh_tokens.session_version`; neue Tabellen `password_reset_tokens` und `user_preferences` (Phase 4e, ADR 0021). Bestand bleibt unverändert (aktiv bleibt aktiv, Sitzungsversion 1, Sitzungen gültig). Neue Rechte legt der Seed an. Downgrade: Einstellungen und Links gehen verloren, entfernte Mitgliedschaften werden `disabled` |
 | `0006_data_lifecycle` | `storage_cleanup_jobs`; `customers.anonymized_at`, `customers.deleted_at` und `projects.deleted_at` entfernt (keine Zeile gelöscht, Ausgeblendetes wieder sichtbar); Berechtigung `customer.record.anonymize` gelöscht (Phase 4d, ADR 0020). Neue Rechte legt der Seed an |
 
 ---

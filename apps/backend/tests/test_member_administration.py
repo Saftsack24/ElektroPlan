@@ -113,7 +113,7 @@ def test_lesen_ohne_schreibrecht(api: TestClient, engine: Engine, betrieb: uuid.
     version = {"If-Match": str(detail["version"])}
 
     for pfad, koerper in (
-        (f"/api/v1/members/{ziel.member_id}/suspend", None),
+        (f"/api/v1/members/{ziel.member_id}/suspend", {}),
         (f"/api/v1/members/{ziel.member_id}/reactivate", None),
         ("/api/v1/invitations", {"email": "x@test.example", "role_keys": ["planer"]}),
     ):
@@ -207,6 +207,12 @@ def test_detail_zeigt_keine_globalen_kontodaten_ausser_name_und_email(
         "joined_at",
         "last_login_at",
         "version",
+        # Phase 4e (ADR 0021): Zustand und Grenzen der Verwaltung - keine
+        # weiteren Kontodaten.
+        "lock_reason",
+        "updated_at",
+        "is_last_active_administrator",
+        "account_shared",
     }
     assert detail["is_self"] is False
     assert detail["roles"] == [{"key": "planer", "name": "Planer"}]
@@ -237,17 +243,21 @@ def test_sperren_und_reaktivieren_mit_if_match(
     pfad = f"/api/v1/members/{person.member_id}"
     version = _mitglied(api, headers, person.member_id)["version"]
 
-    assert api.post(f"{pfad}/suspend", headers=headers).status_code == 428
-    veraltet = api.post(f"{pfad}/suspend", headers={**headers, "If-Match": str(version + 1)})
+    assert api.post(f"{pfad}/suspend", json={}, headers=headers).status_code == 428
+    veraltet = api.post(
+        f"{pfad}/suspend", json={}, headers={**headers, "If-Match": str(version + 1)}
+    )
     assert veraltet.status_code == 409
     assert veraltet.json()["type"].endswith("/version-conflict")
 
-    gesperrt = api.post(f"{pfad}/suspend", headers={**headers, "If-Match": str(version)})
+    gesperrt = api.post(f"{pfad}/suspend", json={}, headers={**headers, "If-Match": str(version)})
     assert gesperrt.status_code == 200, gesperrt.text
     assert gesperrt.json()["status"] == "disabled"
     assert gesperrt.json()["version"] == version + 1
 
-    doppelt = api.post(f"{pfad}/suspend", headers={**headers, "If-Match": str(version + 1)})
+    doppelt = api.post(
+        f"{pfad}/suspend", json={}, headers={**headers, "If-Match": str(version + 1)}
+    )
     assert doppelt.status_code == 409
 
     frei = api.post(f"{pfad}/reactivate", headers={**headers, "If-Match": str(version + 1)})
@@ -267,6 +277,7 @@ def test_sperre_wirkt_sofort_auf_access_und_refresh(
         version = _mitglied(api, headers, person.member_id)["version"]
         response = api.post(
             f"/api/v1/members/{person.member_id}/suspend",
+            json={},
             headers={**headers, "If-Match": str(version)},
         )
         assert response.status_code == 200
@@ -331,6 +342,7 @@ def test_sperre_betrifft_keinen_anderen_betrieb(
         version = _mitglied(api, headers, person.member_id)["version"]
         response = api.post(
             f"/api/v1/members/{person.member_id}/suspend",
+            json={},
             headers={**headers, "If-Match": str(version)},
         )
         assert response.status_code == 200
@@ -355,7 +367,9 @@ def test_selbstsperrung_ist_ausgeschlossen(
     headers = _anmelden(api, ADMIN)
     version = _mitglied(api, headers, ich.member_id)["version"]
     response = api.post(
-        f"/api/v1/members/{ich.member_id}/suspend", headers={**headers, "If-Match": str(version)}
+        f"/api/v1/members/{ich.member_id}/suspend",
+        json={},
+        headers={**headers, "If-Match": str(version)},
     )
     assert response.status_code == 409
     assert response.json()["type"].endswith("/self-lockout")
@@ -371,6 +385,7 @@ def test_letzter_administrator_kann_nicht_gesperrt_werden(
     version = _mitglied(api, headers, admin.member_id)["version"]
     response = api.post(
         f"/api/v1/members/{admin.member_id}/suspend",
+        json={},
         headers={**headers, "If-Match": str(version)},
     )
     assert response.status_code == 409
@@ -396,6 +411,7 @@ def test_inaktives_globales_konto_zaehlt_nicht_als_administrator(
     version = _mitglied(api, headers, admin.member_id)["version"]
     response = api.post(
         f"/api/v1/members/{admin.member_id}/suspend",
+        json={},
         headers={**headers, "If-Match": str(version)},
     )
     assert response.status_code == 409
@@ -611,7 +627,7 @@ def test_fremde_mitgliedschaften_bleiben_unerreichbar(
     for methode, pfad, koerper in (
         ("GET", f"/api/v1/members/{member}", None),
         ("GET", f"/api/v1/members/{member}/permissions", None),
-        ("POST", f"/api/v1/members/{member}/suspend", None),
+        ("POST", f"/api/v1/members/{member}/suspend", {}),
         ("POST", f"/api/v1/members/{member}/reactivate", None),
         ("PUT", f"/api/v1/members/{member}/roles", {"role_keys": ["monteur"]}),
         ("GET", f"/api/v1/invitations/{einladung['id']}", None),
@@ -651,7 +667,7 @@ def test_protokoll_ohne_personenbezogene_daten(
         headers={**headers, "If-Match": str(version)},
         json={"role_keys": ["planer", "monteur"]},
     )
-    api.post(f"{pfad}/suspend", headers={**headers, "If-Match": str(version + 1)})
+    api.post(f"{pfad}/suspend", json={}, headers={**headers, "If-Match": str(version + 1)})
     api.post(f"{pfad}/reactivate", headers={**headers, "If-Match": str(version + 2)})
 
     session = fabrik(engine)()
@@ -695,6 +711,7 @@ def test_mitglied_bleibt_in_der_datenbank_konsistent(
     version = _mitglied(api, headers, person.member_id)["version"]
     api.post(
         f"/api/v1/members/{person.member_id}/suspend",
+        json={},
         headers={**headers, "If-Match": str(version)},
     )
     session = fabrik(engine)()

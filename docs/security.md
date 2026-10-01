@@ -42,9 +42,25 @@ Die beiden kritischsten Anforderungen des Systems sind:
   versionierbar. Kein bcrypt, kein SHA-Derivat.
 - **Passwortregeln:** Mindestlänge 12, Abgleich gegen eine Liste bekannter Passwörter,
   keine erzwungene periodische Änderung (entspricht BSI-/NIST-Empfehlung).
-- **Access Token:** JWT, kurzlebig (15 Minuten), enthält `user_id`, `organization_id`,
-  `token_version`. Berechtigungen stehen **nicht** im Token — sie werden serverseitig
-  geladen, damit Entzug sofort wirkt.
+- **Access Token:** JWT, kurzlebig (15 Minuten), enthält `user_id` (`sub`),
+  `organization_id` (`org`), `member_id` (`mid`) und seit Phase 4e die
+  **Sitzungsversion** (`sv`) der Mitgliedschaft. Berechtigungen stehen **nicht** im Token —
+  sie werden serverseitig geladen, damit Entzug sofort wirkt.
+- **Sitzungsversion (seit Phase 4e, ADR 0021):** `organization_members.session_version`
+  steht in jedem Access Token und in jedem Refresh Token. Jede Anfrage und jede Erneuerung
+  vergleicht sie mit dem aktuellen Wert; Abweichung → `401` (Refresh: Familie widerrufen,
+  Grund `session_outdated`). Sperren, Entsperren, Entfernen, neue E-Mail und neues Passwort
+  zählen sie hoch. Damit ist **jedes** vorher ausgestellte Token wertlos – auch ein Nachfolger,
+  den eine gleichzeitige Erneuerung noch mit altem Stand ausgestellt hat – und ein Entsperren
+  belebt keine alte Sitzung. Keine prozesslokale Sperrliste. Access Tokens ohne `sv` (vor 4e)
+  gelten nicht; der Client erneuert einmal über das Cookie.
+- **Neutrale Ablehnung (seit Phase 4e, ADR 0021 §2a):** Jeder abgelehnte Login –
+  unbekannte Adresse, falsches Passwort, deaktiviertes Konto, gesperrte, entfernte oder
+  fehlende Mitgliedschaft, gewählter Betrieb ohne aktive Mitgliedschaft – antwortet gleich:
+  `401 authentication-failed`, „Anmeldung nicht möglich. Bitte Zugangsdaten prüfen oder die Administration kontaktieren.“, kein Token, kein Cookie. Jeder zählt als
+  Fehlversuch je Konto und IP, auch mit richtigem Passwort. Die Auswahl zwischen mehreren
+  aktiven Betrieben (`409`) ist kein Fehler. Dieselbe Antwort bei der Prüfung bestehender
+  Zugangsdaten in der Einladungsannahme.
 - **Refresh Token:** zufälliger, hoch-entroper Wert, nur als Hash gespeichert
   (`refresh_tokens`), Rotation bei jeder Nutzung, Wiederverwendung eines alten Tokens
   invalidiert die gesamte Familie (Diebstahlserkennung).
@@ -81,8 +97,9 @@ Die beiden kritischsten Anforderungen des Systems sind:
   wird erst mit Phase 13 gebaut und teilt sich **nicht** das Response-Schema des
   Webflows — andernfalls bekäme der Webclient den Refresh Token wieder lesbar zurück.
 - **Logout:** widerruft die Token-Familie serverseitig, nicht nur clientseitig.
-- **Gesperrte Mitgliedschaft (seit Phase 4.2):** Jede Anfrage prüft den Status der
-  Mitgliedschaft aus dem Access Token; ein gesperrter Zugang erhält sofort `401`. Die
+- **Gesperrte oder entfernte Mitgliedschaft (seit Phase 4.2, ergänzt 4e):** Jede Anfrage
+  prüft Status **und Sitzungsversion** der Mitgliedschaft aus dem Access Token; ein
+  gesperrter Zugang erhält sofort `401`. Die
   Sperre widerruft zusätzlich alle offenen Refresh Tokens **dieser** Mitgliedschaft
   (Grund `membership_disabled`); Sitzungen desselben Kontos in anderen Betrieben bleiben
   unberührt. Ein Refresh mit gesperrter Mitgliedschaft liefert `401` und widerruft die
@@ -127,7 +144,8 @@ Was es **noch nicht** gibt — und was deshalb nirgends behauptet wird:
 - keine bedingten oder datenabhängigen Policies,
 - kein Rolleneditor in der Oberfläche; Rollen lassen sich **nicht** anpassen oder
   kopieren, und einzelne Berechtigungen lassen sich nicht vergeben,
-- keine Passwortwiederherstellung (siehe Abschnitt 18),
+- keine Passwortwiederherstellung durch die Person selbst (kein E-Mail-Versand); seit
+  Phase 4e kann ein Administrator einen Einmal-Link auslösen (Abschnitt 18a),
 - keine Lizenz-, Abrechnungs- oder Trial-Logik.
 
 **Lebenszyklus von Projekten und Kunden (seit Phase 4d, ADR 0020):**
@@ -151,7 +169,12 @@ Zugang. Verwendete Berechtigungen – keine neuen Schlüssel:
 | Berechtigung | erlaubt |
 |---|---|
 | `user.account.read` | Benutzerliste, Mitglied, Einladung, Systeminformationen lesen |
-| `user.account.write` | Einladung widerrufen/neu ausstellen, Zugang sperren/freigeben |
+| `user.account.write` | Einladung widerrufen/neu ausstellen (Sperren seit 4e: `user.account.lock`) |
+| `user.account.lock` | sperren und entsperren – **nur Administrator** (seit 4e) |
+| `user.profile.write` | Name und E-Mail eines exklusiven Kontos ändern – **nur Administrator** (seit 4e) |
+| `user.password.reset` | Reset-Link auslösen – **nur Administrator** (seit 4e) |
+| `user.account.remove` | Mitglied endgültig entfernen – **nur Administrator** (seit 4e) |
+| `user.preferences.write` | **eigene** Einstellungen speichern – jede Systemrolle (seit 4e) |
 | `role.assignment.read` | Systemrollen, Rollen und effektive Rechte eines Mitglieds lesen |
 | `role.assignment.write` | Rollen vergeben; zusammen mit `user.account.write` einladen |
 
@@ -244,6 +267,12 @@ Explizit protokolliert werden mindestens:
 - Benutzerverwaltung: `invitation.created`, `invitation.revoked`, `invitation.reissued`,
   `invitation.accepted`, `member.suspended`, `member.reactivated` – mit IDs und
   Rollenschlüsseln, **ohne** E-Mail, Namen, Token, Link oder Passwort
+- Benutzerlebenszyklus (seit 4e): `member.profile_updated` (nur die **Namen** der
+  geänderten Felder), `member.removed` (`account_tombstoned` ja/nein),
+  `member.password_reset_issued`, `member.password_reset_completed` – Ziel-ID und
+  Aktionsart, nie alte oder neue Werte, Sperrgrund, Token, Link oder Passwort. Die
+  Anmeldung protokolliert seit 4e nur „Anmeldung“ ohne E-Mail (ältere Einträge enthalten sie
+  noch; das Audit wird nicht nachträglich geändert)
 - Anlegen/Ändern/Löschen von Kunden und Projekten
   (`customer.created`, `customer.updated`, `customer.deleted`, `project.created`,
   `project.updated`, `project.deleted`, `project.status_changed`, `project.reopened`).
@@ -281,6 +310,8 @@ nicht generisch über ORM-Hooks, und sind nicht änderbar.
 | `POST /auth/login` | 10 Versuche / 15 min / IP **und** / Konto |
 | `POST /auth/refresh` | 60 / Stunde / Konto |
 | `POST /invitation-acceptance/*` | 20 ungültige Tokens / 15 min / IP; die Annahme mit bestehendem Konto zusätzlich über die Login-Grenze (Konto **und** IP) |
+| `POST /password-reset/*` (seit 4e) | 20 ungültige Tokens / 15 min / IP |
+| `POST /members/{id}/password-reset` (seit 4e) | 5 Links / 15 min / Mitgliedschaft |
 | Datei-Upload | 100 / Stunde / Organisation |
 | Schreibende API allgemein | 600 / min / Organisation |
 | PDF-Erzeugung | 30 / min / Organisation |
@@ -333,9 +364,11 @@ Umgesetzt ist eine **zweistufige, überprüfbare** Lösung — kein Double-Submi
    siteübergreifenden Anfragen überhaupt nicht mit.
 2. **Strenge Herkunftsprüfung** (`require_trusted_origin`) auf allen
    cookiebasierten Endpunkten (`/auth/login`, `/auth/refresh`, `/auth/logout`,
-   `/auth/switch-organization`): Ist ein `Origin`- oder `Referer`-Header
-   vorhanden, muss er zu den konfigurierten Origins passen, sonst `403`
-   (`csrf-validation-failed`).
+   `/auth/switch-organization`) und den öffentlichen Token-Endpunkten
+   (`/invitation-acceptance/*`, seit 4e `/password-reset/*`): Ist ein `Origin`- oder
+   `Referer`-Header vorhanden, muss er zu den konfigurierten Origins passen, sonst `403`
+   (`csrf-validation-failed`). Die Reset-Endpunkte lesen und setzen **kein** Cookie und
+   stellen keine Sitzung aus; ohne das Einmal-Token im Anfragekörper bewirken sie nichts.
 
 Fehlen **beide** Header, wird die Anfrage zugelassen. Begründung: Browser senden
 `Origin` bei zustandsändernden Anfragen immer mit; fehlt er, stammt die Anfrage
@@ -404,6 +437,9 @@ einen Zweck; Felder „für später" gibt es nicht.
 | `projects` | `site_street`, `site_postal_code`, `site_city` | Baustelle auffinden, Anfahrt und Aufmaß | Art. 6 Abs. 1 lit. b |
 | `users` | `email`, `full_name` | Anmeldung und Zuordnung von Handlungen | Art. 6 Abs. 1 lit. b/f |
 | `organization_members` | `status`, `last_login_at` | Zugang zum Betrieb steuern; ungenutzte Zugänge erkennen (letzte Anmeldung **nur in diesem Betrieb**) | Art. 6 Abs. 1 lit. b/f |
+| `organization_members` | `lock_reason` (seit 4e, optional, ≤ 200 Zeichen, nur solange gesperrt) | Sperre nachvollziehbar machen – nur bei echtem betrieblichem Bedarf, ohne sensible Angaben | Art. 6 Abs. 1 lit. f |
+| `user_preferences` | `theme_mode`, `accent`, `length_unit` (seit 4e) | persönliche Darstellung auf allen Geräten; benutzerbezogene Profildaten ohne weitere Aussagekraft | Art. 6 Abs. 1 lit. b/f |
+| `password_reset_tokens` | `token_hash`, `expires_at`, `created_by_user_id` (seit 4e) | Einmal-Link zum Zurücksetzen; nur Hash, nur solange offen | Art. 6 Abs. 1 lit. b/f |
 | `member_invitations` | `email`, `full_name` | Einladung zustellen und der richtigen Person zuordnen; der Name ist nur ein Vorschlag | Art. 6 Abs. 1 lit. b |
 | `member_invitations` | `token_hash`, `expires_at`, `accepted_at`, `revoked_at`, `created_by_user_id` | Einmaligkeit, Frist und Nachvollziehbarkeit der Einladung – kein Personenbezug im Hash | Art. 6 Abs. 1 lit. f |
 | `audit_entries` | `actor_user_id` | Nachvollziehbarkeit kritischer Aktionen | Art. 6 Abs. 1 lit. f |
@@ -481,9 +517,16 @@ aus ADR 0020. Archivierung ist ausschließlich der Projektstatus `archived`.
   E-Mail seiner Mitglieder – nicht deren andere Betriebe, nicht deren globale letzte
   Anmeldung.
 * **Sperrung** betrifft nur die Mitgliedschaft; Daten bleiben erhalten, damit Protokoll
-  und Belege zuordenbar bleiben. Ein **Austritt** (Löschen der Mitgliedschaft) und die
-  Löschung eines Kontos sind noch nicht umgesetzt – beides gehört zu den offenen
-  Punkten 3 und 5, angewandt auf Mitarbeiterdaten.
+  und Belege zuordenbar bleiben.
+* **Entfernen** (seit Phase 4e, ADR 0021) ist ein endgültiger **Tombstone**, kein
+  wiederherstellbares Soft Delete: Rollen, Einstellungen und Reset-Links werden gelöscht;
+  gehört das Konto keinem anderen Betrieb an, werden E-Mail (→
+  `removed-<user_id>@removed.invalid`), Name (→ „Entfernter Benutzer“), Passworthash und
+  letzte Anmeldung ersetzt bzw. gelöscht. Die Mitgliedschaftszeile und die Konto-ID bleiben,
+  damit Bearbeiterangaben als „Entfernter Benutzer“ auflösbar sind – ohne Personenbezug im
+  operativen Bestand. **Backups** enthalten die früheren Werte bis zum Ablauf ihrer
+  Aufbewahrung; die Wiederholung einer Entfernung nach einem Restore ist wie bei Kunden
+  offen (Punkt 8). Audit-Einträge behalten nur Ziel-ID und Aktionsart.
 * **Einladungen** leben höchstens bis zur Aufbewahrungsfrist: angenommene, widerrufene
   oder abgelaufene Einladungen entfernt `python -m app.cli purge-invitations` nach
   `ELEKTROPLAN_INVITATION_RETENTION_DAYS` (Standard 30 Tage). Das ist ein Werkzeug,
@@ -587,6 +630,72 @@ Paralleltests gegen PostgreSQL samt Gegenprobe ohne Sperre.
 keine Anmeldung, prüfen aber `Origin`/`Referer` wie die Sitzungsendpunkte, sind je IP
 begrenzt und stellen keine Sitzung aus.
 
-**Passwortwiederherstellung** ist **nicht** Teil dieser Phase. Sie wird als eigener,
-vom Kontoinhaber ausgelöster Ablauf mit E-Mail-Versand eingeführt – nie als Funktion
-eines Betriebsadministrators.
+**Passwortwiederherstellung** durch die Person selbst (mit E-Mail-Versand) gibt es weiterhin
+nicht. Seit Phase 4e kann ein Administrator für ein **exklusives** Konto einen Einmal-Link
+auslösen – siehe Abschnitt 18a.
+
+---
+
+## 18a. Benutzerlebenszyklus (Phase 4e)
+
+Entscheidung: [ADR 0021](decisions/0021-user-lifecycle-account-locks-password-reset-preferences.md).
+Präzisiert die Grenze aus Abschnitt 18:
+
+**Exklusive Konten.** Name, E-Mail und Passwortreset sowie die Bereinigung beim Entfernen
+nur für Konten ohne weitere (nicht entfernte) Mitgliedschaft in einem anderen Betrieb –
+sonst `409 account-shared` (ohne Betriebsnamen). Sperren und Entfernen der Mitgliedschaft
+bleiben für jedes Mitglied möglich.
+
+**Zustände** `active ↔ disabled → removed` (endgültig). Sperren widerruft die Refresh Tokens
+der Mitgliedschaft, löscht alle offenen Reset-Links der Mitgliedschaft und zählt die
+Sitzungsversion hoch (Abschnitt 3); Entsperren zählt erneut hoch, verlangt eine neue
+Anmeldung und belebt weder Sitzungen noch Reset-Links. Eine Anmeldung mit gesperrter
+oder entfernter Mitgliedschaft ist nach außen nicht von einem falschen Passwort zu
+unterscheiden (Abschnitt 3) und zählt für die Begrenzung.
+
+**Sperre als Sicherheitsstopp (Nachkorrektur vor dem Commit):** Eine Sperre löscht in
+derselben Transaktion jeden zuvor ausgestellten offenen Reset-Link der Mitgliedschaft
+(Reihenfolge `Organisation → Mitgliedschaft → Reset-Link`, kein Konto nötig); Entsperren
+belebt ihn nicht wieder. Ein Administrator darf für das gesperrte Mitglied **bewusst einen
+neuen** Link erzeugen: Das Passwort lässt sich damit setzen, die Sperre bleibt bestehen, und
+anmelden kann sich die Person erst nach dem Entsperren – dann nur mit dem neuen Passwort;
+alte Sitzungen bleiben ungültig. Gleichzeitig mit einer Einlösung entscheidet die
+Mitgliedschaftssperre: Hat die Einlösung zuerst committet, gilt das neue Passwort und die
+Sperre folgt; hat die Sperre zuerst committet, findet die Einlösung keinen Link mehr. Nach
+jeder abgeschlossenen Sperre bleibt kein zuvor ausgestellter Link übrig.
+
+**Neue E-Mail** (normalisiert, eindeutig gegen alle Konten und die offenen Einladungen
+dieses Betriebs, sonst `409 email-unavailable` – eine Meldung für beide Fälle): alle
+Sitzungen enden, nur noch die neue Adresse meldet an.
+
+**Reset-Link:**
+
+| Eigenschaft | Umsetzung |
+|---|---|
+| Zufall | 256 Bit (`secrets.token_urlsafe(32)`, gemeinsame Hilfsfunktion mit Einladungen) |
+| Speicherung | nur SHA-256-Hash, eindeutig; höchstens ein offener Link je Mitgliedschaft |
+| Gültigkeit | `ELEKTROPLAN_PASSWORD_RESET_VALID_MINUTES` (Standard 60) |
+| Neuer Link | löscht den alten – er ist sofort wertlos |
+| Einlösen | atomar: Mitgliedschaft → Konto → Link sperren, erneut prüfen, Passwort setzen, Link löschen, alle Refresh Tokens widerrufen, Sitzungsversion + 1 |
+| Sperre | löscht jeden zuvor ausgestellten offenen Link der Mitgliedschaft; ein danach bewusst neu erzeugter Link wirkt, die Sperre bleibt |
+| Ungültig | unbekannt, abgelaufen, verwendet, ersetzt, durch Sperre entwertet, entfernt, inzwischen geteilt: **eine** Antwort (`404 password-reset-invalid`) |
+| Passwortregeln | dieselben wie bei der Anmeldung; ein zu schwaches Passwort verbraucht den Link nicht |
+| Transport | Token im Fragment (`#t=`), im Anfragekörper, nie in Pfad oder Query; die Seite entfernt es sofort aus der Adresszeile |
+| Protokoll und Logs | weder Token noch Link noch Passwort; getestet für Audit **und** Logausgabe |
+| Zustellung | `ELEKTROPLAN_PASSWORD_RESET_DELIVERY`: `none` (Standard) → `503`, nichts angelegt; `admin_link` → Link genau einmal in der Antwort an den Administrator, **in Produktion verweigert die Konfiguration den Start**. Kein E-Mail-Versand. |
+
+Restrisiko: Mit `admin_link` hält der Administrator den Link in der Hand und könnte das
+Passwort selbst setzen. Der Vorgang steht im Audit; deshalb nur außerhalb der Produktion.
+
+**Letzter Administrator.** Sperren, Entfernen und Herabstufen teilen sich die Sperrwurzel
+Organisationszeile und die Reihenfolge `organizations → organization_members → users →
+password_reset_tokens`. Nachgewiesen mit Paralleltests gegen PostgreSQL
+(`tests/test_lifecycle_concurrency.py`).
+
+**Einstellungen** sind benutzerbezogene Profildaten je Mitgliedschaft; nur der Anfragende
+erreicht sie (`/me/preferences`, ohne ID im Pfad). Beim Entfernen werden sie gelöscht.
+
+**Ausschließlich synthetische Benutzer**, bis die DSGVO-Voraussetzungen aus Abschnitt 13
+erfüllt sind. Phase 4e erfüllt die DSGVO **nicht** automatisch; sie liefert Bausteine
+(Berichtigung von Name und E-Mail, Entfernen mit Bereinigung), keine vollständige Umsetzung
+von Auskunft, Verarbeitungsverzeichnis, TOM oder Backup-Löschkonzept.

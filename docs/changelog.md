@@ -5,6 +5,62 @@ Einträge entstehen nach relevanten Änderungen, nicht nach jedem Commit.
 
 ---
 
+## 2026-10-01 — Phase 4e: Benutzerlebenszyklus und serverseitige Einstellungen
+
+Migration **`0007_user_lifecycle_preferences`**, danach **Seed ausführen**. Mit diesem Checkpoint committet. Entscheidung:
+[ADR 0021](decisions/0021-user-lifecycle-account-locks-password-reset-preferences.md).
+
+### Added
+
+- **Serverseitige Einstellungen** `GET/POST/PUT /me/preferences` (Darstellung, Akzent,
+  Maßeinheit; je Benutzer und Betrieb, versioniert, `If-Match`); einmalige Übernahme der
+  alten lokalen Einstellungen; Konflikt mit einem anderen Gerät wird erklärt.
+- **Maßeinheit Meter** (`m`, drei Nachkommastellen); Eingaben mit Komma oder Punkt und mit
+  Einheitenzeichen (`125 cm`, `1,25 m`).
+- **Name und E-Mail ändern** (`PATCH /members/{id}`), **Passwort-Reset-Link**
+  (`POST /members/{id}/password-reset`, öffentlich `/password-reset/preview|complete`,
+  Seite `/passwort-zuruecksetzen`), **Benutzer entfernen** (`POST /members/{id}/remove`,
+  Bestätigung mit der E-Mail-Adresse), optionaler **Sperrgrund**.
+- Benutzerliste: Ansichten Aktiv, Gesperrt, Einladungen, **Entfernt**; Spalten „Erstellt am“
+  und „Zuletzt geändert“; Detailseite mit Aktionen und Dialogen (Bearbeiten, Sperren,
+  Entsperren, Passwort zurücksetzen mit einmaliger Linkanzeige und Kopieren, Entfernen).
+- Bearbeiterangabe „Entfernter Benutzer“ (`UserReference.kind = removed`).
+- Rechte `user.profile.write`, `user.account.lock`, `user.password.reset`,
+  `user.account.remove` (nur Administrator), `user.preferences.write` (jede Rolle).
+- Fehlertypen `member-removed`, `account-shared`, `email-unavailable`,
+  `password-reset-invalid`, `password-reset-delivery-unavailable`, `preferences-exist`.
+- Konfiguration `ELEKTROPLAN_PASSWORD_RESET_DELIVERY` (`none`|`admin_link`, in Produktion
+  nur `none`) und `ELEKTROPLAN_PASSWORD_RESET_VALID_MINUTES`.
+
+### Changed
+
+- **Neutrale Anmeldeablehnung:** `/auth/login` antwortet bei gesperrter, entfernter oder
+  fehlender Mitgliedschaft, deaktiviertem Konto und gewähltem Betrieb ohne aktive
+  Mitgliedschaft wie bei einem falschen Passwort – `401 authentication-failed` mit
+  „Anmeldung nicht möglich. Bitte Zugangsdaten prüfen oder die Administration kontaktieren.“ (vorher `404` bzw. eigene Meldung). Jeder dieser Versuche zählt für die
+  Begrenzung je Konto und IP. Ebenso die Prüfung bestehender Zugangsdaten in der
+  Einladungsannahme.
+- **Sitzungsversion** in Access und Refresh Token; Sperren, Entsperren, Entfernen, neue
+  E-Mail und neues Passwort machen jedes ältere Token wertlos. Access Tokens von vor 4e
+  werden einmal automatisch erneuert.
+- Sperren verlangt `user.account.lock` statt `user.account.write`; `POST …/suspend` erwartet
+  einen Körper (`{}` genügt).
+- **Sperren entwertet alle offenen Passwort-Reset-Links** der Mitgliedschaft
+  (Sicherheitsstopp); Entsperren belebt sie nicht. Für gesperrte Mitglieder bleibt ein neu
+  ausgelöster Reset erlaubt – die Sperre bleibt bestehen.
+- Verwaltungssperren mit `FOR NO KEY UPDATE`; die Einladungsanlage sperrt die
+  Organisationszeile; die Annahme mit bestehendem Konto sperrt die Kontozeile.
+- Eindeutigkeit `(organization_id, user_id)` nur noch für nicht entfernte Mitgliedschaften.
+- Anmeldeprotokoll ohne E-Mail („Anmeldung“).
+- Tabellenhüllen sind positioniert (`relative`) – keine Seitenverbreiterung durch
+  Screenreader-Texte bei schmalen Ansichten.
+
+### Fixed
+
+- Deadlock zwischen Sitzungserneuerung und Sperren (bestand latent seit 4.2), gefunden durch
+  den neuen Paralleltest.
+- Ein vor einer Sperre ausgestelltes Access Token wurde nach dem Entsperren wieder gültig.
+
 ## 2026-09-30 — Phase 4d: Datenlebenszyklus, Löschregeln, Bearbeitungsmetadaten, Aktions-UX
 
 Migration **`0006_data_lifecycle`**, danach Seed ausführen. Mit diesem Checkpoint committet.

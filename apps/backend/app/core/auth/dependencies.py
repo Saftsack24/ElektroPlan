@@ -80,6 +80,11 @@ def get_current_user(
         or member.status != MEMBER_STATUS_ACTIVE
     ):
         raise AuthenticationError("Die Mitgliedschaft ist nicht mehr gueltig.")
+    if member.session_version != payload.session_version:
+        # Sperre, Entsperren, Entfernen, neue E-Mail oder neues Passwort seit
+        # der Ausstellung: Der Token ist wertlos, auch wenn er noch nicht
+        # abgelaufen ist (ADR 0021). Ein Entsperren belebt ihn nicht wieder.
+        raise AuthenticationError("Die Sitzung ist nicht mehr gueltig.")
 
     organization = session.get(Organization, payload.organization_id)
     if organization is None or organization.deleted_at is not None:

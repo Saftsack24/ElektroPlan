@@ -7,10 +7,13 @@ const ZEITPUNKT = new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeSt
  *
  * Der Server liefert nur den Anzeigenamen von Mitgliedern des eigenen
  * Betriebs, nie eine E-Mail-Adresse. Bestandsdaten ohne Bearbeiter heißen
- * „System/Bestandsdaten"; ein Konto außerhalb des Betriebs bleibt namenlos.
+ * „System/Bestandsdaten"; ein Konto außerhalb des Betriebs bleibt namenlos,
+ * ein entferntes Mitglied heißt „Entfernter Benutzer".
  */
 export function bearbeiterText(person: UserReference): string {
   if (person.kind === "member" && person.display_name) return person.display_name;
+  // Endgültig entferntes Mitglied (Phase 4e): neutral, ohne Name.
+  if (person.kind === "removed") return "Entfernter Benutzer";
   if (person.kind === "unknown") return "Unbekannter Benutzer";
   return "System/Bestandsdaten";
 }

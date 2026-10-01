@@ -1,7 +1,13 @@
 # 0019 — Persönliche Darstellungseinstellungen: lokal je Benutzer, versioniert
 
-Status: accepted
+Status: superseded by [0021](0021-user-lifecycle-account-locks-password-reset-preferences.md) (Speicherort)
 Datum: 2026-09-30
+
+> **Abgelöst in Phase 4e:** Die Einstellungen liegen jetzt serverseitig je Benutzer und
+> Betrieb; der Browser hält nur einen Cache je Mitgliedschaft
+> (`elektroplan.einstellungen.<member_id>`). Die lokalen Schlüssel dieses ADR werden einmalig
+> an den Server übertragen und danach gelöscht. Vorschau, Validierung, Wurzelattribute und
+> „keine Anwendung vor der Anmeldung“ gelten unverändert.
 Betrifft: Phase 4c.2 (persönliche Darstellung)
 Baut auf: [ADR 0018](0018-frontend-styling-tailwind-and-theme-tokens.md) (Tokens und
 Wurzelattribute)

@@ -19,6 +19,8 @@ from app.core.files.models import FileRecord, StorageCleanupJob
 from app.core.invitations.models import MemberInvitation, MemberInvitationRole
 from app.core.numbering.models import NumberSequence
 from app.core.organizations.models import Organization, OrganizationMember, OrganizationModule
+from app.core.password_reset.models import PasswordResetToken
+from app.core.preferences.models import UserPreferences
 from app.core.projects.models import Building, Floor, Project
 from app.core.users.models import User
 from app.db.base import Base, metadata
@@ -46,6 +48,7 @@ __all__ = [
     "Organization",
     "OrganizationMember",
     "OrganizationModule",
+    "PasswordResetToken",
     "Permission",
     "Project",
     "RefreshToken",
@@ -53,5 +56,6 @@ __all__ = [
     "RolePermission",
     "StorageCleanupJob",
     "User",
+    "UserPreferences",
     "metadata",
 ]

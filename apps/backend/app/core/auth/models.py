@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -35,6 +35,15 @@ class RefreshTokenRevocationReason(StrEnum):
     #: mit dessen ``organization_id``; Sitzungen in anderen Betrieben
     #: desselben Benutzers bleiben bestehen (ADR 0015).
     MEMBERSHIP_DISABLED = "membership_disabled"
+    #: Die Mitgliedschaft wurde endgueltig entfernt (Phase 4e, ADR 0021).
+    MEMBERSHIP_REMOVED = "membership_removed"
+    #: E-Mail-Adresse oder Passwort des Kontos wurden geaendert - jede
+    #: bestehende Sitzung endet (Phase 4e).
+    CREDENTIALS_CHANGED = "credentials_changed"
+    #: Beim Erneuern erkannt: Der Token stammt aus einer aelteren
+    #: Sitzungsversion der Mitgliedschaft (``session_version``) - etwa weil
+    #: eine Sperre gleichzeitig mit dieser Erneuerung committet hat.
+    SESSION_OUTDATED = "session_outdated"
 
 
 class RefreshToken(UUIDPrimaryKey, Timestamped, Base):
@@ -66,6 +75,11 @@ class RefreshToken(UUIDPrimaryKey, Timestamped, Base):
     revoked_reason: Mapped[str | None] = mapped_column(String(32), nullable=True, default=None)
     replaced_by_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, default=None)
     user_agent: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    #: ``organization_members.session_version`` bei der Ausstellung. Weicht
+    #: sie beim Erneuern ab, ist der Token wertlos (Phase 4e, ADR 0021).
+    session_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default=text("1")
+    )
 
     @property
     def is_revoked(self) -> bool:

@@ -12,6 +12,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import NoReturn
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -41,6 +42,15 @@ from app.errors import (
 from app.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+#: Eine Antwort fuer **jeden** abgelehnten Anmeldeversuch (ADR 0021): unbekannte
+#: Adresse, falsches Passwort, deaktiviertes Konto, gesperrte, entfernte oder
+#: fehlende Mitgliedschaft, gewaehlter Betrieb ohne aktive Mitgliedschaft. Sonst
+#: verriete die Antwort, dass ein Passwort stimmte (Passwort- und
+#: Kontozustands-Orakel).
+LOGIN_REJECTED = (
+    "Anmeldung nicht möglich. Bitte Zugangsdaten prüfen oder die Administration kontaktieren."
+)
 
 _settings = get_settings()
 _login_limiter = SlidingWindowLimiter(
@@ -90,9 +100,16 @@ class AuthService:
     ) -> IssuedTokens:
         """Meldet einen Benutzer an.
 
-        Fehlversuche werden pro Konto **und** pro IP begrenzt. Die Fehlermeldung
-        unterscheidet bewusst nicht zwischen unbekanntem Konto und falschem
-        Passwort.
+        **Jeder** abgelehnte Versuch - unbekannte Adresse, falsches Passwort,
+        deaktiviertes Konto, keine aktive Mitgliedschaft (gesperrt, entfernt,
+        nie vorhanden) oder ein gewaehlter Betrieb ohne aktive Mitgliedschaft -
+        endet gleich: ``401 authentication-failed`` mit :data:`LOGIN_REJECTED`,
+        kein Token, und er zaehlt als Fehlversuch je Konto **und** IP. Sonst
+        liesse sich gegen ein gesperrtes Konto unbegrenzt pruefen, ob ein
+        Passwort stimmt (ADR 0021). Die Sperre selbst bleibt unberuehrt.
+
+        Die Auswahl zwischen mehreren **aktiven** Betrieben nach geprueften
+        Zugangsdaten ist kein Fehler (``409 organization-selection-required``).
         """
         normalized = normalize_email(email)
         self._check_rate_limit(normalized, client_ip)
@@ -101,16 +118,16 @@ class AuthService:
             select(User).where(User.email == normalized)
         ).scalar_one_or_none()
 
-        if user is None or not verify_password(user.password_hash, password):
-            self._register_failed_attempt(normalized, client_ip)
-            if user is not None:
-                self._audit_failed_login(user)
-            raise AuthenticationError("E-Mail oder Passwort ist falsch.")
+        if user is None or not verify_password(user.password_hash, password) or not user.is_active:
+            self._reject_login(normalized, client_ip, user)
 
-        if not user.is_active:
-            raise AuthenticationError("Dieses Konto ist deaktiviert.")
-
-        member = self._select_member(user.id, organization_id)
+        assert user is not None  # durch _reject_login ausgeschlossen
+        try:
+            member = self._select_member(user.id, organization_id)
+        except NotFoundError:
+            # Gesperrt, entfernt, ohne Mitgliedschaft oder fremder Betrieb:
+            # nach aussen nicht vom falschen Passwort zu unterscheiden.
+            self._reject_login(normalized, client_ip, user)
         if needs_rehash(user.password_hash):
             user.password_hash = hash_password(password)
 
@@ -125,7 +142,9 @@ class AuthService:
             entity_type="user",
             entity_id=user.id,
             actor_user_id=user.id,
-            summary=f"Anmeldung {user.email}",
+            # Ohne E-Mail: Das Protokoll ist unveraenderlich und ueberdauert
+            # eine Kontoentfernung (ADR 0021). Die Ziel-ID genuegt.
+            summary="Anmeldung",
         )
         logger.info("login_succeeded", user_id=str(user.id))
         return tokens
@@ -137,19 +156,18 @@ class AuthService:
 
         Gebraucht bei der Annahme einer Einladung mit einem bestehenden Konto
         (ADR 0015). Es gelten dieselben Regeln wie bei der Anmeldung: dieselbe
-        Begrenzung je Konto und IP, dieselbe Meldung fuer unbekanntes Konto
-        und falsches Passwort. Das Passwort wird nie geaendert.
+        Begrenzung je Konto und IP, **dieselbe** Antwort fuer unbekanntes
+        Konto, falsches Passwort und deaktiviertes Konto. Das Passwort wird nie
+        geaendert.
         """
         normalized = normalize_email(email)
         self._check_rate_limit(normalized, client_ip)
         user = self.session.execute(
             select(User).where(User.email == normalized)
         ).scalar_one_or_none()
-        if user is None or not verify_password(user.password_hash, password):
+        if user is None or not verify_password(user.password_hash, password) or not user.is_active:
             self._register_failed_attempt(normalized, client_ip)
-            raise AuthenticationError("E-Mail oder Passwort ist falsch.")
-        if not user.is_active:
-            raise AuthenticationError("Dieses Konto ist deaktiviert.")
+            raise AuthenticationError(LOGIN_REJECTED)
         _login_limiter.reset(f"user:{normalized}")
         return user
 
@@ -242,6 +260,16 @@ class AuthService:
             )
             self.session.commit()
             raise AuthenticationError("Die Mitgliedschaft ist nicht mehr gueltig.") from exc
+        if stored.session_version != member.session_version:
+            # Seit der Ausstellung hat sich etwas Sicherheitsrelevantes
+            # geaendert (Sperre und Entsperren, neue E-Mail, neues Passwort).
+            # Auch ein Token, den eine gleichzeitige Erneuerung noch mit dem
+            # alten Stand ausgestellt hat, endet hier - endgueltig (ADR 0021).
+            self._revoke_family(
+                stored.family_id, reason=RefreshTokenRevocationReason.SESSION_OUTDATED
+            )
+            self.session.commit()
+            raise AuthenticationError("Die Sitzung ist nicht mehr gueltig.")
         new_tokens = self._issue(
             user=user,
             member=member,
@@ -416,6 +444,7 @@ class AuthService:
             user_id=user.id,
             organization_id=member.organization_id,
             member_id=member.id,
+            session_version=member.session_version,
         )
         raw_refresh, refresh_hash = generate_refresh_token()
         record = RefreshToken(
@@ -425,6 +454,7 @@ class AuthService:
             token_hash=refresh_hash,
             expires_at=datetime.now(tz=UTC) + timedelta(days=self.settings.refresh_token_days),
             user_agent=(user_agent or "")[:255] or None,
+            session_version=member.session_version,
         )
         self.session.add(record)
         self.session.flush()
@@ -463,6 +493,19 @@ class AuthService:
             token.revoked_at = now
             token.revoked_reason = reason.value
 
+    def _reject_login(self, email: str, client_ip: str | None, user: User | None) -> NoReturn:
+        """Ein abgelehnter Anmeldeversuch - immer derselbe Weg.
+
+        Zaehlt als Fehlversuch je normalisierter E-Mail und je IP; bei einem
+        vorhandenen Konto ein Protokolleintrag nur mit der Konto-ID und einer
+        neutralen Beschreibung. Keine E-Mail in Protokoll oder Log.
+        """
+        self._register_failed_attempt(email, client_ip)
+        if user is not None:
+            self._audit_failed_login(user)
+        logger.info("login_rejected")
+        raise AuthenticationError(LOGIN_REJECTED)
+
     def _check_rate_limit(self, email: str, client_ip: str | None) -> None:
         for key in self._limit_keys(email, client_ip):
             if not _login_limiter.check(key):
@@ -499,15 +542,24 @@ class AuthService:
 
 
 def revoke_membership_sessions(
-    session: Session, *, user_id: uuid.UUID, organization_id: uuid.UUID
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    organization_id: uuid.UUID,
+    reason: RefreshTokenRevocationReason = RefreshTokenRevocationReason.MEMBERSHIP_DISABLED,
 ) -> int:
     """Widerruft alle offenen Refresh Tokens **einer** Mitgliedschaft.
 
     Gezielt: nur Tokens dieses Benutzers **in diesem Betrieb**. Sitzungen
     desselben Benutzers in anderen Betrieben bleiben unberuehrt. Ausgestellte
     Access Tokens laufen noch bis zu ihrem Ablauf, werden aber bei jeder
-    Anfrage gegen den Mitgliedsstatus geprueft und ab sofort abgelehnt
-    (:func:`app.core.auth.dependencies.get_current_user`).
+    Anfrage gegen Mitgliedsstatus und Sitzungsversion geprueft und ab sofort
+    abgelehnt (:func:`app.core.auth.dependencies.get_current_user`).
+
+    Allein genuegt der Widerruf nicht: Eine gleichzeitige Erneuerung kann noch
+    einen Nachfolger mit altem Stand ausgestellt haben. Deshalb zaehlt der
+    Aufrufer zusaetzlich die Sitzungsversion hoch
+    (:func:`bump_session_version`).
     """
     tokens = (
         session.execute(
@@ -523,5 +575,47 @@ def revoke_membership_sessions(
     now = datetime.now(tz=UTC)
     for token in tokens:
         token.revoked_at = now
-        token.revoked_reason = RefreshTokenRevocationReason.MEMBERSHIP_DISABLED.value
+        token.revoked_reason = reason.value
     return len(tokens)
+
+
+def revoke_user_sessions(
+    session: Session, *, user_id: uuid.UUID, reason: RefreshTokenRevocationReason
+) -> int:
+    """Widerruft **alle** offenen Refresh Tokens eines Kontos - in jedem Betrieb.
+
+    Fuer Aenderungen am Konto selbst (E-Mail, Passwort, Bereinigung beim
+    Entfernen). Ein Betriebsadministrator loest das nur fuer Konten aus, die
+    keinem anderen Betrieb angehoeren (ADR 0021); fuer sie ist "alle" und
+    "dieser Betrieb" dasselbe.
+    """
+    tokens = (
+        session.execute(
+            select(RefreshToken).where(
+                RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    now = datetime.now(tz=UTC)
+    for token in tokens:
+        token.revoked_at = now
+        token.revoked_reason = reason.value
+    return len(tokens)
+
+
+def bump_session_version(session: Session, member_id: uuid.UUID) -> None:
+    """Macht jedes bisher ausgestellte Token dieser Mitgliedschaft wertlos.
+
+    Als Core-``UPDATE``: Die Sitzungsversion gehoert nicht zum verwaltbaren
+    Zustand und zaehlt ``organization_members.version`` nicht weiter. Aendert
+    der Aufrufer die Mitgliedschaft ohnehin (Status, Profil), zaehlt die
+    Version dort - nicht hier.
+    """
+    session.execute(
+        update(OrganizationMember)
+        .where(OrganizationMember.id == member_id)
+        .values(session_version=OrganizationMember.session_version + 1)
+        .execution_options(synchronize_session=False)
+    )

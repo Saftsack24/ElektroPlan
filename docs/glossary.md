@@ -51,7 +51,18 @@ Dokumentation und Oberfläche auf Deutsch, Code und API auf Englisch.
 | Protokolleintrag | `audit_entry` | |
 | Statusgruppe | `status_group`: `current`, `closed` | Listenfilter: laufend (Entwurf + in Bearbeitung) bzw. abgeschlossen + archiviert |
 | Nummerierte Seite | `page`, `page_size`, `total_items`, `total_pages` | seitenbasierte Liste für Kunden und Projekte (ADR 0017) |
-| Anzeigeeinheit (Maßeinheit) | `masseinheit` (nur Oberfläche): `cm`, `mm` | persönliche Darstellung von Längen; gespeichert wird immer in Millimetern |
+| Anzeigeeinheit (Maßeinheit) | `length_unit` / `masseinheit`: `mm`, `cm`, `m` | persönliche Darstellung von Längen; gespeichert und übertragen wird immer in ganzen Millimetern (`m` seit 4e) |
+| Persönliche Einstellungen | `user_preferences`, `/me/preferences` | Darstellung, Akzent, Maßeinheit je Benutzer und Betrieb; Server ist die Wahrheit, Browser nur Cache (ADR 0021) |
+| Kontostatus | `organization_members.status`: `active`, `disabled`, `removed` | Aktiv, Gesperrt, Entfernt – Zustand eines Benutzers in einem Betrieb |
+| Sperren / Entsperren | `suspend` / `reactivate` (`user.account.lock`) | Zugang zu diesem Betrieb sofort beenden bzw. wieder erlauben; alte Sitzungen bleiben ungültig |
+| Sperrgrund | `lock_reason` | optionaler, kurzer Hinweis zur Sperre, ohne sensible Angaben |
+| Benutzer entfernen | `remove` (`user.account.remove`) | endgültiger Tombstone, keine Wiederherstellung; Bearbeiterangaben zeigen „Entfernter Benutzer“ |
+| Tombstone | – | verbleibende, neutralisierte Zeile eines entfernten Kontos, damit Referenzen auflösbar bleiben |
+| Entfernter Benutzer | `UserReference.kind = "removed"` | neutrale Anzeige eines entfernten Mitglieds – ohne Name, E-Mail, ID |
+| Exklusives Konto | – (`account_shared = false`) | Konto, das keinem anderen Betrieb (nicht entfernt) angehört; nur dann ändert ein Betrieb Name, E-Mail, Passwort |
+| Sitzungsversion | `session_version` (Claim `sv`) | Zähler je Mitgliedschaft; jede sicherheitsrelevante Änderung macht alle älteren Tokens wertlos |
+| Passwort zurücksetzen | `password-reset`, `password_reset_tokens` | Einmal-Link, vom Administrator ausgelöst; das Passwort setzt die Person selbst |
+| Einmal-Link | `reset_url`, Token im Fragment `#t=` | nur als Hash gespeichert, befristet, genau einmal verwendbar |
 | Adressvorschlag | – (nur Oberfläche) | Rechnungsadresse des Kunden als Vorschlag für die Baustellenadresse; keine Verknüpfung |
 | Rückfrage | – (nur Oberfläche, `Rueckfrage`) | eigener Bestätigungsdialog der Anwendung statt `window.confirm` |
 | Design-Token (Theme-Token) | CSS Custom Property `--ep-*`, Tailwind-Name z. B. `bg-surface` | benannte Bedeutung einer Farbe oder Form („Oberfläche", „Akzent"), zur Laufzeit überschreibbar (ADR 0018) |

@@ -1,42 +1,41 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { EINHEIT_NAME, MASSEINHEITEN, STANDARD_MASSEINHEIT, mmAnzeigen } from "../masse";
-import type { Masseinheit } from "../masse";
+import { useAuth } from "../auth/AuthProvider";
+import {
+  EinstellungsKonflikt,
+  STANDARD_EINSTELLUNGEN,
+  einstellungenAktualisieren,
+  einstellungenSpeichern,
+  gleicheEinstellungen,
+  gueltigeEinstellungen,
+} from "../einstellungen/persoenlich";
+import type { PersoenlicheEinstellungen } from "../einstellungen/persoenlich";
+import { EINHEIT_NAME, MASSEINHEITEN, mmAnzeigen } from "../masse";
 import {
   AKZENTE,
   DARSTELLUNGSMODI,
   MODUS_NAME,
   STANDARD_DARSTELLUNG,
-  darstellungSpeichern,
   darstellungVorschauBeenden,
   darstellungVorschauen,
-  darstellungszustand,
 } from "../theme/darstellung";
-import type { Darstellung } from "../theme/darstellung";
 import { Dialog, DialogAktionen } from "./Dialog";
-import {
-  gespeicherteMasseinheit,
-  masseinheitSetzen,
-  masseinheitVorschauBeenden,
-  masseinheitVorschauen,
-} from "./masseinheit";
-import { FORMULARRASTER_BLOCK, FORMULARRASTER_LEGENDE, SCHALTERFELD, STAPEL, knopf } from "./stil";
-
-interface Entwurf extends Darstellung {
-  readonly einheit: Masseinheit;
-}
-
-const STANDARD_ENTWURF: Entwurf = { ...STANDARD_DARSTELLUNG, einheit: STANDARD_MASSEINHEIT };
+import { masseinheitVorschauBeenden, masseinheitVorschauen } from "./masseinheit";
+import { FORMULARRASTER_BLOCK, FORMULARRASTER_LEGENDE, SCHALTERFELD, STAPEL, knopf, meldungsflaeche } from "./stil";
 
 /**
- * Persönliche Einstellungen: Darstellung, Akzentfarbe, Maßeinheit.
+ * Persönliche Einstellungen: Darstellung, Akzentfarbe, Maßeinheit - die
+ * einzige Stelle dafür in der Oberfläche.
  *
  * **Alle drei verhalten sich gleich:** Eine Wahl wirkt sofort als Vorschau in
- * der ganzen Anwendung, gespeichert wird erst mit „Übernehmen". Abbrechen,
- * Escape und ✕ stellen den gespeicherten Stand vollständig wieder her.
- * „Auf Standard zurücksetzen" setzt nur den Entwurf zurück.
+ * der ganzen Anwendung, gespeichert wird erst mit „Übernehmen" - auf dem
+ * Server, für diesen Benutzer in diesem Betrieb, auf allen Geräten (ADR 0021).
+ * Abbrechen, Escape und ✕ stellen den gespeicherten Stand vollständig wieder
+ * her. „Auf Standard zurücksetzen" setzt nur den Entwurf zurück.
  *
- * Gespeichert wird je Benutzer und nur in diesem Browser (ADR 0019).
+ * Beim Öffnen wird der Serverstand neu gelesen. Hat ein anderes Gerät
+ * inzwischen gespeichert, gilt dessen Stand; ein Speichern mit veraltetem
+ * Stand wird abgelehnt und erklärt, nie still überschrieben.
  */
 export function EinstellungenDialog({ offen, onClose }: { offen: boolean; onClose: () => void }) {
   // Der Inhalt existiert nur, solange der Dialog offen ist: Jedes Öffnen
@@ -44,11 +43,17 @@ export function EinstellungenDialog({ offen, onClose }: { offen: boolean; onClos
   return offen ? <Einstellungen onClose={onClose} /> : null;
 }
 
+type Meldung = { art: "konflikt" | "fehler"; text: string } | null;
+
 function Einstellungen({ onClose }: { onClose: () => void }) {
-  const [entwurf, setEntwurf] = useState<Entwurf>(() => ({
-    ...darstellungszustand().gespeichert,
-    einheit: gespeicherteMasseinheit(),
-  }));
+  const { api } = useAuth();
+  const [entwurf, setEntwurf] = useState<PersoenlicheEinstellungen>(gueltigeEinstellungen);
+  const [laedt, setLaedt] = useState(true);
+  const [speichert, setSpeichert] = useState(false);
+  const [meldung, setMeldung] = useState<Meldung>(null);
+  // Hat der Benutzer schon gewählt, überschreibt der nachgeladene Serverstand
+  // seinen Entwurf nicht.
+  const veraendert = useRef(false);
 
   // Wird der Dialog auf anderem Weg entfernt (Abmelden, Seitenwechsel),
   // endet auch die Vorschau.
@@ -60,33 +65,86 @@ function Einstellungen({ onClose }: { onClose: () => void }) {
     [],
   );
 
-  const aendern = (neu: Entwurf) => {
+  useEffect(() => {
+    let aktiv = true;
+    void einstellungenAktualisieren(api).finally(() => {
+      if (!aktiv) return;
+      setLaedt(false);
+      if (!veraendert.current) setEntwurf(gueltigeEinstellungen());
+    });
+    return () => {
+      aktiv = false;
+    };
+  }, [api]);
+
+  const aendern = (neu: PersoenlicheEinstellungen) => {
+    veraendert.current = true;
+    setMeldung(null);
     setEntwurf(neu);
     darstellungVorschauen({ modus: neu.modus, akzent: neu.akzent });
     masseinheitVorschauen(neu.einheit);
   };
 
   const abbrechen = () => {
+    if (speichert) return;
     darstellungVorschauBeenden();
     masseinheitVorschauBeenden();
     onClose();
   };
 
-  const uebernehmen = () => {
-    darstellungSpeichern({ modus: entwurf.modus, akzent: entwurf.akzent });
-    masseinheitSetzen(entwurf.einheit);
-    onClose();
+  const uebernehmen = async () => {
+    if (speichert) return;
+    if (gleicheEinstellungen(entwurf, gueltigeEinstellungen())) {
+      darstellungVorschauBeenden();
+      masseinheitVorschauBeenden();
+      onClose();
+      return;
+    }
+    setSpeichert(true);
+    setMeldung(null);
+    try {
+      await einstellungenSpeichern(api, entwurf);
+      onClose();
+    } catch (error) {
+      if (error instanceof EinstellungsKonflikt) {
+        // Der Stand des anderen Geräts ist bereits angewendet; die Vorschau
+        // ist damit beendet. Der Entwurf zeigt jetzt diesen Stand.
+        veraendert.current = false;
+        setEntwurf(gueltigeEinstellungen());
+        setMeldung({
+          art: "konflikt",
+          text: "Ihre Einstellungen wurden inzwischen auf einem anderen Gerät geändert. Der dort gespeicherte Stand ist jetzt geladen - bitte Ihre Wahl prüfen und erneut übernehmen.",
+        });
+      } else {
+        setMeldung({
+          art: "fehler",
+          text: "Die Einstellungen konnten nicht gespeichert werden. Bitte erneut versuchen - die Vorschau bleibt bis dahin sichtbar.",
+        });
+      }
+    } finally {
+      setSpeichert(false);
+    }
   };
 
   return (
     <Dialog
       offen
       titel="Einstellungen"
-      beschreibung="Änderungen sind sofort als Vorschau sichtbar und werden mit „Übernehmen“ gespeichert – nur für Sie und nur in diesem Browser."
+      beschreibung="Änderungen sind sofort als Vorschau sichtbar und werden mit „Übernehmen“ gespeichert – nur für Sie, in diesem Betrieb und auf allen Ihren Geräten."
       onClose={abbrechen}
     >
-      <div className={STAPEL}>
-        <fieldset className={FORMULARRASTER_BLOCK}>
+      <div className={STAPEL} aria-busy={laedt || speichert}>
+        {laedt && (
+          <p className="text-muted" role="status">
+            Aktueller Stand wird geladen ...
+          </p>
+        )}
+        {meldung !== null && (
+          <p className={meldungsflaeche(meldung.art === "konflikt" ? "erfolg" : "fehler")} role="alert">
+            {meldung.text}
+          </p>
+        )}
+        <fieldset className={FORMULARRASTER_BLOCK} disabled={speichert}>
           <legend className={FORMULARRASTER_LEGENDE}>Darstellung</legend>
           {DARSTELLUNGSMODI.map((modus) => (
             <div key={modus} className={SCHALTERFELD}>
@@ -107,7 +165,7 @@ function Einstellungen({ onClose }: { onClose: () => void }) {
           ))}
         </fieldset>
 
-        <fieldset className={FORMULARRASTER_BLOCK}>
+        <fieldset className={FORMULARRASTER_BLOCK} disabled={speichert}>
           <legend className={FORMULARRASTER_LEGENDE}>Akzentfarbe</legend>
           <div className="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-2">
             {AKZENTE.map((akzent) => (
@@ -136,7 +194,7 @@ function Einstellungen({ onClose }: { onClose: () => void }) {
           </div>
         </fieldset>
 
-        <fieldset className={FORMULARRASTER_BLOCK}>
+        <fieldset className={FORMULARRASTER_BLOCK} disabled={speichert}>
           <legend className={FORMULARRASTER_LEGENDE}>Maßeinheit für Längen</legend>
           {MASSEINHEITEN.map((wert) => (
             <div key={wert} className={SCHALTERFELD}>
@@ -155,19 +213,30 @@ function Einstellungen({ onClose }: { onClose: () => void }) {
           ))}
           <p className="text-muted">
             Die Maßeinheit ändert ausschließlich Anzeige und Eingabe - die gespeicherten Planmaße
-            bleiben unverändert in ganzen Millimetern. Flächen werden weiter in m² angezeigt.
+            bleiben unverändert in ganzen Millimetern. Eingaben dürfen Komma oder Punkt und eine
+            Einheit wie „cm“ oder „m“ enthalten. Flächen werden weiter in m² angezeigt.
           </p>
         </fieldset>
       </div>
 
       <DialogAktionen>
-        <button type="button" className={knopf("primaer")} onClick={uebernehmen}>
-          Übernehmen
+        <button
+          type="button"
+          className={knopf("primaer")}
+          disabled={speichert}
+          onClick={() => void uebernehmen()}
+        >
+          {speichert ? "Wird gespeichert ..." : "Übernehmen"}
         </button>
-        <button type="button" className={knopf()} onClick={abbrechen}>
+        <button type="button" className={knopf()} disabled={speichert} onClick={abbrechen}>
           Abbrechen
         </button>
-        <button type="button" className={knopf()} onClick={() => aendern(STANDARD_ENTWURF)}>
+        <button
+          type="button"
+          className={knopf()}
+          disabled={speichert}
+          onClick={() => aendern(STANDARD_EINSTELLUNGEN)}
+        >
           Auf Standard zurücksetzen
         </button>
       </DialogAktionen>

@@ -2,14 +2,18 @@ import { ApiError } from "@elektroplan/api-client";
 import type { ProblemDetail } from "@elektroplan/api-client";
 import { useState } from "react";
 import type { FormEvent } from "react";
+import { useLocation } from "react-router-dom";
 
 import { FELD, FELD_BESCHRIFTUNG, STAPEL, eingabefeld, karte, knopf, meldungsflaeche } from "../ui/stil";
 import { useAuth } from "./AuthProvider";
+import type { AnmeldehinweisZustand } from "./PasswortZuruecksetzenPage";
 
 type OrganizationChoice = NonNullable<ProblemDetail["organizations"]>[number];
 
 export function LoginPage() {
   const { login } = useAuth();
+  // Nach dem Setzen eines neuen Passworts über einen Einmal-Link (Phase 4e).
+  const passwortNeu = (useLocation().state as AnmeldehinweisZustand | null)?.passwortNeu === true;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +51,11 @@ export function LoginPage() {
       <form className={`${karte()} flex w-[min(380px,100%)] flex-col gap-3.5`} onSubmit={handleSubmit}>
         <h1 className="m-0 text-[1.4rem]">ElektroPlan</h1>
         <p className="m-0 text-muted">Anmeldung</p>
+        {passwortNeu && (
+          <p className={meldungsflaeche("erfolg")} role="status">
+            Ihr neues Passwort ist gespeichert. Bitte melden Sie sich damit an.
+          </p>
+        )}
 
         <label className={FELD}>
           <span className={FELD_BESCHRIFTUNG}>E-Mail</span>

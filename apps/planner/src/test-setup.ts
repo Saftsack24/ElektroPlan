@@ -1,26 +1,22 @@
 import "@testing-library/jest-dom/vitest";
 import { afterEach } from "vitest";
 
+import { einstellungenZuruecksetzen } from "./core/einstellungen/persoenlich";
 import { darstellungZuruecksetzen } from "./core/theme/darstellung";
-import { MASSEINHEIT_SCHLUESSEL_ALT, masseinheitZuruecksetzen } from "./core/ui/masseinheit";
+import { masseinheitZuruecksetzen } from "./core/ui/masseinheit";
 
-// Jeder Test beginnt mit der Standard-Maßeinheit (cm) und ohne angemeldeten
-// Benutzer: Die persönliche Wahl liegt im localStorage (je Benutzer) und
-// würde sonst in den nächsten Test durchschlagen.
+// Jeder Test beginnt mit den Standardeinstellungen (Wie das System, Blau, cm)
+// und ohne angemeldeten Benutzer: Cache und Altbestand im localStorage würden
+// sonst in den nächsten Test durchschlagen.
 afterEach(() => {
   try {
     for (const schluessel of Object.keys(window.localStorage)) {
-      if (
-        schluessel === MASSEINHEIT_SCHLUESSEL_ALT ||
-        schluessel.startsWith(`${MASSEINHEIT_SCHLUESSEL_ALT}.`) ||
-        schluessel.startsWith("elektroplan.darstellung.")
-      ) {
-        window.localStorage.removeItem(schluessel);
-      }
+      if (schluessel.startsWith("elektroplan.")) window.localStorage.removeItem(schluessel);
     }
   } catch {
     // ohne Speicher gibt es nichts zurückzusetzen
   }
+  einstellungenZuruecksetzen();
   masseinheitZuruecksetzen();
   darstellungZuruecksetzen();
 });

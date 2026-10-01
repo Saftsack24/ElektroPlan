@@ -21,8 +21,6 @@ Sicherheitsfestlegungen (docs/security.md, Abschnitt 18):
 
 from __future__ import annotations
 
-import hashlib
-import secrets
 import uuid
 from collections import defaultdict
 from collections.abc import Sequence
@@ -35,7 +33,13 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.auth.rate_limit import SlidingWindowLimiter
-from app.core.auth.security import hash_password, validate_password_strength
+from app.core.auth.security import (
+    MAX_ONE_TIME_TOKEN_LENGTH,
+    generate_one_time_token,
+    hash_one_time_token,
+    hash_password,
+    validate_password_strength,
+)
 from app.core.auth.service import AuthService, normalize_email
 from app.core.authorization.models import MemberRole, Role
 from app.core.authorization.service import resolve_system_roles
@@ -45,7 +49,14 @@ from app.core.invitations.models import (
     MemberInvitation,
     MemberInvitationRole,
 )
-from app.core.organizations.models import MEMBER_STATUS_ACTIVE, Organization, OrganizationMember
+from app.core.members.guard import MembershipGuard
+from app.core.organizations.models import (
+    CURRENT_MEMBERSHIP_INDEX,
+    MEMBER_STATUS_ACTIVE,
+    MEMBER_STATUS_REMOVED,
+    Organization,
+    OrganizationMember,
+)
 from app.core.persistence import flush, unique_violation_translated
 from app.core.preconditions import check_version
 from app.core.tenancy.repository import TenantRepository
@@ -64,14 +75,12 @@ from app.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-#: 32 Byte = 256 Bit Zufall; als URL-sicheres Base64 43 Zeichen lang.
-TOKEN_BYTES = 32
-#: Obergrenze fuer ein vorgelegtes Token. Laengere Werte sind nie gueltig und
-#: werden nicht erst gehasht.
-MAX_TOKEN_LENGTH = 128
+#: Obergrenze fuer ein vorgelegtes Token (gemeinsam mit Reset-Links).
+MAX_TOKEN_LENGTH = MAX_ONE_TIME_TOKEN_LENGTH
 
 USERS_EMAIL_CONSTRAINT = "uq_users_email"
-MEMBERSHIP_CONSTRAINT = "uq_organization_members_organization_id_user_id"
+#: Hoechstens eine nicht entfernte Mitgliedschaft je Betrieb und Konto (ADR 0021).
+MEMBERSHIP_CONSTRAINT = CURRENT_MEMBERSHIP_INDEX
 
 _OPEN_INVITATION_EXISTS = (
     "Fuer diese E-Mail-Adresse gibt es bereits eine offene Einladung. "
@@ -96,12 +105,11 @@ def reset_acceptance_limiter() -> None:
 
 def hash_invitation_token(raw: str) -> str:
     """SHA-256 des Tokens als Hex-Zeichenkette (64 Zeichen)."""
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    return hash_one_time_token(raw)
 
 
 def _new_token() -> tuple[str, str]:
-    raw = secrets.token_urlsafe(TOKEN_BYTES)
-    return raw, hash_invitation_token(raw)
+    return generate_one_time_token()
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,6 +180,11 @@ class InvitationService:
         normalized = normalize_email(email)
         roles = resolve_system_roles(self.session, self.organization_id, role_keys)
 
+        # Dieselbe Sperrwurzel wie die Aenderung einer E-Mail-Adresse
+        # (ADR 0021): Eine Einladung und eine gleichzeitige Adressaenderung
+        # eines Mitglieds auf dieselbe Adresse laufen nacheinander - die
+        # zweite sieht die erste und wird abgelehnt.
+        MembershipGuard(self.session, self.organization_id).lock_organization()
         if self._is_member(normalized):
             raise ConflictError(_ALREADY_MEMBER)
         if self._open_invitation_exists(normalized):
@@ -260,11 +273,17 @@ class InvitationService:
             raise ConflictError("Diese Einladung wurde bereits widerrufen.")
 
     def _is_member(self, email: str) -> bool:
+        """Gehoert die Adresse einem (nicht entfernten) Mitglied dieses Betriebs?
+
+        Ein entferntes Mitglied zaehlt nicht: Seine fruehere Adresse darf neu
+        eingeladen werden (ADR 0021).
+        """
         stmt = (
             select(OrganizationMember.id)
             .join(User, User.id == OrganizationMember.user_id)
             .where(
                 OrganizationMember.organization_id == self.organization_id,
+                OrganizationMember.status != MEMBER_STATUS_REMOVED,
                 User.email == email,
             )
         )
@@ -390,10 +409,23 @@ class InvitationAcceptance:
         user = AuthService(self.session).verify_credentials(
             email=invitation.email, password=password, client_ip=self.client_ip
         )
+        # Die Annahme macht das Konto womoeglich zu einem geteilten. Kontozeile
+        # sperren und erneut pruefen: Eine gleichzeitige Adressaenderung oder
+        # Entfernung durch einen anderen Betrieb laeuft so davor oder danach,
+        # nie dazwischen (ADR 0021).
+        locked = self.session.execute(
+            select(User)
+            .where(User.id == user.id)
+            .with_for_update(key_share=True)
+            .execution_options(populate_existing=True)
+        ).scalar_one()
+        if locked.email != invitation.email or not locked.is_active:
+            raise InvitationInvalidError(_INVALID)
         already = self.session.execute(
             select(OrganizationMember.id).where(
                 OrganizationMember.organization_id == organization.id,
                 OrganizationMember.user_id == user.id,
+                OrganizationMember.status != MEMBER_STATUS_REMOVED,
             )
         ).first()
         if already is not None:

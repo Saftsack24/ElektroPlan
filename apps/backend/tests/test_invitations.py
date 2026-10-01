@@ -16,11 +16,11 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
-from sqlalchemy import Engine, select, text
+from sqlalchemy import Engine, select, text, update
 
 from app.config import Settings, get_settings
 from app.core.audit.models import AuditEntry
-from app.core.auth.service import _login_limiter
+from app.core.auth.service import LOGIN_REJECTED, _login_limiter
 from app.core.invitations.models import MemberInvitation
 from app.core.invitations.service import purge_invitations, reset_acceptance_limiter
 from app.core.module_registry.registry import ModuleRegistry
@@ -260,6 +260,8 @@ def test_ohne_zustellweg_wird_nichts_angelegt(
 
 def test_entwicklungslink_ist_in_produktion_verboten(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ELEKTROPLAN_INVITATION_DELIVERY", raising=False)
+    # Auch der Reset-Link-Zustellweg ist in Produktion verboten (Phase 4e) - hier neutral.
+    monkeypatch.delenv("ELEKTROPLAN_PASSWORD_RESET_DELIVERY", raising=False)
     with pytest.raises(ValidationError, match="development_link"):
         Settings(
             environment="production",
@@ -269,6 +271,7 @@ def test_entwicklungslink_ist_in_produktion_verboten(monkeypatch: pytest.MonkeyP
         )
     produktion = Settings(environment="production", jwt_secret="x" * 40, s3_secret_key="geheim")
     assert produktion.invitation_delivery == "none"
+    assert produktion.password_reset_delivery == "none"
 
 
 # -------------------------------------------------------- Widerruf / Neuausstellung
@@ -420,6 +423,37 @@ def test_passwortregeln_gelten_auch_bei_der_annahme(
 # ------------------------------------------------------- Annahme: bestehend
 
 
+def test_deaktiviertes_konto_bei_der_annahme_wie_falsches_passwort(
+    api: TestClient, engine: Engine, admin: dict[str, str], registry: ModuleRegistry
+) -> None:
+    """Auch die Pruefung bestehender Zugangsdaten verraet keinen Kontozustand."""
+    fremd = _zweiter_betrieb(engine, registry)
+    person_anlegen(
+        engine, fremd, "ruhend@zweit.example", ["planer"], passwort="altes-passwort-1234"
+    )
+    session = fabrik(engine)()
+    try:
+        session.execute(
+            update(User).where(User.email == "ruhend@zweit.example").values(is_active=False)
+        )
+        session.commit()
+    finally:
+        session.close()
+    token = token_aus_link(
+        _einladen(api, admin, email="ruhend@zweit.example", name="Ruhend")[
+            "development_activation_url"
+        ]
+    )
+
+    richtig = _bestehendes_konto(api, token, "altes-passwort-1234")
+    falsch = _bestehendes_konto(api, token, "angreifer-passwort-99")
+    for antwort in (richtig, falsch):
+        assert antwort.status_code == 401
+        assert antwort.json()["type"].endswith("/authentication-failed")
+        assert antwort.json()["detail"] == LOGIN_REJECTED
+    assert _vorschau(api, token).status_code == 200
+
+
 def test_bestehendes_konto_wird_nie_uebernommen(
     api: TestClient, engine: Engine, admin: dict[str, str], registry: ModuleRegistry
 ) -> None:
@@ -453,7 +487,7 @@ def test_bestehendes_konto_wird_nie_uebernommen(
     # Falsches Passwort: dieselbe Meldung wie bei der Anmeldung.
     falsch = _bestehendes_konto(api, token, "angreifer-passwort-99")
     assert falsch.status_code == 401
-    assert falsch.json()["detail"] == "E-Mail oder Passwort ist falsch."
+    assert falsch.json()["detail"] == LOGIN_REJECTED
 
     session = fabrik(engine)()
     try:

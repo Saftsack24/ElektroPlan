@@ -3,8 +3,9 @@ import { StrictMode, lazy } from "react";
 import { createMemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { einstellungenAnmelden } from "../core/einstellungen/persoenlich";
+import { masseinheit } from "../core/ui/masseinheit";
 import { useUngespeicherteAenderungen } from "../core/ui/ungespeichert";
-import { masseinheitBenutzerSetzen } from "../core/ui/masseinheit";
 
 /**
  * Anwendungswurzel auf dem Data Router (Phase 4a.1).
@@ -15,6 +16,18 @@ import { masseinheitBenutzerSetzen } from "../core/ui/masseinheit";
  * übergebenen Speicherrouter, so wie `main.tsx` den Browserrouter übergibt.
  */
 const abmelden = vi.fn(() => Promise.resolve());
+/** Stabil über alle Renderdurchläufe - wie der echte Client aus `useMemo`. */
+const { appApi } = vi.hoisted(() => {
+  const ohneStand = { stored: false, theme_mode: "system", accent: "blue", length_unit: "cm", version: 0 };
+  return {
+    appApi: {
+      get: vi.fn((pfad: string) => Promise.resolve(pfad === "/api/v1/me/preferences" ? ohneStand : [])),
+      post: vi.fn((_pfad: string, optionen: { body: Record<string, string> }) =>
+        Promise.resolve({ stored: true, ...optionen.body, version: 1 }),
+      ),
+    },
+  };
+});
 
 vi.mock("../core/auth/AuthProvider", () => ({
   AuthProvider: ({ children }: { children: React.ReactNode }) => children,
@@ -24,7 +37,7 @@ vi.mock("../core/auth/AuthProvider", () => ({
     activeModuleIds: new Set(["beispiel"]),
     permissions: new Set(["beispiel.lesen"]),
     logout: abmelden,
-    api: { get: vi.fn(() => Promise.resolve([])) },
+    api: appApi,
   }),
   usePermission: () => true,
 }));
@@ -157,9 +170,12 @@ describe("Anwendungswurzel", () => {
     expect(frage).not.toHaveBeenCalled();
   });
 
-  it("stellt die Maßeinheit in den Einstellungen um und merkt sie sich", async () => {
+  it("stellt die Maßeinheit in den Einstellungen um und speichert sie auf dem Server", async () => {
     // Den angemeldeten Benutzer meldet sonst der (hier ersetzte) AuthProvider.
-    masseinheitBenutzerSetzen("33333333-3333-4333-8333-333333333333");
+    einstellungenAnmelden({
+      benutzerId: "33333333-3333-4333-8333-333333333333",
+      mitgliedId: "cccccccc-3333-4333-8333-333333333333",
+    });
     zeigen(["/zweite"]);
     await screen.findByText("Zweite Seite");
     fireEvent.click(screen.getByRole("button", { name: "Einstellungen" }));
@@ -168,12 +184,14 @@ describe("Anwendungswurzel", () => {
     expect(within(dialog).getByText(/gespeicherten Planmaße bleiben unverändert/)).toBeInTheDocument();
     fireEvent.click(within(dialog).getByLabelText(/Millimeter/));
     expect(within(dialog).getByLabelText(/Millimeter/)).toBeChecked();
-    // Seit Phase 4c.2 zunächst nur Vorschau - gespeichert wird mit „Übernehmen".
-    expect(window.localStorage.getItem("elektroplan.masseinheit.33333333-3333-4333-8333-333333333333")).toBeNull();
+    // Zunächst nur Vorschau - gespeichert wird mit „Übernehmen".
+    expect(appApi.post).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByRole("button", { name: "Übernehmen" }));
-    expect(screen.queryByRole("dialog", { name: "Einstellungen" })).toBeNull();
-    expect(window.localStorage.getItem("elektroplan.masseinheit.33333333-3333-4333-8333-333333333333")).toBe("mm");
-    expect(window.localStorage.getItem("elektroplan.masseinheit")).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Einstellungen" })).toBeNull());
+    expect(appApi.post).toHaveBeenCalledWith("/api/v1/me/preferences", {
+      body: { theme_mode: "system", accent: "blue", length_unit: "mm" },
+    });
+    expect(masseinheit()).toBe("mm");
   });
 
   it("öffnet die Einladungsseite ohne Anwendungshülle - auch bei bestehender Sitzung", async () => {

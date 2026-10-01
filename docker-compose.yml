@@ -99,6 +99,10 @@ services:
       # Entwicklung erscheint der Einladungslink einmalig in der Oberflaeche.
       # In Produktion ist dieser Wert verboten - die Anwendung startet dann nicht.
       ELEKTROPLAN_INVITATION_DELIVERY: development_link
+      # Passwortzuruecksetzung (Phase 4e): Ohne E-Mail-Versand erhaelt der
+      # ausloesende Administrator den Einmal-Link genau einmal. In Produktion
+      # verboten - die Anwendung startet dann nicht.
+      ELEKTROPLAN_PASSWORD_RESET_DELIVERY: admin_link
       ELEKTROPLAN_PUBLIC_APP_URL: http://localhost:5173
     ports:
       - "8000:8000"

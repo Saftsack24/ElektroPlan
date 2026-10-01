@@ -18,7 +18,20 @@ ORGANIZATION_PROFILE_WRITE = "organization.profile.write"
 ORGANIZATION_MEMBER_READ = "organization.member.read"
 ORGANIZATION_MEMBER_WRITE = "organization.member.write"
 USER_ACCOUNT_READ = "user.account.read"
+#: Einladen, Einladungen widerrufen und neu ausstellen. Sperren ist seit
+#: Phase 4e ein eigenes Recht (``user.account.lock``).
 USER_ACCOUNT_WRITE = "user.account.write"
+#: Name und E-Mail-Adresse eines Kontos aendern - nur Konten, die keinem
+#: anderen Betrieb angehoeren (ADR 0021). **Nur Administrator.**
+USER_PROFILE_WRITE = "user.profile.write"
+#: Zugang sperren und entsperren. **Nur Administrator.**
+USER_ACCOUNT_LOCK = "user.account.lock"
+#: Einen Einmal-Link zum Zuruecksetzen des Passworts ausloesen. **Nur Administrator.**
+USER_PASSWORD_RESET = "user.password.reset"  # noqa: S105 - Berechtigungsschluessel
+#: Ein Mitglied endgueltig entfernen (Tombstone). **Nur Administrator.**
+USER_ACCOUNT_REMOVE = "user.account.remove"
+#: Die **eigenen** persoenlichen Einstellungen speichern. Jede Systemrolle.
+USER_PREFERENCES_WRITE = "user.preferences.write"
 ROLE_ASSIGNMENT_READ = "role.assignment.read"
 ROLE_ASSIGNMENT_WRITE = "role.assignment.write"
 CUSTOMER_RECORD_READ = "customer.record.read"
@@ -58,7 +71,12 @@ CORE_PERMISSIONS: tuple[PermissionDef, ...] = (
     PermissionDef(ORGANIZATION_MEMBER_READ, "Mitarbeiter ansehen"),
     PermissionDef(ORGANIZATION_MEMBER_WRITE, "Mitarbeiter verwalten"),
     PermissionDef(USER_ACCOUNT_READ, "Benutzerkonten ansehen"),
-    PermissionDef(USER_ACCOUNT_WRITE, "Benutzerkonten verwalten"),
+    PermissionDef(USER_ACCOUNT_WRITE, "Benutzer einladen und Einladungen verwalten"),
+    PermissionDef(USER_PROFILE_WRITE, "Name und E-Mail-Adresse von Benutzern ändern"),
+    PermissionDef(USER_ACCOUNT_LOCK, "Benutzer sperren und entsperren"),
+    PermissionDef(USER_PASSWORD_RESET, "Passwortzurücksetzung für Benutzer auslösen"),
+    PermissionDef(USER_ACCOUNT_REMOVE, "Benutzer endgültig entfernen"),
+    PermissionDef(USER_PREFERENCES_WRITE, "Eigene Einstellungen speichern"),
     PermissionDef(ROLE_ASSIGNMENT_READ, "Rollen und Rechte ansehen"),
     PermissionDef(ROLE_ASSIGNMENT_WRITE, "Rollen und Rechte vergeben"),
     PermissionDef(CUSTOMER_RECORD_READ, "Kunden ansehen"),
@@ -93,6 +111,9 @@ _BASE_READ = (
     ORGANIZATION_PROFILE_READ,
     MODULE_REGISTRY_READ,
     FILE_OBJECT_READ,
+    # Kein Lesen, aber Grundausstattung jeder Rolle: die eigene Darstellung und
+    # Masseinheit speichern (Phase 4e). Betrifft nur die eigene Mitgliedschaft.
+    USER_PREFERENCES_WRITE,
 )
 
 #: Wer plant oder kalkuliert, braucht Projekt- und Kundendaten lesend.
@@ -107,7 +128,7 @@ SYSTEM_ROLES: tuple[SystemRole, ...] = (
         name="Administrator",
         description=(
             "Für Inhaber und Büroleitung: voller Zugriff auf alle Bereiche, "
-            "einschließlich Benutzer einladen, sperren und Rollen vergeben."
+            "einschließlich Benutzer einladen, bearbeiten, sperren, entfernen und Rollen vergeben."
         ),
         permissions=tuple(permission.key for permission in CORE_PERMISSIONS),
     ),
@@ -178,7 +199,16 @@ ADMIN_ROLE_KEY = "admin"
 #: Ein Architekturtest haelt fest, dass keine andere Systemrolle und kein
 #: ``default_roles`` eines Moduls sie vergibt (ADR 0020).
 ADMIN_ONLY_PERMISSIONS: frozenset[str] = frozenset(
-    {PROJECT_RECORD_PURGE, PROJECT_RECORD_REOPEN, CUSTOMER_RECORD_DELETE}
+    {
+        PROJECT_RECORD_PURGE,
+        PROJECT_RECORD_REOPEN,
+        CUSTOMER_RECORD_DELETE,
+        # Benutzerlebenszyklus (Phase 4e, ADR 0021)
+        USER_PROFILE_WRITE,
+        USER_ACCOUNT_LOCK,
+        USER_PASSWORD_RESET,
+        USER_ACCOUNT_REMOVE,
+    }
 )
 
 #: Verstaendliche Bereichsnamen der Core-Berechtigungen, gebildet aus dem

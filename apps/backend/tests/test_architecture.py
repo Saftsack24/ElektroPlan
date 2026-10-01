@@ -33,6 +33,11 @@ PERMISSION_EXEMPT_PATHS = frozenset(
         "/api/v1/invitation-acceptance/preview",
         "/api/v1/invitation-acceptance/new-account",
         "/api/v1/invitation-acceptance/existing-account",
+        # Neues Passwort mit einem Einmal-Link (Phase 4e, ADR 0021): wie die
+        # Annahme einer Einladung - das Token ist der Nachweis, eine
+        # Anmeldung gibt es gerade nicht.
+        "/api/v1/password-reset/preview",
+        "/api/v1/password-reset/complete",
     }
 )
 
@@ -144,14 +149,15 @@ def test_tabellenbestand_ist_vollstaendig_erfasst() -> None:
     """Warnt, wenn eine neue Tabelle hinzukommt, ohne die Liste zu pflegen.
 
     17 Core-Tabellen (Phase 1 und 2), zwei fuer Einladungen (Phase 4.2), die
-    Storage-Aufraeum-Warteschlange (Phase 4d) plus die drei des Fachmoduls
-    ``electrical`` aus Phase 3.
+    Storage-Aufraeum-Warteschlange (Phase 4d), Reset-Links und persoenliche
+    Einstellungen (Phase 4e) plus die drei des Fachmoduls ``electrical`` aus
+    Phase 3.
     """
-    assert len(metadata.sorted_tables) == 23, (
+    assert len(metadata.sorted_tables) == 25, (
         "Anzahl der Tabellen hat sich geaendert - test_architecture.py und "
         "docs/database.md pruefen."
     )
-    assert len(CORE_TABLES) == 20
+    assert len(CORE_TABLES) == 22
 
 
 # ----------------------------------------------------------------- Permissions

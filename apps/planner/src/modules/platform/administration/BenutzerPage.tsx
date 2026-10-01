@@ -14,6 +14,7 @@ import { EinladenDialog } from "./EinladenDialog";
 import type { EinladungsWerte } from "./EinladenDialog";
 import { Entwicklungslink } from "./Entwicklungslink";
 import {
+  ENTFERNTER_BENUTZER,
   STATUSFILTER,
   STATUS_ART,
   STATUS_TEXT,
@@ -34,9 +35,11 @@ type Einladungsaktion = { art: "widerrufen" | "neu"; eintrag: DirectoryEntryOut 
  * Administration → Benutzer.
  *
  * Eine Liste für Mitglieder **und** offene Einladungen, serverseitig
- * sortiert, gesucht und gefiltert. Bearbeitet wird in der Detailansicht
- * eines Mitglieds; Einladungen lassen sich hier widerrufen oder neu
- * ausstellen - jeweils nach Rückfrage.
+ * sortiert, gesucht und gefiltert: Aktiv, Gesperrt, Einladungen, Entfernt.
+ * Entfernte Konten erscheinen nur in ihrer eigenen Ansicht und neutral, ohne
+ * Name und E-Mail. Bearbeitet, gesperrt, zurückgesetzt und entfernt wird in
+ * der Detailansicht eines Mitglieds; Einladungen lassen sich hier widerrufen
+ * oder neu ausstellen - jeweils nach Rückfrage.
  */
 export default function BenutzerPage() {
   const { api, permissions } = useAuth();
@@ -231,9 +234,11 @@ export default function BenutzerPage() {
         {liste.geladen &&
           (liste.eintraege.length === 0 ? (
             <p className="py-3 text-muted *:my-1">
-              {gefiltert
-                ? "Keine Treffer für diese Suche oder diesen Filter."
-                : "Noch keine weiteren Benutzer. Laden Sie Kolleginnen und Kollegen ein."}
+              {status === "removed" && begriff.length > 0
+                ? "Entfernte Konten lassen sich nicht nach Name oder E-Mail suchen - beides ist nicht mehr gespeichert."
+                : gefiltert
+                  ? "Keine Treffer für diese Suche oder diesen Filter."
+                  : "Noch keine weiteren Benutzer. Laden Sie Kolleginnen und Kollegen ein."}
             </p>
           ) : (
             <Benutzertabelle
@@ -326,8 +331,14 @@ function Benutzertabelle({
             <th scope="col">E-Mail</th>
             <th scope="col">Status</th>
             <th scope="col">Rollen</th>
-            {/* Auf schmalen Flächen entfällt die Spalte „Letzte Anmeldung". */}
-            <th scope="col" className="max-sm:hidden">
+            {/* Auf schmalen Flächen entfallen die Zeitspalten; die Detailansicht zeigt sie. */}
+            <th scope="col" className="max-md:hidden">
+              Erstellt am
+            </th>
+            <th scope="col" className="max-md:hidden">
+              Zuletzt geändert
+            </th>
+            <th scope="col" className="max-lg:hidden">
               Letzte Anmeldung
             </th>
             <th scope="col">
@@ -336,58 +347,79 @@ function Benutzertabelle({
           </tr>
         </thead>
         <tbody>
-          {eintraege.map((eintrag) => (
-            <tr key={`${eintrag.kind}-${eintrag.id}`}>
-              <td>
-                {eintrag.kind === "member" ? (
-                  <Link to={`/administration/users/${eintrag.id}`}>{eintrag.full_name}</Link>
-                ) : (
-                  (eintrag.full_name ?? <span className="text-muted">—</span>)
-                )}
-              </td>
-              <td>{eintrag.email}</td>
-              <td>
-                {eintrag.kind === "invitation" && eintrag.invitation_expired ? (
-                  <Marke art="warnung">Einladung abgelaufen</Marke>
-                ) : (
-                  <Marke art={STATUS_ART[eintrag.status]}>{STATUS_TEXT[eintrag.status]}</Marke>
-                )}
-              </td>
-              <td>{eintrag.roles.map((rolle) => rolle.name).join(", ") || "—"}</td>
-              <td className="max-sm:hidden">
-                {eintrag.kind === "invitation"
-                  ? `gültig bis ${datum(eintrag.invitation_expires_at)}`
-                  : datum(eintrag.last_login_at)}
-              </td>
-              <td className="flex flex-wrap gap-1.5 whitespace-nowrap">
-                {eintrag.kind === "member" ? (
-                  <Link to={`/administration/users/${eintrag.id}`}>
-                    Verwalten<span className="sr-only"> ({eintrag.full_name})</span>
-                  </Link>
-                ) : (
-                  darfSchreiben && (
-                    <>
-                      <button
-                        type="button"
-                        className={knopf("neutral", { klein: true })}
-                        onClick={() => onAktion({ art: "neu", eintrag })}
-                      >
-                        Neu ausstellen
-                        <span className="sr-only"> ({eintrag.email})</span>
-                      </button>
-                      <button
-                        type="button"
-                        className={knopf("neutral", { klein: true })}
-                        onClick={() => onAktion({ art: "widerrufen", eintrag })}
-                      >
-                        Widerrufen<span className="sr-only"> ({eintrag.email})</span>
-                      </button>
-                    </>
-                  )
-                )}
-              </td>
-            </tr>
-          ))}
+          {eintraege.map((eintrag) => {
+            const entfernt = eintrag.status === "removed";
+            const anzeigename = entfernt ? ENTFERNTER_BENUTZER : (eintrag.full_name ?? undefined);
+            return (
+              <tr key={`${eintrag.kind}-${eintrag.id}`}>
+                <td>
+                  {eintrag.kind === "member" ? (
+                    <Link
+                      to={`/administration/users/${eintrag.id}`}
+                      className={entfernt ? "text-muted" : undefined}
+                    >
+                      {anzeigename}
+                    </Link>
+                  ) : (
+                    (eintrag.full_name ?? <span className="text-muted">—</span>)
+                  )}
+                </td>
+                <td className="wrap-anywhere">
+                  {entfernt ? (
+                    <span className="text-muted">
+                      —<span className="sr-only"> (nicht mehr gespeichert)</span>
+                    </span>
+                  ) : (
+                    eintrag.email
+                  )}
+                </td>
+                <td>
+                  {eintrag.kind === "invitation" && eintrag.invitation_expired ? (
+                    <Marke art="warnung">Einladung abgelaufen</Marke>
+                  ) : (
+                    <Marke art={STATUS_ART[eintrag.status]}>{STATUS_TEXT[eintrag.status]}</Marke>
+                  )}
+                </td>
+                <td>{eintrag.roles.map((rolle) => rolle.name).join(", ") || "—"}</td>
+                <td className="max-md:hidden">{datum(eintrag.created_at)}</td>
+                <td className="max-md:hidden">{datum(eintrag.updated_at)}</td>
+                <td className="max-lg:hidden">
+                  {eintrag.kind === "invitation"
+                    ? `gültig bis ${datum(eintrag.invitation_expires_at)}`
+                    : datum(eintrag.last_login_at)}
+                </td>
+                <td className="flex flex-wrap gap-1.5 whitespace-nowrap">
+                  {eintrag.kind === "member" ? (
+                    !entfernt && (
+                      <Link to={`/administration/users/${eintrag.id}`}>
+                        Verwalten<span className="sr-only"> ({eintrag.full_name})</span>
+                      </Link>
+                    )
+                  ) : (
+                    darfSchreiben && (
+                      <>
+                        <button
+                          type="button"
+                          className={knopf("neutral", { klein: true })}
+                          onClick={() => onAktion({ art: "neu", eintrag })}
+                        >
+                          Neu ausstellen
+                          <span className="sr-only"> ({eintrag.email})</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={knopf("neutral", { klein: true })}
+                          onClick={() => onAktion({ art: "widerrufen", eintrag })}
+                        >
+                          Widerrufen<span className="sr-only"> ({eintrag.email})</span>
+                        </button>
+                      </>
+                    )
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 
 import {
   STANDARD_MASSEINHEIT,
-  istMasseinheit,
   mitEinheit,
   mmAlsEingabe,
   mmAlsEingabeOptional,
@@ -17,106 +16,46 @@ import type { Masseinheit } from "../masse";
 /**
  * Persönliche Anzeigeeinheit für Längenmaße - fachneutrale Core-Infrastruktur.
  *
- * * Standard ist `cm`; gespeichert wird die Wahl **lokal im Browser, je
- *   angemeldetem Benutzer** (`elektroplan.masseinheit.<user_id>`). Zwei
- *   Benutzer desselben Browsers haben also getrennte Einstellungen; ein
- *   Betriebswechsel desselben Benutzers behält seine Wahl. Sie ändert nie
- *   gespeicherte Planmaße.
- * * Solange niemand angemeldet ist (Anmeldung lädt noch, abgemeldet), gilt
- *   der Standard - die Wahl eines anderen Benutzers wird nie gezeigt.
- *   Den Benutzer setzt `AuthProvider` über {@link masseinheitBenutzerSetzen}.
+ * * Standard ist `cm`; wählbar sind `mm`, `cm` und `m`. Gespeichert wird die
+ *   Wahl seit Phase 4e **serverseitig je Benutzer und Betrieb**; den Abgleich
+ *   mit Server und Browser-Cache übernimmt `core/einstellungen/persoenlich.ts`
+ *   und setzt hier nur den gültigen Wert ({@link masseinheitSetzen}). Diese
+ *   Datei liest und schreibt keinen Speicher. Sie ändert nie gespeicherte
+ *   Planmaße - die bleiben ganze Millimeter.
+ * * Solange niemand angemeldet ist, gilt der Standard.
  * * Eine Änderung wirkt sofort in jeder Komponente, die {@link useMasseinheit}
  *   oder {@link useMasse} benutzt - ohne Neuladen und ohne Provider
- *   (`useSyncExternalStore`). Ein zweiter Tab desselben Benutzers zieht über
- *   das `storage`-Ereignis nach.
- * * Ohne nutzbaren Speicher (privates Fenster, gesperrt) gilt die Wahl bis
- *   zum Neuladen - kein Fehler.
+ *   (`useSyncExternalStore`).
  * * Der Einstellungsdialog zeigt eine Wahl zunächst nur als Vorschau
- *   ({@link masseinheitVorschauen}); gespeichert wird erst mit „Übernehmen"
- *   ({@link masseinheitSetzen}), Abbrechen beendet die Vorschau.
+ *   ({@link masseinheitVorschauen}); gültig wird sie erst nach dem
+ *   erfolgreichen Speichern, Abbrechen beendet die Vorschau.
  *
  * Die eigentliche Umrechnung steht in `core/masse.ts`.
  */
-const PRAEFIX = "elektroplan.masseinheit";
 
-/**
- * Browserweiter Schlüssel aus Bedienungsnacharbeit 1 (4b.1). Er wird beim
- * ersten Anmelden einmalig für diesen Benutzer übernommen und danach entfernt.
- */
-export const MASSEINHEIT_SCHLUESSEL_ALT = PRAEFIX;
-
-export function masseinheitSchluessel(benutzerId: string): string {
-  return `${PRAEFIX}.${benutzerId}`;
+/** Lokaler Schlüssel aus Phase 4b.2 - nur noch Quelle der einmaligen Übernahme. */
+export function alterMasseinheitsschluessel(benutzerId: string): string {
+  return `elektroplan.masseinheit.${benutzerId}`;
 }
 
-let benutzer: string | null = null;
-let aktuell: Masseinheit | null = null;
+/** Noch älterer, browserweiter Schlüssel aus Phase 4b.1 - ebenso nur zur Übernahme. */
+export const MASSEINHEIT_SCHLUESSEL_BROWSERWEIT = "elektroplan.masseinheit";
+
+let aktuell: Masseinheit = STANDARD_MASSEINHEIT;
 let vorschau: Masseinheit | null = null;
 const hoerer = new Set<() => void>();
-
-function gespeichert(): Masseinheit {
-  if (benutzer === null) return STANDARD_MASSEINHEIT;
-  try {
-    const wert = window.localStorage.getItem(masseinheitSchluessel(benutzer));
-    return istMasseinheit(wert) ? wert : STANDARD_MASSEINHEIT;
-  } catch {
-    return STANDARD_MASSEINHEIT;
-  }
-}
 
 function benachrichtigen() {
   for (const h of [...hoerer]) h();
 }
 
-function speicherGeaendert(event: StorageEvent) {
-  if (benutzer === null) return;
-  if (event.key !== masseinheitSchluessel(benutzer) && event.key !== null) return;
-  const neu = gespeichert();
-  if (neu === aktuell) return;
-  const vorher = masseinheit();
-  aktuell = neu;
-  if (masseinheit() !== vorher) benachrichtigen();
-}
-
-/** Einmalige Übernahme der früheren, browserweiten Wahl für den ersten Benutzer. */
-function altenWertUebernehmen(benutzerId: string) {
-  try {
-    const alt = window.localStorage.getItem(MASSEINHEIT_SCHLUESSEL_ALT);
-    if (alt === null) return;
-    const schluessel = masseinheitSchluessel(benutzerId);
-    if (istMasseinheit(alt) && window.localStorage.getItem(schluessel) === null) {
-      window.localStorage.setItem(schluessel, alt);
-    }
-    window.localStorage.removeItem(MASSEINHEIT_SCHLUESSEL_ALT);
-  } catch {
-    // Ohne Speicher gibt es nichts zu übernehmen.
-  }
-}
-
-/**
- * Meldet den angemeldeten Benutzer (`user_id`) - oder `null` beim Laden und
- * nach dem Abmelden. Wechselt der Benutzer, gilt sofort dessen Einstellung.
- */
-export function masseinheitBenutzerSetzen(benutzerId: string | null) {
-  if (benutzerId === benutzer) return;
-  benutzer = benutzerId;
-  if (benutzerId !== null) altenWertUebernehmen(benutzerId);
-  const vorher = aktuell === null ? null : masseinheit();
-  vorschau = null;
-  aktuell = gespeichert();
-  if (aktuell !== vorher) benachrichtigen();
-}
-
 /** Die wirksame Einheit - während einer Vorschau die Vorschau. */
 export function masseinheit(): Masseinheit {
-  if (vorschau !== null) return vorschau;
-  if (aktuell === null) aktuell = gespeichert();
-  return aktuell;
+  return vorschau ?? aktuell;
 }
 
-/** Die für den Benutzer gespeicherte Einheit, unabhängig von einer Vorschau. */
+/** Die für den Benutzer gültige Einheit, unabhängig von einer Vorschau. */
 export function gespeicherteMasseinheit(): Masseinheit {
-  if (aktuell === null) aktuell = gespeichert();
   return aktuell;
 }
 
@@ -135,41 +74,28 @@ export function masseinheitVorschauBeenden() {
   if (masseinheit() !== vorher) benachrichtigen();
 }
 
-/** Speichert die Einheit und beendet eine Vorschau. */
-export function masseinheitSetzen(einheit: Masseinheit) {
+/**
+ * Setzt die gültige Einheit und beendet eine Vorschau - `null` heißt:
+ * niemand angemeldet, es gilt der Standard. Gespeichert wird hier nichts.
+ */
+export function masseinheitSetzen(einheit: Masseinheit | null) {
   const vorher = masseinheit();
   vorschau = null;
-  if (einheit === gespeicherteMasseinheit()) {
-    if (einheit !== vorher) benachrichtigen();
-    return;
-  }
-  aktuell = einheit;
-  if (benutzer !== null) {
-    try {
-      window.localStorage.setItem(masseinheitSchluessel(benutzer), einheit);
-    } catch {
-      // Ohne Speicher gilt die Wahl bis zum Neuladen.
-    }
-  }
-  benachrichtigen();
+  aktuell = einheit ?? STANDARD_MASSEINHEIT;
+  if (aktuell !== vorher) benachrichtigen();
 }
 
 function abonnieren(hoerer_: () => void): () => void {
   hoerer.add(hoerer_);
-  // Genau ein globaler Listener, solange jemand zuhört - auch unter
-  // StrictMode, das Abonnieren und Abmelden doppelt durchspielt.
-  if (hoerer.size === 1) window.addEventListener("storage", speicherGeaendert);
   return () => {
     hoerer.delete(hoerer_);
-    if (hoerer.size === 0) window.removeEventListener("storage", speicherGeaendert);
   };
 }
 
-/** Nur für Tests: vergisst Benutzer, Vorschau und gelesenen Wert (ohne Benachrichtigung). */
+/** Nur für Tests: vergisst Einheit und Vorschau (ohne Benachrichtigung). */
 export function masseinheitZuruecksetzen() {
-  aktuell = null;
+  aktuell = STANDARD_MASSEINHEIT;
   vorschau = null;
-  benutzer = null;
 }
 
 export function useMasseinheit(): Masseinheit {

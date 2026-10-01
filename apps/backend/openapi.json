@@ -2589,7 +2589,7 @@
           "administration"
         ],
         "summary": "Benutzer des Betriebs",
-        "description": "Mitgliedschaften und offene Einladungen, nach Name sortiert, seitenweise.\n\n``status=invited`` zeigt nur offene (auch abgelaufene) Einladungen.",
+        "description": "Mitgliedschaften und offene Einladungen, nach Name sortiert, seitenweise.\n\nOhne ``status``: aktive und gesperrte Mitglieder sowie offene Einladungen.\n``status=invited`` zeigt nur offene (auch abgelaufene) Einladungen,\n``status=removed`` nur entfernte Konten - neutral, ohne Name und E-Mail.",
         "operationId": "listMembers",
         "parameters": [
           {
@@ -2621,7 +2621,8 @@
                   "enum": [
                     "active",
                     "disabled",
-                    "invited"
+                    "invited",
+                    "removed"
                   ],
                   "type": "string"
                 },
@@ -2737,6 +2738,104 @@
             }
           }
         }
+      },
+      "patch": {
+        "tags": [
+          "administration"
+        ],
+        "summary": "Name und E-Mail-Adresse eines Mitglieds aendern",
+        "description": "Aendert Name und/oder E-Mail-Adresse des Kontos.\n\nNur fuer Konten, die keinem anderen Betrieb angehoeren (``409\naccount-shared``). Eine neue E-Mail-Adresse beendet jede Sitzung der\nPerson; anmelden kann sie sich danach nur noch mit der neuen Adresse.\nIst die Adresse bereits einem Konto oder einer offenen Einladung dieses\nBetriebs zugeordnet: ``409 email-unavailable``.",
+        "operationId": "updateMemberProfile",
+        "parameters": [
+          {
+            "name": "member_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Member Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberProfileUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden (auch fremder Betrieb)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, letzter Administrator (last-administrator), eigenes Konto (self-lockout), entferntes Konto (member-removed), Konto eines weiteren Betriebs (account-shared) oder E-Mail-Adresse vergeben (email-unavailable)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ungueltige Eingabe oder Bestaetigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/members/{member_id}/suspend": {
@@ -2745,8 +2844,108 @@
           "administration"
         ],
         "summary": "Zugang zu diesem Betrieb sperren",
-        "description": "Sperrt den Zugang des Mitglieds zu **diesem** Betrieb.\n\nDas globale Konto und Mitgliedschaften in anderen Betrieben bleiben\nunberuehrt. Offene Sitzungen in diesem Betrieb enden sofort.",
+        "description": "Sperrt den Zugang des Mitglieds zu **diesem** Betrieb.\n\nDas globale Konto und Mitgliedschaften in anderen Betrieben bleiben\nunberuehrt. Jede Sitzung in diesem Betrieb endet sofort: Refresh Tokens\nwerden widerrufen, und bereits ausgestellte Access Tokens scheitern ab\ndem Commit an der Sitzungsversion. Der Koerper ist Pflicht (``{}`` genuegt);\nein Sperrgrund darin ist optional und kurz.",
         "operationId": "suspendMember",
+        "parameters": [
+          {
+            "name": "member_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Member Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberSuspend"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, letzter Administrator (last-administrator), eigene Mitgliedschaft (self-lockout) oder unzulaessiger Zustand",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unbekannte oder nicht vergebbare Rolle",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/members/{member_id}/reactivate": {
+      "post": {
+        "tags": [
+          "administration"
+        ],
+        "summary": "Zugang zu diesem Betrieb wieder freigeben",
+        "description": "Gibt den Zugang zu diesem Betrieb wieder frei.\n\nAlte Sitzungen bleiben ungueltig; die Person meldet sich neu an. Ein\nentferntes Konto laesst sich nicht reaktivieren (``409 member-removed``).",
+        "operationId": "reactivateMember",
         "parameters": [
           {
             "name": "member_id",
@@ -2829,14 +3028,108 @@
         }
       }
     },
-    "/api/v1/members/{member_id}/reactivate": {
+    "/api/v1/members/{member_id}/password-reset": {
       "post": {
         "tags": [
           "administration"
         ],
-        "summary": "Zugang zu diesem Betrieb wieder freigeben",
-        "description": "Gibt den Zugang zu diesem Betrieb wieder frei.",
-        "operationId": "reactivateMember",
+        "summary": "Einmal-Link zum Zuruecksetzen des Passworts erzeugen",
+        "description": "Erzeugt einen Einmal-Link; ein bisher offener Link wird ungueltig.\n\nKein ``If-Match``: Der Vorgang aendert die Mitgliedschaft nicht, er legt\nnur einen neuen Link an. Der Link steht **nur in dieser Antwort**\n(``ELEKTROPLAN_PASSWORD_RESET_DELIVERY=admin_link``); er wird nicht\ngespeichert, nicht protokolliert und ist spaeter nicht abrufbar. Das\nPasswort setzt ausschliesslich die Person selbst.",
+        "operationId": "issueMemberPasswordReset",
+        "parameters": [
+          {
+            "name": "member_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Member Id"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordResetIssued"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden (auch fremder Betrieb)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, letzter Administrator (last-administrator), eigenes Konto (self-lockout), entferntes Konto (member-removed), Konto eines weiteren Betriebs (account-shared) oder E-Mail-Adresse vergeben (email-unavailable)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Ungueltige Eingabe oder Bestaetigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Links in kurzer Zeit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Kein Zustellweg eingerichtet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/members/{member_id}/remove": {
+      "post": {
+        "tags": [
+          "administration"
+        ],
+        "summary": "Mitglied endgueltig entfernen",
+        "description": "Entfernt ein Mitglied endgueltig - ein Tombstone, keine Wiederherstellung.\n\nBestaetigt wird mit der aktuellen E-Mail-Adresse des Kontos\n(``confirm_email``). Rollen, Einstellungen, Reset-Links und Sitzungen\nenden; Bearbeiterangaben zeigen danach \"Entfernter Benutzer\". Gehoert das\nKonto keinem anderen Betrieb an, werden Name und E-Mail durch neutrale\nPlatzhalter ersetzt, und die Adresse ist fuer eine neue Einladung frei.\nEine **offene Einladung** wird nicht hier, sondern ueber ihren Widerruf\nentfernt.",
+        "operationId": "removeMember",
         "parameters": [
           {
             "name": "member_id",
@@ -2865,6 +3158,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemberRemove"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -2877,7 +3180,7 @@
             }
           },
           "404": {
-            "description": "Nicht gefunden",
+            "description": "Nicht gefunden (auch fremder Betrieb)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2887,7 +3190,7 @@
             }
           },
           "409": {
-            "description": "Versionskonflikt, letzter Administrator (last-administrator), eigene Mitgliedschaft (self-lockout) oder unzulaessiger Zustand",
+            "description": "Versionskonflikt, letzter Administrator (last-administrator), eigenes Konto (self-lockout), entferntes Konto (member-removed), Konto eines weiteren Betriebs (account-shared) oder E-Mail-Adresse vergeben (email-unavailable)",
             "content": {
               "application/json": {
                 "schema": {
@@ -2897,7 +3200,7 @@
             }
           },
           "422": {
-            "description": "Unbekannte oder nicht vergebbare Rolle",
+            "description": "Ungueltige Eingabe oder Bestaetigung",
             "content": {
               "application/json": {
                 "schema": {
@@ -3630,6 +3933,283 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/password-reset/preview": {
+      "post": {
+        "tags": [
+          "password-reset"
+        ],
+        "summary": "Reset-Link pruefen",
+        "description": "Prueft den Link, ohne etwas zu aendern. Verraet nur die Ablaufzeit.",
+        "operationId": "previewPasswordReset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetTokenIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordResetPreview"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Link ungueltig (password-reset-invalid)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Versuche",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/password-reset/complete": {
+      "post": {
+        "tags": [
+          "password-reset"
+        ],
+        "summary": "Neues Passwort mit dem Einmal-Link setzen",
+        "description": "Setzt das Passwort, verbraucht den Link und beendet alle Sitzungen - atomar.\n\nEs gelten die Passwortregeln der Anmeldung. Ein zu schwaches Passwort\nverbraucht den Link nicht.",
+        "operationId": "completePasswordReset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetComplete"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Link ungueltig (password-reset-invalid)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Versuche",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Passwortregeln nicht erfuellt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/preferences": {
+      "get": {
+        "tags": [
+          "preferences"
+        ],
+        "summary": "Eigene Einstellungen",
+        "description": "Der gespeicherte Stand - oder die Standardwerte mit ``stored=false``.\n\nBewusst ``200`` statt ``404``: \"noch nichts gespeichert\" ist der\nregulaere Zustand nach der ersten Anmeldung, kein Fehler.",
+        "operationId": "getMyPreferences",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreferencesOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "preferences"
+        ],
+        "summary": "Eigene Einstellungen erstmalig speichern",
+        "description": "Legt den Serverstand an - nur, solange es noch keinen gibt.\n\nFuer die einmalige Uebernahme eines alten lokalen Stands und fuer das\nerste Speichern. Existiert bereits einer, gewinnt er (``409``).",
+        "operationId": "createMyPreferences",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreferencesIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreferencesOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Es gibt bereits einen Serverstand (preferences-exist)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unbekannter Wert",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "preferences"
+        ],
+        "summary": "Eigene Einstellungen aendern",
+        "description": "Ersetzt den Serverstand als Ganzes - nur mit der aktuellen Version.",
+        "operationId": "replaceMyPreferences",
+        "parameters": [
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreferencesIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreferencesOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Noch kein Serverstand",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt (anderes Geraet)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unbekannter Wert",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
                 }
               }
             }
@@ -5809,7 +6389,14 @@
             "title": "Full Name"
           },
           "email": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Email"
           },
           "status": {
@@ -5817,7 +6404,8 @@
             "enum": [
               "active",
               "disabled",
-              "invited"
+              "invited",
+              "removed"
             ],
             "title": "Status"
           },
@@ -5856,6 +6444,16 @@
             "type": "boolean",
             "title": "Invitation Expired"
           },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
           "version": {
             "type": "integer",
             "title": "Version"
@@ -5872,10 +6470,12 @@
           "last_login_at",
           "invitation_expires_at",
           "invitation_expired",
+          "created_at",
+          "updated_at",
           "version"
         ],
         "title": "DirectoryEntryOut",
-        "description": "Eintrag der Benutzerliste: Mitgliedschaft **oder** offene Einladung.\n\n``kind`` unterscheidet beides. ``id`` ist je nach Art die ID der\nMitgliedschaft oder der Einladung."
+        "description": "Eintrag der Benutzerliste: Mitgliedschaft **oder** offene Einladung.\n\n``kind`` unterscheidet beides. ``id`` ist je nach Art die ID der\nMitgliedschaft oder der Einladung. Ein entferntes Konto (``removed``)\nerscheint nur mit ``status=removed`` und **ohne** Name und E-Mail."
       },
       "EffectivePermissionOut": {
         "properties": {
@@ -6580,20 +7180,46 @@
             "title": "Id"
           },
           "full_name": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Full Name"
           },
           "email": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Email"
           },
           "status": {
             "type": "string",
             "enum": [
               "active",
-              "disabled"
+              "disabled",
+              "removed"
             ],
             "title": "Status"
+          },
+          "lock_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lock Reason"
           },
           "roles": {
             "items": {
@@ -6610,10 +7236,23 @@
             "type": "boolean",
             "title": "Is Self"
           },
+          "is_last_active_administrator": {
+            "type": "boolean",
+            "title": "Is Last Active Administrator"
+          },
+          "account_shared": {
+            "type": "boolean",
+            "title": "Account Shared"
+          },
           "joined_at": {
             "type": "string",
             "format": "date-time",
             "title": "Joined At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
           },
           "last_login_at": {
             "anyOf": [
@@ -6638,15 +7277,19 @@
           "full_name",
           "email",
           "status",
+          "lock_reason",
           "roles",
           "is_administrator",
           "is_self",
+          "is_last_active_administrator",
+          "account_shared",
           "joined_at",
+          "updated_at",
           "last_login_at",
           "version"
         ],
         "title": "MemberOut",
-        "description": "Eine Mitgliedschaft im aktuellen Betrieb.\n\nEnthaelt vom globalen Konto nur Name und E-Mail - beide sind hier nicht\naenderbar (ADR 0015)."
+        "description": "Eine Mitgliedschaft im aktuellen Betrieb.\n\nEnthaelt vom globalen Konto nur Name und E-Mail. Aenderbar sind sie nur,\nwenn das Konto keinem anderen Betrieb angehoert (``account_shared``,\nADR 0021). Bei einem entfernten Konto sind beide ``None``."
       },
       "MemberPermissionsOut": {
         "properties": {
@@ -6683,6 +7326,56 @@
         ],
         "title": "MemberPermissionsOut"
       },
+      "MemberProfileUpdate": {
+        "properties": {
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "email"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "MemberProfileUpdate",
+        "description": "Name und/oder E-Mail-Adresse. Mindestens ein Feld."
+      },
+      "MemberRemove": {
+        "properties": {
+          "confirm_email": {
+            "type": "string",
+            "maxLength": 320,
+            "minLength": 1,
+            "title": "Confirm Email"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "confirm_email"
+        ],
+        "title": "MemberRemove",
+        "description": "Bestaetigung: die aktuelle E-Mail-Adresse des Kontos."
+      },
       "MemberRolesUpdate": {
         "properties": {
           "role_keys": {
@@ -6702,6 +7395,26 @@
         ],
         "title": "MemberRolesUpdate",
         "description": "Vollstaendige Liste der Systemrollen - ersetzt die bisherigen als Ganzes."
+      },
+      "MemberSuspend": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "MemberSuspend",
+        "description": "Optionaler, kurzer Sperrgrund - ohne sensible Angaben."
       },
       "ModuleInfo": {
         "properties": {
@@ -7125,6 +7838,92 @@
         ],
         "title": "Page[DirectoryEntryOut]"
       },
+      "PasswordResetComplete": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Token"
+          },
+          "password": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Password"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "token",
+          "password"
+        ],
+        "title": "PasswordResetComplete"
+      },
+      "PasswordResetIssued": {
+        "properties": {
+          "member_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Member Id"
+          },
+          "delivery": {
+            "type": "string",
+            "const": "admin_link",
+            "title": "Delivery"
+          },
+          "reset_url": {
+            "type": "string",
+            "title": "Reset Url"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "member_id",
+          "delivery",
+          "reset_url",
+          "expires_at"
+        ],
+        "title": "PasswordResetIssued",
+        "description": "Ergebnis eines vom Administrator ausgeloesten Resets.\n\n``reset_url`` steht **nur in dieser Antwort** - er wird nicht gespeichert\nund ist spaeter nicht erneut abrufbar. Ein neuer Link macht ihn ungueltig."
+      },
+      "PasswordResetPreview": {
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expires_at"
+        ],
+        "title": "PasswordResetPreview",
+        "description": "Was der Inhaber eines gueltigen Links erfaehrt: nur die Ablaufzeit."
+      },
+      "PasswordResetTokenIn": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Token"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "title": "PasswordResetTokenIn"
+      },
       "PermissionInfo": {
         "properties": {
           "key": {
@@ -7147,6 +7946,99 @@
           "area"
         ],
         "title": "PermissionInfo"
+      },
+      "PreferencesIn": {
+        "properties": {
+          "theme_mode": {
+            "type": "string",
+            "enum": [
+              "system",
+              "light",
+              "dark"
+            ],
+            "title": "Theme Mode"
+          },
+          "accent": {
+            "type": "string",
+            "enum": [
+              "blue",
+              "teal",
+              "green",
+              "violet",
+              "orange"
+            ],
+            "title": "Accent"
+          },
+          "length_unit": {
+            "type": "string",
+            "enum": [
+              "mm",
+              "cm",
+              "m"
+            ],
+            "title": "Length Unit"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "theme_mode",
+          "accent",
+          "length_unit"
+        ],
+        "title": "PreferencesIn",
+        "description": "Vollstaendiger Stand - ersetzt den gespeicherten als Ganzes.\n\nUnbekannte Werte und zusaetzliche Felder werden abgelehnt (``422``)."
+      },
+      "PreferencesOut": {
+        "properties": {
+          "stored": {
+            "type": "boolean",
+            "title": "Stored"
+          },
+          "theme_mode": {
+            "type": "string",
+            "enum": [
+              "system",
+              "light",
+              "dark"
+            ],
+            "title": "Theme Mode"
+          },
+          "accent": {
+            "type": "string",
+            "enum": [
+              "blue",
+              "teal",
+              "green",
+              "violet",
+              "orange"
+            ],
+            "title": "Accent"
+          },
+          "length_unit": {
+            "type": "string",
+            "enum": [
+              "mm",
+              "cm",
+              "m"
+            ],
+            "title": "Length Unit"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stored",
+          "theme_mode",
+          "accent",
+          "length_unit",
+          "version"
+        ],
+        "title": "PreferencesOut",
+        "description": "Eigene Einstellungen im aktuellen Betrieb.\n\n``stored`` sagt, ob es bereits einen Serverstand gibt. Ohne ihn stehen hier\ndie dokumentierten Standardwerte (``system``, ``blue``, ``cm``) und\n``version`` ist ``0``; der Client darf dann einmalig einen alten lokalen\nStand uebertragen (``POST``). Mit ihm ist der Server die Wahrheit, und\nAenderungen laufen ueber ``PUT`` mit ``If-Match`` (ADR 0021)."
       },
       "ProblemDetail": {
         "properties": {
@@ -8325,6 +9217,7 @@
             "type": "string",
             "enum": [
               "member",
+              "removed",
               "unknown",
               "system"
             ],

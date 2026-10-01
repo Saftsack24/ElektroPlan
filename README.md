@@ -165,6 +165,25 @@ Icons (`lucide-react`). Regeln und Protokoll:
 > `lucide-react`). Offene Storage-Aufräumaufträge arbeitet
 > `python -m app.cli storage-cleanup` ab.
 
+**Phase 4e — Benutzerlebenszyklus und serverseitige Einstellungen — abgeschlossen**
+(vom Auftraggeber geprüft, mit diesem Checkpoint committet). Darstellung, Akzentfarbe und
+Maßeinheit liegen jetzt **auf dem Server** je Benutzer und Betrieb (der Browser hält nur einen
+Cache) und folgen auf jedes Gerät; neue Maßeinheit **Meter** (`m`, drei Nachkommastellen,
+intern weiter ganze Millimeter). Administratoren ändern Name und E-Mail, **sperren und
+entsperren** mit sofortiger Wirkung auf jede Sitzung, lösen einen **Einmal-Link zum
+Zurücksetzen des Passworts** aus (das Passwort setzt die Person selbst) und **entfernen**
+Benutzer endgültig (Tombstone, frühere Einträge zeigen „Entfernter Benutzer“). Kontoänderungen
+nur bei Konten, die keinem anderen Betrieb angehören. Entscheidung:
+[ADR 0021](docs/decisions/0021-user-lifecycle-account-locks-password-reset-preferences.md).
+
+> **Nach dem Aktualisieren auf 4e:** `.\tasks.ps1 migrate` (Migration `0007`), danach
+> **zwingend** `.\tasks.ps1 seed` – erst der Seed legt `user.account.lock`,
+> `user.profile.write`, `user.password.reset`, `user.account.remove` und
+> `user.preferences.write` an; ohne ihn kann niemand sperren oder Einstellungen speichern.
+> Der Reset-Link erscheint nur mit `ELEKTROPLAN_PASSWORD_RESET_DELIVERY=admin_link` (in
+> `docker-compose.yml` gesetzt, in Produktion verboten). Bereits angemeldete Browser
+> erneuern ihre Sitzung einmal automatisch.
+
 > **Einladungen in der Entwicklung:** Es gibt noch keinen E-Mail-Versand. Mit
 > `ELEKTROPLAN_INVITATION_DELIVERY=development_link` (in `docker-compose.yml` gesetzt)
 > erscheint der Einladungslink einmalig in der Oberfläche, deutlich als
@@ -272,6 +291,7 @@ bewusst nicht ersatzweise gegen SQLite.
 | `.\tasks.ps1 boundaries` | Modulgrenzen prüfen |
 | `.\tasks.ps1 migrate` | Alembic upgrade head |
 | `.\tasks.ps1 openapi` | OpenAPI exportieren und API-Client neu erzeugen |
+| `docker exec elektroplan-backend python -m app.cli seed` | nach Migration `0007` Pflicht: neue Rechte der Benutzerverwaltung (Phase 4e) |
 | `docker exec elektroplan-backend python -m app.cli purge-invitations` | abgeschlossene und abgelaufene Einladungen nach der Aufbewahrungsfrist (30 Tage) löschen |
 | `docker exec elektroplan-backend python -m app.cli storage-cleanup` | offene Storage-Aufräumaufträge gelöschter Projekte erneut abarbeiten (idempotent; Exitcode 1, solange Aufträge offen sind) |
 

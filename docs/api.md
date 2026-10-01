@@ -130,10 +130,13 @@ dann Name, dann ID; Wände nach `sort_order`, dann ID; Öffnungen nach Abstand, 
 ### Benutzerverwaltung (ab Phase 4.2, ADR 0015)
 
 ```
-GET    /api/v1/members                        ?q= &status=active|disabled|invited &limit= &cursor=
+GET    /api/v1/members                        ?q= &status=active|disabled|invited|removed &limit= &cursor=
 GET    /api/v1/members/{member_id}
-POST   /api/v1/members/{member_id}/suspend    If-Match  Zugang zu diesem Betrieb sperren
-POST   /api/v1/members/{member_id}/reactivate If-Match  Zugang wieder freigeben
+PATCH  /api/v1/members/{member_id}            If-Match  Name/E-Mail ändern (seit 4e)
+POST   /api/v1/members/{member_id}/suspend    If-Match  sperren, Körper {"reason"?} (seit 4e Pflichtkörper)
+POST   /api/v1/members/{member_id}/reactivate If-Match  entsperren
+POST   /api/v1/members/{member_id}/password-reset       Einmal-Link erzeugen (201, seit 4e)
+POST   /api/v1/members/{member_id}/remove     If-Match  endgültig entfernen, {"confirm_email"} (seit 4e)
 GET    /api/v1/members/{member_id}/permissions         Rollen und effektive Rechte samt Herkunft
 PUT    /api/v1/members/{member_id}/roles      If-Match  Systemrollen als Ganzes ersetzen
 GET    /api/v1/roles                                   feste Systemrollen mit Zweck und Rechten
@@ -147,6 +150,13 @@ POST   /api/v1/invitations/{invitation_id}/reissue  If-Match  neues Token, neue 
 POST   /api/v1/invitation-acceptance/preview
 POST   /api/v1/invitation-acceptance/new-account        (201)
 POST   /api/v1/invitation-acceptance/existing-account   (201)
+POST   /api/v1/password-reset/preview                   (seit 4e) nur Ablaufzeit
+POST   /api/v1/password-reset/complete                  (seit 4e) 204
+
+# eigene Einstellungen (seit 4e), ohne ID im Pfad
+GET    /api/v1/me/preferences                           200, auch ohne Stand (stored=false)
+POST   /api/v1/me/preferences                           201 - nur ohne Stand, sonst 409 preferences-exist
+PUT    /api/v1/me/preferences                 If-Match  ganzer Stand
 ```
 
 **Liste.** `GET /members` liefert Mitgliedschaften **und** offene Einladungen in einer
@@ -155,8 +165,11 @@ schreibung, dann ID; Keyset-Cursor über genau diese Werte. `status=invited` zei
 Einladungen, auch abgelaufene (`invitation_expired`). Rollen werden je Seite in einer
 Abfrage nachgeladen – kein N+1.
 
-**Berechtigungen:** lesen `user.account.read`; sperren, freigeben, widerrufen, neu
-ausstellen `user.account.write`; Rollen und effektive Rechte lesen
+**Berechtigungen:** lesen `user.account.read`; widerrufen, neu ausstellen
+`user.account.write`; sperren und entsperren seit 4e `user.account.lock`; Name/E-Mail
+`user.profile.write`; Reset-Link `user.password.reset`; entfernen `user.account.remove`
+(alle vier nur Administrator); eigene Einstellungen speichern `user.preferences.write`
+(jede Systemrolle); Rollen und effektive Rechte lesen
 `role.assignment.read`; Rollen vergeben `role.assignment.write`; **einladen verlangt
 `user.account.write` und `role.assignment.write`**, weil die Einladung Rollen vergibt.
 
@@ -165,7 +178,13 @@ Eine Rollenänderung zählt die Mitgliedsversion weiter; eine Anmeldung nicht.
 
 | Fall | Antwort |
 |---|---|
-| eigene Mitgliedschaft sperren / eigene Administratorrolle entfernen | `409 self-lockout` |
+| eigene Mitgliedschaft sperren oder entfernen / eigene Administratorrolle entfernen | `409 self-lockout` |
+| Aktion an einem entfernten Konto (auch entsperren, Rollen, Profil, Reset) | `409 member-removed` |
+| Name, E-Mail oder Reset bei einem Konto, das noch einem anderen Betrieb angehört | `409 account-shared` (ohne Betriebsnamen) |
+| neue E-Mail gehört einem anderen Konto oder einer offenen Einladung dieses Betriebs | `409 email-unavailable` (eine Meldung für beide Fälle) |
+| Bestätigungsadresse beim Entfernen passt nicht | `422`, `errors[].code` `confirmation_mismatch` |
+| kein Zustellweg für Reset-Links | `503 password-reset-delivery-unavailable`, nichts angelegt |
+| zu viele Reset-Links für ein Mitglied | `429` |
 | danach bliebe kein aktiver Administrator | `409 last-administrator` |
 | bereits gesperrt / bereits aktiv / Einladung schon angenommen oder widerrufen | `409 conflict` |
 | unbekannte, doppelte oder nicht vergebbare Rolle (nur `is_system`) | `422`, `errors[].code` `unknown_role` / `duplicate_role` |
@@ -176,6 +195,25 @@ Eine Rollenänderung zählt die Mitgliedsversion weiter; eine Anmeldung nicht.
 **Einladungsantwort.** `POST /invitations` und `…/reissue` liefern `InvitationIssued`
 mit `delivery` und – nur bei `ELEKTROPLAN_INVITATION_DELIVERY=development_link` –
 `development_activation_url`. Kein anderer Endpunkt liefert Token oder Link.
+
+**Lebenszyklus (seit 4e, ADR 0021).** `MemberOut` trägt zusätzlich `lock_reason`,
+`updated_at`, `is_last_active_administrator` und `account_shared`; bei `status=removed` sind
+`full_name` und `email` `null`. Die Liste zeigt ohne Filter aktive und gesperrte Mitglieder
+sowie offene Einladungen; entfernte nur mit `status=removed` – ohne Name, E-Mail und
+Namenssortierung, eine Suche findet sie nicht. `DirectoryEntryOut` trägt `created_at` und
+`updated_at`. `PasswordResetIssued.reset_url` steht nur in dieser einen Antwort
+(`ELEKTROPLAN_PASSWORD_RESET_DELIVERY=admin_link`). Die öffentliche Einlösung antwortet für
+jeden ungültigen Link `404 password-reset-invalid`, bei Fehlversuchen je IP `429`, bei
+schwachem Passwort `422` (Link bleibt gültig). **`POST …/suspend` entwertet alle offenen
+Reset-Links der Mitgliedschaft** (danach `404 password-reset-invalid`, auch nach dem
+Entsperren); `POST …/password-reset` ist für gesperrte Mitglieder weiter erlaubt – das
+Passwort wird gesetzt, die Mitgliedschaft bleibt gesperrt. Bearbeiterangaben (`UserReference`) kennen
+`kind=removed` („Entfernter Benutzer“).
+
+**Einstellungen.** `PreferencesOut {stored, theme_mode, accent, length_unit, version}`;
+`theme_mode ∈ system|light|dark`, `accent ∈ blue|teal|green|violet|orange`,
+`length_unit ∈ mm|cm|m`. Unbekannte Werte und zusätzliche Felder `422`. Kein Upsert:
+Anlage nur per `POST` ohne Stand, Änderung nur per `PUT` mit `If-Match`.
 
 **Annahme.** Ungültige Tokens (unbekannt, abgelaufen, widerrufen, verwendet) erhalten
 einheitlich `404 invitation-invalid`; Fehlversuche je IP begrenzt (`429`). Der Weg
@@ -614,6 +652,14 @@ Folgen für Clients:
   `docs/security.md`, Abschnitt 12.
 - Die spätere Baustellen-App erhält einen **getrennten** mobilen Tokenflow; sie
   verwendet dieses Schema nicht.
+
+### Abgelehnte Anmeldung
+
+Jede Ablehnung von `/auth/login` ist gleich: `401`, `type: …/authentication-failed`,
+`detail` „Anmeldung nicht möglich. Bitte Zugangsdaten prüfen oder die Administration kontaktieren.“ – ob die Adresse unbekannt, das Passwort falsch, das Konto deaktiviert,
+die Mitgliedschaft gesperrt, entfernt oder nicht vorhanden ist oder der gewählte Betrieb keine
+aktive Mitgliedschaft hat. Kein `404`, kein Token, kein Cookie. Nach zu vielen Ablehnungen je
+Konto oder IP `429 rate-limited`. Clients zeigen `detail` unverändert an.
 
 ### Mehrere Betriebe beim Login
 
