@@ -36,8 +36,9 @@ from app.core.files.storage import (
     build_storage_key,
     matches_magic_bytes,
 )
+from app.core.persistence import foreign_key_violation_translated
 from app.core.tenancy.repository import TenantRepository
-from app.errors import ValidationFailedError
+from app.errors import NotFoundError, ValidationFailedError
 from app.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -161,8 +162,14 @@ class FileService:
             )
             self.session.add(record)
             # Erst die Datenbankzeile: Schlaegt sie fehl, wurde noch nichts
-            # in den Storage geladen.
-            self.session.flush()
+            # in den Storage geladen. Wurde das Projekt inzwischen geloescht
+            # (die Loeschung hielt die Projektsperre, der Fremdschluessel hat
+            # gewartet), ist die Antwort ``404`` - kein ``500``.
+            with foreign_key_violation_translated(
+                self.session,
+                error=NotFoundError("Das Projekt wurde nicht gefunden oder inzwischen geloescht."),
+            ):
+                self.session.flush()
 
             try:
                 self.storage.put_stream(key, buffered.buffer, content_type, buffered.size_bytes)

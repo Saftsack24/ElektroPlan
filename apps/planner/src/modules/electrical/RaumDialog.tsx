@@ -5,6 +5,8 @@ import { Feld } from "../../core/ui/Feld";
 import { EINGABEHINWEIS, eingabeUmrechnen, mmAlsEingabeOptional } from "../../core/masse";
 import { useEinheitenwechsel, useMasse } from "../../core/ui/masseinheit";
 import { FORMULARRASTER, KNOPFZEILE, knopf, meldungsflaeche } from "../../core/ui/stil";
+import { AKTION } from "../../core/ui/aktionssymbole";
+import { MitSymbol } from "../../core/ui/Symbol";
 
 export type Raumwerte = {
   name: string;
@@ -155,7 +157,7 @@ export function RaumDialog({
 
         <div className={KNOPFZEILE}>
           <button className={knopf("primaer")} type="submit" disabled={laeuft}>
-            {laeuft ? "Wird gespeichert ..." : "Speichern"}
+            <MitSymbol icon={AKTION.speichern}>{laeuft ? "Wird gespeichert ..." : "Speichern"}</MitSymbol>
           </button>
           <button
             className={knopf()}

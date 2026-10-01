@@ -74,6 +74,14 @@ Offline erzeugte Daten werden **nicht** hart gelöscht. Ein Löschen setzt
 Gerät, das die Löschung nicht gesehen hat, den Datensatz beim nächsten Sync
 wieder „auferstehen“ lassen.
 
+**Abgrenzung Phase 4d (ADR 0020):** Kunden und Projekte werden seit Phase 4d
+physisch gelöscht – sie entstehen nicht offline. Ein physisch gelöschtes Projekt
+darf später keine Offline-Daten mehr annehmen: Ein Sync gegen ein unbekanntes
+Projekt endet wie jeder Schreibzugriff mit `404`. Wenn Phase 16 offline erzeugte
+Projektunterdaten einführt, braucht die Projektlöschung dafür einen eigenen
+Tombstone oder muss für Projekte mit offenen Offline-Ständen gesperrt werden –
+das ist dort zu entscheiden, nicht vorweggenommen.
+
 ---
 
 ## 3. Konfliktklassen

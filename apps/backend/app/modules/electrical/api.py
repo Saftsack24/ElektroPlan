@@ -24,6 +24,7 @@ from app.core.auth.dependencies import CurrentUser, require_permission
 from app.core.events.bus import EventBus, get_event_bus
 from app.core.events.uow import UnitOfWork
 from app.core.preconditions import require_if_match
+from app.core.projects.planning import FloorPlanningAccess
 from app.db.session import get_session
 from app.errors import ProblemDetail
 from app.modules.electrical.events import PlanChangeKind, plan_updated
@@ -169,6 +170,12 @@ def _commit(
     Commit an den Bus: Vor dem Commit ist nichts Tatsache (docs/events.md,
     Abschnitt 3). Ein Fehler im Handler wirkt nicht auf diese Anfrage zurueck.
     """
+    # Die Aenderung am Projekt vermerken (wer, wann) - ueber den oeffentlichen
+    # Core-Zugang, ohne das Projektmodell zu kennen (Phase 4d). Die
+    # Projektsperre haelt dieser Vorgang bereits.
+    FloorPlanningAccess(session, current_user.organization_id).record_project_change(
+        result.context.project_id, actor_user_id=current_user.user_id
+    )
     uow = UnitOfWork(session, bus)
     uow.add_event(
         plan_updated(

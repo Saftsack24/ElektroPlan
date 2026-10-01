@@ -20,14 +20,9 @@ from app.core.pagination import OffsetPage, fetch_numbered_page, order_with_tieb
 from app.core.persistence import flush
 from app.core.preconditions import check_version
 from app.core.tenancy.repository import TenantRepository
-from app.db.mixins import utcnow
-from app.errors import ConflictError, NotFoundError
+from app.errors import NotFoundError
 
 CustomerSort = Literal["created_at", "name"]
-
-#: Platzhalter nach der Anonymisierung. Bewusst ohne Bezug zur Person - der
-#: Datensatz bleibt nur als Belegzuordnung bestehen.
-ANONYMIZED_NAME = "Geloeschter Kunde"
 
 
 class CustomerRepository(TenantRepository[Customer]):
@@ -35,7 +30,7 @@ class CustomerRepository(TenantRepository[Customer]):
 
 
 class CustomerService:
-    """Anlegen, Aendern, Ausblenden und Anonymisieren von Kunden."""
+    """Anlegen, Aendern und endgueltiges Loeschen von Kunden."""
 
     def __init__(self, session: Session, organization_id: uuid.UUID) -> None:
         self.session = session
@@ -50,13 +45,9 @@ class CustomerService:
     def get_for_update(self, customer_id: uuid.UUID) -> Customer:
         """Laedt den Kunden und **sperrt die Zeile** bis zum Commit.
 
-        Die Sperre ist der Angelpunkt gegen zwei Rennen (docs/database.md,
-        Abschnitt "Sperrreihenfolge"):
-
-        * Ausblenden gegen Projektanlage - sonst entstuende ein sichtbares
-          Projekt an einem ausgeblendeten Kunden.
-        * Anonymisieren gegen Projektzuordnung - sonst haenge eine neue
-          Zuordnung an einem bereits anonymisierten Kunden.
+        Die Sperre ist der Angelpunkt gegen das Rennen **Loeschen gegen
+        Projektzuordnung** (docs/database.md, Abschnitt "Sperrreihenfolge"):
+        Projektanlage und Kundenwechsel sperren dieselbe Zeile.
 
         Es wird **immer zuerst die Kundenzeile** gesperrt und erst danach auf
         Projekte zugegriffen. Diese Reihenfolge gilt auf beiden Seiten und
@@ -81,10 +72,8 @@ class CustomerService:
     ) -> OffsetPage[Customer]:
         """Nummerierte Seite von Kunden - gefiltert, stabil sortiert (ADR 0017).
 
-        Die Basisabfrage ist bereits auf den Betrieb und auf nicht
-        ausgeblendete Kunden eingeschraenkt; Zaehlung und Seite teilen sie.
-        Anonymisierte Kunden bleiben enthalten: Sie sind als Belegzuordnung
-        sichtbar (docs/api.md, "Zustand des Kunden bei der Projektzuordnung").
+        Die Basisabfrage ist bereits auf den Betrieb eingeschraenkt; Zaehlung
+        und Seite teilen sie.
         """
         stmt = self.repository.query()
         if kind:
@@ -133,77 +122,28 @@ class CustomerService:
     ) -> Customer:
         customer = self.repository.get_or_404(customer_id)
         check_version(customer, expected_version)
-        _require_not_anonymized(customer)
         for field, value in payload.model_dump(exclude_unset=True).items():
             setattr(customer, field, value)
         customer.updated_by_user_id = actor_user_id
         flush(self.session)
         return customer
 
-    def soft_delete(self, customer: Customer, *, actor_user_id: uuid.UUID) -> Customer:
-        """Blendet den Kunden aus. Bestehende Belege bleiben zuordenbar.
+    def delete(self, customer: Customer) -> None:
+        """Entfernt den Kunden **physisch** aus der operativen Datenbank.
 
-        Erwartet einen bereits ueber :meth:`get_for_update` **gesperrten**
-        Datensatz. Nur so bleiben Sperre, Projektpruefung und Aenderung in
-        derselben Transaktion - und genau das schliesst das Rennen gegen eine
-        gleichzeitige Projektanlage.
+        Erwartet einen ueber :meth:`get_for_update` **gesperrten** Datensatz,
+        dessen Projektfreiheit der Aufrufer unter derselben Sperre geprueft hat
+        (ADR 0020). Der Fremdschluessel ``projects -> customers`` (``RESTRICT``)
+        sichert das zusaetzlich in der Datenbank.
+
+        Die Kundennummer wird nicht wiederverwendet: Der Nummernkreis zaehlt
+        nur hoch.
         """
-        customer.deleted_at = utcnow()
-        customer.updated_by_user_id = actor_user_id
+        self.session.delete(customer)
         flush(self.session)
-        return customer
-
-    def anonymize(
-        self, customer_id: uuid.UUID, *, expected_version: int, actor_user_id: uuid.UUID
-    ) -> Customer:
-        """Setzt ein Loeschbegehren um (Art. 17 DSGVO).
-
-        Die personenbezogenen Felder werden ueberschrieben; Kundennummer und
-        Anlagezeitpunkt bleiben stehen. Damit bleiben aufbewahrungspflichtige
-        Belege (HGB/AO) zuordenbar, ohne die Person weiter zu fuehren.
-
-        Die Kundenzeile wird dabei **gesperrt** (siehe
-        :meth:`get_for_update`). Eine gleichzeitige Projektzuordnung an
-        denselben Kunden wartet damit: Entweder sie ist zuerst fertig und die
-        Anonymisierung behaelt die bestehende Referenz, oder die
-        Anonymisierung gewinnt und die Zuordnung wird abgelehnt.
-
-        Ausblenden und Anonymisieren sind **zwei getrennte Vorgaenge**:
-        ``deleted_at`` steuert die Sichtbarkeit, ``anonymized_at`` den
-        Personenbezug. Die Anonymisierung blendet den Datensatz deshalb nicht
-        zusaetzlich aus - er bleibt als Zuordnung bestehen und zeigt in Listen
-        den Platzhalternamen. Wer ihn auch aus den Listen nehmen will, blendet
-        ihn zusaetzlich aus.
-
-        Der Vorgang ist **nicht umkehrbar** und wird protokolliert.
-        """
-        customer = self.get_for_update(customer_id)
-        check_version(customer, expected_version)
-        _require_not_anonymized(customer)
-        customer.name = ANONYMIZED_NAME
-        customer.contact_person = None
-        customer.email = None
-        customer.phone = None
-        customer.billing_street = None
-        customer.billing_postal_code = None
-        customer.billing_city = None
-        customer.anonymized_at = utcnow()
-        customer.updated_by_user_id = actor_user_id
-        flush(self.session)
-        return customer
 
 
 # ------------------------------------------------------------------- Helfer
-
-
-def _require_not_anonymized(customer: Customer) -> None:
-    """Ein anonymisierter Datensatz wird nicht mehr veraendert.
-
-    Sonst liessen sich die geloeschten Angaben ueber ein ``PATCH`` wieder
-    eintragen - die Loeschung waere damit wirkungslos.
-    """
-    if customer.anonymized_at is not None:
-        raise ConflictError("Dieser Kunde wurde anonymisiert und kann nicht mehr geaendert werden.")
 
 
 def _apply_search(stmt: Select[tuple[Customer]], search: str) -> Select[tuple[Customer]]:

@@ -32,8 +32,7 @@ GET    /api/v1/customers                      ?q= &kind= &sort= &page= &page_siz
 POST   /api/v1/customers
 GET    /api/v1/customers/{customer_id}
 PATCH  /api/v1/customers/{customer_id}                       If-Match
-DELETE /api/v1/customers/{customer_id}                       If-Match  (Soft Delete)
-POST   /api/v1/customers/{customer_id}/anonymize             If-Match  (DSGVO Art. 17)
+DELETE /api/v1/customers/{customer_id}                       If-Match  (endgültig, nur ohne Projekte, ADR 0020)
 
 GET    /api/v1/projects                       ?q= &status= &status_group= &customer_id= &sort= &page= &page_size=
                                               q: Bezeichnung, Projektnummer, Baustellenort (nicht Kunde)
@@ -43,10 +42,12 @@ GET    /api/v1/projects                       ?q= &status= &status_group= &custo
 POST   /api/v1/projects
 GET    /api/v1/projects/{project_id}
 PATCH  /api/v1/projects/{project_id}                         If-Match
-DELETE /api/v1/projects/{project_id}                         If-Match  (Soft Delete)
+GET    /api/v1/projects/{project_id}/deletion-check                 (Vorprüfung, ADR 0020)
+DELETE /api/v1/projects/{project_id}                         If-Match  ?confirm_project_number=  (endgültig, ADR 0020)
 POST   /api/v1/projects/{project_id}/activate                If-Match
 POST   /api/v1/projects/{project_id}/complete                If-Match
 POST   /api/v1/projects/{project_id}/archive                 If-Match
+POST   /api/v1/projects/{project_id}/reopen                  If-Match  (completed -> active, nur Administrator)
 
 GET    /api/v1/projects/{project_id}/buildings
 POST   /api/v1/projects/{project_id}/buildings
@@ -191,21 +192,66 @@ Ein Projekt darf nur einem Kunden zugeordnet werden, der aktiv ist. Geprüft wir
 | Zustand des Kunden | Neue Zuordnung | Bestehende Zuordnung |
 |---|---|---|
 | aktiv | erlaubt | bleibt |
-| ausgeblendet (`deleted_at`) | `404` | bleibt |
-| anonymisiert (`anonymized_at`) | `404` | bleibt, zeigt den Platzhalternamen |
+| gelöscht (Phase 4d) | `404` | nicht möglich – ein Kunde mit Projekten ist nicht löschbar |
 | fremder Mandant | `404` | — |
 
 Jeder unzulässige Fall liefert `404` — auch der fremde Mandant. Andernfalls wäre
-ableitbar, dass es den Kunden gibt.
+ableitbar, dass es den Kunden gibt. Die Anonymisierung aus Phase 2 gibt es seit Phase 4d
+nicht mehr (ADR 0020).
 
-Ein anonymisierter Kunde bleibt für **bestehende** Projekte und aufbewahrungspflichtige
-Belege lesbar, darf aber nicht für neue Geschäftsvorgänge reaktiviert werden
-(`docs/security.md`, Abschnitt 13).
+### Löschen und Wiedereröffnen (Phase 4d, ADR 0020)
+
+**`GET /projects/{id}/deletion-check`** (`project.record.read`) beschreibt, was eine
+Löschung bedeuten würde – **keine Autorisierung und keine Garantie**:
+
+| Feld | Bedeutung |
+|---|---|
+| `status`, `version` | aktueller Stand (die Version ist das `If-Match` der Löschung) |
+| `is_empty`, `contents[]` | leer oder erkannte Inhaltsarten `{code, label, count}` (`core.files`, `core.structure`, `electrical.rooms`, `electrical.walls`, `electrical.openings`) |
+| `status_allows_deletion` | nur `draft` und `active` |
+| `can_delete` | der angemeldete Benutzer dürfte jetzt löschen |
+| `requires_admin`, `requires_number_confirmation` | Inhalte vorhanden – nur `project.record.purge`, nur mit Projektnummer |
+| `blocked_code`, `blocked_reason` | `status` oder `permission` samt Erklärung |
+
+**`DELETE /projects/{id}`** (Route: `project.record.delete`; bei Inhalt zusätzlich
+`project.record.purge` und `confirm_project_number`) prüft alles erneut unter der
+Projektsperre:
+
+| Fall | Antwort |
+|---|---|
+| gelöscht | `204` – auch wenn das Storage-Objekt erst später entfernt werden kann |
+| `If-Match` fehlt / veraltet | `428` / `409 version-conflict` |
+| fremdes oder unbekanntes Projekt | `404` |
+| Berechtigung fehlt (auch: Inhalt ohne `purge`) | `403 permission-denied` |
+| `completed` oder `archived` | `409 project-not-deletable` |
+| Inhalt, aber Projektnummer fehlt oder falsch | `409 deletion-confirmation-required` |
+| Teilnehmer gescheitert | `500 project-deletion-failed` – nichts verändert |
+
+**`POST /projects/{id}/reopen`** (`project.record.reopen`, nur Administrator): nur aus
+`completed` → `active`; `archived` → `409 project-archived`; `draft`/`active` → `409`;
+`If-Match` Pflicht. Die normalen Übergänge bleiben unverändert.
+
+**`DELETE /customers/{id}`** (`customer.record.delete`, nur Administrator): physische
+Löschung unter der Kundensperre. Ist dem Kunden irgendein Projekt zugeordnet – jeder
+Status –, `409 customer-has-projects`. `If-Match` Pflicht.
+
+Projekt- und Kundennummern werden nach einer Löschung nie wiederverwendet.
+
+### Ersteller und letzter Bearbeiter (Phase 4d)
+
+`CustomerOut`, `ProjectOut` und `ProjectSummary` tragen `created_by` und `updated_by`:
+`{kind, user_id, display_name}` mit `kind` = `member` (Mitglied dieses Betriebs, Anzeigename,
+nie E-Mail), `unknown` (Konto außerhalb des Betriebs – ohne Name und ID) oder `system`
+(Bestandsdaten, gelöschtes Konto). Listen lösen die Bearbeiter einer Seite in einer
+Abfrage auf. Änderungen an Gebäuden, Geschossen, Dateien und Planungsdaten setzen
+`updated_at`/`updated_by` des Projekts, **ohne** dessen `version` zu erhöhen.
 
 ### Projektstatus
 
 `draft → active → completed`, `archived` ist von jedem Zustand aus erreichbar und ein
-Endzustand. Ein Wechsel außerhalb dieser Tabelle ist `409`.
+Endzustand. Ein Wechsel außerhalb dieser Tabelle ist `409`. Einzige Rückkehr ist seit
+Phase 4d die administrative Wiedereröffnung `completed → active`
+(`POST /projects/{id}/reopen`, ADR 0020) – kein Teil der Übergangstabelle.
 
 #### `archived` ist ein Schreibschutz
 
@@ -225,7 +271,8 @@ jede Änderung wird abgelehnt:
 | jeder schreibende Zugriff auf `modules/electrical/…` (Raum, Wand, Öffnung) | `409` `project-archived` |
 | `POST /files` mit `project_id` des Projekts | `409` `project-archived` |
 | `POST /projects/{id}/activate` · `/complete` · `/archive` | `409` (kein Wechsel aus `archived`) |
-| `DELETE /projects/{id}` (Soft Delete) | **erlaubt** — siehe unten |
+| `POST /projects/{id}/reopen` | `409` `project-archived` |
+| `DELETE /projects/{id}` | `409` `project-not-deletable` (seit Phase 4d) |
 
 Der eigene Fehlertyp `project-archived` erlaubt es Clients, diesen Fall ohne Auswerten
 der Meldung von einem gewöhnlichen Konflikt zu unterscheiden.
@@ -240,14 +287,13 @@ Prüfung erfolgt erst unmittelbar vor dem Commit, also nach der Übertragung. Ei
 kann deshalb mit `409 project-archived` scheitern, obwohl die Datei bereits übertragen
 war; sie wird dann verworfen.
 
-**Eine bewusste Ausnahme: das Ausblenden des Projekts.** `DELETE /projects/{id}` bleibt
-möglich. Es ist kein inhaltlicher Eingriff, sondern ein Aufräumschritt — und ohne diese
-Ausnahme ließe sich ein Kunde mit archiviertem Projekt nie mehr ausblenden, weil die
-Kundenlöschung offene Projekte zählt.
+~~**Eine bewusste Ausnahme: das Ausblenden des Projekts.**~~ **Überholt mit Phase 4d**
+(ADR 0020): `DELETE /projects/{id}` löscht endgültig und ist für archivierte Projekte
+gesperrt. Soft Delete für Kunden und Projekte ist abgeschafft; Migration `0006` macht
+früher ausgeblendete Zeilen wieder sichtbar, ohne eine zu löschen.
 
-**Keine Wiederherstellung.** Aus `archived` führt kein Weg zurück. Sollte eine
-Reaktivierung gebraucht werden, wird sie als eigener administrativer Vorgang mit eigener
-Berechtigung eingeführt — nicht als stiller Statuswechsel.
+**Keine Wiederherstellung aus `archived`.** Aus `archived` führt kein Weg zurück. Die mit
+Phase 4d eingeführte Wiedereröffnung betrifft ausschließlich `completed`.
 
 Die Regel steht als **eine** Service-Vorbedingung im Backend und nicht verstreut je
 Endpunkt. Die Oberfläche spiegelt sie: Formulare und Upload sind bei einem archivierten
@@ -280,9 +326,8 @@ Strukturanlage.
 **Kundenauswahl im Dialog.** Die Oberfläche sucht über `GET /api/v1/customers?q=…` mit
 kleiner `page_size` und vergleicht `total_items` mit der Trefferzahl. Sie lädt also nicht
 den ganzen Kundenstamm in den Browser und weist darauf hin, wenn es mehr Treffer gibt als
-angezeigt. Anonymisierte Kunden werden ausgefiltert — der Server lehnt sie für neue
-Zuordnungen ohnehin ab. Im **Kundenfilter der Projektliste** bleiben sie dagegen
-auffindbar: Bestehende Projekte an ihnen sollen weiter filterbar sein.
+angezeigt. Jeder gelistete Kunde ist zuordenbar (seit Phase 4d gibt es keine
+anonymisierten Kunden mehr).
 
 **Baustellenadresse als Vorschlag.** Nach der Kundenwahl schlägt die Oberfläche die
 Rechnungsadresse des Kunden (Straße, PLZ, Ort, Ländercode) als Baustellenadresse vor.
@@ -438,7 +483,8 @@ GET /api/v1/projects?page=6&page_size=25&status_group=current&customer_id=…
   Teiländerung mehrdeutig oder nicht atomar wäre. Einziger Fall bisher:
   `PUT /modules/electrical/rooms/{room_id}/contour` (Phase 4a, ADR 0014). Vorgesehen war
   das Muster schon für die Punktlisten der Leitungswege.
-- `DELETE` ist Soft Delete, wo fachlich vorgesehen, und liefert `204`.
+- `DELETE` liefert `204`. Kunden und Projekte werden seit Phase 4d endgültig gelöscht
+  (ADR 0020); Gebäude, Geschosse und Planungsdaten waren schon immer hart gelöscht.
 - Zustandswechsel sind eigene Endpunkte, keine Statusfelder im `PATCH`:
 
 ```

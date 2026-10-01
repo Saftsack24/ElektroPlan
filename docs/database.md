@@ -1,6 +1,6 @@
 # Datenbank und ER-Modell
 
-Version: 1.3 (Core-Geschäftsdaten, Electrical Room Model, Benutzerverwaltung; Migrationen 0001–0005)
+Version: 1.4 (Core-Geschäftsdaten, Electrical Room Model, Benutzerverwaltung, Datenlebenszyklus; Migrationen 0001–0006)
 Datenbank: PostgreSQL 17
 ORM: SQLAlchemy 2.0 · Migrationen: Alembic (ein einziger Strang)
 
@@ -19,7 +19,7 @@ Umsetzung im Detail ändern; Entitäten, Beziehungen und Grenzen nicht ohne ADR.
 | Zeitstempel | `created_at`, `updated_at` als `timestamptz`, immer UTC |
 | Fachliche Daten | `date` ohne Zeitzone (z. B. `valid_until`) |
 | Optimistisches Sperren | `version integer NOT NULL DEFAULT 1` auf Geschäftsentitäten |
-| Löschen | `deleted_at timestamptz NULL` (Soft Delete) für Geschäftsdokumente; Hard Delete nur über den dokumentierten DSGVO-Pfad |
+| Löschen | Kunden und Projekte: physisch nach ADR 0020 (kein Soft Delete seit Phase 4d). `deleted_at` (Soft Delete) nur noch an `organizations` |
 | Tabellennamen | Plural, Modulpräfix bei Nicht-Core-Modulen: `electrical_`, `inventory_`, `calculation_`, `offer_`, `work_order_`, `material_` |
 | Geometrie | ganzzahlige **Millimeter**, Suffix `_mm` |
 | Geld | `numeric(12,4)` für Einzelpreise, `numeric(12,2)` für Summen |
@@ -49,7 +49,7 @@ Organisation B verweisen. Voraussetzung: jede referenzierte Tabelle hat zusätzl
 | `Timestamped` | `created_at`, `updated_at` |
 | `Versioned` | `version` (SQLAlchemy `version_id_col`) |
 | `TenantScoped` | `organization_id` + `UNIQUE (organization_id, id)` |
-| `SoftDeletable` | `deleted_at` |
+| `SoftDeletable` | `deleted_at` (seit Phase 4d nur `organizations`) |
 | `Authored` | `created_by_user_id`, `updated_by_user_id` |
 
 ---
@@ -58,7 +58,7 @@ Organisation B verweisen. Voraussetzung: jede referenzierte Tabelle hat zusätzl
 
 | Modul | Präfix | Tabellen |
 |---|---|---|
-| Core | — | `organizations`, `users`, `organization_members`, `member_invitations`, `member_invitation_roles`, `roles`, `permissions`, `role_permissions`, `member_roles`, `refresh_tokens`, `organization_modules`, `customers`, `projects`, `buildings`, `floors`, `files`, `audit_entries`, `number_sequences`, `domain_events` |
+| Core | — | `organizations`, `users`, `organization_members`, `member_invitations`, `member_invitation_roles`, `roles`, `permissions`, `role_permissions`, `member_roles`, `refresh_tokens`, `organization_modules`, `customers`, `projects`, `buildings`, `floors`, `files`, `storage_cleanup_jobs`, `audit_entries`, `number_sequences`, `domain_events` |
 | materials | `material_` | `material_categories`, `materials`, `material_prices`, `material_rules`, `service_templates`, `service_template_items`, `material_requirement_runs`, `material_requirements`, `labor_requirements` |
 | inventory | `inventory_` | `inventory_locations`, `inventory_stocks`, `inventory_transactions`, `inventory_reservations` |
 | calculation | `calculation_` | `calculation_labor_rates`, `calculations`, `calculation_items`, `calculation_surcharges` |
@@ -162,8 +162,6 @@ erDiagram
         text billing_city
         text billing_country_code
         int version
-        timestamptz anonymized_at
-        timestamptz deleted_at
     }
     PROJECTS {
         uuid id PK
@@ -177,7 +175,6 @@ erDiagram
         text site_city
         text site_country_code
         int version
-        timestamptz deleted_at
     }
     BUILDINGS {
         uuid id PK
@@ -269,8 +266,8 @@ erDiagram
 - `floors` UNIQUE `(building_id, level)` — zwei Geschosse auf derselben Ebene wären
   ein Erfassungsfehler
 - `buildings → projects` und `floors → buildings` mit `ON DELETE CASCADE`: Struktur ohne
-  ihr Projekt ergibt keinen Sinn. Kunden und Projekte selbst werden nur ausgeblendet
-  (`deleted_at`); ein Hard Delete kommt ausschließlich über den DSGVO-Pfad vor.
+  ihr Projekt ergibt keinen Sinn. Kunden und Projekte werden seit Phase 4d nach
+  ADR 0020 physisch gelöscht; ein Ausblenden gibt es nicht mehr.
 - `files.project_id` ist **optional**; der zusammengesetzte Fremdschlüssel greift bei
   `NULL` nicht (MATCH SIMPLE) und lässt Dateien ohne Projektbezug zu.
 - `domain_events` ist **append-only** (kein UPDATE außer `handler_status`)
@@ -297,14 +294,12 @@ Zwei Invarianten lassen sich nicht allein mit einer Vorabprüfung halten — zwe
 gleichzeitige Transaktionen können beide bestehen. Beide werden über **Zeilensperren
 in derselben Transaktion** abgesichert.
 
-**Invariante 1: Ein sichtbares Projekt zeigt nie auf einen ausgeblendeten oder
-anonymisierten Kunden.**
+**Invariante 1: Ein Projekt zeigt nie auf einen gelöschten Kunden.**
 
 | Vorgang | Ablauf innerhalb einer Transaktion |
 |---|---|
-| Projekt anlegen / umhängen | `SELECT … FROM customers … FOR UPDATE` (nur aktiv, nicht ausgeblendet, nicht anonymisiert) → Projekt schreiben |
-| Kunde ausblenden | `SELECT … FROM customers … FOR UPDATE` → Projekte zählen → `deleted_at` setzen |
-| Kunde anonymisieren | `SELECT … FROM customers … FOR UPDATE` → Felder überschreiben |
+| Projekt anlegen / umhängen | `SELECT … FROM customers … FOR UPDATE` (nur eigener Betrieb) → Projekt schreiben |
+| Kunde löschen (seit Phase 4d) | `SELECT … FROM customers … FOR UPDATE` → **alle** Projekte zählen (jeder Status) → Zeile löschen |
 
 **Immer zuerst die Kundenzeile, dann die Projekte.** Diese Reihenfolge gilt auf allen
 Seiten; damit ist ein Deadlock ausgeschlossen. Ein Vorab-Count ohne Sperre genügt
@@ -312,8 +307,19 @@ ausdrücklich nicht: Zwischen Zählen und Schreiben könnte ein Projekt entstehe
 
 Ergebnis unter Parallelität — nur zwei Ausgänge sind möglich:
 
-* Die Projektanlage ist zuerst fertig → das Ausblenden scheitert mit `409`.
-* Das Ausblenden ist zuerst fertig → die Projektanlage scheitert mit `404`.
+* Die Projektanlage ist zuerst fertig → die Löschung scheitert mit `409 customer-has-projects`.
+* Die Löschung ist zuerst fertig → die Projektanlage scheitert mit `404`.
+
+Zusätzlich verhindert der Fremdschlüssel `projects → customers` (`RESTRICT`) das Löschen
+eines Kunden mit Projekt in der Datenbank selbst.
+
+**Invariante 1a (Phase 4d): Eine Projektlöschung nimmt nie Inhalt mit, den ihre Prüfung
+nicht gesehen hat.** Die Löschung sperrt die Projektzeile zuerst – dieselbe Sperrwurzel
+wie jeder inhaltserzeugende Schreibweg (Gebäude, Geschosse, Dateien, Planungsdaten,
+Statuswechsel). Gewinnt der Schreibvorgang, sieht die Löschung den Inhalt und lehnt ohne
+Bestätigung ab; gewinnt die Löschung, findet der Schreibvorgang das Projekt nicht mehr
+(`404`, beim Upload auch über die wartende Fremdschlüsselprüfung). Nachgewiesen in
+`tests/test_deletion_concurrency.py` (ohne die Sperre fallen 4 von 7 Tests um).
 
 **Invariante 2: Pro Gebäude existiert eine Geschossebene genau einmal.**
 `UNIQUE (building_id, level)` entscheidet. Die Vorabprüfung liefert im sequenziellen
@@ -373,19 +379,33 @@ nicht weiterverwendet.
 Es gibt **keine Datenbanktrigger** für diese Invarianten: Klare Transaktionsgrenzen und
 Zeilensperren sind nachvollziehbarer und bleiben im Anwendungscode sichtbar.
 
-### Anonymisierung von Kunden
+### Endgültiges Löschen (Phase 4d, ADR 0020)
 
-`customers.anonymized_at` markiert einen umgesetzten Löschanspruch (Art. 17 DSGVO).
-Dabei werden `name`, `contact_person`, `email`, `phone` und die Rechnungsanschrift
-überschrieben; `customer_number`, `created_at` und die Belegzuordnung bleiben, damit
-aufbewahrungspflichtige Dokumente nach HGB/AO zuordenbar bleiben. Der Vorgang ist
-**nicht umkehrbar** und wird protokolliert — ohne die gelöschten Werte.
+Soft Delete für Kunden und Projekte ist mit Phase 4d **abgeschafft**: Migration `0006`
+entfernt `customers.deleted_at` und `projects.deleted_at`, **löscht dabei keine Zeile**,
+und zuvor ausgeblendete Kunden und Projekte sind danach wieder normal sichtbar (Projekte
+je nach Status in der laufenden oder historischen Ansicht). Für sie gelten die Regeln
+aus ADR 0020. Archivierung ist ausschließlich der Projektstatus `archived`.
+`customers.anonymized_at` ist mit derselben Migration entfallen. Ein Downgrade legt
+`deleted_at` leer (nullable) wieder an; frühere Markierungen sind nicht rekonstruierbar.
 
-`deleted_at` und `anonymized_at` sind **unabhängig**: das eine steuert die Sichtbarkeit,
-das andere den Personenbezug. Ein anonymisierter Kunde bleibt in Listen sichtbar (mit
-Platzhalternamen) und ist serverseitig gegen Änderungen gesperrt. Für **neue**
-Projektzuordnungen ist er ebenfalls gesperrt (`404`); **bestehende** Projekte behalten
-ihre Referenz und zeigen den Platzhalternamen.
+| Beim Löschen eines Projekts | Regel |
+|---|---|
+| Gebäude, Geschosse | `ON DELETE CASCADE` ab `projects` |
+| Räume, Wände, Öffnungen | vom Teilnehmer `electrical` explizit gelöscht (`electrical_rooms → floors` bleibt `RESTRICT`) |
+| Dateien | Storage-Schlüssel erst nach `storage_cleanup_jobs`, dann Zeilen löschen (`files → projects` bleibt `RESTRICT`) |
+| Audit, Domain Events | bleiben; nur IDs und Nummern, keine Personendaten |
+
+`storage_cleanup_jobs` (Core): `storage_key` (eindeutig), `reason`, `attempts`,
+`last_attempt_at`, `last_error` (gekürzt, ohne Adressen), `organization_id`. Erledigte
+Aufträge werden gelöscht; offene arbeitet `python -m app.cli storage-cleanup` ab.
+
+Nummernkreise zählen nur hoch – gelöschte Kunden- und Projektnummern kommen nie wieder.
+
+`created_by_user_id`/`updated_by_user_id` an `customers` und `projects` bestehen seit
+`0003` (`users.id`, `ON DELETE SET NULL`). Ein gelöschtes Konto macht den Datensatz nicht
+unlesbar; er zeigt dann „System/Bestandsdaten". Die API gibt Namen nur für Mitglieder des
+eigenen Betriebs aus.
 
 ---
 
@@ -990,6 +1010,7 @@ Weitere Indizes erst nach Messung (`EXPLAIN ANALYZE`), nicht auf Verdacht.
 | `0003_core_business_data` | Kunden, Projekte, Gebäude, Geschosse, Dateien |
 | `0004_electrical_room_model` | Räume, Wände, Öffnungen |
 | `0005_member_administration` | `organization_members.version` und `last_login_at`, `member_invitations`, `member_invitation_roles` (Phase 4.2, keine Datenmigration) |
+| `0006_data_lifecycle` | `storage_cleanup_jobs`; `customers.anonymized_at`, `customers.deleted_at` und `projects.deleted_at` entfernt (keine Zeile gelöscht, Ausgeblendetes wieder sichtbar); Berechtigung `customer.record.anonymize` gelöscht (Phase 4d, ADR 0020). Neue Rechte legt der Seed an |
 
 ---
 

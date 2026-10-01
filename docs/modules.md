@@ -1,6 +1,6 @@
 # Module, Grenzen und Registrierung
 
-Version: 1.2 (Phase 3: erstes Fachmodul registriert)
+Version: 1.3 (Phase 4d: Löschschutz-Protokoll für Projekte)
 
 Dieses Dokument definiert, welche Module es gibt, was sie dürfen, was sie nicht dürfen und
 wie sie sich registrieren.
@@ -88,6 +88,15 @@ Modelle und Repositories des Core verlassen den Core nicht. Die Archivregel wird
 nicht wiederholt, sondern von `ProjectService.lock_writable` übernommen — sie steht damit
 weiterhin an genau einer Stelle. Der Core kennt kein Fachmodul; er stellt den Kanal, das
 Modul benutzt ihn.
+
+Seit Phase 4d zusätzlich:
+
+* `record_project_change(project_id, actor_user_id=…)` vermerkt nach einem wirksamen
+  Schreibvorgang am Projekt, **wer** zuletzt geändert hat (`updated_at`,
+  `updated_by_user_id`) – ohne Versionssprung und ohne dass das Modul das Projektmodell
+  sieht. Electrical ruft es in `_commit` vor dem Commit auf.
+* `floor_ids_of_project(project_id)` liefert die Geschosse eines Projekts – für
+  Teilnehmer des Löschschutz-Protokolls (Abschnitt 4a).
 
 **`writable_context` sperrt die Projektzeile** (`SELECT … FOR UPDATE`), bevor es den
 Schreibschutz prüft. Ein Fachmodul erhält damit dieselbe Zusage wie der Core: Nach einer
@@ -210,6 +219,8 @@ erhält, ohne das Fachmodul zu kennen.
 | `LaborRequirementProvider` | `contracts/v1/labor.py` | Material Engine | jedes Fachmodul | 7 |
 | `OfferItemSuggestionProvider` | `contracts/v1/offer.py` | Angebotsassistent | jedes Fachmodul | 10 |
 
+| `ProjectContentParticipant` | `contracts/v1/project_lifecycle.py` | Core (Projektlöschung) | jedes Fachmodul mit Projektdaten; heute `electrical` | 4d |
+
 Die Ports entstehen **mit dem Modul, das sie definiert** — nicht vorher. Ein Port
 ohne Aufrufer wäre tote Abstraktion.
 
@@ -223,6 +234,36 @@ Regeln:
 5. Ein Port muss mit mehreren Implementierungen sinnvoll sein. Sonst ist es kein Port,
    sondern ein Funktionsaufruf.
 6. Ein neuer Port braucht eine Begründung im ADR-Format.
+
+### 4a. Löschschutz-Protokoll für Projekte (Phase 4d, ADR 0020)
+
+Der Core darf keine Tabelle eines Fachmoduls lesen, muss aber vor dem endgültigen Löschen
+eines Projekts **verbindlich** wissen, ob ein Modul Daten daran hat – und sie bei einer
+administrativen Löschung mitentfernen lassen. Dafür gibt es den synchronen
+Teilnehmer-Contract `ProjectContentParticipant`:
+
+| Schritt | Aufruf | Antwort |
+|---|---|---|
+| Prüfen | `describe_project_content(session, ProjectContentRequest(organization_id, project_id))` | `ProjectContentReport(module_id, has_content, items)`; `items` = `ProjectContentItem(code, label, count)`, `code` stabil als `<modul>.<art>` |
+| Löschen | `delete_project_content(session, request)` | nichts; löscht ausschließlich eigene Daten, ohne Commit |
+
+* **Registrierung** über die bestehende Registry: `provides=(bind_port(ProjectContentParticipant, …),)`.
+  Keine zweite Registry. `ModuleRegistry.port_implementations(port)` liefert die
+  Teilnehmer **nach Modul-ID sortiert**. Mehrfache Bindung desselben Ports in einem Modul
+  und falsche Signaturen verhindern den Start.
+* **Transaktion:** Der Core hält die Projektsperre, bevor er fragt; Teilnehmer committen
+  nie. Wirft einer, rollt die ganze Löschung zurück (`500 project-deletion-failed`).
+  Nach dem Löschen prüft der Core, dass kein Teilnehmer mehr Inhalte meldet.
+* **Keine Eventual Consistency:** Die Entscheidung fällt synchron. Domain Events dürften
+  eine erfolgte Löschung melden, nie entscheiden.
+* **Ausnahme von Regel 4 oben:** Der Teilnehmer schreibt – nur löschend, nur eigene
+  Tabellen, nur in der Transaktion des Core. Begründung in ADR 0020.
+* **Erweiterbar:** Ein neues Modul bindet den Port; `ProjectDeletionService` ändert sich
+  nicht.
+
+Electrical meldet `electrical.rooms`, `electrical.walls`, `electrical.openings` und löscht
+die Räume (Wände und Öffnungen per Cascade). Dateien (`core.files`) und zusätzliche
+Gebäudestruktur (`core.structure`) prüft der Core selbst.
 
 ---
 

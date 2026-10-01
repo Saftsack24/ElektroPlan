@@ -263,6 +263,21 @@ Eine Datenbanksperre über eine S3-Übertragung hinweg zu halten wäre der falsc
 Sie würde jede parallele Änderung am Projekt für die Dauer des Uploads blockieren.
 Scheitert die Prüfung, wird zurückgerollt und das bereits geladene Objekt verworfen.
 
+**Endgültiges Löschen eines Projekts (Phase 4d, ADR 0020)** reiht sich in dieselbe
+Sperrwurzel ein: Projektzeile sperren → `If-Match` → Status → Inhalte über Core und
+Teilnehmer des Löschschutz-Protokolls → Berechtigung → Teilnehmer löschen → Nachkontrolle
+→ Storage-Schlüssel vormerken, Dateizeilen löschen → Projekt löschen → Commit → Storage
+aufräumen. Gewinnt ein Schreibvorgang die Sperre, sieht die Löschung seinen Inhalt; gewinnt
+die Löschung, findet der Schreibvorgang das Projekt nicht mehr (`404`). Belegt in
+`tests/test_deletion_concurrency.py`.
+
+**Berühren ohne Versionssprung.** Schreibvorgänge unterhalb des Projekts (Gebäude,
+Geschosse, Dateien, Planungsdaten der Fachmodule) setzen unter der gehaltenen
+Projektsperre `updated_at` und `updated_by_user_id` des Projekts per gezieltem `UPDATE`
+(`ProjectService.touch`, für Module `FloorPlanningAccess.record_project_change`). Die
+Projektversion bleibt unverändert: Sie schützt Stammdaten und Status, nicht die
+Unterressourcen.
+
 ---
 
 ## 8. Mandantenfähigkeit
@@ -611,6 +626,11 @@ Ein neues Modul benötigt damit genau **eine** zentrale Änderung: eine Zeile in
   rein "geheimen" Pfad.
 - Auslieferung nie unter dem Anwendungs-Origin, immer mit
   `Content-Disposition: attachment`.
+- **Löschen (Phase 4d):** Datenbank und Storage haben keine gemeinsame Transaktion. Beim
+  Löschen eines Projekts werden die Schlüssel in derselben Transaktion in
+  `storage_cleanup_jobs` vorgemerkt, in der die Dateizeilen verschwinden; nach dem Commit
+  wird gelöscht, Fehler bleiben mit Versuchszähler stehen und werden über
+  `python -m app.cli storage-cleanup` nachgeholt (ADR 0020).
 
 ---
 

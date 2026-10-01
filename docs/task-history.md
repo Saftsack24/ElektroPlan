@@ -2272,3 +2272,153 @@ Messung bei 320/360/420 px. Offene Prüfliste: `docs/current-status.md`, Technis
 ### Nächster sinnvoller Schritt
 
 Sichtbare Browserabnahme; danach Commit auf Freigabe.
+
+---
+
+## Task 0022 – Phase 4d: Datenlebenszyklus, Löschregeln, Bearbeitungsmetadaten, Aktions-UX
+
+**Datum:** 2026-09-30 · **Stand:** umgesetzt, **nicht committet, nicht gepusht**
+(Ausgangsstand `24647d3` = `origin/main`, Arbeitsbaum sauber, ein Alembic-Head `0005`;
+Sicherung als Git-Bundle und `pg_dump` der Entwicklungsdatenbank im Scratchpad).
+Entscheidung: [ADR 0020](decisions/0020-data-lifecycle-deletion-and-reopen.md).
+
+### Umsetzung
+
+1. **Berechtigungen:** `project.record.delete` (leeres Projekt; Administrator, Planer),
+   `project.record.purge` (Projekt mit Inhalt; nur Administrator),
+   `project.record.reopen` (nur Administrator), `customer.record.delete` (Kunde endgültig;
+   nur Administrator). `customer.record.anonymize` entfernt. `ADMIN_ONLY_PERMISSIONS` mit
+   Invariantentests (Code und Datenbank nach Seed).
+2. **Löschschutz-Protokoll:** Contract `app/contracts/v1/project_lifecycle.py`
+   (`ProjectContentParticipant`, Request/Report/Item), gebunden über
+   `ModuleDescriptor.provides`; `ModuleRegistry.port_implementations` (nach Modul-ID
+   sortiert), Doppelbindung verhindert den Start. `ProjectDeletionService`
+   (`app/core/projects/deletion.py`): Sperre → If-Match → Status → Inhalte (Core: Dateien,
+   Gebäudestruktur > 1/1; Teilnehmer) → Berechtigung → Bestätigung → Teilnehmer löschen →
+   Nachkontrolle → Storage vormerken → Dateien, Projekt löschen. Electrical-Teilnehmer
+   `app/modules/electrical/lifecycle.py` (Räume, Wände, Öffnungen).
+3. **Storage:** Tabelle `storage_cleanup_jobs`, `app/core/files/cleanup.py`
+   (`enqueue`, `process_jobs` mit `SKIP LOCKED`, `describe_error` ohne Adressen), CLI
+   `storage-cleanup`. Upload übersetzt eine Fremdschlüsselverletzung (Projekt inzwischen
+   gelöscht) in `404`.
+4. **API:** `GET /projects/{id}/deletion-check`, `DELETE /projects/{id}`
+   (`confirm_project_number`), `POST /projects/{id}/reopen`, `DELETE /customers/{id}`
+   physisch; `POST /customers/{id}/anonymize` entfernt. Neue Fehlertypen
+   `project-not-deletable`, `deletion-confirmation-required`, `project-deletion-failed`,
+   `customer-has-projects`.
+5. **Bearbeiter:** `UserReferenceResolver` (`app/core/users/references.py`), `created_by`/
+   `updated_by` an `CustomerOut`, `ProjectOut`, `ProjectSummary` – je Liste eine Abfrage.
+   `ProjectService.touch` (gezieltes `UPDATE`, ohne Versionssprung) bei Gebäude- und
+   Geschossänderungen und Upload; Electrical über
+   `FloorPlanningAccess.record_project_change` in `_commit`.
+6. **Migration `0006_data_lifecycle`:** `storage_cleanup_jobs`, `customers.anonymized_at`
+   entfernt, Berechtigung `customer.record.anonymize` gelöscht.
+7. **Oberfläche:** Projektliste mit laufender/historischer Ansicht über
+   `?ansicht=abgeschlossen` (Suche und Kundenfilter bleiben, Seite 1, Status je Gruppe);
+   Startseite zeigt nur laufende Projekte; Kundendetail „Abgeschlossene & archivierte
+   anzeigen"; `ProjektLoeschenDialog` (leer / mit Inhalt samt Projektnummer),
+   Wiedereröffnungsdialog, `KundeLoeschenDialog` (zählt Projekte aller Zustände);
+   `Bearbeitungsinfo`; Anonymisierung aus Oberfläche entfernt; Kundensuchfeld
+   „Name, Nummer oder Ort" und eigenes Filterraster; Icon-System `core/ui/Symbol.tsx`,
+   `core/ui/aktionssymbole.ts` (`lucide-react` 1.49.0), `Bestaetigung` mit
+   `bestaetigenGesperrt` und `bestaetigenSymbol`; Dialog-Schließen mit Icon, `aria-label`
+   und Tooltip. Nach Löschungen: Detailabfrage abgeschaltet, Weiterleitung mit `replace`,
+   Meldung über den Verlaufszustand (einmalig), Cache geräumt.
+
+### Tests
+
+| Bereich | Tests |
+|---|---|
+| API-Lebenszyklus (`test_project_lifecycle.py`) | 26: Löschregeln je Status und Rolle, Leerheit ohne Namen, Bestätigung, 428/409, Mandantentrennung, Wiedereröffnung, Listenfilter, Bearbeiter aus Core/Electrical/Upload, Bestandsdaten und fremde Konten, Nummern, Audit ohne Personendaten, Storage-Fehler → Auftrag bleibt |
+| Protokoll (`test_deletion_protocol.py`) | 12: Reihenfolge, Doppelbindung, falsche Signatur, mehrere Teilnehmer, Rollback bei Fehler, Nachkontrolle, Berechtigungsinvarianten (Code und Seed) |
+| Nebenläufigkeit (`test_deletion_concurrency.py`) | 7 echte PostgreSQL-Tests: Upload und Raumanlage je in beiden Richtungen, Statuswechsel in beiden Richtungen, Sperrreihenfolge. **Mit vorübergehend entfernter Sperre fallen 4 davon um.** |
+| Storage (`test_storage_cleanup.py`) | 6: Fehler, Wiederholung, Idempotenz, Rollback, gezielter Lauf, CLI, Ende-zu-Ende gegen MinIO |
+| Kunden | physische Löschung, jeder Projektstatus blockiert, ausgeblendetes Projekt blockiert, Audit ohne Personendaten, Nummer nicht wiederverwendet, 428, Route entfernt, 403 |
+| Frontend | 681 (vorher 653): Listenansichten und URL, Zurück, Meldung, Platzhalter, Löschdialoge beider Varianten, Projektnummer, Fehler 403/409/428, Escape, Wiedereröffnung, Kundenlöschung, Bearbeitungsinfo, Icons dekorativ, kein ✕/Pfeilzeichen im Quelltext |
+
+Gesamt: **786 Backendtests, 0 übersprungen** (vorher 736), gegen PostgreSQL 17 und MinIO.
+Ruff/Format, mypy `--strict` (98 Dateien), import-linter 4/4 (im Wegwerf-Container, weil
+die Windows-Anwendungssteuerung die native `grimp`-DLL lokal blockiert), ein Alembic-Head
+`0006`, Up-/Downgrade und `alembic check` ohne Drift, `uv lock --check`, OpenAPI-Drift,
+TypeScript, ESLint, Frontend-Modulgrenzen, Produktionsbuild.
+
+### Abnahme im Compose-System
+
+Images neu gebaut, Migration `0005 → 0006` auf der **bestehenden** Entwicklungsdatenbank,
+Seed (2 neue Berechtigungen, Planer erhält `project.record.delete`). Nur synthetische
+Daten „Abnahme 4d …", keine bestehenden Testprojekte verändert.
+
+* **API (Skript, 14/14):** leeres Projekt durch Planer gelöscht; Projekt mit Datei und
+  Raum für Planer `403`, Administrator ohne Nummer `409`, mit Nummer `204`; danach
+  Projekt, Datei, Geschoss, Raum, Warteschlange = 0 und Objekt in MinIO entfernt;
+  abgeschlossenes Projekt nur historisch sichtbar, Wiedereröffnung Planer `403`,
+  Administrator `200`, wieder laufend; archiviert: `reopen` und `delete` `409`; Kunde ohne
+  Projekte gelöscht; Kunde mit laufendem/abgeschlossenem/archiviertem Projekt je `409`;
+  Planer `403` bei Kundenlöschung; Bearbeiter nach Struktur (Planer), Raum (Administrator),
+  Raum (Planer) korrekt, Version unverändert; Projektnummern nicht wiederverwendet.
+* **Browser (Claude-Browserbereich, Chromium):** Projektliste laufend mit Icons und
+  vollem Platzhalter; Löschdialog „mit Inhalt" für den Planer blockiert, Fokus auf
+  „Abbrechen", Escape schließt, Fokus zurück; leeres Projekt als Planer gelöscht,
+  Weiterleitung und Meldung; Umschaltung historisch per URL und Browser-Zurück; 420/360/
+  320 px ohne waagrechte Überbreite, Platzhalter passt (166 px Text bei 315/255/215 px
+  Platz), Desktop 359 px Platz; als Administrator Projektnummer-Bestätigung (unvollständig
+  gesperrt, exakt frei) und Löschung; Wiedereröffnung mit Dialog; Kundenlöschdialog mit
+  4 Projekten gesperrt, Kunde ohne Projekte gelöscht. Drei Bestätigungen wurden per
+  Skript-Klick ausgelöst, weil der Browserbereich zeitweise nicht zeichnete.
+* **Befund während der Abnahme, behoben:** Nach einer Löschung lud die noch eingehängte
+  Detailseite den gelöschten Datensatz einmal nach (`404` in der Konsole). Jetzt wird die
+  Detailabfrage abgeschaltet; Nachtest ohne `404`. Die Servermeldung für „nur
+  Administrator" erschien in ASCII-Umschrift; der Dialog zeigt jetzt einen deutschen Text.
+* **Konsole/Logs:** nur `401` vor der Anmeldung; keine `500` im Backendlog.
+* **Nicht geprüft:** Browserzoom (die Wurzelschriftgröße wirkt nicht auf die
+  px-basierten Eingabefelder, die Messung ist nicht aussagekräftig); Sicht des Planers auf
+  die Kundendetailseite nur per Komponententest und API (`403`), nicht im Browser.
+
+### Nachtrag vor dem Commit: Soft Delete für Kunden und Projekte abgeschafft
+
+**Problem:** Nach dem ersten Stand von 4d blieb `deleted_at` an Kunden und Projekten
+bestehen. Ein ausgeblendetes Altprojekt war unsichtbar, ließ sich weder öffnen noch
+löschen, blockierte aber korrekt die Löschung seines Kunden – der Kunde wäre dauerhaft
+unlöschbar gewesen.
+
+**Entscheidung (Auftraggeber):** Der neue Lebenszyklus ersetzt das Ausblenden
+vollständig. Archivierung ist ausschließlich der Projektstatus `archived`.
+
+1. `SoftDeletable` aus `Customer` und `Project` entfernt; alle Filter auf
+   `deleted_at` in Projektliste, Projektsperre, Kundenzuordnung und Zählung entfallen
+   (`organizations` behält `deleted_at`).
+2. Die noch nicht committete Migration `0006_data_lifecycle` entfernt zusätzlich
+   `customers.deleted_at` und `projects.deleted_at` – **ohne eine Zeile zu löschen**.
+   Keine neue Revision. Downgrade legt die Spalten leer (nullable) an; frühere
+   Markierungen sind nicht rekonstruierbar.
+3. **Entwicklungsdatenbank:** Vorab geprüft – ausschließlich synthetische Daten, 0 offene
+   Storage-Aufträge, neue Sicherung `elektroplan-vor-0006-korrektur.dump` im Scratchpad.
+   Zusätzlich synthetischer Altbestand angelegt und ausgeblendet („Abnahme 4d Altbestand
+   Kunde" mit laufendem, abgeschlossenem und archiviertem Projekt; vorhanden war schon
+   KD-00003, ausgeblendet, ohne Projekte). Die bereits angewandte alte `0006` wurde
+   kontrolliert zurückgebaut (ihre Downgrade-Schritte in einer Transaktion,
+   `alembic_version` = `0005`), danach die korrigierte `0006` angewandt, Seed erneut
+   (0 neue Rechte). Ergebnis: 53 Kunden und 54 Projekte wie vorher, keine
+   `deleted_at`-/`anonymized_at`-Spalte, `alembic check` ohne Unterschied. Über die API:
+   Kunde wieder in der Liste, laufendes Projekt in `current`, abgeschlossenes und
+   archiviertes in `closed`, Kundenlöschung `409`, solange Projekte existieren.
+4. **Tests:** neuer Migrationstest `tests/test_migration_soft_delete.py` (7):
+   `0005 → 0006` mit ausgeblendeten Kunden und Projekten, Zeilen bleiben, Spalten weg,
+   Autogenerate ohne Unterschied, Sichtbarkeit über die API (Kunde, laufend, historisch),
+   Mandantentrennung, Projekt löschen → Kunde löschbar, archiviertes Projekt hält den
+   Kunden, Downgrade nullable. Entfernt: `test_ausgeblendetes_projekt_blockiert_die_kundenloeschung`
+   (schrieb den unerreichbaren Altbestand fest); drei Testnamen von „ausgeblendet" auf
+   „gelöscht" umbenannt (sie prüften bereits die physische Löschung).
+5. **Qualitätslauf danach:** 792 Backendtests, 0 übersprungen (786 − 1 entfernt + 7 neu);
+   Ruff, mypy `--strict`, import-linter 4/4 (Container), ein Head, `uv lock --check`,
+   OpenAPI-Drift (nur ein Docstring im Client), 681 Frontendtests (nur Kommentare und ein
+   Testname geändert), TypeScript, ESLint, Modulgrenzen, Build.
+6. **Browser:** ehemals ausgeblendeter Altbestand in der laufenden bzw. historischen
+   Ansicht und in der Kundenliste (auch KD-00003); Planer sieht auf der Kundendetailseite
+   keine Löschaktion (Bildschirmfoto), Administrator sieht sie. 125 % Zoom als CSS-Viewport
+   emuliert (1024 px ≙ 1280 px, 288 px ≙ 360 px): keine waagrechte Überbreite, Platzhalter
+   der Kundensuche passt (166 px Text bei 324 bzw. 183 px Platz). Ein echter
+   Browserzoom (Gerätepixelverhältnis) war mit dem Werkzeug nicht einstellbar.
+
+**Checkpoint (2026-10-01):** Phase 4d vom Auftraggeber geprüft und mit diesem Checkpoint
+committet (nicht gepusht). Phase 5 nicht begonnen.

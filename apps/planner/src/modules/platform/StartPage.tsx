@@ -9,6 +9,8 @@ import type { MarkenArt } from "../../core/ui/Marke";
 import { KARTENKOPF, KARTENTITEL, STAPEL, karte, knopf, meldungsflaeche } from "../../core/ui/stil";
 import { STATUS_LABEL } from "./status";
 import type { ProjectStatus } from "./status";
+import { AKTION } from "../../core/ui/aktionssymbole";
+import { MitSymbol } from "../../core/ui/Symbol";
 
 /** Wie viele Projekte eine Karte der Startseite zeigt. */
 const KARTENGROESSE = 5;
@@ -67,17 +69,17 @@ export default function StartPage() {
           <div className="flex flex-wrap gap-2" role="group" aria-label="Schnellaktionen">
             {darfProjektAnlegen && (
               <Link className={knopf("primaer", { link: true })} to="/projects?neu=1">
-                Neues Projekt
+                <MitSymbol icon={AKTION.anlegen}>Neues Projekt</MitSymbol>
               </Link>
             )}
             {darfKundeAnlegen && (
               <Link className={knopf("neutral", { link: true })} to="/customers?neu=1">
-                Neuer Kunde
+                <MitSymbol icon={AKTION.anlegen}>Neuer Kunde</MitSymbol>
               </Link>
             )}
             {darfEinladen && (
               <Link className={knopf("neutral", { link: true })} to="/administration/users?einladen=1">
-                Benutzer einladen
+                <MitSymbol icon={AKTION.einladen}>Benutzer einladen</MitSymbol>
               </Link>
             )}
           </div>
@@ -90,7 +92,7 @@ export default function StartPage() {
         <div className="grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))] gap-4">
           <Projektkarte
             titel="Zuletzt geändert"
-            beschreibung="Projekte, deren Stammdaten oder Status zuletzt geändert wurden."
+            beschreibung="Laufende Projekte, zuletzt bearbeitete zuerst - auch Gebäude, Dateien und Planung zählen."
             schluessel="zuletzt"
             status={undefined}
             leer={
@@ -165,7 +167,13 @@ function Projektkarte({
     queryKey: ["projects", "start", schluessel],
     queryFn: () =>
       api.get("/api/v1/projects", {
-        query: { sort: "updated_at", page_size: KARTENGROESSE, ...(status ? { status } : {}) },
+        query: {
+          sort: "updated_at",
+          page_size: KARTENGROESSE,
+          // Abgeschlossene und archivierte Projekte gehören nicht auf die
+          // Startseite der laufenden Arbeit (Phase 4d).
+          ...(status ? { status } : { status_group: "current" }),
+        },
       }),
   });
 

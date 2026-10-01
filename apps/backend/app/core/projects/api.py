@@ -17,10 +17,18 @@ from app.core.auth.dependencies import CurrentUser, require_permission
 from app.core.authorization.permissions import (
     PROJECT_RECORD_DELETE,
     PROJECT_RECORD_READ,
+    PROJECT_RECORD_REOPEN,
     PROJECT_RECORD_WRITE,
 )
+from app.core.files import cleanup
+from app.core.files.storage import ObjectStorage, get_object_storage
 from app.core.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, NumberedPage
 from app.core.preconditions import require_if_match
+from app.core.projects.deletion import (
+    Participant,
+    ProjectDeletionService,
+    registered_participants,
+)
 from app.core.projects.models import (
     PROJECT_STATUS_ACTIVE,
     PROJECT_STATUS_ARCHIVED,
@@ -34,7 +42,9 @@ from app.core.projects.schemas import (
     FloorCreate,
     FloorOut,
     FloorUpdate,
+    ProjectContentOut,
     ProjectCreate,
+    ProjectDeletionCheck,
     ProjectOut,
     ProjectStatus,
     ProjectStatusGroup,
@@ -42,8 +52,12 @@ from app.core.projects.schemas import (
     ProjectUpdate,
 )
 from app.core.projects.service import ProjectService, ProjectSort
+from app.core.users.references import UserReferenceResolver
 from app.db.session import get_session
 from app.errors import ProblemDetail
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(tags=["projects"])
 
@@ -62,7 +76,35 @@ _SUBRESOURCE_RESPONSES: dict[int | str, dict[str, object]] = {
 }
 
 
-def _summary(project: Project, customer_name: str) -> ProjectSummary:
+def get_project_participants() -> tuple[Participant, ...]:
+    """Teilnehmer des Loeschprotokolls aus der Module Registry (ADR 0020)."""
+    return registered_participants()
+
+
+def _project_out(session: Session, current_user: CurrentUser, project: Project) -> ProjectOut:
+    """Projekt samt lesbarer Bearbeiter - zwei IDs, eine Abfrage."""
+    people = UserReferenceResolver(session, current_user.organization_id).load(
+        (project.created_by_user_id, project.updated_by_user_id)
+    )
+    return ProjectOut(
+        id=project.id,
+        project_number=project.project_number,
+        name=project.name,
+        status=project.status,
+        customer_id=project.customer_id,
+        site_street=project.site_street,
+        site_postal_code=project.site_postal_code,
+        site_city=project.site_city,
+        site_country_code=project.site_country_code,
+        version=project.version,
+        created_at=project.created_at,
+        updated_at=project.updated_at,
+        created_by=people.reference(project.created_by_user_id),
+        updated_by=people.reference(project.updated_by_user_id),
+    )
+
+
+def _summary(project: Project, customer_name: str, people: UserReferenceResolver) -> ProjectSummary:
     return ProjectSummary(
         id=project.id,
         project_number=project.project_number,
@@ -74,6 +116,8 @@ def _summary(project: Project, customer_name: str) -> ProjectSummary:
         version=project.version,
         created_at=project.created_at,
         updated_at=project.updated_at,
+        created_by=people.reference(project.created_by_user_id),
+        updated_by=people.reference(project.updated_by_user_id),
     )
 
 
@@ -120,8 +164,14 @@ def list_projects(
         customer_id=customer_id,
         sort=sort,
     )
+    # Bearbeiter der ganzen Seite in **einer** Abfrage - kein N+1.
+    people = UserReferenceResolver(session, current_user.organization_id).load(
+        user_id
+        for project, _ in seite.items
+        for user_id in (project.created_by_user_id, project.updated_by_user_id)
+    )
     return NumberedPage[ProjectSummary](
-        items=[_summary(project, customer_name) for project, customer_name in seite.items],
+        items=[_summary(project, customer_name, people) for project, customer_name in seite.items],
         page=seite.page,
         page_size=seite.page_size,
         total_items=seite.total_items,
@@ -156,7 +206,7 @@ def create_project(
         data={"project_number": project.project_number},
     )
     session.commit()
-    return ProjectOut.model_validate(project)
+    return _project_out(session, current_user, project)
 
 
 @router.get(
@@ -173,7 +223,7 @@ def get_project(
 ) -> ProjectOut:
     """Ein Projekt der eigenen Organisation."""
     service = ProjectService(session, current_user.organization_id)
-    return ProjectOut.model_validate(service.get(project_id))
+    return _project_out(session, current_user, service.get(project_id))
 
 
 @router.patch(
@@ -212,44 +262,130 @@ def update_project(
         data={"fields": sorted(payload.model_dump(exclude_unset=True))},
     )
     session.commit()
-    return ProjectOut.model_validate(project)
+    return _project_out(session, current_user, project)
+
+
+@router.get(
+    "/projects/{project_id}/deletion-check",
+    response_model=ProjectDeletionCheck,
+    operation_id="checkProjectDeletion",
+    summary="Loeschwirkung eines Projekts pruefen",
+    responses={404: {"model": ProblemDetail, "description": "Nicht gefunden"}},
+)
+def check_project_deletion(
+    project_id: uuid.UUID,
+    current_user: CurrentUser = Depends(require_permission(PROJECT_RECORD_READ)),
+    session: Session = Depends(get_session),
+    participants: tuple[Participant, ...] = Depends(get_project_participants),
+) -> ProjectDeletionCheck:
+    """Was eine Loeschung bedeuten wuerde - fuer den Bestaetigungsdialog.
+
+    **Keine Autorisierung und keine Garantie:** ``DELETE`` prueft Status,
+    Inhalte und Berechtigung erneut unter der Projektsperre (ADR 0020).
+    """
+    service = ProjectDeletionService(session, current_user.organization_id, participants)
+    result = service.assess(project_id, permissions=current_user.permissions)
+    project = result.project
+    return ProjectDeletionCheck(
+        project_id=project.id,
+        project_number=project.project_number,
+        name=project.name,
+        status=project.status,
+        version=project.version,
+        is_empty=result.is_empty,
+        contents=[
+            ProjectContentOut(code=item.code, label=item.label, count=item.count)
+            for item in result.items
+        ],
+        status_allows_deletion=result.status_allows,
+        can_delete=result.can_delete,
+        requires_admin=result.requires_purge,
+        requires_number_confirmation=result.requires_purge,
+        blocked_code=result.blocked_code,
+        blocked_reason=result.blocked_reason,
+    )
 
 
 @router.delete(
     "/projects/{project_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     operation_id="deleteProject",
-    summary="Projekt ausblenden",
-    responses=_WRITE_RESPONSES,
+    summary="Projekt endgueltig loeschen",
+    responses={
+        403: {"model": ProblemDetail, "description": "Berechtigung fehlt"},
+        404: {"model": ProblemDetail, "description": "Nicht gefunden"},
+        409: {
+            "model": ProblemDetail,
+            "description": (
+                "Versionskonflikt, Projekt abgeschlossen oder archiviert, "
+                "oder Bestaetigung der Projektnummer fehlt"
+            ),
+        },
+        428: {"model": ProblemDetail, "description": "If-Match fehlt"},
+        500: {"model": ProblemDetail, "description": "Ein Teilnehmer ist gescheitert"},
+    },
 )
 def delete_project(
     project_id: uuid.UUID,
+    confirm_project_number: str | None = Query(
+        default=None,
+        max_length=30,
+        description=(
+            "Pflicht, wenn das Projekt Inhalte hat: die Projektnummer als ausdrueckliche "
+            "Bestaetigung des Verlusts."
+        ),
+    ),
     current_user: CurrentUser = Depends(require_permission(PROJECT_RECORD_DELETE)),
     session: Session = Depends(get_session),
     expected_version: int = Depends(require_if_match),
+    participants: tuple[Participant, ...] = Depends(get_project_participants),
+    storage: ObjectStorage = Depends(get_object_storage),
 ) -> None:
-    """Blendet das Projekt aus (Soft Delete). Gebaeude und Dateien bleiben.
+    """Loescht ein Projekt **endgueltig** samt Struktur, Dateien und Planungsdaten.
 
-    Funktioniert **auch bei archivierten Projekten**: Das Ausblenden ist kein
-    inhaltlicher Eingriff, sondern ein Aufraeumschritt. Ohne diese Ausnahme
-    liessen sich Kunden mit archivierten Projekten nie mehr ausblenden.
+    Nur ``draft`` und ``active``. Ein leeres Projekt duerfen alle mit
+    ``project.record.delete`` loeschen, ein Projekt mit Inhalt nur, wer
+    zusaetzlich ``project.record.purge`` hat - und nur mit
+    ``confirm_project_number``. Alles wird unter der Projektsperre in einer
+    Transaktion geprueft und geloescht (ADR 0020).
+
+    Die Storage-Objekte der Dateien werden in derselben Transaktion zur
+    Loeschung vorgemerkt und erst **nach** dem Commit entfernt. Scheitert das,
+    bleibt der Auftrag offen (``python -m app.cli storage-cleanup``); die
+    Antwort ist trotzdem ``204``, denn das Projekt ist geloescht.
+
+    Die Projektnummer wird nie wiederverwendet: Der Nummernkreis zaehlt nur
+    hoch.
     """
-    service = ProjectService(session, current_user.organization_id)
-    project = service.soft_delete(
+    service = ProjectDeletionService(session, current_user.organization_id, participants)
+    deleted = service.delete(
         project_id,
         expected_version=expected_version,
-        actor_user_id=current_user.user_id,
+        permissions=current_user.permissions,
+        confirm_project_number=confirm_project_number,
     )
     audit.record(
         session,
         organization_id=current_user.organization_id,
         action=audit.ACTION_PROJECT_DELETED,
         entity_type="project",
-        entity_id=project.id,
+        entity_id=deleted.project_id,
         actor_user_id=current_user.user_id,
-        summary=f"Projekt {project.project_number} ausgeblendet",
+        summary=f"Projekt {deleted.project_number} endgueltig geloescht",
+        # Nur Nummer und Inhaltsarten - keine Namen, keine Adressen.
+        data={
+            "project_number": deleted.project_number,
+            "contents": [item.code for item in deleted.items],
+            "files": len(deleted.storage_keys),
+        },
     )
     session.commit()
+    if deleted.storage_keys:
+        try:
+            cleanup.process_jobs(session, storage, storage_keys=deleted.storage_keys)
+        except Exception:
+            # Die Loeschung ist committet. Offene Auftraege bleiben stehen.
+            logger.exception("storage_cleanup_after_delete_failed")
 
 
 def _change_status(
@@ -279,7 +415,7 @@ def _change_status(
         data={"from": previous, "to": project.status},
     )
     session.commit()
-    return ProjectOut.model_validate(project)
+    return _project_out(session, current_user, project)
 
 
 @router.post(
@@ -351,6 +487,45 @@ def archive_project(
     )
 
 
+@router.post(
+    "/projects/{project_id}/reopen",
+    response_model=ProjectOut,
+    operation_id="reopenProject",
+    summary="Abgeschlossenes Projekt wieder in Bearbeitung setzen",
+    responses={
+        403: {"model": ProblemDetail, "description": "Berechtigung fehlt"},
+        **_WRITE_RESPONSES,
+    },
+)
+def reopen_project(
+    project_id: uuid.UUID,
+    current_user: CurrentUser = Depends(require_permission(PROJECT_RECORD_REOPEN)),
+    session: Session = Depends(get_session),
+    expected_version: int = Depends(require_if_match),
+) -> ProjectOut:
+    """``completed -> active``. Nur Administratoren; ``archived`` bleibt endgueltig.
+
+    Danach gilt das Projekt wieder als laufend und unterliegt allen Regeln
+    eines aktiven Projekts (ADR 0020).
+    """
+    service = ProjectService(session, current_user.organization_id)
+    project = service.reopen(
+        project_id, expected_version=expected_version, actor_user_id=current_user.user_id
+    )
+    audit.record(
+        session,
+        organization_id=current_user.organization_id,
+        action=audit.ACTION_PROJECT_REOPENED,
+        entity_type="project",
+        entity_id=project.id,
+        actor_user_id=current_user.user_id,
+        summary=f"Projekt {project.project_number} wieder in Bearbeitung",
+        data={"from": "completed", "to": project.status},
+    )
+    session.commit()
+    return _project_out(session, current_user, project)
+
+
 # ---------------------------------------------------------------- Gebaeude
 
 
@@ -387,7 +562,7 @@ def create_building(
 ) -> BuildingOut:
     """Legt ein Gebaeude im Projekt an."""
     service = ProjectService(session, current_user.organization_id)
-    building = service.create_building(project_id, payload)
+    building = service.create_building(project_id, payload, actor_user_id=current_user.user_id)
     session.commit()
     return BuildingOut.model_validate(building)
 
@@ -408,7 +583,12 @@ def update_building(
 ) -> BuildingOut:
     """Aendert Name oder Reihenfolge eines Gebaeudes."""
     service = ProjectService(session, current_user.organization_id)
-    building = service.update_building(building_id, payload, expected_version=expected_version)
+    building = service.update_building(
+        building_id,
+        payload,
+        expected_version=expected_version,
+        actor_user_id=current_user.user_id,
+    )
     session.commit()
     return BuildingOut.model_validate(building)
 
@@ -428,7 +608,9 @@ def delete_building(
 ) -> None:
     """Entfernt das Gebaeude samt seiner Geschosse endgueltig."""
     service = ProjectService(session, current_user.organization_id)
-    service.delete_building(building_id, expected_version=expected_version)
+    service.delete_building(
+        building_id, expected_version=expected_version, actor_user_id=current_user.user_id
+    )
     session.commit()
 
 
@@ -472,7 +654,7 @@ def create_floor(
 ) -> FloorOut:
     """Legt ein Geschoss an. Je Gebaeude ist jede Ebene nur einmal belegbar."""
     service = ProjectService(session, current_user.organization_id)
-    floor = service.create_floor(building_id, payload)
+    floor = service.create_floor(building_id, payload, actor_user_id=current_user.user_id)
     session.commit()
     return FloorOut.model_validate(floor)
 
@@ -493,7 +675,12 @@ def update_floor(
 ) -> FloorOut:
     """Aendert Name, Ebene oder Hoehenangaben eines Geschosses."""
     service = ProjectService(session, current_user.organization_id)
-    floor = service.update_floor(floor_id, payload, expected_version=expected_version)
+    floor = service.update_floor(
+        floor_id,
+        payload,
+        expected_version=expected_version,
+        actor_user_id=current_user.user_id,
+    )
     session.commit()
     return FloorOut.model_validate(floor)
 
@@ -513,5 +700,7 @@ def delete_floor(
 ) -> None:
     """Entfernt das Geschoss endgueltig."""
     service = ProjectService(session, current_user.organization_id)
-    service.delete_floor(floor_id, expected_version=expected_version)
+    service.delete_floor(
+        floor_id, expected_version=expected_version, actor_user_id=current_user.user_id
+    )
     session.commit()

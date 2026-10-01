@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from typing import Literal
 
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.core.customers.models import Customer
@@ -24,6 +24,8 @@ from app.core.persistence import (
 )
 from app.core.preconditions import check_version
 from app.core.projects.models import (
+    PROJECT_REOPEN_FROM,
+    PROJECT_REOPEN_TO,
     PROJECT_STATUS_ARCHIVED,
     PROJECT_STATUS_GROUPS,
     PROJECT_STATUS_TRANSITIONS,
@@ -50,8 +52,9 @@ from app.errors import (
 )
 
 #: ``updated_at``: zuletzt geaenderte Projekte zuerst (Startseite, Phase 4.2).
-#: Gemeint ist die Projektzeile selbst - Stammdaten und Status. Aenderungen an
-#: Gebaeuden, Geschossen oder Planungsdaten zaehlen nicht mit.
+#: Seit Phase 4d zaehlt jede Aenderung am Projekt mit - Stammdaten, Status,
+#: Gebaeude, Geschosse, Dateien und die Planungsdaten der Fachmodule
+#: (:meth:`ProjectService.touch`).
 ProjectSort = Literal["created_at", "name", "updated_at"]
 
 #: Name des eindeutigen Index aus Migration ``0003_core_business_data``.
@@ -85,14 +88,9 @@ def _require_writable(project: Project) -> None:
     neue Uploads werden abgelehnt. Lesen und das Herunterladen bestehender
     Dateien bleiben erlaubt (docs/api.md, Abschnitt "Projektstatus").
 
-    **Eine Ausnahme, bewusst:** Das Ausblenden des Projekts (``deleted_at``)
-    bleibt moeglich. Es ist kein inhaltlicher Eingriff, sondern ein
-    Aufraeumschritt - und ohne ihn liessen sich Kunden mit archivierten
-    Projekten nie mehr ausblenden, weil die Kundenloeschung offene Projekte
-    zaehlt.
-
-    Eine Wiederherstellung aus ``archived`` gibt es nicht; sie waere ein
-    eigener administrativer Vorgang und braucht eine eigene Entscheidung.
+    Eine Wiederherstellung aus ``archived`` gibt es nicht (ADR 0020). Nur
+    ``completed`` laesst sich ueber :meth:`ProjectService.reopen` wieder in
+    Bearbeitung setzen.
     """
     if project.status == PROJECT_STATUS_ARCHIVED:
         raise ProjectArchivedError(
@@ -165,10 +163,7 @@ class ProjectService:
                 (Customer.organization_id == Project.organization_id)
                 & (Customer.id == Project.customer_id),
             )
-            .where(
-                Project.organization_id == self.organization_id,
-                Project.deleted_at.is_(None),
-            )
+            .where(Project.organization_id == self.organization_id)
         )
         if status:
             stmt = stmt.where(Project.status == status)
@@ -275,20 +270,66 @@ class ProjectService:
         flush(self.session)
         return project
 
-    def soft_delete(
-        self, project_id: uuid.UUID, *, expected_version: int, actor_user_id: uuid.UUID
+    def reopen(
+        self,
+        project_id: uuid.UUID,
+        *,
+        expected_version: int,
+        actor_user_id: uuid.UUID,
     ) -> Project:
-        """Blendet das Projekt aus - auch ein archiviertes (bewusste Ausnahme).
+        """``completed -> active`` - der einzige Weg zurueck (ADR 0020).
 
-        Sperrt trotzdem dieselbe Zeile: Die Sperrwurzel gilt fuer **jeden**
-        Schreibvorgang am Projekt, damit die Reihenfolge ueberall dieselbe ist.
+        Bewusst **kein** Eintrag in ``PROJECT_STATUS_TRANSITIONS``: Die normalen
+        Statuswechsel bleiben unveraendert, und eine freie Statusauswahl gibt es
+        nicht. Ein archiviertes Projekt bleibt endgueltig (``409
+        project-archived``); aus jedem anderen Zustand ist die Wiedereroeffnung
+        ein fachlicher Konflikt.
+
+        Ein wiedereroeffnetes Projekt ist ein gewoehnliches aktives Projekt: Es
+        ist beschreibbar, laesst sich erneut abschliessen oder archivieren - und
+        als aktives Projekt auch wieder loeschen.
+
+        Sperrt dieselbe Projektzeile wie jeder andere Schreibvorgang.
         """
         project = self.lock_project(project_id)
         check_version(project, expected_version)
-        project.deleted_at = utcnow()
+        if project.status == PROJECT_STATUS_ARCHIVED:
+            raise ProjectArchivedError(
+                f"Projekt {project.project_number} ist archiviert. Archivierte Projekte "
+                "bleiben endgueltig archiviert und lassen sich nicht wieder oeffnen."
+            )
+        if project.status != PROJECT_REOPEN_FROM:
+            raise ConflictError(
+                "Nur ein abgeschlossenes Projekt laesst sich wieder in Bearbeitung setzen."
+            )
+        project.status = PROJECT_REOPEN_TO
         project.updated_by_user_id = actor_user_id
         flush(self.session)
         return project
+
+    def touch(self, project_id: uuid.UUID, *, actor_user_id: uuid.UUID) -> None:
+        """Vermerkt eine Aenderung **unterhalb** des Projekts am Projekt.
+
+        Setzt ``updated_at`` und ``updated_by_user_id`` - fuer Gebaeude,
+        Geschosse, Dateien und die Planungsdaten der Fachmodule (Fachmodule
+        ueber :mod:`app.core.projects.planning`).
+
+        **Ohne Versionssprung.** Die Projektversion schuetzt Stammdaten und
+        Status vor verlorenen Aktualisierungen (``If-Match``). Eine neue Tuer im
+        Grundriss ist keine konkurrierende Stammdatenaenderung; wuerde sie die
+        Version erhoehen, liefe ein offenes Stammdatenformular grundlos in einen
+        Versionskonflikt. Deshalb ein gezieltes ``UPDATE`` statt einer Aenderung
+        am ORM-Objekt, die ``version_id_col`` hochzaehlen wuerde.
+
+        Der Aufrufer haelt die Projektsperre bereits (``lock_writable``); das
+        ``UPDATE`` trifft also eine Zeile, die niemand sonst gerade aendert.
+        """
+        self.session.execute(
+            update(Project)
+            .where(Project.organization_id == self.organization_id, Project.id == project_id)
+            .values(updated_at=utcnow(), updated_by_user_id=actor_user_id)
+            .execution_options(synchronize_session="fetch")
+        )
 
     # -------------------------------------------------------------- Gebaeude
 
@@ -301,7 +342,9 @@ class ProjectService:
         )
         return list(self.session.execute(stmt).scalars().all())
 
-    def create_building(self, project_id: uuid.UUID, payload: BuildingCreate) -> Building:
+    def create_building(
+        self, project_id: uuid.UUID, payload: BuildingCreate, *, actor_user_id: uuid.UUID
+    ) -> Building:
         # Projekt zuerst sperren - danach entsteht die Unterressource.
         self.lock_writable(project_id)
         building = Building(
@@ -311,19 +354,28 @@ class ProjectService:
         )
         self.buildings.add(building)
         flush(self.session)
+        self.touch(project_id, actor_user_id=actor_user_id)
         return building
 
     def update_building(
-        self, building_id: uuid.UUID, payload: BuildingUpdate, *, expected_version: int
+        self,
+        building_id: uuid.UUID,
+        payload: BuildingUpdate,
+        *,
+        expected_version: int,
+        actor_user_id: uuid.UUID,
     ) -> Building:
         building = self._writable_building(building_id)
         check_version(building, expected_version)
         for field, value in payload.model_dump(exclude_unset=True).items():
             setattr(building, field, value)
         flush(self.session)
+        self.touch(building.project_id, actor_user_id=actor_user_id)
         return building
 
-    def delete_building(self, building_id: uuid.UUID, *, expected_version: int) -> None:
+    def delete_building(
+        self, building_id: uuid.UUID, *, expected_version: int, actor_user_id: uuid.UUID
+    ) -> None:
         """Entfernt ein Gebaeude endgueltig - samt seiner Geschosse.
 
         Gebaeude und Geschosse sind Struktur, kein Geschaeftsdokument; sie
@@ -334,8 +386,10 @@ class ProjectService:
         """
         building = self._writable_building(building_id)
         check_version(building, expected_version)
+        project_id = building.project_id
         self.session.delete(building)
         self._flush_structure_delete(_IN_USE_BUILDING)
+        self.touch(project_id, actor_user_id=actor_user_id)
 
     # ------------------------------------------------------------- Geschosse
 
@@ -346,8 +400,10 @@ class ProjectService:
         )
         return list(self.session.execute(stmt).scalars().all())
 
-    def create_floor(self, building_id: uuid.UUID, payload: FloorCreate) -> Floor:
-        self._writable_building(building_id)
+    def create_floor(
+        self, building_id: uuid.UUID, payload: FloorCreate, *, actor_user_id: uuid.UUID
+    ) -> Floor:
+        building = self._writable_building(building_id)
         self._require_free_level(building_id, payload.level, exclude_floor_id=None)
         floor = Floor(
             organization_id=self.organization_id,
@@ -356,12 +412,18 @@ class ProjectService:
         )
         self.floors.add(floor)
         self._flush_floor(payload.level)
+        self.touch(building.project_id, actor_user_id=actor_user_id)
         return floor
 
     def update_floor(
-        self, floor_id: uuid.UUID, payload: FloorUpdate, *, expected_version: int
+        self,
+        floor_id: uuid.UUID,
+        payload: FloorUpdate,
+        *,
+        expected_version: int,
+        actor_user_id: uuid.UUID,
     ) -> Floor:
-        floor = self._writable_floor(floor_id)
+        floor, building = self._writable_floor(floor_id)
         check_version(floor, expected_version)
         changes = payload.model_dump(exclude_unset=True)
         new_level = changes.get("level")
@@ -370,19 +432,40 @@ class ProjectService:
         for field, value in changes.items():
             setattr(floor, field, value)
         self._flush_floor(floor.level)
+        self.touch(building.project_id, actor_user_id=actor_user_id)
         return floor
 
-    def delete_floor(self, floor_id: uuid.UUID, *, expected_version: int) -> None:
+    def delete_floor(
+        self, floor_id: uuid.UUID, *, expected_version: int, actor_user_id: uuid.UUID
+    ) -> None:
         """Entfernt ein Geschoss endgueltig.
 
         Haengen Planungsdaten eines Fachmoduls daran, lehnt der
         Fremdschluessel das Loeschen ab. Das ist gewollt: Ein Geschoss
         verschwindet nicht unter der Planung weg.
         """
-        floor = self._writable_floor(floor_id)
+        floor, building = self._writable_floor(floor_id)
         check_version(floor, expected_version)
         self.session.delete(floor)
         self._flush_structure_delete(_IN_USE_FLOOR)
+        self.touch(building.project_id, actor_user_id=actor_user_id)
+
+    def floor_ids_of_project(self, project_id: uuid.UUID) -> tuple[uuid.UUID, ...]:
+        """Geschoss-IDs eines Projekts - ohne Sperre, mandantengefiltert."""
+        stmt = (
+            select(Floor.id)
+            .join(
+                Building,
+                (Building.organization_id == Floor.organization_id)
+                & (Building.id == Floor.building_id),
+            )
+            .where(
+                Floor.organization_id == self.organization_id,
+                Building.project_id == project_id,
+            )
+            .order_by(Floor.id)
+        )
+        return tuple(self.session.execute(stmt).scalars().all())
 
     # -------------------------------------------------- Schreibschutz
 
@@ -413,7 +496,6 @@ class ProjectService:
             .where(
                 Project.organization_id == self.organization_id,
                 Project.id == project_id,
-                Project.deleted_at.is_(None),
             )
             .with_for_update()
             .execution_options(populate_existing=True)
@@ -468,31 +550,27 @@ class ProjectService:
         self.lock_writable(building.project_id)
         return building
 
-    def _writable_floor(self, floor_id: uuid.UUID) -> Floor:
+    def _writable_floor(self, floor_id: uuid.UUID) -> tuple[Floor, Building]:
         """Geschoss laden und ueber Gebaeude und Projekt sperren."""
         floor = self.floors.get_or_404(floor_id)
-        self._writable_building(floor.building_id)
-        return floor
+        building = self._writable_building(floor.building_id)
+        return floor, building
 
     # ---------------------------------------------------------------- Helfer
 
     def _lock_customer(self, customer_id: uuid.UUID) -> Customer:
         """Prueft den Kunden fuer eine **neue** Zuordnung und sperrt ihn.
 
-        Zulaessig ist nur ein Kunde, der
+        Zulaessig ist nur ein Kunde, der zur eigenen Organisation gehoert und
+        (noch) existiert.
 
-        * zur eigenen Organisation gehoert,
-        * nicht ausgeblendet ist (``deleted_at IS NULL``) und
-        * nicht anonymisiert ist (``anonymized_at IS NULL``).
-
-        Ein anonymisierter Kunde bleibt fuer **bestehende** Projekte und
-        Belege lesbar - er darf aber nicht fuer neue Geschaeftsvorgaenge
-        reaktiviert werden (docs/security.md, Abschnitt 13).
-
-        ``SELECT ... FOR UPDATE`` haelt die Zeile bis zum Commit. Ein
-        gleichzeitiges Ausblenden oder Anonymisieren desselben Kunden sperrt
-        dieselbe Zeile und wartet damit; die Reihenfolge ist auf beiden Seiten
-        gleich (erst Kunde, dann Projekt) und deshalb deadlockfrei.
+        ``SELECT ... FOR UPDATE`` haelt die Zeile bis zum Commit. Eine
+        gleichzeitige Loeschung desselben Kunden sperrt dieselbe Zeile und
+        wartet damit: Entweder die Zuordnung committet zuerst und die Loeschung
+        sieht das Projekt (``409``), oder die Loeschung gewinnt und die
+        Zuordnung findet den Kunden nicht mehr (``404``). Die Reihenfolge ist
+        auf beiden Seiten gleich (erst Kunde, dann Projekt) und deshalb
+        deadlockfrei.
 
         Jeder unzulaessige Fall liefert ``404`` - auch der fremde Mandant.
         Andernfalls waere ableitbar, dass es den Kunden gibt.
@@ -502,8 +580,6 @@ class ProjectService:
             .where(
                 Customer.organization_id == self.organization_id,
                 Customer.id == customer_id,
-                Customer.deleted_at.is_(None),
-                Customer.anonymized_at.is_(None),
             )
             .with_for_update()
         ).scalar_one_or_none()
@@ -549,7 +625,12 @@ class ProjectService:
 def count_projects_of_customer(
     session: Session, *, organization_id: uuid.UUID, customer_id: uuid.UUID
 ) -> int:
-    """Wie viele nicht geloeschte Projekte haengen an diesem Kunden.
+    """Wie viele Projekte diesem Kunden zugeordnet sind - **in jedem Zustand**.
+
+    Gezaehlt werden Entwuerfe, laufende, abgeschlossene und archivierte
+    Projekte. Ein Kunde darf nur geloescht werden, wenn diese Zahl null ist
+    (ADR 0020); der Fremdschluessel ``RESTRICT`` sichert das zusaetzlich in der
+    Datenbank.
 
     Bewusst hier und nicht im Kundendienst: ``projects`` kennt ``customers``,
     nicht umgekehrt. Das Loeschen eines Kunden ruft diese Funktion auf, statt
@@ -558,6 +639,5 @@ def count_projects_of_customer(
     stmt = select(func.count()).where(
         Project.organization_id == organization_id,
         Project.customer_id == customer_id,
-        Project.deleted_at.is_(None),
     )
     return int(session.execute(stmt).scalar_one())

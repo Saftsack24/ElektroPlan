@@ -232,6 +232,13 @@ implementiert; drei Exit-Kriterien warten auf die Abnahme mit laufender Datenban
 Für die Arbeit am Code wichtig:
 
 - Das Backend ist **synchron** (ADR 0011): Endpunkte sind `def`, nicht `async def`.
+- Seit Phase 4d (ADR 0020): Ein Fachmodul, das Daten an einem Projekt hält, bindet
+  `ProjectContentParticipant` (`app/contracts/v1/project_lifecycle.py`) in seinem
+  `ModuleDescriptor.provides` – sonst würde eine Projektlöschung an seinen Daten scheitern
+  oder sie übersehen. Schreibvorgänge am Projekt melden den Bearbeiter über
+  `FloorPlanningAccess.record_project_change`.
+- Nach einer Migration, die Berechtigungen betrifft, den Seed ausführen
+  (`.\tasks.ps1 seed`) – neue Rechte und Rollenzuordnungen legt nur der Seed an.
 - Neues Backend-Modul: `ModuleDescriptor` anlegen und in
   `apps/backend/app/modules/__init__.py` eintragen.
 - Neues Frontend-Modul: eine Zeile in `apps/planner/src/modules/index.ts`.

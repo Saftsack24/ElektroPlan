@@ -143,14 +143,15 @@ def test_tabellenpraefixe_entsprechen_den_modulen(registry: ModuleRegistry) -> N
 def test_tabellenbestand_ist_vollstaendig_erfasst() -> None:
     """Warnt, wenn eine neue Tabelle hinzukommt, ohne die Liste zu pflegen.
 
-    17 Core-Tabellen (Phase 1 und 2), zwei fuer Einladungen (Phase 4.2) plus
-    die drei des Fachmoduls ``electrical`` aus Phase 3.
+    17 Core-Tabellen (Phase 1 und 2), zwei fuer Einladungen (Phase 4.2), die
+    Storage-Aufraeum-Warteschlange (Phase 4d) plus die drei des Fachmoduls
+    ``electrical`` aus Phase 3.
     """
-    assert len(metadata.sorted_tables) == 22, (
+    assert len(metadata.sorted_tables) == 23, (
         "Anzahl der Tabellen hat sich geaendert - test_architecture.py und "
         "docs/database.md pruefen."
     )
-    assert len(CORE_TABLES) == 19
+    assert len(CORE_TABLES) == 20
 
 
 # ----------------------------------------------------------------- Permissions

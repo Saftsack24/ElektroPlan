@@ -32,8 +32,19 @@ Dokumentation und Oberfläche auf Deutsch, Code und API auf Englisch.
 | Rechnungsanschrift | `billing_*` | Anschrift des Kunden |
 | Baustellenanschrift | `site_*` | Anschrift des Projekts |
 | Projektstatus | `status`: `draft`, `active`, `completed`, `archived` | Entwurf, In Bearbeitung, Abgeschlossen, Archiviert |
-| Ausblenden (Soft Delete) | `deleted_at` | fachliches Ausblenden, kein Löschen |
-| Anonymisieren | `anonymize` / `anonymized_at` | Umsetzung eines Löschbegehrens nach Art. 17 DSGVO |
+| Ausblenden (Soft Delete) | `deleted_at` | für Kunden und Projekte mit Phase 4d abgeschafft (Spalten entfernt, Zeilen wieder sichtbar); nur noch an `organizations` |
+| Endgültig löschen | `DELETE` | physische Löschung aus der operativen Datenbank (Kunden, Projekte; ADR 0020) |
+| Leeres Projekt | – (`is_empty`) | keine Dateien, höchstens ein Gebäude mit höchstens einem Geschoss, keine Planungsdaten eines Moduls |
+| Projekt mit Inhalt löschen | `purge` (`project.record.purge`) | nur Administrator, Projektnummer als Bestätigung |
+| Löschvorprüfung | `deletion-check` | Auskunft über Status, Inhalte und Berechtigung vor dem Löschen – keine Zusage |
+| Löschschutz-Protokoll | `ProjectContentParticipant` | synchroner Contract, über den Fachmodule Projektinhalte melden und löschen |
+| Inhaltsart | `ProjectContentItem.code` | `<modul>.<art>`, z. B. `core.files`, `electrical.rooms` |
+| Wiedereröffnen | `reopen` (`project.record.reopen`) | abgeschlossenes Projekt wieder in Bearbeitung setzen, nur Administrator |
+| Storage-Aufräumauftrag | `storage_cleanup_jobs` | vorgemerktes Storage-Objekt, das nach dem Commit gelöscht wird |
+| Erstellt von / Zuletzt geändert von | `created_by` / `updated_by` | Bearbeiterangabe; „System/Bestandsdaten" ohne Bearbeiter |
+| Projekt berühren | `touch` | `updated_at`/`updated_by` des Projekts setzen, ohne Versionssprung |
+| Laufende / historische Ansicht | `?ansicht=abgeschlossen` (nur Oberfläche) | Projektliste: Entwurf + in Bearbeitung bzw. abgeschlossen + archiviert |
+| Aktionsicon | `AKTION`, `Symbol` (nur Oberfläche) | einheitliche Icons aus `lucide-react`, immer mit Text |
 | Geschossebene | `level` | `0` Erdgeschoss, `-1` Untergeschoss, `1` erstes Obergeschoss |
 | Höhenlage des Fertigfußbodens | `elevation_mm` | ganzzahlige Millimeter |
 | Standard-Geschosshöhe | `default_ceiling_height_mm` | lichte Höhe in Millimetern |

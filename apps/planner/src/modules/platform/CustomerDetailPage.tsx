@@ -5,8 +5,12 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { useAuth, usePermission } from "../../core/auth/AuthProvider";
+import { AKTION } from "../../core/ui/aktionssymbole";
 import { Feld } from "../../core/ui/Feld";
-import { FORMULARRASTER, FORMULARRASTER_AKTIONEN, KNOPFZEILE, STAPEL, karte, knopf, meldungsflaeche } from "../../core/ui/stil";
+import { MitSymbol } from "../../core/ui/Symbol";
+import { FORMULARRASTER, FORMULARRASTER_AKTIONEN, STAPEL, karte, knopf, meldungsflaeche } from "../../core/ui/stil";
+import { Bearbeitungsinfo } from "./Bearbeitungsinfo";
+import { KundeLoeschenDialog } from "./KundeLoeschenDialog";
 import { KundenProjekte } from "./KundenProjekte";
 
 type Bearbeitbar = {
@@ -45,8 +49,8 @@ export default function CustomerDetailPage() {
   const { customerId = "" } = useParams();
   const { api } = useAuth();
   const darfSchreiben = usePermission("customer.record.write");
+  // Nur Administratoren (ADR 0020). Der Server prüft unabhängig davon.
   const darfLoeschen = usePermission("customer.record.delete");
-  const darfAnonymisieren = usePermission("customer.record.anonymize");
   const darfProjekteLesen = usePermission("project.record.read");
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -54,20 +58,19 @@ export default function CustomerDetailPage() {
   const [entwurf, setEntwurf] = useState<Bearbeitbar | null>(null);
   const [meldung, setMeldung] = useState<string | null>(null);
   const [fehler, setFehler] = useState<string | null>(null);
+  const [loeschenOffen, setLoeschenOffen] = useState(false);
+  // Nach der Löschung nichts mehr nachladen: Der Datensatz existiert nicht mehr.
+  const [geloescht, setGeloescht] = useState(false);
 
   const kunde = useQuery({
     queryKey: ["customer", customerId],
     queryFn: () => api.get("/api/v1/customers/{customer_id}", { path: { customer_id: customerId } }),
+    enabled: !geloescht,
   });
 
   const aktualisieren = async () => {
     await queryClient.invalidateQueries({ queryKey: ["customer", customerId] });
     await queryClient.invalidateQueries({ queryKey: ["customers"] });
-  };
-
-  const melden = (error: unknown, standard: string) => {
-    setFehler(error instanceof ApiError ? error.userMessage : standard);
-    setMeldung(null);
   };
 
   const speichern = useMutation({
@@ -83,35 +86,10 @@ export default function CustomerDetailPage() {
       setMeldung("Gespeichert.");
       await aktualisieren();
     },
-    onError: (error: unknown) => melden(error, "Speichern fehlgeschlagen."),
-  });
-
-  const ausblenden = useMutation({
-    mutationFn: () =>
-      api.delete("/api/v1/customers/{customer_id}", {
-        path: { customer_id: customerId },
-        ifMatch: kunde.data?.version ?? 0,
-      }),
-    onSuccess: async () => {
-      await aktualisieren();
-      void navigate("/customers");
+    onError: (error: unknown) => {
+      setFehler(error instanceof ApiError ? error.userMessage : "Speichern fehlgeschlagen.");
+      setMeldung(null);
     },
-    onError: (error: unknown) => melden(error, "Ausblenden fehlgeschlagen."),
-  });
-
-  const anonymisieren = useMutation({
-    mutationFn: () =>
-      api.post("/api/v1/customers/{customer_id}/anonymize", {
-        path: { customer_id: customerId },
-        ifMatch: kunde.data?.version ?? 0,
-      }),
-    onSuccess: async () => {
-      setEntwurf(null);
-      setFehler(null);
-      setMeldung("Der Kunde wurde anonymisiert.");
-      await aktualisieren();
-    },
-    onError: (error: unknown) => melden(error, "Anonymisieren fehlgeschlagen."),
   });
 
   if (kunde.isPending) return <p className="text-muted">Kunde wird geladen ...</p>;
@@ -119,27 +97,28 @@ export default function CustomerDetailPage() {
     return <p className={meldungsflaeche()}>Dieser Kunde ist nicht verfügbar.</p>;
   }
 
-  const werte = entwurf ?? ausKunde(kunde.data);
-  const gesperrt = !darfSchreiben || kunde.data.anonymized_at !== null;
+  const daten = kunde.data;
+  const werte = entwurf ?? ausKunde(daten);
+  const gesperrt = !darfSchreiben;
 
   return (
     <div className={STAPEL}>
       <section className={karte()}>
         <p className="text-muted">
-          <Link to="/customers">← Alle Kunden</Link>
+          <Link to="/customers">
+            <MitSymbol icon={AKTION.zurueck}>Alle Kunden</MitSymbol>
+          </Link>
         </p>
-        <h1>{kunde.data.name}</h1>
+        <h1>{daten.name}</h1>
         <p className="text-muted">
-          Kundennummer <code>{kunde.data.customer_number}</code> · Version{" "}
-          {kunde.data.version}
+          Kundennummer <code>{daten.customer_number}</code> · Version {daten.version}
         </p>
-        {kunde.data.anonymized_at !== null && (
-          <p className={meldungsflaeche()}>
-            Dieser Kunde wurde anonymisiert. Die personenbezogenen Daten sind entfernt;
-            der Datensatz bleibt als Belegzuordnung bestehen und lässt sich nicht mehr
-            bearbeiten.
-          </p>
-        )}
+        <Bearbeitungsinfo
+          erstelltVon={daten.created_by}
+          erstelltAm={daten.created_at}
+          geaendertVon={daten.updated_by}
+          geaendertAm={daten.updated_at}
+        />
         {meldung && <p className="text-muted">{meldung}</p>}
         {fehler && <p className={meldungsflaeche()}>{fehler}</p>}
       </section>
@@ -203,55 +182,48 @@ export default function CustomerDetailPage() {
               type="submit"
               disabled={gesperrt || speichern.isPending || entwurf === null}
             >
-              {speichern.isPending ? "Wird gespeichert ..." : "Speichern"}
+              <MitSymbol icon={AKTION.speichern}>
+                {speichern.isPending ? "Wird gespeichert ..." : "Speichern"}
+              </MitSymbol>
             </button>
           </div>
         </form>
       </section>
 
-      {darfProjekteLesen && <KundenProjekte kundeId={kunde.data.id} />}
+      {darfProjekteLesen && <KundenProjekte kundeId={daten.id} />}
 
-      {(darfLoeschen || darfAnonymisieren) && (
-        <section className={karte()}>
-          <h2>Datenschutz und Löschung</h2>
+      {darfLoeschen && (
+        <section className={karte()} aria-labelledby="kunde-loeschen-titel">
+          <h2 id="kunde-loeschen-titel">Kunden löschen</h2>
           <p className="text-muted">
-            <strong>Ausblenden</strong> entfernt den Kunden aus Listen; bestehende Belege
-            bleiben zuordenbar. <strong>Anonymisieren</strong> setzt ein Löschbegehren nach
-            Art. 17 DSGVO um: Die personenbezogenen Felder werden überschrieben, die
-            Kundennummer bleibt. Das ist <strong>nicht umkehrbar</strong>.
+            Ein Kunde lässt sich nur endgültig löschen, wenn ihm <strong>kein Projekt</strong>{" "}
+            zugeordnet ist - auch kein abgeschlossenes oder archiviertes. Die Löschung ist nicht
+            umkehrbar; die Kundennummer wird nicht erneut vergeben.
           </p>
-          <div className={KNOPFZEILE}>
-            {darfLoeschen && (
-              <button
-                className={knopf()}
-                type="button"
-                disabled={ausblenden.isPending}
-                onClick={() => ausblenden.mutate()}
-              >
-                Kunden ausblenden
-              </button>
-            )}
-            {darfAnonymisieren && kunde.data.anonymized_at === null && (
-              <button
-                className={knopf()}
-                type="button"
-                disabled={anonymisieren.isPending}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      "Die personenbezogenen Daten dieses Kunden werden unwiderruflich " +
-                        "überschrieben. Fortfahren?",
-                    )
-                  ) {
-                    anonymisieren.mutate();
-                  }
-                }}
-              >
-                Unwiderruflich anonymisieren
-              </button>
-            )}
+          <div className="mt-3">
+            <button type="button" className={knopf("gefahr")} onClick={() => setLoeschenOffen(true)}>
+              <MitSymbol icon={AKTION.loeschen}>Kunden löschen</MitSymbol>
+            </button>
           </div>
         </section>
+      )}
+
+      {darfLoeschen && (
+        <KundeLoeschenDialog
+          offen={loeschenOffen}
+          kunde={daten}
+          onAbbrechen={() => setLoeschenOffen(false)}
+          onGeloescht={async () => {
+            setLoeschenOffen(false);
+            setGeloescht(true);
+            await navigate("/customers", {
+              replace: true,
+              state: { meldung: `Kunde ${daten.customer_number} wurde endgültig gelöscht.` },
+            });
+            queryClient.removeQueries({ queryKey: ["customer", customerId] });
+            await queryClient.invalidateQueries({ queryKey: ["customers"] });
+          }}
+        />
       )}
     </div>
   );

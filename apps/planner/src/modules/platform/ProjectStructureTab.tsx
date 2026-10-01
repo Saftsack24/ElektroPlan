@@ -8,6 +8,8 @@ import { eingabenAusMm, eingabenLesen, eingabenUmrechnen } from "../../core/mass
 import { Feld } from "../../core/ui/Feld";
 import { useEinheitenwechsel, useMasse } from "../../core/ui/masseinheit";
 import { FELDREIHE, KARTENKOPF, STAPEL, TABELLE, karte, knopf, meldungsflaeche } from "../../core/ui/stil";
+import { AKTION } from "../../core/ui/aktionssymbole";
+import { MitSymbol } from "../../core/ui/Symbol";
 
 /**
  * Gebäude und Geschosse eines Projekts.
@@ -152,6 +154,7 @@ function Verwaltung({
       setNeuesGebaeude("");
       setFehler(null);
       await queryClient.invalidateQueries({ queryKey: ["buildings", projectId] });
+      await queryClient.invalidateQueries({ queryKey: ["project", projectId], exact: true });
     },
     onError: (error: unknown) => melden(error, "Anlegen fehlgeschlagen."),
   });
@@ -165,6 +168,7 @@ function Verwaltung({
     onSuccess: async () => {
       setFehler(null);
       await queryClient.invalidateQueries({ queryKey: ["buildings", projectId] });
+      await queryClient.invalidateQueries({ queryKey: ["project", projectId], exact: true });
     },
     onError: (error: unknown) => melden(error, "Löschen fehlgeschlagen."),
   });
@@ -258,6 +262,7 @@ function GebaeudeKarte({
       setFormular(leer());
       setFehler(null);
       await queryClient.invalidateQueries({ queryKey: ["floors", gebaeude.id] });
+      await queryClient.invalidateQueries({ queryKey: ["project", gebaeude.project_id], exact: true });
     },
     onError: (error: unknown) => melden(error, "Anlegen fehlgeschlagen."),
   });
@@ -268,6 +273,7 @@ function GebaeudeKarte({
     onSuccess: async () => {
       setFehler(null);
       await queryClient.invalidateQueries({ queryKey: ["floors", gebaeude.id] });
+      await queryClient.invalidateQueries({ queryKey: ["project", gebaeude.project_id], exact: true });
     },
     onError: (error: unknown) => melden(error, "Löschen fehlgeschlagen."),
   });
@@ -313,7 +319,7 @@ function GebaeudeKarte({
                       loeschenGeschoss.mutate({ id: geschoss.id, version: geschoss.version })
                     }
                   >
-                    Entfernen
+                    <MitSymbol icon={AKTION.loeschen}>Entfernen</MitSymbol>
                   </button>
                 </td>
               </tr>

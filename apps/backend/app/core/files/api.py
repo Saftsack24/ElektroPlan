@@ -123,6 +123,8 @@ def upload_file(
         """Sperrt die Projektzeile und prueft den Schreibschutz erneut."""
         if project_id is not None:
             projects.lock_writable(project_id)
+            # Neue Datei = Aenderung am Projekt (Phase 4d), ohne Versionssprung.
+            projects.touch(project_id, actor_user_id=current_user.user_id)
 
     service.finalize(record, before_commit=sperren_und_pruefen)
     return FileOut.model_validate(record)

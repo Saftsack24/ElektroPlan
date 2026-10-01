@@ -66,8 +66,12 @@ def geschoss(factory: sessionmaker[Session]) -> tuple[uuid.UUID, uuid.UUID]:
         project = projects.create(
             ProjectCreate(customer_id=customer.id, name="Neubau"), actor_user_id=ACTOR
         )
-        building = projects.create_building(project.id, BuildingCreate(name="Haupthaus"))
-        floor = projects.create_floor(building.id, FloorCreate(name="Erdgeschoss", level=0))
+        building = projects.create_building(
+            project.id, BuildingCreate(name="Haupthaus"), actor_user_id=ACTOR
+        )
+        floor = projects.create_floor(
+            building.id, FloorCreate(name="Erdgeschoss", level=0), actor_user_id=ACTOR
+        )
         session.commit()
         return organization.id, floor.id
     finally:

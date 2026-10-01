@@ -5,6 +5,8 @@ import { EINGABEHINWEIS, eingabenAusMm, eingabenLesen, eingabenUmrechnen } from 
 import { Feld } from "../../core/ui/Feld";
 import { useEinheitenwechsel, useMasse } from "../../core/ui/masseinheit";
 import { FORMULARRASTER, KNOPFZEILE, knopf, meldungsflaeche } from "../../core/ui/stil";
+import { AKTION } from "../../core/ui/aktionssymbole";
+import { MitSymbol } from "../../core/ui/Symbol";
 
 /** Ganze Millimeter als Text - in beide Richtungen. Die Anzeigeeinheit gilt nur im Dialog. */
 export type Wandwerte = {
@@ -188,7 +190,7 @@ export function WandDialog({
 
         <div className={KNOPFZEILE}>
           <button className={knopf("primaer")} type="submit" disabled={laeuft}>
-            {laeuft ? "Wird gespeichert ..." : "Speichern"}
+            <MitSymbol icon={AKTION.speichern}>{laeuft ? "Wird gespeichert ..." : "Speichern"}</MitSymbol>
           </button>
           <button
             className={knopf()}

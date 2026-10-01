@@ -15,7 +15,7 @@ from app.core.auth.models import RefreshToken
 from app.core.authorization.models import MemberRole, Permission, Role, RolePermission
 from app.core.customers.models import Customer
 from app.core.events.models import DomainEventRecord
-from app.core.files.models import FileRecord
+from app.core.files.models import FileRecord, StorageCleanupJob
 from app.core.invitations.models import MemberInvitation, MemberInvitationRole
 from app.core.numbering.models import NumberSequence
 from app.core.organizations.models import Organization, OrganizationMember, OrganizationModule
@@ -51,6 +51,7 @@ __all__ = [
     "RefreshToken",
     "Role",
     "RolePermission",
+    "StorageCleanupJob",
     "User",
     "metadata",
 ]

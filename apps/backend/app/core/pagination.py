@@ -224,7 +224,7 @@ def fetch_numbered_page[RowT](
     ``stmt`` muss bereits sortiert sein (siehe :func:`order_with_tiebreaker`).
 
     Eine Seite hinter der letzten wird **auf die letzte vorhandene Seite**
-    abgebildet, nicht mit einem Fehler beantwortet: Nach dem Ausblenden des
+    abgebildet, nicht mit einem Fehler beantwortet: Nach dem Loeschen des
     letzten Eintrags einer Seite oder einem engeren Filter landet die
     Oberflaeche so auf einer gueltigen Seite, statt auf einer dauerhaft
     leeren. Die Antwort nennt die tatsaechlich gelieferte Seite.

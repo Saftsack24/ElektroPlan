@@ -52,6 +52,7 @@ CORE_TABLES: tuple[str, ...] = (
     "buildings",
     "floors",
     "files",
+    "storage_cleanup_jobs",
     "audit_entries",
     "domain_events",
 )

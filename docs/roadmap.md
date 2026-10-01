@@ -1,6 +1,6 @@
 # Roadmap
 
-Stand: 2026-09-30 (nach Task 0021 — Phase 4c.2: persönliche Darstellung, abgeschlossen)
+Stand: 2026-10-01 (nach Task 0022 — Phase 4d: Datenlebenszyklus, abgeschlossen)
 Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 
 ---
@@ -26,6 +26,7 @@ Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 | 4b.2 | Bedienungsnacharbeit 2 (Tür per Maus, gemeinsame Öffnungen, Teilwände) | **DONE** (Checkpoint 4b/4b.1/4b.2 committet) | 4b.1 |
 | 4c.1 | Frontend auf Tailwind CSS, semantische Theme-Tokens | **DONE** (mit diesem Checkpoint committet) | 4b.2 |
 | 4c.2 | Persönliche Darstellung, Laufzeitthemes, responsive Nachkorrektur | **DONE** (mit diesem Checkpoint committet) | 4c.1 |
+| 4d | Datenlebenszyklus: Löschregeln, Wiedereröffnung, Bearbeiter, Icons | **DONE** (mit diesem Checkpoint committet) | 4c.2 |
 | 5 | Electrical Devices | NOT STARTED | 4a |
 | 6 | Circuits & Cable Routes | NOT STARTED | 5 |
 | 7 | Materials | NOT STARTED | 6 |
@@ -353,6 +354,25 @@ Build grün. **Abnahme:** Die Funktionen hat der Auftraggeber manuell geprüft u
 freigegeben. Die Dokumentbreiten bei 320/360/420 px wurden nicht automatisiert gemessen;
 eine automatisierte Browserabnahme mit Bildschirmfotos fand nicht statt (Browserbereich
 nicht erreichbar).
+
+---
+
+## Phase 4d — Datenlebenszyklus, Löschregeln, Bearbeitungsmetadaten, Aktions-UX · DONE (2026-10-01, mit diesem Checkpoint committet)
+
+Leere Projekte löschen Projektbearbeiter, Projekte mit Inhalt nur Administratoren
+(Projektnummer als Bestätigung); abgeschlossene und archivierte Projekte sind nicht
+direkt löschbar. Administratoren setzen abgeschlossene Projekte wieder in Bearbeitung,
+archivierte bleiben endgültig. Kunden ohne Projekte löscht ein Administrator physisch;
+die Anonymisierung ist entfallen. Synchrones Löschschutz-Protokoll Core – Registry –
+Fachmodule (`ProjectContentParticipant`), persistente Storage-Aufräumwarteschlange,
+Ersteller/letzter Bearbeiter an Kunden und Projekten, laufende/historische Projektliste,
+Icon-System mit `lucide-react`. Entscheidung:
+[ADR 0020](decisions/0020-data-lifecycle-deletion-and-reopen.md). Migration `0006`.
+Ergebnis: [`docs/task-history.md`](task-history.md), Task 0022.
+
+**Stand:** 792 Backendtests (0 übersprungen), 681 Frontendtests, alle Qualitätsschranken
+grün; API-Abnahme im Compose-System 14/14, Browserabnahme durchgeführt, Soft Delete für
+Kunden und Projekte abgeschafft. Vom Auftraggeber geprüft und freigegeben.
 
 ---
 

@@ -58,10 +58,11 @@ class Versioned:
 
 
 class SoftDeletable:
-    """Loeschkennzeichen fuer Geschaeftsdokumente.
+    """Loeschkennzeichen (Soft Delete).
 
-    Ersetzt kein DSGVO-Loeschbegehren - dafuer existiert ein eigener
-    Anonymisierungspfad (docs/security.md, Abschnitt 13).
+    Seit Phase 4d nur noch an ``organizations``. Kunden und Projekte kennen kein
+    Ausblenden mehr; sie werden nach ADR 0020 physisch geloescht. Ein Soft
+    Delete ersetzt kein DSGVO-Loeschbegehren.
     """
 
     deleted_at: Mapped[datetime | None] = mapped_column(

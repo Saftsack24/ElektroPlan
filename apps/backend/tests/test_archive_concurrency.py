@@ -113,8 +113,12 @@ def welt(factory: sessionmaker[Session]) -> Welt:
         project = projects.create(
             ProjectCreate(customer_id=customer.id, name="Neubau"), actor_user_id=ACTOR
         )
-        building = projects.create_building(project.id, BuildingCreate(name="Haupthaus"))
-        floor = projects.create_floor(building.id, FloorCreate(name="Erdgeschoss", level=0))
+        building = projects.create_building(
+            project.id, BuildingCreate(name="Haupthaus"), actor_user_id=ACTOR
+        )
+        floor = projects.create_floor(
+            building.id, FloorCreate(name="Erdgeschoss", level=0), actor_user_id=ACTOR
+        )
 
         electrical = ElectricalRoomService(session, organization.id)
         view, _ = electrical.create_room(floor.id, RoomCreate(name="Wohnzimmer"))
@@ -192,13 +196,13 @@ def kontur_speichern(session: Session, welt: Welt) -> None:
 
 def gebaeude_anlegen(session: Session, welt: Welt) -> None:
     ProjectService(session, welt.organization_id).create_building(
-        welt.project_id, BuildingCreate(name="Garage")
+        welt.project_id, BuildingCreate(name="Garage"), actor_user_id=ACTOR
     )
 
 
 def geschoss_anlegen(session: Session, welt: Welt) -> None:
     ProjectService(session, welt.organization_id).create_floor(
-        welt.building_id, FloorCreate(name="Obergeschoss", level=1)
+        welt.building_id, FloorCreate(name="Obergeschoss", level=1), actor_user_id=ACTOR
     )
 
 

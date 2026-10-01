@@ -1,8 +1,8 @@
-"""Kundenstamm: CRUD, Berechtigungen, optimistisches Sperren, Anonymisierung.
+"""Kundenstamm: CRUD, Berechtigungen, optimistisches Sperren, Loeschung.
 
-Phase 2 fuehrt die ersten personenbezogenen Daten ein. Getestet wird deshalb
-nicht nur, dass Anlegen und Aendern funktionieren, sondern auch der
-Anonymisierungspfad aus ``docs/security.md``, Abschnitt 13.
+Phase 2 fuehrt die ersten personenbezogenen Daten ein. Seit Phase 4d ersetzt
+die physische Loeschung (nur Administrator, nur ohne Projekte) die fruehere
+Anonymisierung (ADR 0020, ``docs/security.md``, Abschnitt 13).
 
 Benoetigt PostgreSQL (``ELEKTROPLAN_TEST_DATABASE_URL``).
 """
@@ -335,7 +335,7 @@ def test_gesamtzahl_folgt_dem_suchfilter(api: TestClient, betrieb: uuid.UUID) ->
     assert all("Schmidt" in item["name"] for item in seite["items"])
 
 
-def test_ausgeblendete_kunden_zaehlen_nicht(api: TestClient, betrieb: uuid.UUID) -> None:
+def test_geloeschte_kunden_zaehlen_nicht(api: TestClient, betrieb: uuid.UUID) -> None:
     token = login(api, ADMIN_EMAIL)
     _create(api, token, name="Bleibt")
     weg = _create(api, token, name="Weg")
@@ -395,52 +395,76 @@ def test_nicht_ganzzahlige_seite_ist_ein_eingabefehler(api: TestClient, betrieb:
     assert response.json()["type"].endswith("/validation-failed")
 
 
-# ------------------------------------------------------ Loeschen und Schutz
+# ------------------------------------------ Endgueltiges Loeschen (Phase 4d)
 
 
-def test_ausblenden_entfernt_aus_der_liste(api: TestClient, betrieb: uuid.UUID) -> None:
+def _loeschen(api: TestClient, token: str, kunde: dict[str, object], version: object = 1) -> Any:
+    return api.delete(
+        f"/api/v1/customers/{kunde['id']}",
+        headers={**auth_headers(token), "If-Match": str(version)},
+    )
+
+
+def test_kunde_ohne_projekte_wird_physisch_geloescht(
+    api: TestClient, engine: Engine, betrieb: uuid.UUID
+) -> None:
     token = login(api, ADMIN_EMAIL)
     kunde = _create(api, token)
 
-    response = api.delete(
-        f"/api/v1/customers/{kunde['id']}",
-        headers={**auth_headers(token), "If-Match": "1"},
-    )
+    response = _loeschen(api, token, kunde)
 
     assert response.status_code == 204
-    body = api.get("/api/v1/customers", headers=auth_headers(token)).json()
-    assert body["items"] == []
+    assert api.get("/api/v1/customers", headers=auth_headers(token)).json()["items"] == []
     assert api.get(f"/api/v1/customers/{kunde['id']}", headers=auth_headers(token)).status_code == (
         404
     )
+    # Physisch geloescht: Die Zeile ist aus der operativen Datenbank weg.
+    factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    session = factory()
+    try:
+        assert session.get(Customer, uuid.UUID(str(kunde["id"]))) is None
+    finally:
+        session.close()
 
 
-def test_kunde_mit_projekt_laesst_sich_nicht_ausblenden(
-    api: TestClient, betrieb: uuid.UUID
+@pytest.mark.parametrize("zielstatus", ["draft", "active", "completed", "archived"])
+def test_kunde_mit_projekt_in_jedem_status_ist_nicht_loeschbar(
+    api: TestClient, betrieb: uuid.UUID, zielstatus: str
 ) -> None:
     token = login(api, ADMIN_EMAIL)
     kunde = _create(api, token)
-    api.post(
+    projekt = api.post(
         "/api/v1/projects",
         headers=auth_headers(token),
         json={"customer_id": kunde["id"], "name": "Neubau"},
-    )
+    ).json()
+    wege = {
+        "draft": [],
+        "active": ["activate"],
+        "completed": ["activate", "complete"],
+        "archived": ["archive"],
+    }[zielstatus]
+    version = projekt["version"]
+    for weg in wege:
+        antwort = api.post(
+            f"/api/v1/projects/{projekt['id']}/{weg}",
+            headers={**auth_headers(token), "If-Match": str(version)},
+        )
+        assert antwort.status_code == 200, antwort.text
+        version = antwort.json()["version"]
 
-    response = api.delete(
-        f"/api/v1/customers/{kunde['id']}",
-        headers={**auth_headers(token), "If-Match": "1"},
-    )
+    response = _loeschen(api, token, kunde)
 
     assert response.status_code == 409
+    assert response.json()["type"].endswith("/customer-has-projects")
+    assert api.get(f"/api/v1/customers/{kunde['id']}", headers=auth_headers(token)).status_code == (
+        200
+    )
 
 
-# ---------------------------------------------------------- Anonymisierung
-
-
-def test_anonymisieren_entfernt_personenbezug(
-    api: TestClient, engine: Engine, betrieb: uuid.UUID
+def test_kundenloeschung_protokolliert_keine_personendaten(
+    api: TestClient, betrieb: uuid.UUID
 ) -> None:
-    """Art. 17 DSGVO: Personenbezug weg, Belegzuordnung bleibt."""
     token = login(api, ADMIN_EMAIL)
     kunde = _create(
         api,
@@ -448,60 +472,56 @@ def test_anonymisieren_entfernt_personenbezug(
         name="Erika Musterfrau",
         contact_person="Erika Musterfrau",
         email="erika@example.org",
-        phone="0511 12345",
         billing_street="Musterweg 1",
-        billing_postal_code="30159",
         billing_city="Hannover",
     )
+    assert _loeschen(api, token, kunde).status_code == 204
+
+    protokoll = api.get(
+        "/api/v1/audit", headers=auth_headers(token), params={"action": "customer.deleted"}
+    ).json()
+
+    assert len(protokoll["items"]) == 1
+    eintrag = protokoll["items"][0]
+    assert eintrag["entity_id"] == kunde["id"]
+    roh = str(eintrag)
+    for wert in ("Musterfrau", "erika@example.org", "Musterweg", "Hannover"):
+        assert wert not in roh
+
+
+def test_kundennummer_wird_nach_loeschung_nicht_wiederverwendet(
+    api: TestClient, betrieb: uuid.UUID
+) -> None:
+    token = login(api, ADMIN_EMAIL)
+    erster = _create(api, token, name="Erster")
+    assert _loeschen(api, token, erster).status_code == 204
+
+    zweiter = _create(api, token, name="Zweiter")
+
+    assert zweiter["customer_number"] != erster["customer_number"]
+    assert zweiter["customer_number"] > erster["customer_number"]  # type: ignore[operator]
+
+
+def test_kundenloeschung_ohne_if_match_liefert_428(api: TestClient, betrieb: uuid.UUID) -> None:
+    token = login(api, ADMIN_EMAIL)
+    kunde = _create(api, token)
+
+    response = api.delete(f"/api/v1/customers/{kunde['id']}", headers=auth_headers(token))
+
+    assert response.status_code == 428
+
+
+def test_anonymisierungsroute_existiert_nicht_mehr(api: TestClient, betrieb: uuid.UUID) -> None:
+    token = login(api, ADMIN_EMAIL)
+    kunde = _create(api, token)
 
     response = api.post(
         f"/api/v1/customers/{kunde['id']}/anonymize",
         headers={**auth_headers(token), "If-Match": "1"},
     )
 
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["customer_number"] == kunde["customer_number"]
-    assert body["anonymized_at"] is not None
-    assert body["name"] != "Erika Musterfrau"
-    assert body["email"] is None
-    assert body["phone"] is None
-    assert body["contact_person"] is None
-    assert body["billing_street"] is None
-    assert body["billing_city"] is None
-
-    # Auch in der Datenbank steht nichts Personenbezogenes mehr.
-    factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
-    session = factory()
-    try:
-        gespeichert = session.get(Customer, uuid.UUID(str(kunde["id"])))
-        assert gespeichert is not None
-        assert "Musterfrau" not in gespeichert.name
-        assert gespeichert.email is None
-    finally:
-        session.close()
-
-
-def test_anonymisierung_wird_ohne_die_alten_werte_protokolliert(
-    api: TestClient, betrieb: uuid.UUID
-) -> None:
-    """Das Protokoll darf die geloeschten Daten nicht konservieren."""
-    token = login(api, ADMIN_EMAIL)
-    kunde = _create(api, token, name="Erika Musterfrau", email="erika@example.org")
-
-    api.post(
-        f"/api/v1/customers/{kunde['id']}/anonymize",
-        headers={**auth_headers(token), "If-Match": "1"},
-    )
-
-    protokoll = api.get(
-        "/api/v1/audit", headers=auth_headers(token), params={"action": "customer.anonymized"}
-    ).json()
-
-    assert len(protokoll["items"]) == 1
-    roh = str(protokoll["items"][0])
-    assert "Musterfrau" not in roh
-    assert "erika@example.org" not in roh
+    assert response.status_code in (404, 405)
+    assert "anonymized_at" not in kunde
 
 
 # ------------------------------------------------------------ Berechtigungen
@@ -526,12 +546,27 @@ def test_monteur_darf_keine_kunden_anlegen(api: TestClient, betrieb: uuid.UUID) 
     assert response.status_code == 403
 
 
-def test_nur_der_admin_darf_anonymisieren() -> None:
-    """Die Anonymisierung ist nicht umkehrbar und gehoert keiner Fachrolle."""
-    berechtigt = {
-        role.key for role in SYSTEM_ROLES if "customer.record.anonymize" in role.permissions
-    }
+def test_nicht_administrator_darf_keinen_kunden_loeschen(
+    api: TestClient, betrieb: uuid.UUID
+) -> None:
+    token = login(api, ADMIN_EMAIL)
+    kunde = _create(api, token)
+
+    response = _loeschen(api, login(api, MONTEUR_EMAIL), kunde)
+
+    assert response.status_code == 403
+    assert api.get(f"/api/v1/customers/{kunde['id']}", headers=auth_headers(token)).status_code == (
+        200
+    )
+
+
+def test_nur_der_admin_darf_kunden_loeschen() -> None:
+    """Die Loeschung ist nicht umkehrbar und gehoert keiner Fachrolle."""
+    berechtigt = {role.key for role in SYSTEM_ROLES if "customer.record.delete" in role.permissions}
     assert berechtigt == {"admin"}
+    assert "customer.record.anonymize" not in {
+        permission for role in SYSTEM_ROLES for permission in role.permissions
+    }
 
 
 def test_anlegen_wird_protokolliert(api: TestClient, betrieb: uuid.UUID) -> None:
@@ -579,44 +614,10 @@ def test_optionales_feld_laesst_sich_leeren(api: TestClient, betrieb: uuid.UUID)
     assert response.json()["billing_city"] is None
 
 
-def test_anonymisierter_kunde_ist_nicht_mehr_aenderbar(api: TestClient, betrieb: uuid.UUID) -> None:
-    """Sonst liessen sich die geloeschten Angaben wieder eintragen."""
-    token = login(api, ADMIN_EMAIL)
-    kunde = _create(api, token, name="Erika Musterfrau")
-    anonym = api.post(
-        f"/api/v1/customers/{kunde['id']}/anonymize",
-        headers={**auth_headers(token), "If-Match": "1"},
-    ).json()
-
-    response = api.patch(
-        f"/api/v1/customers/{kunde['id']}",
-        headers={**auth_headers(token), "If-Match": str(anonym["version"])},
-        json={"name": "Erika Musterfrau"},
-    )
-
-    assert response.status_code == 409
-
-
-def test_zweimal_anonymisieren_wird_abgelehnt(api: TestClient, betrieb: uuid.UUID) -> None:
-    token = login(api, ADMIN_EMAIL)
-    kunde = _create(api, token)
-    anonym = api.post(
-        f"/api/v1/customers/{kunde['id']}/anonymize",
-        headers={**auth_headers(token), "If-Match": "1"},
-    ).json()
-
-    response = api.post(
-        f"/api/v1/customers/{kunde['id']}/anonymize",
-        headers={**auth_headers(token), "If-Match": str(anonym["version"])},
-    )
-
-    assert response.status_code == 409
-
-
 def test_veraltete_version_schlaegt_vor_dem_fachlichen_konflikt_durch(
     api: TestClient, betrieb: uuid.UUID
 ) -> None:
-    """Beim Ausblenden wird zuerst die Version geprueft, dann der Projektbezug."""
+    """Beim Loeschen wird zuerst die Version geprueft, dann der Projektbezug."""
     token = login(api, ADMIN_EMAIL)
     kunde = _create(api, token)
     api.post(

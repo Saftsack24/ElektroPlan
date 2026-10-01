@@ -34,8 +34,9 @@ export function KundeKurz({ kunde }: { kunde: CustomerOut }) {
  * * **Keine veralteten Treffer.** Jeder Suchbegriff ist eine eigene Abfrage
  *   (`queryKey`). Eine langsame Antwort auf einen älteren Begriff landet in
  *   ihrem eigenen Eintrag und überschreibt nie die Treffer des aktuellen.
- * * Welche Kunden angeboten werden, entscheidet der Aufrufer über `suchen`:
- *   Die Projektanlage lässt anonymisierte Kunden weg, der Listenfilter nicht.
+ * * Welche Kunden angeboten werden, entscheidet der Aufrufer über `suchen`.
+ * * Der Platzhalter ist kurz (Phase 4d), damit er auch in schmalen Spalten
+ *   nicht abgeschnitten wird; die Beschriftung nennt das Feld.
  * * Die Auswahl bleibt als erkennbarer Eintrag stehen und lässt sich
  *   entfernen; sie gehört dem Benutzer, nicht der Trefferliste.
  */
@@ -121,7 +122,7 @@ export function KundenAuswahl({
       fehler={fehler}
       eingabe={begriff}
       onEingabe={setBegriff}
-      platzhalter="Name, Kundennummer oder Ort"
+      platzhalter="Name, Nummer oder Ort"
       zustand={zustand}
       optionen={optionen}
       schluessel={(kunde) => kunde.id}

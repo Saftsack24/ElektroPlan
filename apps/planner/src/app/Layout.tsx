@@ -6,6 +6,8 @@ import { EinstellungenDialog } from "../core/ui/EinstellungenDialog";
 import { useVerlassenBestaetigen } from "../core/ui/Rueckfrage";
 import { knopf } from "../core/ui/stil";
 import { moduleRegistry } from "../modules";
+import { AKTION } from "../core/ui/aktionssymbole";
+import { MitSymbol } from "../core/ui/Symbol";
 
 /** Eintrag der Hauptnavigation; der aktive ist hervorgehoben. */
 function navigationslink({ isActive }: { isActive: boolean }): string {
@@ -39,7 +41,7 @@ export function Layout() {
           <span className="min-w-0 font-semibold wrap-anywhere">{me?.organization.name}</span>
           <span className="min-w-0 text-label text-muted wrap-anywhere">{me?.email}</span>
           <button className={knopf()} type="button" onClick={() => setEinstellungen(true)}>
-            Einstellungen
+            <MitSymbol icon={AKTION.einstellungen}>Einstellungen</MitSymbol>
           </button>
           <button
             className={knopf()}

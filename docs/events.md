@@ -205,6 +205,16 @@ Nutzlastfeld wäre brechend und erzeugt `event_version` 2.
 
 ---
 
+### Löschen und Wiedereröffnen erzeugen keine Events (Phase 4d)
+
+Das endgültige Löschen von Projekten und Kunden sowie die Wiedereröffnung werden im
+**Audit-Protokoll** festgehalten (`project.deleted`, `customer.deleted`,
+`project.reopened`), nicht als Domain Event: Es gibt keinen Empfänger. Die Entscheidung,
+**ob** gelöscht werden darf, fällt ohnehin synchron über den Contract
+`ProjectContentParticipant` in der Transaktion des Core (ADR 0020) – ein Event wäre dafür
+ungeeignet (*at most once*, erst nach dem Commit). Ein späteres `core.project.deleted`
+dürfte eine erfolgte Löschung melden, nie entscheiden; seine Nutzlast enthielte nur IDs.
+
 ### Benutzerverwaltung erzeugt keine Events (Phase 4.2)
 
 Einladen, Annehmen, Sperren und Rollenvergabe sind synchrone Core-Vorgänge ohne

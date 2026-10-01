@@ -4,6 +4,8 @@ import { useRef, useState } from "react";
 
 import { useAuth, usePermission } from "../../core/auth/AuthProvider";
 import { FELD, FELD_BESCHRIFTUNG, FELDREIHE, TABELLE, eingabefeld, karte, knopf, meldungsflaeche } from "../../core/ui/stil";
+import { AKTION } from "../../core/ui/aktionssymbole";
+import { MitSymbol } from "../../core/ui/Symbol";
 
 const KB = 1024;
 
@@ -53,6 +55,8 @@ export function ProjectFilesTab({
       setFehler(null);
       if (eingabe.current) eingabe.current.value = "";
       await queryClient.invalidateQueries({ queryKey: ["project-files", projectId] });
+      // Ein Upload berührt das Projekt ("Zuletzt geändert").
+      await queryClient.invalidateQueries({ queryKey: ["project", projectId], exact: true });
     },
     onError: (error: unknown) =>
       setFehler(error instanceof ApiError ? error.userMessage : "Upload fehlgeschlagen."),
@@ -89,7 +93,7 @@ export function ProjectFilesTab({
         <div className={FELDREIHE}>
           <div className={FELD}>
             <label className={FELD_BESCHRIFTUNG} htmlFor="datei-upload">
-              Datei hochladen
+              <MitSymbol icon={AKTION.hochladen}>Datei hochladen</MitSymbol>
             </label>
             <input
               id="datei-upload"
@@ -140,7 +144,7 @@ export function ProjectFilesTab({
                     disabled={herunterladen.isPending}
                     onClick={() => herunterladen.mutate(datei.id)}
                   >
-                    Herunterladen
+                    <MitSymbol icon={AKTION.herunterladen}>Herunterladen</MitSymbol>
                   </button>
                 </td>
               </tr>

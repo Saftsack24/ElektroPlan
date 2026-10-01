@@ -130,6 +130,20 @@ Was es **noch nicht** gibt — und was deshalb nirgends behauptet wird:
 - keine Passwortwiederherstellung (siehe Abschnitt 18),
 - keine Lizenz-, Abrechnungs- oder Trial-Logik.
 
+**Lebenszyklus von Projekten und Kunden (seit Phase 4d, ADR 0020):**
+
+| Berechtigung | erlaubt | Standardrollen |
+|---|---|---|
+| `project.record.delete` | leeres Projekt (Entwurf/in Bearbeitung) endgültig löschen | Administrator, Planer – genau die Rollen mit `project.record.write` |
+| `project.record.purge` | Projekt **mit Inhalt** endgültig löschen (Projektnummer als Bestätigung) | **nur** Administrator |
+| `project.record.reopen` | abgeschlossenes Projekt wieder in Bearbeitung setzen | **nur** Administrator |
+| `customer.record.delete` | Kunden ohne Projekte endgültig löschen | **nur** Administrator |
+
+`ADMIN_ONLY_PERMISSIONS` (`app/core/authorization/permissions.py`) nennt die drei
+Administratorrechte; ein Test verhindert, dass eine andere Systemrolle oder ein
+`default_roles` eines Moduls sie erhält, ein weiterer prüft die Zuordnung nach dem Seed in
+der Datenbank. `customer.record.anonymize` ist entfernt (Migration `0006`).
+
 **Benutzerverwaltung (seit Phase 4.2, Abschnitt 18):** Ein Administrator vergibt die
 **festen Systemrollen** an Mitgliedschaften seines Betriebs, lädt ein und sperrt den
 Zugang. Verwendete Berechtigungen – keine neuen Schlüssel:
@@ -204,7 +218,7 @@ Vorbereitet, aber im MVP nicht aktiviert: PostgreSQL Row Level Security
 | Projektzuordnung | Ein Upload mit `project_id` wird gegen den mandantengefilterten Projektdienst geprüft; ein fremdes Projekt liefert `404`. Der Speicherschlüssel lautet dann `org/<org-id>/project/<project-id>/<file-id><ext>`. |
 | Download im Browser | `GET /files/{id}/download-url` liefert die signierte Adresse als JSON, der Browser navigiert anschließend dorthin. Ein Link direkt auf den API-Endpunkt käme ohne `Authorization`-Header nicht durch; ein Token in der URL ist ausgeschlossen. |
 | Dateiname im Header | `Content-Disposition` wird injektionssicher gebaut: Steuerzeichen, Zeilenumbrüche, Anführungszeichen und Backslashes werden ersetzt, der Originalname folgt prozentkodiert als `filename*` (RFC 6266). |
-| Verwaiste Objekte | Reihenfolge: Datenbankzeile → Storage-Upload → Commit. Scheitert der Upload, wird die Transaktion zurückgerollt (kein Datensatz ohne Objekt). Scheitert der Commit, wird das Objekt gelöscht (kein Objekt ohne Datensatz). Gelingt auch das Löschen nicht, wird der Schlüssel unter `orphan_object_cleanup_failed` protokolliert und über einen manuellen Cleanup-Lauf entfernt. |
+| Verwaiste Objekte | Reihenfolge: Datenbankzeile → Storage-Upload → Commit. Scheitert der Upload, wird die Transaktion zurückgerollt (kein Datensatz ohne Objekt). Scheitert der Commit, wird das Objekt gelöscht (kein Objekt ohne Datensatz). Gelingt auch das Löschen nicht, wird der Schlüssel unter `orphan_object_cleanup_failed` protokolliert und muss von Hand entfernt werden. Objekte gelöschter Projekte laufen dagegen über die persistente Warteschlange `storage_cleanup_jobs` (Phase 4d, ADR 0020): vorgemerkt in der Löschtransaktion, nach dem Commit gelöscht, bei Fehler mit Zähler und Meldung aufbewahrt, nachholbar mit `python -m app.cli storage-cleanup`. |
 
 ---
 
@@ -231,8 +245,11 @@ Explizit protokolliert werden mindestens:
   `invitation.accepted`, `member.suspended`, `member.reactivated` – mit IDs und
   Rollenschlüsseln, **ohne** E-Mail, Namen, Token, Link oder Passwort
 - Anlegen/Ändern/Löschen von Kunden und Projekten
-  (`customer.created`, `customer.updated`, `customer.deleted`, `customer.anonymized`,
-  `project.created`, `project.updated`, `project.deleted`, `project.status_changed`)
+  (`customer.created`, `customer.updated`, `customer.deleted`, `project.created`,
+  `project.updated`, `project.deleted`, `project.status_changed`, `project.reopened`).
+  Löscheinträge tragen nur IDs, Nummern und Inhaltsarten – keine Namen, Anschriften oder
+  E-Mail-Adressen (ADR 0020). `customer.anonymized` stammt aus der Zeit vor Phase 4d und
+  kommt nur noch in älteren Einträgen vor.
 - Materialpreisänderungen
 - Finalisierung einer Kalkulation
 - Freigabe, Versand und Statuswechsel einer Angebotsversion
@@ -364,9 +381,9 @@ Beim Abmelden wird das Cookie mit **denselben** Attributen (`Path`, `Secure`,
 | 2 | Datenminimierung | Feldliste je Entität mit Zweck; keine Felder „für später“ |
 | 3 | Auskunft und Export | Verfahren, wie alle Daten zu einer Person zusammengestellt und ausgegeben werden |
 | 4 | Berichtigung | Änderbarkeit der Stammdaten, ohne Geschäftsdokumente zu verfälschen |
-| 5 | Löschung / Anonymisierung | Umgesetzter Pfad, der personenbezogene Felder anonymisiert und aufbewahrungspflichtige Belege erhält |
+| 5 | Löschung | Umgesetzter Pfad, der personenbezogene Daten aus der operativen Datenbank entfernt, ohne aufbewahrungspflichtige Belege zu verlieren |
 | 6 | Aufbewahrungspflichten | Festgelegt, welche Dokumente nach HGB/AO/GoBD 6 bzw. 10 Jahre bleiben |
-| 7 | Trennung löschbar / aufbewahrungspflichtig | Dokumentiert je Tabelle: löschbar, anonymisierbar oder aufbewahrungspflichtig |
+| 7 | Trennung löschbar / aufbewahrungspflichtig | Dokumentiert je Tabelle: löschbar oder aufbewahrungspflichtig |
 | 8 | Backup und Restore | Regel, wie eine Löschung wirkt, wenn ein älteres Backup zurückgespielt wird (Wiederholung der Löschung nach Restore, protokolliert) |
 | 9 | Protokoll- und Audit-Aufbewahrung | Audit 12 Monate, Anwendungslogs 30 Tage; keine personenbezogenen Daten in Logs |
 | 10 | Auftragsverarbeitung | AV-Verträge mit **allen** Verarbeitern: Hosting, Backup, Object Storage, E-Mail-Versand, Monitoring — auch bei rein interner Nutzung, sobald Dritte beteiligt sind |
@@ -394,40 +411,42 @@ einen Zweck; Felder „für später" gibt es nicht.
 Bewusst **nicht** erhoben: Geburtsdatum, Bankverbindung, Steuernummer, Freitextnotizen
 zu Personen. Sie werden erst aufgenommen, wenn eine konkrete Funktion sie braucht.
 
-### Löschung und Anonymisierung (Punkt 5) — umgesetzt in Phase 2
+### Löschung (Punkt 5) — seit Phase 4d physisch (ADR 0020)
 
-`POST /api/v1/customers/{id}/anonymize` setzt ein Löschbegehren nach Art. 17 DSGVO um:
+> Die Anonymisierung aus Phase 2 (`POST /customers/{id}/anonymize`, `anonymized_at`,
+> Berechtigung `customer.record.anonymize`) ist mit Phase 4d **ersatzlos entfallen**.
 
-1. `name`, `contact_person`, `email`, `phone` und die Rechnungsanschrift werden
-   überschrieben, nicht nur ausgeblendet.
-2. `customer_number`, `created_at` und die Verknüpfung zu Projekten und Belegen bleiben
-   erhalten — sonst wären aufbewahrungspflichtige Dokumente nach HGB/AO nicht mehr
-   zuordenbar (Punkte 6 und 7).
-3. `anonymized_at` hält fest, wann das geschah. Der Datensatz ist danach **serverseitig
-   gesperrt**: Ein `PATCH` oder ein zweiter Anonymisierungsversuch wird mit `409`
-   abgelehnt. Andernfalls ließen sich die gelöschten Angaben einfach wieder eintragen —
-   die Löschung wäre wirkungslos.
-   *Ausblenden und Anonymisieren sind getrennt:* `deleted_at` steuert die Sichtbarkeit,
-   `anonymized_at` den Personenbezug. Ein anonymisierter Kunde bleibt sichtbar (mit
-   Platzhalternamen), damit Projekte und Belege zuordenbar bleiben; wer ihn auch aus den
-   Listen nehmen will, blendet ihn zusätzlich aus.
-6. **Keine Reaktivierung.** Für **neue** Projektzuordnungen ist ein anonymisierter Kunde
-   gesperrt (`404`) — sonst ließe sich der gelöschte Datensatz über einen neuen
-   Geschäftsvorgang wieder in Gebrauch nehmen. Die Kundenzeile wird dabei gesperrt
-   (`SELECT … FOR UPDATE`), damit Anonymisierung und Zuordnung nicht gegeneinander
-   laufen: Entweder die Zuordnung ist zuerst fertig und die Anonymisierung behält die
-   bestehende Referenz, oder die Anonymisierung gewinnt und die Zuordnung wird
-   abgelehnt. **Bestehende** Projekte bleiben in jedem Fall lesbar.
-7. **Keine Kopien der gelöschten Werte.** Weder Audit-Eintrag noch Fehlermeldung noch
-   Log enthalten die überschriebenen Angaben. Tests prüfen das für das Protokoll und
-   für die Projektliste.
-4. Der Vorgang wird protokolliert — **ohne** die gelöschten Werte. Ein Audit-Eintrag,
-   der die anonymisierten Daten konserviert, wäre das Gegenteil einer Löschung. Ein Test
-   prüft das.
-5. Die Berechtigung `customer.record.anonymize` liegt ausschließlich beim
-   Administrator, nicht bei einer Fachrolle. Auch das ist getestet.
+`DELETE /api/v1/customers/{id}` entfernt einen Kunden **physisch aus der operativen
+Datenbank**:
 
-Der Vorgang ist **nicht umkehrbar**.
+1. **Nur Administratoren** (`customer.record.delete`); keine andere Standardrolle erhält
+   das Recht – ein Architekturtest hält das fest. Die Oberfläche zeigt die Aktion nur
+   Berechtigten; verbindlich ist die Serverprüfung.
+2. **Nur ohne Projekte.** Ist dem Kunden irgendein Projekt zugeordnet – Entwurf, laufend,
+   abgeschlossen oder archiviert –, lautet die Antwort
+   `409 customer-has-projects`. Belege, die an Projekten hängen, bleiben damit zuordenbar.
+3. **Unter Sperre.** Kundenzeile sperren, `If-Match` prüfen, Projekte zählen, löschen –
+   in einer Transaktion; eine gleichzeitige Projektanlage wartet und erhält danach `404`.
+4. **Minimale Audit-Tatsache.** `customer.deleted` hält Kunden-ID, Kundennummer, Mandant,
+   Akteur und Zeitpunkt fest – keine Namen, Anschriften, E-Mail-Adressen. Ein Test prüft,
+   dass keine der gelöschten Angaben im Protokoll steht.
+5. **Kundennummer nicht wiederverwendet.** Der Nummernkreis zählt nur hoch.
+
+**Was „physisch gelöscht" nicht bedeutet:** Datensicherungen enthalten den Kunden bis zum
+Ablauf ihrer Aufbewahrungsfrist. Eine sofortige Entfernung aus allen Backups findet
+**nicht** statt; wie eine Löschung nach einem Restore wiederholt wird, ist offen
+(Punkt 8). Bereits anonymisierte Entwicklungsdatensätze aus der Zeit vor 4d bleiben mit
+ihrem Platzhalternamen stehen.
+
+**Projekte** mit Anschrift der Baustelle werden ebenso physisch gelöscht (leere Projekte
+durch Projektbearbeiter, Projekte mit Inhalt nur durch Administratoren, abgeschlossene
+und archivierte nie direkt); ihre Dateien werden über `storage_cleanup_jobs` aus dem
+Object Storage entfernt (ADR 0020).
+
+**Ersteller und Bearbeiter.** Kunden und Projekte zeigen, wer sie angelegt und zuletzt
+geändert hat. Ausgegeben wird nur der Anzeigename von Mitgliedern des eigenen Betriebs,
+nie die E-Mail-Adresse; ein Konto außerhalb des Betriebs bleibt namenlos, damit kein
+Datensatz Personen eines anderen Mandanten verrät.
 
 Was damit **weiterhin fehlt**: die Auskunft nach Art. 15 (Punkt 3) als Export, das
 Verarbeitungsverzeichnis (Punkt 11), die TOM-Dokumentation (Punkt 12), die AV-Verträge
@@ -437,18 +456,21 @@ Verarbeitungsverzeichnis (Punkt 11), die TOM-Dokumentation (Punkt 12), die AV-Ve
 ### Was Phase 1 dazu beiträgt — und was nicht
 
 Vorhanden: Mandantentrennung, rollenbasierte Zugriffskontrolle, Audit-Protokoll,
-`deleted_at` auf Geschäftsdokumenten, Ausschluss personenbezogener Daten aus
+`deleted_at` auf Geschäftsdokumenten (für Kunden und Projekte mit Phase 4d abgeschafft), Ausschluss personenbezogener Daten aus
 Logs und Event-Payloads.
 
-Nicht vorhanden: Export-, Auskunfts- und Anonymisierungsfunktionen, das
+Nicht vorhanden: Export-, Auskunfts- und Löschfunktionen, das
 Verarbeitungsverzeichnis, die TOM-Dokumentation und die AV-Verträge. Das ist
 kein Versäumnis von Phase 1 — Phase 1 verarbeitet keine personenbezogenen
 Daten außer den Konten der Entwickler. Es ist aber eine **harte Voraussetzung
 für Phase 2**.
 
-**Soft Delete allein erfüllt kein Löschbegehren.** Der Anonymisierungspfad ist mit
-Phase 2 implementiert und getestet (siehe oben) — `deleted_at` blendet lediglich aus,
-`anonymized_at` entfernt den Personenbezug.
+**Soft Delete allein erfüllt kein Löschbegehren.** Seit Phase 4d werden Kunden und
+Projekte physisch gelöscht (siehe oben). Soft Delete für Kunden und Projekte ist mit Phase 4d **abgeschafft**: Migration `0006`
+entfernt `customers.deleted_at` und `projects.deleted_at`, **löscht dabei keine Zeile**,
+und zuvor ausgeblendete Kunden und Projekte sind danach wieder normal sichtbar (Projekte
+je nach Status in der laufenden oder historischen Ansicht). Für sie gelten die Regeln
+aus ADR 0020. Archivierung ist ausschließlich der Projektstatus `archived`.
 
 ---
 

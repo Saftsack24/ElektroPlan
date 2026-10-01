@@ -7,6 +7,8 @@ import { useEinheitenwechsel, useMasse } from "../../core/ui/masseinheit";
 import { FORMULARRASTER, KNOPFZEILE, knopf, meldungsflaeche } from "../../core/ui/stil";
 import { OEFFNUNGSARTEN } from "./texte";
 import type { Oeffnungsart } from "./texte";
+import { AKTION } from "../../core/ui/aktionssymbole";
+import { MitSymbol } from "../../core/ui/Symbol";
 
 /** Maße als ganze Millimeter in Textform - in beide Richtungen. */
 export type Oeffnungswerte = {
@@ -205,7 +207,7 @@ export function OeffnungDialog({
 
         <div className={KNOPFZEILE}>
           <button className={knopf("primaer")} type="submit" disabled={laeuft}>
-            {laeuft ? "Wird gespeichert ..." : "Speichern"}
+            <MitSymbol icon={AKTION.speichern}>{laeuft ? "Wird gespeichert ..." : "Speichern"}</MitSymbol>
           </button>
           <button
             className={knopf()}

@@ -15,6 +15,8 @@ import { FELD_FEHLER, KARTENKOPF, KENNWERTE, KNOPFZEILE, STAPEL, karte, knopf, m
 import { AdminNavigation } from "./AdminNavigation";
 import { STATUS_ART, STATUS_TEXT, datum, verwaltungsfehler } from "./texte";
 import { RECHTE_BEREICH_TITEL, RECHTE_LISTE, RECHTE_RASTER, RECHTE_SCHLUESSEL } from "./rechtedarstellung";
+import { AKTION } from "../../../core/ui/aktionssymbole";
+import { MitSymbol } from "../../../core/ui/Symbol";
 
 const ADMIN_ROLLE = "admin";
 
@@ -56,7 +58,9 @@ export default function MitgliedPage() {
         <p className="m-0 text-[0.8rem] tracking-[0.04em] text-muted uppercase">Administration</p>
         <AdminNavigation />
         <p>
-          <Link to="/administration/users">← Zur Benutzerliste</Link>
+          <Link to="/administration/users">
+            <MitSymbol icon={AKTION.zurueck}>Zur Benutzerliste</MitSymbol>
+          </Link>
         </p>
         {mitglied.isPending && <p className="text-muted">Mitglied wird geladen ...</p>}
         {mitglied.isError && (

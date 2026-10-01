@@ -233,18 +233,22 @@ export interface paths {
         put?: never;
         post?: never;
         /**
-         * Kunde ausblenden
-         * @description Blendet den Kunden aus (Soft Delete).
+         * Kunden endgueltig loeschen
+         * @description Loescht den Kunden **physisch** aus der operativen Datenbank (ADR 0020).
          *
-         *     Solange nicht geloeschte Projekte an ihm haengen, wird abgelehnt: Ein
-         *     Projekt ohne auffindbaren Kunden waere ein unvollstaendiger Datensatz.
+         *     Nur Administratoren, und nur wenn dem Kunden **kein einziges** Projekt
+         *     zugeordnet ist - gleich in welchem Status.
+         *     Sonst ``409 customer-has-projects``.
          *
-         *     **Sperre, Pruefung und Aenderung liegen in einer Transaktion.** Die
-         *     Kundenzeile wird zuerst mit ``SELECT ... FOR UPDATE`` geladen; erst danach
-         *     werden die Projekte gezaehlt. Eine gleichzeitige Projektanlage sperrt
-         *     dieselbe Zeile und wartet deshalb - ein sichtbares Projekt an einem
-         *     ausgeblendeten Kunden kann nicht entstehen (docs/database.md, Abschnitt
-         *     "Sperrreihenfolge").
+         *     **Sperre, Pruefung und Loeschung liegen in einer Transaktion.** Die
+         *     Kundenzeile wird zuerst gesperrt; eine gleichzeitige Projektanlage oder ein
+         *     Kundenwechsel sperrt dieselbe Zeile und wartet. Danach findet sie den
+         *     Kunden nicht mehr (``404``) - ein Projekt ohne Kunden kann nicht entstehen.
+         *
+         *     Das Protokoll haelt nur Kunden-ID und Kundennummer fest, keine
+         *     personenbezogenen Daten. Die Kundennummer wird nie wiederverwendet.
+         *     Backups enthalten den Datensatz bis zum Ablauf ihrer Aufbewahrungsfrist
+         *     (docs/security.md, Abschnitt 13).
          */
         delete: operations["deleteCustomer"];
         options?: never;
@@ -254,30 +258,6 @@ export interface paths {
          * @description Aendert einzelne Felder. Die Kundennummer bleibt unveraendert.
          */
         patch: operations["updateCustomer"];
-        trace?: never;
-    };
-    "/api/v1/customers/{customer_id}/anonymize": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Kundendaten anonymisieren
-         * @description Setzt ein Loeschbegehren um (Art. 17 DSGVO).
-         *
-         *     Die personenbezogenen Felder werden ueberschrieben; Kundennummer und
-         *     Belegzuordnung bleiben erhalten, damit aufbewahrungspflichtige Dokumente
-         *     nach HGB/AO zuordenbar bleiben. **Der Vorgang ist nicht umkehrbar.**
-         */
-        post: operations["anonymizeCustomer"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
         trace?: never;
     };
     "/api/v1/projects": {
@@ -322,12 +302,22 @@ export interface paths {
         put?: never;
         post?: never;
         /**
-         * Projekt ausblenden
-         * @description Blendet das Projekt aus (Soft Delete). Gebaeude und Dateien bleiben.
+         * Projekt endgueltig loeschen
+         * @description Loescht ein Projekt **endgueltig** samt Struktur, Dateien und Planungsdaten.
          *
-         *     Funktioniert **auch bei archivierten Projekten**: Das Ausblenden ist kein
-         *     inhaltlicher Eingriff, sondern ein Aufraeumschritt. Ohne diese Ausnahme
-         *     liessen sich Kunden mit archivierten Projekten nie mehr ausblenden.
+         *     Nur ``draft`` und ``active``. Ein leeres Projekt duerfen alle mit
+         *     ``project.record.delete`` loeschen, ein Projekt mit Inhalt nur, wer
+         *     zusaetzlich ``project.record.purge`` hat - und nur mit
+         *     ``confirm_project_number``. Alles wird unter der Projektsperre in einer
+         *     Transaktion geprueft und geloescht (ADR 0020).
+         *
+         *     Die Storage-Objekte der Dateien werden in derselben Transaktion zur
+         *     Loeschung vorgemerkt und erst **nach** dem Commit entfernt. Scheitert das,
+         *     bleibt der Auftrag offen (``python -m app.cli storage-cleanup``); die
+         *     Antwort ist trotzdem ``204``, denn das Projekt ist geloescht.
+         *
+         *     Die Projektnummer wird nie wiederverwendet: Der Nummernkreis zaehlt nur
+         *     hoch.
          */
         delete: operations["deleteProject"];
         options?: never;
@@ -339,6 +329,29 @@ export interface paths {
          *     Ein archiviertes Projekt ist schreibgeschuetzt und liefert ``409``.
          */
         patch: operations["updateProject"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/deletion-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Loeschwirkung eines Projekts pruefen
+         * @description Was eine Loeschung bedeuten wuerde - fuer den Bestaetigungsdialog.
+         *
+         *     **Keine Autorisierung und keine Garantie:** ``DELETE`` prueft Status,
+         *     Inhalte und Berechtigung erneut unter der Projektsperre (ADR 0020).
+         */
+        get: operations["checkProjectDeletion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/projects/{project_id}/activate": {
@@ -395,6 +408,29 @@ export interface paths {
          * @description Archiviert das Projekt. Aus ``archived`` fuehrt kein Weg zurueck.
          */
         post: operations["archiveProject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project_id}/reopen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Abgeschlossenes Projekt wieder in Bearbeitung setzen
+         * @description ``completed -> active``. Nur Administratoren; ``archived`` bleibt endgueltig.
+         *
+         *     Danach gilt das Projekt wieder als laufend und unterliegt allen Regeln
+         *     eines aktiven Projekts (ADR 0020).
+         */
+        post: operations["reopenProject"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1450,8 +1486,6 @@ export interface components {
             billing_city: string | null;
             /** Billing Country Code */
             billing_country_code: string;
-            /** Anonymized At */
-            anonymized_at: string | null;
             /** Version */
             version: number;
             /**
@@ -1464,6 +1498,8 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            created_by: components["schemas"]["UserReference"];
+            updated_by: components["schemas"]["UserReference"];
         };
         /**
          * CustomerUpdate
@@ -2132,6 +2168,18 @@ export interface components {
             keys?: string[] | null;
         };
         /**
+         * ProjectContentOut
+         * @description Eine erkannte Inhaltsart - aus dem Core oder einem Fachmodul.
+         */
+        ProjectContentOut: {
+            /** Code */
+            code: string;
+            /** Label */
+            label: string;
+            /** Count */
+            count: number | null;
+        };
+        /**
          * ProjectCreate
          * @description Neues Projekt. Die Projektnummer vergibt der Nummernkreis.
          */
@@ -2154,6 +2202,47 @@ export interface components {
              * @default DE
              */
             site_country_code: string;
+        };
+        /**
+         * ProjectDeletionCheck
+         * @description Vorpruefung einer Projektloeschung (ADR 0020).
+         *
+         *     **Keine Autorisierung und keine Garantie.** Die Loeschung prueft alles
+         *     erneut unter der Projektsperre.
+         */
+        ProjectDeletionCheck: {
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Project Number */
+            project_number: string;
+            /** Name */
+            name: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "draft" | "active" | "completed" | "archived";
+            /** Version */
+            version: number;
+            /** Is Empty */
+            is_empty: boolean;
+            /** Contents */
+            contents: components["schemas"]["ProjectContentOut"][];
+            /** Status Allows Deletion */
+            status_allows_deletion: boolean;
+            /** Can Delete */
+            can_delete: boolean;
+            /** Requires Admin */
+            requires_admin: boolean;
+            /** Requires Number Confirmation */
+            requires_number_confirmation: boolean;
+            /** Blocked Code */
+            blocked_code: ("status" | "permission") | null;
+            /** Blocked Reason */
+            blocked_reason: string | null;
         };
         /** ProjectOut */
         ProjectOut: {
@@ -2196,6 +2285,8 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            created_by: components["schemas"]["UserReference"];
+            updated_by: components["schemas"]["UserReference"];
         };
         /**
          * ProjectSummary
@@ -2238,6 +2329,8 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            created_by: components["schemas"]["UserReference"];
+            updated_by: components["schemas"]["UserReference"];
         };
         /**
          * ProjectUpdate
@@ -2521,6 +2614,21 @@ export interface components {
              * Format: uuid
              */
             organization_id: string;
+        };
+        /**
+         * UserReference
+         * @description Bearbeiter eines Datensatzes, wie die Oberflaeche ihn zeigen darf.
+         */
+        UserReference: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "member" | "unknown" | "system";
+            /** User Id */
+            user_id?: string | null;
+            /** Display Name */
+            display_name?: string | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -3087,6 +3195,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Berechtigung fehlt */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
             /** @description Nicht gefunden */
             404: {
                 headers: {
@@ -3096,7 +3213,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Versionskonflikt */
+            /** @description Versionskonflikt oder dem Kunden sind Projekte zugeordnet */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3141,66 +3258,6 @@ export interface operations {
                 "application/json": components["schemas"]["CustomerUpdate"];
             };
         };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CustomerOut"];
-                };
-            };
-            /** @description Nicht gefunden */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Versionskonflikt */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetail"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description If-Match fehlt */
-            428: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ProblemDetail"];
-                };
-            };
-        };
-    };
-    anonymizeCustomer: {
-        parameters: {
-            query?: never;
-            header?: {
-                "If-Match"?: string | null;
-            };
-            path: {
-                customer_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -3373,7 +3430,10 @@ export interface operations {
     };
     deleteProject: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Pflicht, wenn das Projekt Inhalte hat: die Projektnummer als ausdrueckliche Bestaetigung des Verlusts. */
+                confirm_project_number?: string | null;
+            };
             header?: {
                 "If-Match"?: string | null;
             };
@@ -3391,6 +3451,15 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Berechtigung fehlt */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
             /** @description Nicht gefunden */
             404: {
                 headers: {
@@ -3400,7 +3469,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt */
+            /** @description Versionskonflikt, Projekt abgeschlossen oder archiviert, oder Bestaetigung der Projektnummer fehlt */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3420,6 +3489,15 @@ export interface operations {
             };
             /** @description If-Match fehlt */
             428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Ein Teilnehmer ist gescheitert */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3489,6 +3567,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    checkProjectDeletion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectDeletionCheck"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -3633,6 +3751,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    reopenProject: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectOut"];
+                };
+            };
+            /** @description Berechtigung fehlt */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
             /** @description Nicht gefunden */

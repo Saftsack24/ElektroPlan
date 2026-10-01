@@ -1,8 +1,10 @@
 import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 
+import { AKTION } from "./aktionssymbole";
 import { seitenScrollSperren } from "./scrollsperre";
 import { knopf } from "./stil";
+import { Symbol } from "./Symbol";
 
 /**
  * Modaler Dialog auf Basis des nativen `<dialog>`-Elements.
@@ -133,9 +135,10 @@ export function Dialog({
           type="button"
           className={knopf()}
           aria-label="Dialog schließen"
+          title="Dialog schließen"
           onClick={onClose}
         >
-          ✕
+          <Symbol icon={AKTION.schliessen} />
         </button>
       </div>
       <div

@@ -92,7 +92,7 @@ Modulregistrierung und generiertem API-Client.
 
 **Phase 2 — Core Business Data — abgeschlossen und abgenommen.**
 Kunden, Projekte, Gebäude und Geschosse mit Nummernkreisen und optimistischem Sperren;
-Projektdateien gegen MinIO; Anonymisierungspfad nach Art. 17 DSGVO; Oberfläche mit
+Projektdateien gegen MinIO; (bis Phase 4d) Anonymisierungspfad; Oberfläche mit
 Kunden- und Projektverwaltung und einer Projektansicht, in die sich Fachmodule ab
 Phase 3 mit eigenen Tabs einhängen.
 
@@ -144,6 +144,26 @@ Unter „Einstellungen" wählt jeder Benutzer **Darstellung** (Wie das System, H
 Stand her. Gespeichert wird **nur in diesem Browser, je Benutzer**
 (`elektroplan.darstellung.<user_id>`); auf einem anderen Gerät gilt der Standard.
 Warnfarbe und Umrisse von Eingabefeldern und Knöpfen erfüllen jetzt WCAG AA bzw. 3 : 1.
+
+**Phase 4d — Datenlebenszyklus — abgeschlossen** (mit diesem Checkpoint committet).
+Versehentlich angelegte, **leere** Projekte löschen Projektbearbeiter; Projekte mit Inhalt
+löscht nur ein Administrator nach Eingabe der Projektnummer. Abgeschlossene und
+archivierte Projekte verschwinden aus der Hauptliste (Umschaltung
+„Abgeschlossene & archivierte anzeigen"); ein Administrator kann ein abgeschlossenes
+Projekt wieder in Bearbeitung setzen, archivierte bleiben endgültig. Kunden ohne Projekte
+löscht ein Administrator physisch – die frühere Anonymisierung ist entfallen, ebenso
+das Ausblenden (Soft Delete): Die Migration entfernt die Markierung, löscht keine Zeile,
+und früher ausgeblendete Kunden und Projekte sind wieder sichtbar. Kunden und
+Projekte zeigen, wer sie angelegt und zuletzt geändert hat. Aktionen tragen einheitliche
+Icons (`lucide-react`). Regeln und Protokoll:
+[ADR 0020](docs/decisions/0020-data-lifecycle-deletion-and-reopen.md).
+
+> **Nach dem Aktualisieren auf 4d:** `.\tasks.ps1 migrate` (Migration `0006`), danach
+> `.\tasks.ps1 seed` – erst der Seed legt `project.record.purge` und
+> `project.record.reopen` an und gibt dem Planer `project.record.delete`. Das
+> Planner-Image neu bauen (`docker compose build planner`, neue Abhängigkeit
+> `lucide-react`). Offene Storage-Aufräumaufträge arbeitet
+> `python -m app.cli storage-cleanup` ab.
 
 > **Einladungen in der Entwicklung:** Es gibt noch keinen E-Mail-Versand. Mit
 > `ELEKTROPLAN_INVITATION_DELIVERY=development_link` (in `docker-compose.yml` gesetzt)
@@ -253,6 +273,7 @@ bewusst nicht ersatzweise gegen SQLite.
 | `.\tasks.ps1 migrate` | Alembic upgrade head |
 | `.\tasks.ps1 openapi` | OpenAPI exportieren und API-Client neu erzeugen |
 | `docker exec elektroplan-backend python -m app.cli purge-invitations` | abgeschlossene und abgelaufene Einladungen nach der Aufbewahrungsfrist (30 Tage) löschen |
+| `docker exec elektroplan-backend python -m app.cli storage-cleanup` | offene Storage-Aufräumaufträge gelöschter Projekte erneut abarbeiten (idempotent; Exitcode 1, solange Aufträge offen sind) |
 
 ---
 

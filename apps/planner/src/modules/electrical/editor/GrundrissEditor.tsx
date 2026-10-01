@@ -33,6 +33,8 @@ import { Zeichenflaeche } from "./Zeichenflaeche";
 import type { Raumdarstellung } from "./Zeichenflaeche";
 import { ANFANG, editorReducer, fehlerhafteKeys, ungespeichert } from "./zustand";
 import type { Auswahl, Speicherstatus, Werkzeug } from "./zustand";
+import { AKTION } from "../../../core/ui/aktionssymbole";
+import { Symbol } from "../../../core/ui/Symbol";
 
 
 const STATUS_TEXT: Record<Speicherstatus, string> = {
@@ -616,9 +618,10 @@ export function GrundrissEditor({
               type="button"
               className={`${knopf()} pointer-events-auto`}
               aria-label="Hinweis schließen"
+              title="Hinweis schließen"
               onClick={() => setHinweis(null)}
             >
-              ✕
+              <Symbol icon={AKTION.schliessen} />
             </button>
           </p>
         )}

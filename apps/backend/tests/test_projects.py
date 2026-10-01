@@ -441,7 +441,7 @@ def test_kombination_aus_suche_kunde_status_und_seite(
     assert gruppe["total_items"] == 4
 
 
-def test_ausgeblendetes_projekt_verschwindet(
+def test_geloeschtes_projekt_verschwindet(
     api: TestClient, token: str, kunde: dict[str, object]
 ) -> None:
     projekt = _projekt(api, token, kunde["id"])
@@ -723,13 +723,11 @@ def test_projektanlage_mit_aktivem_kunden_funktioniert(
     assert projekt["customer_id"] == kunde["id"]
 
 
-def test_projektanlage_mit_ausgeblendetem_kunden_wird_abgelehnt(
-    api: TestClient, token: str
-) -> None:
-    ausgeblendet = _kunde(api, token, "Ausgeblendet GmbH")
+def test_projektanlage_mit_geloeschtem_kunden_wird_abgelehnt(api: TestClient, token: str) -> None:
+    geloescht = _kunde(api, token, "Geloescht GmbH")
     assert (
         api.delete(
-            f"/api/v1/customers/{ausgeblendet['id']}",
+            f"/api/v1/customers/{geloescht['id']}",
             headers={**auth_headers(token), "If-Match": "1"},
         ).status_code
         == 204
@@ -738,29 +736,7 @@ def test_projektanlage_mit_ausgeblendetem_kunden_wird_abgelehnt(
     response = api.post(
         "/api/v1/projects",
         headers=auth_headers(token),
-        json={"customer_id": ausgeblendet["id"], "name": "Neubau", "site_country_code": "DE"},
-    )
-
-    assert response.status_code == 404
-
-
-def test_projektanlage_mit_anonymisiertem_kunden_wird_abgelehnt(
-    api: TestClient, token: str
-) -> None:
-    """Ein anonymisierter Kunde bleibt lesbar, aber nicht reaktivierbar."""
-    anonym = _kunde(api, token, "Erika Musterfrau")
-    assert (
-        api.post(
-            f"/api/v1/customers/{anonym['id']}/anonymize",
-            headers={**auth_headers(token), "If-Match": "1"},
-        ).status_code
-        == 200
-    )
-
-    response = api.post(
-        "/api/v1/projects",
-        headers=auth_headers(token),
-        json={"customer_id": anonym["id"], "name": "Neubau", "site_country_code": "DE"},
+        json={"customer_id": geloescht["id"], "name": "Neubau", "site_country_code": "DE"},
     )
 
     assert response.status_code == 404
@@ -782,77 +758,23 @@ def test_projekt_laesst_sich_auf_einen_anderen_aktiven_kunden_umhaengen(
     assert response.json()["customer_id"] == anderer["id"]
 
 
-def test_umhaengen_auf_ausgeblendeten_kunden_wird_abgelehnt(
+def test_umhaengen_auf_geloeschten_kunden_wird_abgelehnt(
     api: TestClient, token: str, kunde: dict[str, object]
 ) -> None:
     projekt = _projekt(api, token, kunde["id"])
-    ausgeblendet = _kunde(api, token, "Ausgeblendet GmbH")
+    geloescht = _kunde(api, token, "Geloescht GmbH")
     api.delete(
-        f"/api/v1/customers/{ausgeblendet['id']}",
+        f"/api/v1/customers/{geloescht['id']}",
         headers={**auth_headers(token), "If-Match": "1"},
     )
 
     response = api.patch(
         f"/api/v1/projects/{projekt['id']}",
         headers={**auth_headers(token), "If-Match": "1"},
-        json={"customer_id": ausgeblendet["id"]},
+        json={"customer_id": geloescht["id"]},
     )
 
     assert response.status_code == 404
-
-
-def test_umhaengen_auf_anonymisierten_kunden_wird_abgelehnt(
-    api: TestClient, token: str, kunde: dict[str, object]
-) -> None:
-    projekt = _projekt(api, token, kunde["id"])
-    anonym = _kunde(api, token, "Erika Musterfrau")
-    api.post(
-        f"/api/v1/customers/{anonym['id']}/anonymize",
-        headers={**auth_headers(token), "If-Match": "1"},
-    )
-
-    response = api.patch(
-        f"/api/v1/projects/{projekt['id']}",
-        headers={**auth_headers(token), "If-Match": "1"},
-        json={"customer_id": anonym["id"]},
-    )
-
-    assert response.status_code == 404
-
-
-def test_bestehendes_projekt_bleibt_nach_der_anonymisierung_lesbar(
-    api: TestClient, token: str
-) -> None:
-    """Belege muessen zuordenbar bleiben - das ist der Zweck der Anonymisierung."""
-    bauherr = _kunde(api, token, "Erika Musterfrau")
-    projekt = _projekt(api, token, bauherr["id"])
-    api.post(
-        f"/api/v1/customers/{bauherr['id']}/anonymize",
-        headers={**auth_headers(token), "If-Match": "1"},
-    )
-
-    response = api.get(f"/api/v1/projects/{projekt['id']}", headers=auth_headers(token))
-
-    assert response.status_code == 200
-    assert response.json()["customer_id"] == bauherr["id"]
-
-
-def test_projektliste_zeigt_nach_der_anonymisierung_nur_den_platzhalter(
-    api: TestClient, token: str
-) -> None:
-    """Keine frueheren Personendaten in der Liste."""
-    bauherr = _kunde(api, token, "Erika Musterfrau")
-    _projekt(api, token, bauherr["id"])
-    api.post(
-        f"/api/v1/customers/{bauherr['id']}/anonymize",
-        headers={**auth_headers(token), "If-Match": "1"},
-    )
-
-    body = api.get("/api/v1/projects", headers=auth_headers(token)).json()
-
-    assert len(body["items"]) == 1
-    assert "Musterfrau" not in str(body)
-    assert body["items"][0]["customer_name"] == "Geloeschter Kunde"
 
 
 def test_unbekannter_kunde_liefert_beim_umhaengen_404(
@@ -984,33 +906,6 @@ def test_archiviertes_projekt_bleibt_vollstaendig_lesbar(
         == 200
     )
     assert api.get("/api/v1/projects", headers=auth_headers(token)).json()["items"]
-
-
-def test_archiviertes_projekt_laesst_sich_weiterhin_ausblenden(
-    api: TestClient, token: str, kunde: dict[str, object]
-) -> None:
-    """Bewusste Ausnahme vom Schreibschutz.
-
-    Ohne sie liesse sich ein Kunde mit archiviertem Projekt nie mehr
-    ausblenden - die Kundenloeschung zaehlt offene Projekte.
-    """
-    projekt = _projekt(api, token, kunde["id"])
-    archiviert = api.post(
-        f"/api/v1/projects/{projekt['id']}/archive",
-        headers={**auth_headers(token), "If-Match": "1"},
-    ).json()
-
-    antwort = api.delete(
-        f"/api/v1/projects/{projekt['id']}",
-        headers={**auth_headers(token), "If-Match": str(archiviert["version"])},
-    )
-
-    assert antwort.status_code == 204
-    kunde_weg = api.delete(
-        f"/api/v1/customers/{kunde['id']}",
-        headers={**auth_headers(token), "If-Match": "1"},
-    )
-    assert kunde_weg.status_code == 204
 
 
 def test_aus_archiviert_fuehrt_weiterhin_kein_statuswechsel_zurueck(

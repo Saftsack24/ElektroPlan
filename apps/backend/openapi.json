@@ -691,8 +691,8 @@
         "tags": [
           "customers"
         ],
-        "summary": "Kunde ausblenden",
-        "description": "Blendet den Kunden aus (Soft Delete).\n\nSolange nicht geloeschte Projekte an ihm haengen, wird abgelehnt: Ein\nProjekt ohne auffindbaren Kunden waere ein unvollstaendiger Datensatz.\n\n**Sperre, Pruefung und Aenderung liegen in einer Transaktion.** Die\nKundenzeile wird zuerst mit ``SELECT ... FOR UPDATE`` geladen; erst danach\nwerden die Projekte gezaehlt. Eine gleichzeitige Projektanlage sperrt\ndieselbe Zeile und wartet deshalb - ein sichtbares Projekt an einem\nausgeblendeten Kunden kann nicht entstehen (docs/database.md, Abschnitt\n\"Sperrreihenfolge\").",
+        "summary": "Kunden endgueltig loeschen",
+        "description": "Loescht den Kunden **physisch** aus der operativen Datenbank (ADR 0020).\n\nNur Administratoren, und nur wenn dem Kunden **kein einziges** Projekt\nzugeordnet ist - gleich in welchem Status.\nSonst ``409 customer-has-projects``.\n\n**Sperre, Pruefung und Loeschung liegen in einer Transaktion.** Die\nKundenzeile wird zuerst gesperrt; eine gleichzeitige Projektanlage oder ein\nKundenwechsel sperrt dieselbe Zeile und wartet. Danach findet sie den\nKunden nicht mehr (``404``) - ein Projekt ohne Kunden kann nicht entstehen.\n\nDas Protokoll haelt nur Kunden-ID und Kundennummer fest, keine\npersonenbezogenen Daten. Die Kundennummer wird nie wiederverwendet.\nBackups enthalten den Datensatz bis zum Ablauf ihrer Aufbewahrungsfrist\n(docs/security.md, Abschnitt 13).",
         "operationId": "deleteCustomer",
         "parameters": [
           {
@@ -726,92 +726,12 @@
           "204": {
             "description": "Successful Response"
           },
-          "404": {
-            "description": "Nicht gefunden",
+          "403": {
+            "description": "Berechtigung fehlt",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Versionskonflikt",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "428": {
-            "description": "If-Match fehlt",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetail"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/customers/{customer_id}/anonymize": {
-      "post": {
-        "tags": [
-          "customers"
-        ],
-        "summary": "Kundendaten anonymisieren",
-        "description": "Setzt ein Loeschbegehren um (Art. 17 DSGVO).\n\nDie personenbezogenen Felder werden ueberschrieben; Kundennummer und\nBelegzuordnung bleiben erhalten, damit aufbewahrungspflichtige Dokumente\nnach HGB/AO zuordenbar bleiben. **Der Vorgang ist nicht umkehrbar.**",
-        "operationId": "anonymizeCustomer",
-        "parameters": [
-          {
-            "name": "customer_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Customer Id"
-            }
-          },
-          {
-            "name": "If-Match",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CustomerOut"
                 }
               }
             }
@@ -827,7 +747,7 @@
             }
           },
           "409": {
-            "description": "Versionskonflikt",
+            "description": "Versionskonflikt oder dem Kunden sind Projekte zugeordnet",
             "content": {
               "application/json": {
                 "schema": {
@@ -1219,8 +1139,8 @@
         "tags": [
           "projects"
         ],
-        "summary": "Projekt ausblenden",
-        "description": "Blendet das Projekt aus (Soft Delete). Gebaeude und Dateien bleiben.\n\nFunktioniert **auch bei archivierten Projekten**: Das Ausblenden ist kein\ninhaltlicher Eingriff, sondern ein Aufraeumschritt. Ohne diese Ausnahme\nliessen sich Kunden mit archivierten Projekten nie mehr ausblenden.",
+        "summary": "Projekt endgueltig loeschen",
+        "description": "Loescht ein Projekt **endgueltig** samt Struktur, Dateien und Planungsdaten.\n\nNur ``draft`` und ``active``. Ein leeres Projekt duerfen alle mit\n``project.record.delete`` loeschen, ein Projekt mit Inhalt nur, wer\nzusaetzlich ``project.record.purge`` hat - und nur mit\n``confirm_project_number``. Alles wird unter der Projektsperre in einer\nTransaktion geprueft und geloescht (ADR 0020).\n\nDie Storage-Objekte der Dateien werden in derselben Transaktion zur\nLoeschung vorgemerkt und erst **nach** dem Commit entfernt. Scheitert das,\nbleibt der Auftrag offen (``python -m app.cli storage-cleanup``); die\nAntwort ist trotzdem ``204``, denn das Projekt ist geloescht.\n\nDie Projektnummer wird nie wiederverwendet: Der Nummernkreis zaehlt nur\nhoch.",
         "operationId": "deleteProject",
         "parameters": [
           {
@@ -1232,6 +1152,25 @@
               "format": "uuid",
               "title": "Project Id"
             }
+          },
+          {
+            "name": "confirm_project_number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 30
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Pflicht, wenn das Projekt Inhalte hat: die Projektnummer als ausdrueckliche Bestaetigung des Verlusts.",
+              "title": "Confirm Project Number"
+            },
+            "description": "Pflicht, wenn das Projekt Inhalte hat: die Projektnummer als ausdrueckliche Bestaetigung des Verlusts."
           },
           {
             "name": "If-Match",
@@ -1254,6 +1193,16 @@
           "204": {
             "description": "Successful Response"
           },
+          "403": {
+            "description": "Berechtigung fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Nicht gefunden",
             "content": {
@@ -1265,7 +1214,7 @@
             }
           },
           "409": {
-            "description": "Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt",
+            "description": "Versionskonflikt, Projekt abgeschlossen oder archiviert, oder Bestaetigung der Projektnummer fehlt",
             "content": {
               "application/json": {
                 "schema": {
@@ -1276,6 +1225,70 @@
           },
           "428": {
             "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Ein Teilnehmer ist gescheitert",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/deletion-check": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Loeschwirkung eines Projekts pruefen",
+        "description": "Was eine Loeschung bedeuten wuerde - fuer den Bestaetigungsdialog.\n\n**Keine Autorisierung und keine Garantie:** ``DELETE`` prueft Status,\nInhalte und Berechtigung erneut unter der Projektsperre (ADR 0020).",
+        "operationId": "checkProjectDeletion",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectDeletionCheck"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
             "content": {
               "application/json": {
                 "schema": {
@@ -1520,6 +1533,106 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProjectOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_id}/reopen": {
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "Abgeschlossenes Projekt wieder in Bearbeitung setzen",
+        "description": "``completed -> active``. Nur Administratoren; ``archived`` bleibt endgueltig.\n\nDanach gilt das Projekt wieder als laufend und unterliegt allen Regeln\neines aktiven Projekts (ADR 0020).",
+        "operationId": "reopenProject",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Berechtigung fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
                 }
               }
             }
@@ -5506,18 +5619,6 @@
             "type": "string",
             "title": "Billing Country Code"
           },
-          "anonymized_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Anonymized At"
-          },
           "version": {
             "type": "integer",
             "title": "Version"
@@ -5531,6 +5632,12 @@
             "type": "string",
             "format": "date-time",
             "title": "Updated At"
+          },
+          "created_by": {
+            "$ref": "#/components/schemas/UserReference"
+          },
+          "updated_by": {
+            "$ref": "#/components/schemas/UserReference"
           }
         },
         "type": "object",
@@ -5546,10 +5653,11 @@
           "billing_postal_code",
           "billing_city",
           "billing_country_code",
-          "anonymized_at",
           "version",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "created_by",
+          "updated_by"
         ],
         "title": "CustomerOut"
       },
@@ -7166,6 +7274,37 @@
         "title": "ProblemFieldError",
         "description": "Einzelner Feldfehler innerhalb einer Problemantwort."
       },
+      "ProjectContentOut": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "label",
+          "count"
+        ],
+        "title": "ProjectContentOut",
+        "description": "Eine erkannte Inhaltsart - aus dem Core oder einem Fachmodul."
+      },
       "ProjectCreate": {
         "properties": {
           "customer_id": {
@@ -7231,6 +7370,108 @@
         ],
         "title": "ProjectCreate",
         "description": "Neues Projekt. Die Projektnummer vergibt der Nummernkreis."
+      },
+      "ProjectDeletionCheck": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "project_number": {
+            "type": "string",
+            "title": "Project Number"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "active",
+              "completed",
+              "archived"
+            ],
+            "title": "Status"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "is_empty": {
+            "type": "boolean",
+            "title": "Is Empty"
+          },
+          "contents": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectContentOut"
+            },
+            "type": "array",
+            "title": "Contents"
+          },
+          "status_allows_deletion": {
+            "type": "boolean",
+            "title": "Status Allows Deletion"
+          },
+          "can_delete": {
+            "type": "boolean",
+            "title": "Can Delete"
+          },
+          "requires_admin": {
+            "type": "boolean",
+            "title": "Requires Admin"
+          },
+          "requires_number_confirmation": {
+            "type": "boolean",
+            "title": "Requires Number Confirmation"
+          },
+          "blocked_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "status",
+                  "permission"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked Code"
+          },
+          "blocked_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "project_number",
+          "name",
+          "status",
+          "version",
+          "is_empty",
+          "contents",
+          "status_allows_deletion",
+          "can_delete",
+          "requires_admin",
+          "requires_number_confirmation",
+          "blocked_code",
+          "blocked_reason"
+        ],
+        "title": "ProjectDeletionCheck",
+        "description": "Vorpruefung einer Projektloeschung (ADR 0020).\n\n**Keine Autorisierung und keine Garantie.** Die Loeschung prueft alles\nerneut unter der Projektsperre."
       },
       "ProjectOut": {
         "properties": {
@@ -7312,6 +7553,12 @@
             "type": "string",
             "format": "date-time",
             "title": "Updated At"
+          },
+          "created_by": {
+            "$ref": "#/components/schemas/UserReference"
+          },
+          "updated_by": {
+            "$ref": "#/components/schemas/UserReference"
           }
         },
         "type": "object",
@@ -7327,7 +7574,9 @@
           "site_country_code",
           "version",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "created_by",
+          "updated_by"
         ],
         "title": "ProjectOut"
       },
@@ -7389,6 +7638,12 @@
             "type": "string",
             "format": "date-time",
             "title": "Updated At"
+          },
+          "created_by": {
+            "$ref": "#/components/schemas/UserReference"
+          },
+          "updated_by": {
+            "$ref": "#/components/schemas/UserReference"
           }
         },
         "type": "object",
@@ -7402,7 +7657,9 @@
           "site_city",
           "version",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "created_by",
+          "updated_by"
         ],
         "title": "ProjectSummary",
         "description": "Listeneintrag - mit dem Kundennamen, damit die Liste ohne\nFolgeabfragen lesbar ist."
@@ -8061,6 +8318,48 @@
         ],
         "title": "TokenResponse",
         "description": "Antwort des Webflows.\n\nEnthaelt **keinen** Refresh Token: Der liegt ausschliesslich im\nHttpOnly-Cookie und ist fuer JavaScript nicht lesbar. Wuerde er zusaetzlich\nim JSON stehen, waere der HttpOnly-Schutz gegen XSS wirkungslos\n(docs/security.md, Abschnitt 3).\n\nDie spaetere Baustellen-App erhaelt einen ausdruecklich getrennten mobilen\nTokenflow mit sicherem Geraetespeicher - nicht dieses Schema."
+      },
+      "UserReference": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "member",
+              "unknown",
+              "system"
+            ],
+            "title": "Kind"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "UserReference",
+        "description": "Bearbeiter eines Datensatzes, wie die Oberflaeche ihn zeigen darf."
       },
       "ValidationError": {
         "properties": {

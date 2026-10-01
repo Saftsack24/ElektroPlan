@@ -19,7 +19,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.mixins import (
     Authored,
-    SoftDeletable,
     TenantScoped,
     Timestamped,
     UUIDPrimaryKey,
@@ -48,6 +47,18 @@ PROJECT_STATUS_TRANSITIONS: dict[str, frozenset[str]] = {
     PROJECT_STATUS_ARCHIVED: frozenset(),
 }
 
+#: Die **einzige** Rueckkehr aus einem Endzustand: ``completed -> active``.
+#: Bewusst nicht Teil von ``PROJECT_STATUS_TRANSITIONS`` - sie ist ein eigener,
+#: administrativer Vorgang mit eigener Berechtigung und eigenem Endpunkt
+#: (ADR 0020). ``archived`` bleibt endgueltig.
+PROJECT_REOPEN_FROM = PROJECT_STATUS_COMPLETED
+PROJECT_REOPEN_TO = PROJECT_STATUS_ACTIVE
+
+#: Nur in diesen Zustaenden darf ein Projekt endgueltig geloescht werden.
+PROJECT_DELETABLE_STATUSES: frozenset[str] = frozenset(
+    {PROJECT_STATUS_DRAFT, PROJECT_STATUS_ACTIVE}
+)
+
 #: Statusgruppen fuer Listenfilter (``status_group``). ``current``: noch
 #: laufende Vorgaenge - ein Entwurf zaehlt dazu. ``closed``: abgeschlossen
 #: oder archiviert. Zusammen decken sie jeden Status genau einmal ab.
@@ -57,8 +68,12 @@ PROJECT_STATUS_GROUPS: dict[str, tuple[str, ...]] = {
 }
 
 
-class Project(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, SoftDeletable, Authored, Base):
-    """Ein Bauvorhaben eines Kunden."""
+class Project(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, Authored, Base):
+    """Ein Bauvorhaben eines Kunden.
+
+    Kein Soft Delete (seit Phase 4d): Ein Projekt wird ueber seinen Status gefuehrt -
+    ``archived`` ist die einzige Archivierung - oder nach ADR 0020 physisch geloescht.
+    """
 
     __tablename__ = "projects"
     __table_args__ = (

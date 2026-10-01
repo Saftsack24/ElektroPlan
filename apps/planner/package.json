@@ -16,6 +16,7 @@
     "@elektroplan/api-client": "*",
     "@tanstack/react-query": "^5.62.0",
     "decimal.js-light": "^2.5.1",
+    "lucide-react": "^1.49.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.1.0",

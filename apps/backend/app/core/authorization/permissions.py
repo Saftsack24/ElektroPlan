@@ -23,13 +23,18 @@ ROLE_ASSIGNMENT_READ = "role.assignment.read"
 ROLE_ASSIGNMENT_WRITE = "role.assignment.write"
 CUSTOMER_RECORD_READ = "customer.record.read"
 CUSTOMER_RECORD_WRITE = "customer.record.write"
+#: Endgueltiges Loeschen eines Kunden ohne Projekte - **nur Administrator**
+#: (ADR 0020). Ersetzt seit Phase 4d das Ausblenden und die Anonymisierung.
 CUSTOMER_RECORD_DELETE = "customer.record.delete"
-#: Getrennt von ``delete``: Die Anonymisierung ist nicht umkehrbar und setzt
-#: ein Loeschbegehren nach Art. 17 DSGVO um (docs/security.md, Abschnitt 13).
-CUSTOMER_RECORD_ANONYMIZE = "customer.record.anonymize"
 PROJECT_RECORD_READ = "project.record.read"
 PROJECT_RECORD_WRITE = "project.record.write"
+#: Endgueltiges Loeschen eines **leeren** Projekts (Entwurf oder in
+#: Bearbeitung). Erhalten genau die Rollen, die Projekte bearbeiten duerfen.
 PROJECT_RECORD_DELETE = "project.record.delete"
+#: Endgueltiges Loeschen eines Projekts **mit Inhalt** - nur Administrator.
+PROJECT_RECORD_PURGE = "project.record.purge"
+#: ``completed -> active`` - nur Administrator (ADR 0020).
+PROJECT_RECORD_REOPEN = "project.record.reopen"
 AUDIT_ENTRY_READ = "audit.entry.read"
 FILE_OBJECT_READ = "file.object.read"
 FILE_OBJECT_WRITE = "file.object.write"
@@ -58,11 +63,12 @@ CORE_PERMISSIONS: tuple[PermissionDef, ...] = (
     PermissionDef(ROLE_ASSIGNMENT_WRITE, "Rollen und Rechte vergeben"),
     PermissionDef(CUSTOMER_RECORD_READ, "Kunden ansehen"),
     PermissionDef(CUSTOMER_RECORD_WRITE, "Kunden anlegen und bearbeiten"),
-    PermissionDef(CUSTOMER_RECORD_DELETE, "Kunden ausblenden"),
-    PermissionDef(CUSTOMER_RECORD_ANONYMIZE, "Kundendaten unwiderruflich anonymisieren"),
+    PermissionDef(CUSTOMER_RECORD_DELETE, "Kunden ohne Projekte endgültig löschen"),
     PermissionDef(PROJECT_RECORD_READ, "Projekte ansehen"),
     PermissionDef(PROJECT_RECORD_WRITE, "Projekte anlegen und bearbeiten"),
-    PermissionDef(PROJECT_RECORD_DELETE, "Projekte ausblenden"),
+    PermissionDef(PROJECT_RECORD_DELETE, "Leere Projekte endgültig löschen"),
+    PermissionDef(PROJECT_RECORD_PURGE, "Projekte mit Inhalt endgültig löschen"),
+    PermissionDef(PROJECT_RECORD_REOPEN, "Abgeschlossene Projekte wieder in Bearbeitung setzen"),
     PermissionDef(AUDIT_ENTRY_READ, "Protokoll ansehen"),
     PermissionDef(FILE_OBJECT_READ, "Dateien herunterladen"),
     PermissionDef(FILE_OBJECT_WRITE, "Dateien hochladen"),
@@ -118,6 +124,9 @@ SYSTEM_ROLES: tuple[SystemRole, ...] = (
             ORGANIZATION_MEMBER_READ,
             FILE_OBJECT_WRITE,
             PROJECT_RECORD_WRITE,
+            # Wer Projekte bearbeitet, darf ein versehentlich angelegtes,
+            # **leeres** Projekt wieder loeschen (ADR 0020).
+            PROJECT_RECORD_DELETE,
         ),
     ),
     SystemRole(
@@ -164,6 +173,13 @@ SYSTEM_ROLES: tuple[SystemRole, ...] = (
 
 SYSTEM_ROLE_KEYS = tuple(role.key for role in SYSTEM_ROLES)
 ADMIN_ROLE_KEY = "admin"
+
+#: Berechtigungen, die **ausschliesslich** die Administratorrolle erhalten darf.
+#: Ein Architekturtest haelt fest, dass keine andere Systemrolle und kein
+#: ``default_roles`` eines Moduls sie vergibt (ADR 0020).
+ADMIN_ONLY_PERMISSIONS: frozenset[str] = frozenset(
+    {PROJECT_RECORD_PURGE, PROJECT_RECORD_REOPEN, CUSTOMER_RECORD_DELETE}
+)
 
 #: Verstaendliche Bereichsnamen der Core-Berechtigungen, gebildet aus dem
 #: ersten Teil des Schluessels. Berechtigungen eines Moduls tragen den Namen

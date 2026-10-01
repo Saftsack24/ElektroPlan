@@ -8,6 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
+from app.core.users.references import UserReference
 from app.core.validation import reject_explicit_null
 
 CustomerKind = Literal["private", "company"]
@@ -54,8 +55,6 @@ class CustomerUpdate(_Strict):
 
 
 class CustomerOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     id: uuid.UUID
     customer_number: str
     kind: CustomerKind
@@ -67,7 +66,9 @@ class CustomerOut(BaseModel):
     billing_postal_code: str | None
     billing_city: str | None
     billing_country_code: str
-    anonymized_at: datetime | None
     version: int
     created_at: datetime
     updated_at: datetime
+    #: Wer den Kunden angelegt bzw. zuletzt geaendert hat (Phase 4d).
+    created_by: UserReference
+    updated_by: UserReference

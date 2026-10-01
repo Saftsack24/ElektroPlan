@@ -114,3 +114,25 @@ class FloorPlanningAccess:
         # Projekt schreibgeschuetzt ist. Der Status wird dabei neu gelesen.
         self._projects.lock_writable(context.project_id)
         return context
+
+    def record_project_change(self, project_id: uuid.UUID, *, actor_user_id: uuid.UUID) -> None:
+        """Vermerkt eine Aenderung an Planungsdaten am Projekt (Phase 4d).
+
+        Setzt ``updated_at`` und ``updated_by_user_id`` des Projekts, **ohne**
+        dessen Version zu erhoehen (:meth:`ProjectService.touch`). Ein
+        Fachmodul ruft das nach jedem wirksamen Schreibvorgang auf, **vor** dem
+        Commit und nachdem es den Zugang ueber :meth:`writable_context`
+        erhalten hat - die Projektsperre ist dann bereits gehalten. Das
+        Projektmodell selbst bekommt ein Fachmodul nie zu sehen.
+        """
+        self._projects.touch(project_id, actor_user_id=actor_user_id)
+
+    def floor_ids_of_project(self, project_id: uuid.UUID) -> tuple[uuid.UUID, ...]:
+        """Alle Geschosse eines Projekts dieses Mandanten - fuer das Loeschprotokoll.
+
+        Gedacht fuer Teilnehmer der Projektloeschung (ADR 0020), die ihre
+        Planungsdaten ueber das Geschoss finden. Sperrt nichts: Der Core ruft
+        Teilnehmer nur auf, waehrend er die Projektzeile bereits gesperrt haelt.
+        Ein fremdes oder unbekanntes Projekt hat schlicht keine Geschosse.
+        """
+        return self._projects.floor_ids_of_project(project_id)

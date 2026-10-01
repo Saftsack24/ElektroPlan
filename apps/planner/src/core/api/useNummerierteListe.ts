@@ -18,7 +18,7 @@ export interface NummerierteSeite<ItemT> {
  *   im `schluessel`; ändert er sich, wird die Seite noch im selben Render
  *   zurückgesetzt. So wird nie Seite 5 einer neuen Suche angefragt.
  * * **Keine dauerhaft ungültige Seite.** Liegt die angefragte Seite hinter
- *   der letzten (etwa nach dem Ausblenden des letzten Eintrags), liefert der
+ *   der letzten (etwa nach dem Löschen des letzten Eintrags), liefert der
  *   Server die letzte vorhandene und nennt sie in `page`; die Liste übernimmt
  *   diese Seitenzahl.
  * * Beim Blättern bleibt die bisherige Seite sichtbar, bis die neue da ist -

@@ -228,6 +228,18 @@ Meter × Minuten-pro-Meter des Verlegeart-Schlüssels.
 
 ---
 
+## 6a. Projektlebenszyklus (Phase 4d, ADR 0020)
+
+* **Löschschutz-Protokoll:** `ElectricalProjectContent` (`lifecycle.py`) ist als
+  `ProjectContentParticipant` gebunden. Er meldet `electrical.rooms`, `electrical.walls`
+  und `electrical.openings` mit Anzahl und löscht bei einer administrativen
+  Projektlöschung die Räume des Projekts (Wände und Öffnungen per Cascade) – in der
+  Transaktion des Core, ohne Commit. Die Geschosse des Projekts erfährt das Modul über
+  `FloorPlanningAccess.floor_ids_of_project`.
+* **Bearbeiter:** Nach jedem wirksamen Schreibvorgang vermerkt `_commit` über
+  `FloorPlanningAccess.record_project_change`, wer das Projekt zuletzt geändert hat –
+  ohne die Projektversion zu erhöhen und ohne das Projektmodell zu kennen.
+
 ## 7. Permissions
 
 | Key | Bedeutung | Stand |

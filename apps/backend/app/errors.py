@@ -160,6 +160,43 @@ class ProjectArchivedError(ConflictError):
     title = "Projekt ist archiviert"
 
 
+class ProjectNotDeletableError(ConflictError):
+    """Das Projekt ist abgeschlossen oder archiviert und darf nicht geloescht werden.
+
+    Geloescht werden duerfen nur Entwuerfe und laufende Projekte (ADR 0020).
+    """
+
+    error_type = "project-not-deletable"
+    title = "Projekt kann nicht geloescht werden"
+
+
+class DeletionConfirmationRequiredError(ConflictError):
+    """Das Projekt hat Inhalte, die Anfrage bestaetigt deren Verlust aber nicht.
+
+    Schuetzt vor einer veralteten Vorpruefung: Wer ein leeres Projekt loeschen
+    wollte, loescht nicht stillschweigend Inhalte, die inzwischen entstanden
+    sind.
+    """
+
+    error_type = "deletion-confirmation-required"
+    title = "Bestaetigung erforderlich"
+
+
+class ProjectDeletionFailedError(AppError):
+    """Ein Teilnehmer der Projektloeschung ist gescheitert - nichts wurde geloescht."""
+
+    error_type = "project-deletion-failed"
+    title = "Loeschen fehlgeschlagen"
+    status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+
+
+class CustomerHasProjectsError(ConflictError):
+    """Dem Kunden sind noch Projekte zugeordnet - in irgendeinem Zustand."""
+
+    error_type = "customer-has-projects"
+    title = "Kunde hat Projekte"
+
+
 class LastAdministratorError(ConflictError):
     """Die Aenderung liesse den Betrieb ohne aktiven Administrator zurueck.
 

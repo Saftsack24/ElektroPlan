@@ -1,24 +1,43 @@
 import type { CustomerOut } from "@elektroplan/api-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import { alsFormularfehler } from "../../core/api/fehler";
 import { useNummerierteListe } from "../../core/api/useNummerierteListe";
 import { useAuth, usePermission } from "../../core/auth/AuthProvider";
+import { AKTION } from "../../core/ui/aktionssymbole";
 import { Seitennavigation } from "../../core/ui/Seitennavigation";
+import { MitSymbol } from "../../core/ui/Symbol";
 import { useEntprellt } from "../../core/ui/useEntprellt";
-import { FELD, FELD_BESCHRIFTUNG, FILTERZEILE, KARTENKOPF, STAPEL, eingabefeld, karte, knopf, meldungsflaeche } from "../../core/ui/stil";
+import { FELD, FELD_BESCHRIFTUNG, KARTENKOPF, KARTENTITEL, STAPEL, eingabefeld, karte, knopf, meldungsflaeche } from "../../core/ui/stil";
 import { KundenAuswahl } from "./KundenAuswahl";
 import { kundenSuchen } from "./kundensuche";
 import { ProjectFormDialog } from "./ProjectFormDialog";
 import type { ProjektWerte } from "./ProjectFormDialog";
 import { Projekttabelle } from "./Projekttabelle";
 import { START_EBENE, START_HOEHE_MM, startstrukturAnlegen } from "./startstruktur";
-import { STATUS_LABEL } from "./status";
-import type { ProjectStatus } from "./status";
+import { ANSICHT, ansichtAus, STATUS_LABEL } from "./status";
+import type { Ansicht, ProjectStatus } from "./status";
 
 const SEITENGROESSE = 25;
+
+/**
+ * Filterzeile der Projektliste. Breit: Suche und Kundenfilter teilen sich den
+ * Platz, der Status ist schmaler. Schmal: untereinander. `min-w-0` lässt die
+ * Felder schrumpfen, statt das Dokument zu verbreitern.
+ */
+const PROJEKTFILTER =
+  "mb-2 grid grid-cols-1 gap-3 *:min-w-0 md:grid-cols-[minmax(0,5fr)_minmax(0,5fr)_minmax(0,3fr)]";
+
+/** Nach einer Löschung übergibt die Detailseite die Meldung im Verlaufszustand. */
+function meldungAus(zustand: unknown): string | null {
+  if (typeof zustand === "object" && zustand !== null && "meldung" in zustand) {
+    const meldung = (zustand).meldung;
+    return typeof meldung === "string" ? meldung : null;
+  }
+  return null;
+}
 
 const PROJEKTFELDER = [
   "customer_id",
@@ -35,6 +54,7 @@ export default function ProjectsPage() {
   const darfKundenLesen = usePermission("customer.record.read");
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const ort = useLocation();
 
   const [suche, setSuche] = useState("");
   const [status, setStatus] = useState<ProjectStatus | "">("");
@@ -52,20 +72,42 @@ export default function ProjectsPage() {
     rest.delete("neu");
     setParameter(rest, { replace: true });
   }, [parameter, setParameter, darfSchreiben]);
-  const [hinweis, setHinweis] = useState<string | null>(null);
+  const [hinweis, setHinweis] = useState<string | null>(() => meldungAus(ort.state));
   const [hinweisVollstaendig, setHinweisVollstaendig] = useState(true);
+  // Die Erfolgsmeldung einer Löschung einmal zeigen, dann aus dem Verlauf
+  // nehmen - sonst erschiene sie nach Neuladen oder Zurück erneut.
+  useEffect(() => {
+    if (meldungAus(ort.state) === null) return;
+    void navigate({ pathname: ort.pathname, search: ort.search }, { replace: true, state: null });
+  }, [ort, navigate]);
 
-  // Suche, Status und Kunde stehen im Schluessel: Jede Aenderung beginnt
-  // wieder auf Seite 1 (useNummerierteListe).
+  // Die Ansicht steht in der Adresse (`?ansicht=abgeschlossen`): Direktlinks,
+  // Zurück und Vorwärts wechseln sie nachvollziehbar. Suche und Kundenfilter
+  // bleiben beim Wechsel erhalten; der Status gilt nur innerhalb seiner Gruppe.
+  const ansicht: Ansicht = ansichtAus(parameter.get("ansicht"));
+  const text = ANSICHT[ansicht];
+  const wirksamerStatus = status !== "" && text.status.includes(status) ? status : "";
+  const ansichtWechseln = () => {
+    const naechste = new URLSearchParams(parameter);
+    if (ansicht === "laufend") naechste.set("ansicht", "abgeschlossen");
+    else naechste.delete("ansicht");
+    setStatus("");
+    setHinweis(null);
+    setParameter(naechste);
+  };
+
+  // Ansicht, Suche, Status und Kunde stehen im Schluessel: Jede Aenderung
+  // beginnt wieder auf Seite 1 (useNummerierteListe). Gefiltert wird auf dem
+  // Server - nie alle Projekte laden und im Browser ausblenden.
   const liste = useNummerierteListe({
-    schluessel: ["projects", "liste", suchbegriff, status, kunde?.id ?? null],
+    schluessel: ["projects", "liste", ansicht, suchbegriff, wirksamerStatus, kunde?.id ?? null],
     laden: (seite) =>
       api.get("/api/v1/projects", {
         query: {
           page: seite,
           page_size: SEITENGROESSE,
           ...(suchbegriff ? { q: suchbegriff } : {}),
-          ...(status ? { status } : {}),
+          ...(wirksamerStatus ? { status: wirksamerStatus } : { status_group: text.gruppe }),
           ...(kunde !== null ? { customer_id: kunde.id } : {}),
         },
       }),
@@ -145,7 +187,7 @@ export default function ProjectsPage() {
     return undefined;
   };
 
-  const gefiltert = suchbegriff !== "" || status !== "" || kunde !== null;
+  const gefiltert = suchbegriff !== "" || wirksamerStatus !== "" || kunde !== null;
 
   return (
     <div className={STAPEL}>
@@ -161,9 +203,23 @@ export default function ProjectsPage() {
                 setDialogOffen(true);
               }}
             >
-              Neues Projekt
+              <MitSymbol icon={AKTION.anlegen}>Neues Projekt</MitSymbol>
             </button>
           )}
+        </div>
+
+        <div className={`${KARTENKOPF} mt-3`}>
+          <h2 className={KARTENTITEL} id="projektansicht-titel">
+            {text.titel}
+          </h2>
+          <button
+            type="button"
+            className={knopf()}
+            aria-pressed={ansicht === "abgeschlossen"}
+            onClick={ansichtWechseln}
+          >
+            {text.umschalten}
+          </button>
         </div>
 
         {hinweis !== null && (
@@ -172,7 +228,7 @@ export default function ProjectsPage() {
           </p>
         )}
 
-        <div className={FILTERZEILE}>
+        <div className={`${PROJEKTFILTER} mt-3`}>
           <div className={FELD}>
             <label className={FELD_BESCHRIFTUNG} htmlFor="projektsuche">
               Suche (Bezeichnung, Projektnummer, Baustellenort)
@@ -196,7 +252,7 @@ export default function ProjectsPage() {
               zweck="filter"
               gewaehlt={kunde}
               entfernenLabel="Kundenfilter entfernen"
-              suchen={(begriff) => kundenSuchen(api, begriff, { nurZuordenbar: false })}
+              suchen={(begriff) => kundenSuchen(api, begriff)}
               onChange={(gewaehlt) => {
                 setKunde(gewaehlt);
                 setHinweis(null);
@@ -210,16 +266,16 @@ export default function ProjectsPage() {
             <select
               id="projektstatus"
               className={eingabefeld()}
-              value={status}
+              value={wirksamerStatus}
               onChange={(event) => {
                 setStatus(event.target.value as ProjectStatus | "");
                 setHinweis(null);
               }}
             >
-              <option value="">Alle</option>
-              {Object.entries(STATUS_LABEL).map(([wert, label]) => (
+              <option value="">{text.alle}</option>
+              {text.status.map((wert) => (
                 <option key={wert} value={wert}>
-                  {label}
+                  {STATUS_LABEL[wert]}
                 </option>
               ))}
             </select>
@@ -242,7 +298,7 @@ export default function ProjectsPage() {
         {liste.geladen && (
           <Projekttabelle
             projekte={liste.eintraege}
-            leerText={gefiltert ? "Keine Projekte zu diesen Filtern gefunden." : "Noch keine Projekte angelegt."}
+            leerText={gefiltert ? "Keine Projekte zu diesen Filtern gefunden." : text.leer}
           />
         )}
         {liste.geladen && (
@@ -260,7 +316,7 @@ export default function ProjectsPage() {
       {darfSchreiben && (
         <ProjectFormDialog
           offen={dialogOffen}
-          suchen={(begriff) => kundenSuchen(api, begriff, { nurZuordenbar: true })}
+          suchen={(begriff) => kundenSuchen(api, begriff)}
           onSubmit={anlegen}
           onClose={() => setDialogOffen(false)}
         />

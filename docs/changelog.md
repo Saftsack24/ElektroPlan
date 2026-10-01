@@ -5,6 +5,58 @@ Einträge entstehen nach relevanten Änderungen, nicht nach jedem Commit.
 
 ---
 
+## 2026-09-30 — Phase 4d: Datenlebenszyklus, Löschregeln, Bearbeitungsmetadaten, Aktions-UX
+
+Migration **`0006_data_lifecycle`**, danach Seed ausführen. Mit diesem Checkpoint committet.
+Entscheidung: [ADR 0020](decisions/0020-data-lifecycle-deletion-and-reopen.md).
+
+### Added
+
+- **Projekte endgültig löschen:** leere Entwürfe und laufende Projekte durch
+  Projektbearbeiter (`project.record.delete`), Projekte mit Inhalt nur durch
+  Administratoren (`project.record.purge`) mit Projektnummer als Bestätigung;
+  Vorprüfung `GET /projects/{id}/deletion-check`.
+- **Wiedereröffnung** `completed → active` (`POST /projects/{id}/reopen`,
+  `project.record.reopen`, nur Administrator).
+- **Löschschutz-Protokoll** `ProjectContentParticipant` (Contract v1) über die Module
+  Registry; Electrical meldet und löscht Räume, Wände, Öffnungen.
+- **Storage-Aufräumwarteschlange** `storage_cleanup_jobs` und CLI `storage-cleanup`.
+- **Ersteller und letzter Bearbeiter** (`created_by`, `updated_by`) an Kunden und Projekten;
+  Änderungen an Gebäuden, Geschossen, Dateien und Planungsdaten aktualisieren das Projekt
+  (ohne Versionssprung).
+- Projektliste: **laufende und historische Ansicht** (`?ansicht=abgeschlossen`).
+- **Icon-System** mit `lucide-react` für Anlegen, Einladen, Einstellungen, Bearbeiten,
+  Löschen, Archivieren, Wiedereröffnen, Speichern, Hochladen, Herunterladen, Zurück.
+- Neue Fehlertypen `project-not-deletable`, `deletion-confirmation-required`,
+  `project-deletion-failed`, `customer-has-projects`.
+
+### Changed
+
+- `DELETE /customers/{id}` und `DELETE /projects/{id}` löschen **physisch** statt
+  auszublenden. Kunden nur ohne Projekte (jeder Status) und nur durch Administratoren.
+- Projektliste und Startseite zeigen standardmäßig nur Entwurf und In Bearbeitung.
+- Platzhalter der Kundensuche: „Name, Nummer oder Ort"; Filterzeile der Projektliste als
+  Raster.
+- `ProjectService`-Strukturmethoden verlangen den Handelnden (`actor_user_id`).
+
+### Removed
+
+- **Soft Delete für Kunden und Projekte:** `SoftDeletable` entfernt, Migration `0006`
+  entfernt `customers.deleted_at` und `projects.deleted_at` – **ohne Zeilen zu löschen**;
+  früher ausgeblendete Kunden und Projekte sind danach wieder sichtbar. Archivierung ist
+  ausschließlich der Projektstatus `archived`.
+- **Kundenanonymisierung:** Route `POST /customers/{id}/anonymize`, Service, Berechtigung
+  `customer.record.anonymize`, Spalte `customers.anonymized_at`, Oberfläche.
+
+### Security
+
+- Administratorrechte `purge`, `reopen` und `customer.record.delete` durch
+  Invariantentests auf die Administratorrolle beschränkt.
+- Löscheinträge im Audit ohne Personendaten; Bearbeiternamen nur für Mitglieder des
+  eigenen Betriebs.
+
+---
+
 ## 2026-09-30 — Phase 4c.2: persönliche Darstellung, Laufzeitthemes, responsive Nachkorrektur
 
 Keine Migration, **keine** API- oder Backendänderung. Mit diesem Checkpoint committet.

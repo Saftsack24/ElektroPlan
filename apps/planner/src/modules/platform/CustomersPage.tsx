@@ -1,11 +1,13 @@
 import type { CustomerOut } from "@elektroplan/api-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import { useNummerierteListe } from "../../core/api/useNummerierteListe";
 import { useAuth, usePermission } from "../../core/auth/AuthProvider";
+import { AKTION } from "../../core/ui/aktionssymbole";
 import { Seitennavigation } from "../../core/ui/Seitennavigation";
+import { MitSymbol } from "../../core/ui/Symbol";
 import { useEntprellt } from "../../core/ui/useEntprellt";
 import { CustomerFormDialog } from "./CustomerFormDialog";
 import type { KundenWerte } from "./CustomerFormDialog";
@@ -49,7 +51,21 @@ export default function CustomersPage() {
     rest.delete("neu");
     setParameter(rest, { replace: true });
   }, [parameter, setParameter, darfSchreiben]);
-  const [erfolg, setErfolg] = useState<string | null>(null);
+  const ort = useLocation();
+  const navigate = useNavigate();
+  // Nach einer Löschung übergibt die Detailseite die Meldung im Verlauf; sie
+  // wird einmal gezeigt und danach aus dem Verlaufseintrag genommen.
+  const [erfolg, setErfolg] = useState<string | null>(() => {
+    const zustand: unknown = ort.state;
+    return typeof zustand === "object" && zustand !== null && "meldung" in zustand
+      ? String((zustand).meldung)
+      : null;
+  });
+  useEffect(() => {
+    const zustand: unknown = ort.state;
+    if (typeof zustand !== "object" || zustand === null || !("meldung" in zustand)) return;
+    void navigate({ pathname: ort.pathname, search: ort.search }, { replace: true, state: null });
+  }, [ort, navigate]);
   const [zuletztAngelegt, setZuletztAngelegt] = useState<string | null>(null);
 
   // Der Suchbegriff steht im Schluessel: Eine Aenderung beginnt wieder auf
@@ -100,7 +116,7 @@ export default function CustomersPage() {
                 setDialogOffen(true);
               }}
             >
-              Neuer Kunde
+              <MitSymbol icon={AKTION.anlegen}>Neuer Kunde</MitSymbol>
             </button>
           )}
         </div>

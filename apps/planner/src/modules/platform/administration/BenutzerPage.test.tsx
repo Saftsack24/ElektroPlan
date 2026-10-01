@@ -138,16 +138,16 @@ describe("Benutzerliste", () => {
     zeigen();
     await screen.findByText("Anna Albrecht");
     expect(screen.getByText("Seite 1")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "← Zurück" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Zurück" })).toBeDisabled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Weiter →" }));
+    fireEvent.click(screen.getByRole("button", { name: "Weiter" }));
     expect(await screen.findByText("neu@test.example")).toBeInTheDocument();
     expect(screen.getByText("Seite 2")).toBeInTheDocument();
     expect(screen.getByText("Einladung abgelaufen")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Weiter →" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Weiter" })).toBeDisabled();
     expect(mitgliederAufrufe().at(-1)).toEqual({ limit: 25, cursor: "cursor-2" });
 
-    fireEvent.click(screen.getByRole("button", { name: "← Zurück" }));
+    fireEvent.click(screen.getByRole("button", { name: "Zurück" }));
     expect(await screen.findByText("Anna Albrecht")).toBeInTheDocument();
     expect(screen.getByText("Seite 1")).toBeInTheDocument();
   });
@@ -155,7 +155,7 @@ describe("Benutzerliste", () => {
   it("sucht serverseitig und beginnt dabei wieder auf Seite 1", async () => {
     zeigen();
     await screen.findByText("Anna Albrecht");
-    fireEvent.click(screen.getByRole("button", { name: "Weiter →" }));
+    fireEvent.click(screen.getByRole("button", { name: "Weiter" }));
     await screen.findByText("Seite 2");
 
     fireEvent.change(screen.getByLabelText("Suche (Name oder E-Mail)"), {
@@ -209,7 +209,7 @@ describe("Einladen und Einladungen verwalten", () => {
     rechte.menge = new Set(["user.account.read"]);
     zeigen();
     await screen.findByText("Anna Albrecht");
-    fireEvent.click(screen.getByRole("button", { name: "Weiter →" }));
+    fireEvent.click(screen.getByRole("button", { name: "Weiter" }));
     await screen.findByText("neu@test.example");
     expect(screen.queryByRole("button", { name: /Widerrufen/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Neu ausstellen/ })).toBeNull();
@@ -265,7 +265,7 @@ describe("Einladen und Einladungen verwalten", () => {
     api.post.mockResolvedValue({ id: "e1", status: "revoked" });
     zeigen();
     await screen.findByText("Anna Albrecht");
-    fireEvent.click(screen.getByRole("button", { name: "Weiter →" }));
+    fireEvent.click(screen.getByRole("button", { name: "Weiter" }));
     fireEvent.click(await screen.findByRole("button", { name: /Widerrufen/ }));
 
     const frage = screen.getByRole("dialog", { name: "Einladung widerrufen?" });

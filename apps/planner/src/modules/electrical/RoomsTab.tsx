@@ -17,6 +17,8 @@ import { RaumDetail } from "./RaumDetail";
 import { RaumDialog } from "./RaumDialog";
 import type { Raumwerte } from "./RaumDialog";
 import { KONTURZUSTAND_LABEL, flaecheAnzeigen } from "./texte";
+import { AKTION } from "../../core/ui/aktionssymbole";
+import { MitSymbol } from "../../core/ui/Symbol";
 
 type Schemas = components["schemas"];
 type RoomOut = Schemas["RoomOut"];
@@ -375,7 +377,7 @@ export default function RoomsTab() {
                             aria-label={`Raum ${raum.name} bearbeiten`}
                             onClick={() => setRaumdialog({ raum })}
                           >
-                            Bearbeiten
+                            <MitSymbol icon={AKTION.bearbeiten}>Bearbeiten</MitSymbol>
                           </button>
                           <button
                             className={knopf()}
@@ -384,7 +386,7 @@ export default function RoomsTab() {
                             disabled={raumLoeschen.isPending}
                             onClick={() => raumLoeschen.mutate(raum)}
                           >
-                            Entfernen
+                            <MitSymbol icon={AKTION.loeschen}>Entfernen</MitSymbol>
                           </button>
                         </>
                       )}

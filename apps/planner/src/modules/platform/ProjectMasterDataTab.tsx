@@ -6,6 +6,8 @@ import { useState } from "react";
 import { useAuth, usePermission } from "../../core/auth/AuthProvider";
 import { Feld } from "../../core/ui/Feld";
 import { FORMULARRASTER, FORMULARRASTER_AKTIONEN, karte, knopf, meldungsflaeche } from "../../core/ui/stil";
+import { AKTION } from "../../core/ui/aktionssymbole";
+import { MitSymbol } from "../../core/ui/Symbol";
 
 type Bearbeitbar = {
   name: string;
@@ -99,7 +101,9 @@ export function ProjectMasterDataTab({ projekt }: { projekt: ProjectOut }) {
             type="submit"
             disabled={gesperrt || speichern.isPending || entwurf === null}
           >
-            {speichern.isPending ? "Wird gespeichert ..." : "Speichern"}
+            <MitSymbol icon={AKTION.speichern}>
+              {speichern.isPending ? "Wird gespeichert ..." : "Speichern"}
+            </MitSymbol>
           </button>
         </div>
       </form>

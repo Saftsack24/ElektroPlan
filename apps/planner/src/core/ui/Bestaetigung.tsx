@@ -1,7 +1,9 @@
+import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Dialog, DialogAktionen } from "./Dialog";
 import { knopf, meldungsflaeche } from "./stil";
+import { MitSymbol } from "./Symbol";
 
 /**
  * Rückfrage vor einer folgenreichen Aktion - Sperren, Widerrufen,
@@ -19,6 +21,8 @@ export function Bestaetigung({
   bestaetigenLabel,
   gefaehrlich = false,
   laeuft = false,
+  bestaetigenGesperrt = false,
+  bestaetigenSymbol,
   fehler = null,
   onBestaetigen,
   onAbbrechen,
@@ -30,6 +34,10 @@ export function Bestaetigung({
   /** Rote Hervorhebung für Aktionen, die jemandem den Zugang nehmen. */
   gefaehrlich?: boolean;
   laeuft?: boolean;
+  /** Bestätigen ist (noch) nicht möglich - etwa bis eine Eingabe passt. */
+  bestaetigenGesperrt?: boolean;
+  /** Icon der bestätigenden Aktion, etwa der Papierkorb beim Löschen. */
+  bestaetigenSymbol?: LucideIcon;
   fehler?: string | null;
   onBestaetigen: () => void;
   onAbbrechen: () => void;
@@ -50,10 +58,16 @@ export function Bestaetigung({
           <button
             type="button"
             className={knopf(gefaehrlich ? "gefahr" : "primaer")}
-            disabled={laeuft}
+            disabled={laeuft || bestaetigenGesperrt}
             onClick={onBestaetigen}
           >
-            {laeuft ? "Wird ausgeführt ..." : bestaetigenLabel}
+            {laeuft ? (
+              "Wird ausgeführt ..."
+            ) : bestaetigenSymbol !== undefined ? (
+              <MitSymbol icon={bestaetigenSymbol}>{bestaetigenLabel}</MitSymbol>
+            ) : (
+              bestaetigenLabel
+            )}
           </button>
           <button
             type="button"

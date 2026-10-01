@@ -9,8 +9,8 @@ Synchronisation:
    ``check_version``. Genau einer gewinnt; der andere muss einen
    kontrollierten Versionskonflikt erhalten, keinen rohen ``StaleDataError``
    und keinen ``500``.
-2. **Kunde ausblenden gegen Projekt anlegen.** Es darf niemals ein
-   sichtbares Projekt an einem ausgeblendeten Kunden entstehen.
+2. **Kunde loeschen gegen Projekt anlegen** (bis Phase 4d: ausblenden). Es darf niemals ein
+   Projekt an einem geloeschten Kunden entstehen.
 3. **Geschossebene doppelt.** Pro Gebaeude darf eine Ebene genau einmal
    existieren - auch wenn zwei Anfragen die Vorpruefung gleichzeitig
    bestehen.
@@ -168,7 +168,9 @@ def _gebaeude_anlegen(
         project = service.create(
             ProjectCreate(customer_id=customer_id, name="Neubau"), actor_user_id=ACTOR
         )
-        building = service.create_building(project.id, BuildingCreate(name="Haupthaus"))
+        building = service.create_building(
+            project.id, BuildingCreate(name="Haupthaus"), actor_user_id=ACTOR
+        )
         session.commit()
         return building.id
     finally:
@@ -280,7 +282,9 @@ def test_dieselbe_behandlung_gilt_fuer_alle_versionierten_entitaeten(
         session = factory()
         try:
             service = ProjectService(session, organisation)
-            floor = service.create_floor(building_id, FloorCreate(name="Erdgeschoss", level=0))
+            floor = service.create_floor(
+                building_id, FloorCreate(name="Erdgeschoss", level=0), actor_user_id=ACTOR
+            )
             session.commit()
             ziel_id = floor.id
         finally:
@@ -297,12 +301,17 @@ def test_dieselbe_behandlung_gilt_fuer_alle_versionierten_entitaeten(
         if entitaet == "floor":
             service.floors.get_or_404(ziel_id)
             barriere.wait()
-            service.update_floor(ziel_id, FloorUpdate(name=f"Ebene {name}"), expected_version=1)
+            service.update_floor(
+                ziel_id, FloorUpdate(name=f"Ebene {name}"), expected_version=1, actor_user_id=ACTOR
+            )
         else:
             service.buildings.get_or_404(ziel_id)
             barriere.wait()
             service.update_building(
-                ziel_id, BuildingUpdate(name=f"Haus {name}"), expected_version=1
+                ziel_id,
+                BuildingUpdate(name=f"Haus {name}"),
+                expected_version=1,
+                actor_user_id=ACTOR,
             )
         return name
 
@@ -321,20 +330,21 @@ def test_dieselbe_behandlung_gilt_fuer_alle_versionierten_entitaeten(
         session.close()
 
 
-# ------------------------- 2. Kunde ausblenden gegen Projekt anlegen
+# -------------------------- 2. Kunde loeschen gegen Projekt anlegen
 
 
-def test_ausblenden_und_projektanlage_enden_immer_konsistent(
+def test_kundenloeschung_und_projektanlage_enden_immer_konsistent(
     factory: sessionmaker[Session], organisation: uuid.UUID
 ) -> None:
-    """Der Kern von Phase 2.1.
+    """Seit Phase 4d wird ein Kunde physisch geloescht (ADR 0020).
 
     Nur zwei Ergebnisse sind zulaessig:
 
-    * Projektanlage gewinnt -> Ausblenden scheitert mit ``409``.
-    * Ausblenden gewinnt     -> Projektanlage scheitert mit ``404``.
+    * Projektanlage gewinnt -> Loeschung scheitert mit ``409``.
+    * Loeschung gewinnt     -> Projektanlage scheitert mit ``404``.
 
-    Verboten ist: ausgeblendeter Kunde **und** sichtbares Projekt.
+    Verboten ist: geloeschter Kunde **und** Projekt (der Fremdschluessel
+    wuerde es zusaetzlich verhindern, aber als ``500``).
     """
     customer_id = _kunde_anlegen(factory, organisation)
     barriere = threading.Barrier(2, timeout=15)
@@ -344,21 +354,21 @@ def test_ausblenden_und_projektanlage_enden_immer_konsistent(
         projects = ProjectService(session, organisation)
         # Beide Seiten stehen am selben Startpunkt, bevor gesperrt wird.
         barriere.wait()
-        if name == "ausblenden":
+        if name == "loeschen":
             customer = customers.get_for_update(customer_id)
-            offen = count_projects_of_customer(
+            zugeordnet = count_projects_of_customer(
                 session, organization_id=organisation, customer_id=customer_id
             )
-            if offen:
-                raise ConflictError(f"Noch {offen} Projekte am Kunden.")
-            customers.soft_delete(customer, actor_user_id=ACTOR)
+            if zugeordnet:
+                raise ConflictError(f"Noch {zugeordnet} Projekte am Kunden.")
+            customers.delete(customer)
         else:
             projects.create(
                 ProjectCreate(customer_id=customer_id, name="Neubau"), actor_user_id=ACTOR
             )
         return name
 
-    lauf = gleichzeitig(factory, arbeiten, namen=("ausblenden", "projekt"))
+    lauf = gleichzeitig(factory, arbeiten, namen=("loeschen", "projekt"))
 
     assert len(lauf.erfolge) == 1, (
         f"Genau eine Seite darf gewinnen. Erfolge={lauf.erfolge}, Fehler={lauf.fehler}"
@@ -369,82 +379,20 @@ def test_ausblenden_und_projektanlage_enden_immer_konsistent(
     session = factory()
     try:
         kunde = session.get(Customer, customer_id)
-        assert kunde is not None
         anzahl_projekte = session.execute(
-            select(func.count()).where(
-                Project.customer_id == customer_id, Project.deleted_at.is_(None)
-            )
+            select(func.count()).where(Project.customer_id == customer_id)
         ).scalar_one()
 
         if lauf.erfolge[0] == "projekt":
-            # Projekt gewonnen: Kunde bleibt sichtbar, Ausblenden war 409.
-            assert kunde.deleted_at is None
+            assert kunde is not None
             assert anzahl_projekte == 1
             assert isinstance(verlierer, ConflictError)
             assert verlierer.status_code == 409
         else:
-            # Ausblenden gewonnen: kein Projekt entstanden, Anlage war 404.
-            assert kunde.deleted_at is not None
+            assert kunde is None
             assert anzahl_projekte == 0
             assert isinstance(verlierer, NotFoundError)
             assert verlierer.status_code == 404
-
-        # Die verbotene Kombination darf in keinem Fall eintreten.
-        assert not (kunde.deleted_at is not None and anzahl_projekte > 0)
-    finally:
-        session.close()
-
-
-def test_anonymisieren_und_projektanlage_enden_immer_konsistent(
-    factory: sessionmaker[Session], organisation: uuid.UUID
-) -> None:
-    """Dieselbe Sperre schuetzt auch die Anonymisierung.
-
-    Entweder die Zuordnung ist zuerst fertig und die Anonymisierung behaelt
-    die bestehende Referenz, oder die Anonymisierung gewinnt und die neue
-    Zuordnung wird abgelehnt.
-    """
-    customer_id = _kunde_anlegen(factory, organisation, name="Erika Musterfrau")
-    barriere = threading.Barrier(2, timeout=15)
-
-    def arbeiten(session: Session, name: str) -> str:
-        customers = CustomerService(session, organisation)
-        projects = ProjectService(session, organisation)
-        barriere.wait()
-        if name == "anonymisieren":
-            customers.anonymize(customer_id, expected_version=1, actor_user_id=ACTOR)
-        else:
-            projects.create(
-                ProjectCreate(customer_id=customer_id, name="Neubau"), actor_user_id=ACTOR
-            )
-        return name
-
-    lauf = gleichzeitig(factory, arbeiten, namen=("anonymisieren", "projekt"))
-
-    session = factory()
-    try:
-        kunde = session.get(Customer, customer_id)
-        assert kunde is not None
-        projekte = session.execute(
-            select(func.count()).where(Project.customer_id == customer_id)
-        ).scalar_one()
-
-        if "anonymisieren" in lauf.erfolge and "projekt" in lauf.erfolge:
-            # Beide koennen gewinnen - aber nur in dieser Reihenfolge:
-            # erst die Zuordnung, dann die Anonymisierung.
-            assert kunde.anonymized_at is not None
-            assert projekte == 1
-        elif lauf.erfolge == ["anonymisieren"]:
-            assert kunde.anonymized_at is not None
-            assert projekte == 0
-            assert isinstance(lauf.fehler[0], NotFoundError)
-        else:
-            assert projekte == 1
-
-        # Personenbezug ist nach der Anonymisierung in jedem Fall weg.
-        if kunde.anonymized_at is not None:
-            assert "Musterfrau" not in kunde.name
-            assert kunde.email is None
     finally:
         session.close()
 
@@ -519,7 +467,7 @@ def test_kundenzeile_wird_bei_neuzuordnung_gesperrt(
     assert sperren, f"Kein 'SELECT ... FOR UPDATE' auf customers gefunden: {anweisungen}"
 
 
-def test_ausblenden_sperrt_die_kundenzeile(
+def test_kundenloeschung_sperrt_die_kundenzeile(
     factory: sessionmaker[Session], organisation: uuid.UUID, engine: Engine
 ) -> None:
     """Dieselbe Zeile, dieselbe Reihenfolge - Voraussetzung gegen Deadlocks."""
@@ -536,7 +484,7 @@ def test_ausblenden_sperrt_die_kundenzeile(
     try:
         service = CustomerService(session, organisation)
         kunde = service.get_for_update(customer_id)
-        service.soft_delete(kunde, actor_user_id=ACTOR)
+        service.delete(kunde)
         session.commit()
     finally:
         session.close()
@@ -597,7 +545,9 @@ def test_parallele_anlage_derselben_ebene_erzeugt_nur_ein_geschoss(
         # Vorpruefung auf beiden Seiten, bevor eine Seite schreibt.
         service._require_free_level(building_id, 0, exclude_floor_id=None)
         barriere.wait()
-        service.create_floor(building_id, FloorCreate(name=f"Erdgeschoss {name}", level=0))
+        service.create_floor(
+            building_id, FloorCreate(name=f"Erdgeschoss {name}", level=0), actor_user_id=ACTOR
+        )
         return name
 
     lauf = gleichzeitig(factory, anlegen)
@@ -634,7 +584,7 @@ def test_unique_verletzung_wird_zuverlaessig_uebersetzt(
     session = factory()
     try:
         ProjectService(session, organisation).create_floor(
-            building_id, FloorCreate(name="Erdgeschoss", level=0)
+            building_id, FloorCreate(name="Erdgeschoss", level=0), actor_user_id=ACTOR
         )
         session.commit()
     finally:
@@ -680,8 +630,12 @@ def test_paralleles_verschieben_auf_dieselbe_ebene_wird_abgefangen(
     session = factory()
     try:
         service = ProjectService(session, organisation)
-        unten = service.create_floor(building_id, FloorCreate(name="Unten", level=0))
-        oben = service.create_floor(building_id, FloorCreate(name="Oben", level=1))
+        unten = service.create_floor(
+            building_id, FloorCreate(name="Unten", level=0), actor_user_id=ACTOR
+        )
+        oben = service.create_floor(
+            building_id, FloorCreate(name="Oben", level=1), actor_user_id=ACTOR
+        )
         session.commit()
         ids = {"A": unten.id, "B": oben.id}
     finally:
@@ -693,7 +647,9 @@ def test_paralleles_verschieben_auf_dieselbe_ebene_wird_abgefangen(
         service = ProjectService(session, organisation)
         service.floors.get_or_404(ids[name])
         barriere.wait()
-        service.update_floor(ids[name], FloorUpdate(level=5), expected_version=1)
+        service.update_floor(
+            ids[name], FloorUpdate(level=5), expected_version=1, actor_user_id=ACTOR
+        )
         return name
 
     lauf = gleichzeitig(factory, verschieben)
@@ -767,7 +723,7 @@ def test_mandantentrennung_bleibt_bei_geschossen_erhalten(
     try:
         with pytest.raises(NotFoundError):
             ProjectService(session, fremde_organisation).create_floor(
-                building_id, FloorCreate(name="Fremdgeschoss", level=0)
+                building_id, FloorCreate(name="Fremdgeschoss", level=0), actor_user_id=ACTOR
             )
     finally:
         session.close()

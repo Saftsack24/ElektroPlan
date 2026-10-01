@@ -9,7 +9,7 @@ from __future__ import annotations
 import inspect
 import re
 from collections.abc import Iterable, Sequence
-from typing import get_type_hints
+from typing import Any, get_type_hints
 
 from fastapi import FastAPI
 
@@ -195,8 +195,32 @@ class ModuleRegistry:
         beim Anwendungsstart.
         """
         for module in self._modules.values():
+            bound: set[type] = set()
             for binding in module.provides:
+                if binding.port in bound:
+                    msg = (
+                        f"Modul {module.id!r} bindet den Port {binding.port.__name__} "
+                        "mehrfach. Je Modul und Port ist genau eine Implementierung erlaubt."
+                    )
+                    raise ModuleRegistrationError(msg)
+                bound.add(binding.port)
                 _verify_port_binding(binding.port, binding.implementation)
+
+    def port_implementations(self, port: object) -> tuple[tuple[str, type[Any]], ...]:
+        """Alle Implementierungen eines Ports als ``(module_id, Klasse)``.
+
+        **Deterministisch nach Modul-ID sortiert** - unabhaengig davon, in
+        welcher Reihenfolge die Module registriert wurden. Je Modul hoechstens
+        eine Implementierung (siehe :meth:`_validate_ports`). Ein neues Modul
+        nimmt teil, indem es den Port in ``provides`` bindet; der Aufrufer
+        aendert sich dafuer nicht (ADR 0020).
+        """
+        found: list[tuple[str, type[Any]]] = []
+        for module_id in sorted(self._modules):
+            for binding in self._modules[module_id].provides:
+                if binding.port is port:
+                    found.append((module_id, binding.implementation))
+        return tuple(found)
 
     # ---------------------------------------------------------------- Aufbau
 

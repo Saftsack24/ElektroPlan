@@ -14,6 +14,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.core.users.references import UserReference
 from app.core.validation import reject_explicit_null
 
 ProjectStatus = Literal["draft", "active", "completed", "archived"]
@@ -71,8 +72,6 @@ class ProjectUpdate(_Strict):
 
 
 class ProjectOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     id: uuid.UUID
     project_number: str
     name: str
@@ -85,13 +84,16 @@ class ProjectOut(BaseModel):
     version: int
     created_at: datetime
     updated_at: datetime
+    #: Wer das Projekt angelegt hat (Phase 4d). ``system`` bei Bestandsdaten.
+    created_by: UserReference
+    #: Wer zuletzt etwas am Projekt geaendert hat - auch an Gebaeuden,
+    #: Geschossen, Dateien und Planungsdaten der Fachmodule.
+    updated_by: UserReference
 
 
 class ProjectSummary(BaseModel):
     """Listeneintrag - mit dem Kundennamen, damit die Liste ohne
     Folgeabfragen lesbar ist."""
-
-    model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
     project_number: str
@@ -103,6 +105,42 @@ class ProjectSummary(BaseModel):
     version: int
     created_at: datetime
     updated_at: datetime
+    created_by: UserReference
+    updated_by: UserReference
+
+
+class ProjectContentOut(BaseModel):
+    """Eine erkannte Inhaltsart - aus dem Core oder einem Fachmodul."""
+
+    code: str
+    label: str
+    count: int | None
+
+
+class ProjectDeletionCheck(BaseModel):
+    """Vorpruefung einer Projektloeschung (ADR 0020).
+
+    **Keine Autorisierung und keine Garantie.** Die Loeschung prueft alles
+    erneut unter der Projektsperre.
+    """
+
+    project_id: uuid.UUID
+    project_number: str
+    name: str
+    status: ProjectStatus
+    version: int
+    is_empty: bool
+    contents: list[ProjectContentOut]
+    #: Status erlaubt die Loeschung (nur Entwurf und in Bearbeitung).
+    status_allows_deletion: bool
+    #: Der angemeldete Benutzer duerfte jetzt loeschen.
+    can_delete: bool
+    #: Inhalte vorhanden - nur mit Administratorberechtigung loeschbar.
+    requires_admin: bool
+    #: Die Loeschung verlangt die Projektnummer als Bestaetigung.
+    requires_number_confirmation: bool
+    blocked_code: Literal["status", "permission"] | None
+    blocked_reason: str | None
 
 
 # ------------------------------------------------------------------ Gebaeude

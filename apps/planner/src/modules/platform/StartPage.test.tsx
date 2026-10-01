@@ -129,7 +129,7 @@ describe("Startseite", () => {
       .map(([, optionen]) => (optionen as { query: unknown }).query);
     expect(projektabfragen).toEqual(
       expect.arrayContaining([
-        { sort: "updated_at", page_size: 5 },
+        { sort: "updated_at", page_size: 5, status_group: "current" },
         { sort: "updated_at", page_size: 5, status: "active" },
       ]),
     );

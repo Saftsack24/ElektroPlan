@@ -23,6 +23,8 @@ import {
 } from "./texte";
 import type { Verzeichnisstatus } from "./texte";
 import { useSeitenweise } from "./useSeitenweise";
+import { AKTION } from "../../../core/ui/aktionssymbole";
+import { MitSymbol, Symbol } from "../../../core/ui/Symbol";
 
 export const SEITENGROESSE = 25;
 
@@ -166,7 +168,7 @@ export default function BenutzerPage() {
                 setDialogOffen(true);
               }}
             >
-              Benutzer einladen
+              <MitSymbol icon={AKTION.einladen}>Benutzer einladen</MitSymbol>
             </button>
           )}
         </div>
@@ -252,7 +254,7 @@ export default function BenutzerPage() {
               disabled={!liste.hatZurueck || liste.wechselt}
               onClick={liste.zurueck}
             >
-              ← Zurück
+              <MitSymbol icon={AKTION.zurueck}>Zurück</MitSymbol>
             </button>
             <span aria-live="polite">Seite {liste.seite}</span>
             <button
@@ -261,7 +263,9 @@ export default function BenutzerPage() {
               disabled={!liste.hatWeiter || liste.wechselt}
               onClick={liste.weiter}
             >
-              Weiter →
+              <span className="inline-flex items-center gap-1.5">
+                Weiter <Symbol icon={AKTION.weiter} />
+              </span>
             </button>
           </nav>
         )}

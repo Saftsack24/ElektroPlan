@@ -11,14 +11,17 @@ tatsaechlich benutzen darf, steht als Positivliste in
 ``app/core/module_registry/boundaries.py`` (``CORE_PUBLIC_SURFACE``) und wird
 statisch geprueft.
 
-``provides`` bleibt leer: Provider-Ports entstehen mit dem Modul, das sie
-aufruft - das ist ``materials`` ab Phase 7.
+``provides`` bindet seit Phase 4d den Teilnehmer des Loeschprotokolls fuer
+Projekte (``ProjectContentParticipant``, ADR 0020). Die Provider-Ports fuer
+``materials`` kommen erst mit Phase 7.
 """
 
 from __future__ import annotations
 
-from app.core.module_registry.descriptor import ModuleDescriptor, ModuleKind
+from app.contracts.v1.project_lifecycle import ProjectContentParticipant
+from app.core.module_registry.descriptor import ModuleDescriptor, ModuleKind, bind_port
 from app.modules.electrical.api import router
+from app.modules.electrical.lifecycle import ElectricalProjectContent
 from app.modules.electrical.permissions import ELECTRICAL_PERMISSIONS
 
 DESCRIPTOR = ModuleDescriptor(
@@ -31,5 +34,5 @@ DESCRIPTOR = ModuleDescriptor(
     permissions=ELECTRICAL_PERMISSIONS,
     router=router,
     subscriptions=(),
-    provides=(),
+    provides=(bind_port(ProjectContentParticipant, ElectricalProjectContent),),
 )

@@ -26,12 +26,14 @@ ACTION_ROLE_ASSIGNED = "authorization.role_assigned"
 ACTION_ROLE_REVOKED = "authorization.role_revoked"
 ACTION_CUSTOMER_CREATED = "customer.created"
 ACTION_CUSTOMER_UPDATED = "customer.updated"
+#: Physische Loeschung (Phase 4d). Nur IDs und Nummer - keine Kundendaten.
 ACTION_CUSTOMER_DELETED = "customer.deleted"
-ACTION_CUSTOMER_ANONYMIZED = "customer.anonymized"
 ACTION_PROJECT_CREATED = "project.created"
 ACTION_PROJECT_UPDATED = "project.updated"
+#: Physische Loeschung (Phase 4d). Nur IDs, Nummer und erkannte Inhaltsarten.
 ACTION_PROJECT_DELETED = "project.deleted"
 ACTION_PROJECT_STATUS_CHANGED = "project.status_changed"
+ACTION_PROJECT_REOPENED = "project.reopened"
 #: Benutzerverwaltung (Phase 4.2). Die Eintraege tragen IDs und
 #: Rollenschluessel - **keine** E-Mail, keinen Namen, nie Token oder Link.
 ACTION_INVITATION_CREATED = "invitation.created"

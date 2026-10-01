@@ -17,6 +17,8 @@ import {
   OEFFNUNGSART_LABEL,
   flaecheAnzeigen,
 } from "./texte";
+import { AKTION } from "../../core/ui/aktionssymbole";
+import { MitSymbol } from "../../core/ui/Symbol";
 
 type Schemas = components["schemas"];
 type RoomOut = Schemas["RoomOut"];
@@ -250,7 +252,7 @@ export function RaumDetail({
                           aria-label={`Wand ${index + 1} bearbeiten`}
                           onClick={() => setWanddialog({ wand })}
                         >
-                          Bearbeiten
+                          <MitSymbol icon={AKTION.bearbeiten}>Bearbeiten</MitSymbol>
                         </button>
                         <button
                           className={knopf()}
@@ -277,7 +279,7 @@ export function RaumDetail({
                           disabled={wandLoeschen.isPending}
                           onClick={() => wandLoeschen.mutate(wand)}
                         >
-                          Entfernen
+                          <MitSymbol icon={AKTION.loeschen}>Entfernen</MitSymbol>
                         </button>
                       </div>
                     </td>
@@ -470,7 +472,7 @@ function Oeffnungen({
                         type="button"
                         onClick={() => setDialog({ oeffnung })}
                       >
-                        Bearbeiten
+                        <MitSymbol icon={AKTION.bearbeiten}>Bearbeiten</MitSymbol>
                       </button>
                       <button
                         className={knopf()}
@@ -478,7 +480,7 @@ function Oeffnungen({
                         disabled={loeschen.isPending}
                         onClick={() => loeschen.mutate(oeffnung)}
                       >
-                        Entfernen
+                        <MitSymbol icon={AKTION.loeschen}>Entfernen</MitSymbol>
                       </button>
                     </div>
                   </td>

@@ -14,7 +14,7 @@ const GRUPPE: Record<Gruppe, { titel: string; leer: string; umschalten: string }
   current: {
     titel: "Laufende Projekte",
     leer: "Keine laufenden Projekte. Entwürfe zählen hier mit.",
-    umschalten: "Abgeschlossene und archivierte anzeigen",
+    umschalten: "Abgeschlossene & archivierte anzeigen",
   },
   closed: {
     titel: "Abgeschlossene und archivierte Projekte",
@@ -32,8 +32,8 @@ const GRUPPE: Record<Gruppe, { titel: string; leer: string; umschalten: string }
  * gerendert, wenn der Benutzer Projekte lesen darf; der Server prüft das
  * unabhängig davon.
  *
- * Auch ein anonymisierter Kunde zeigt hier seine bestehenden Projekte - die
- * Belegzuordnung bleibt ausdrücklich erhalten.
+ * Die Umschaltung zeigt, dass es abgeschlossene oder archivierte Projekte
+ * geben kann - sie blockieren auch die Löschung des Kunden (ADR 0020).
  */
 export function KundenProjekte({ kundeId }: { kundeId: string }) {
   const { api } = useAuth();

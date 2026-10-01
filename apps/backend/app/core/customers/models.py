@@ -5,26 +5,22 @@ Feldliste ist deshalb bewusst kurz gehalten (Datenminimierung, Art. 5 Abs. 1
 lit. c DSGVO); jedes Feld hat einen dokumentierten Zweck in
 ``docs/security.md``, Abschnitt 13. Es gibt keine Felder "fuer spaeter".
 
-Zwei getrennte Loeschwege:
+**Loeschen heisst seit Phase 4d physisch loeschen** (ADR 0020): Ein Kunde
+ohne Projekte wird aus der operativen Datenbank entfernt. Die fruehere
+Anonymisierung (``anonymized_at``) ist entfallen.
 
-* ``deleted_at`` - fachliches Ausblenden. Der Datensatz bleibt lesbar fuer
-  bestehende Projekte und aufbewahrungspflichtige Belege.
-* ``anonymized_at`` - Umsetzung eines Loeschbegehrens. Die personenbezogenen
-  Felder werden unwiederbringlich ueberschrieben, die Kundennummer und damit
-  die Belegzuordnung bleiben erhalten.
+Ein Ausblenden (Soft Delete) gibt es seit Phase 4d nicht mehr; die Spalte
+``deleted_at`` ist mit Migration ``0006`` entfallen.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
-
-from sqlalchemy import CheckConstraint, DateTime, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.db.mixins import (
     Authored,
-    SoftDeletable,
     TenantScoped,
     Timestamped,
     UUIDPrimaryKey,
@@ -37,7 +33,7 @@ CUSTOMER_KIND_COMPANY = "company"
 CUSTOMER_KINDS: tuple[str, ...] = (CUSTOMER_KIND_PRIVATE, CUSTOMER_KIND_COMPANY)
 
 
-class Customer(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, SoftDeletable, Authored, Base):
+class Customer(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, Authored, Base):
     """Ein Auftraggeber des Betriebs."""
 
     __tablename__ = "customers"
@@ -61,12 +57,3 @@ class Customer(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, SoftDeletab
     billing_postal_code: Mapped[str | None] = mapped_column(String(20), nullable=True, default=None)
     billing_city: Mapped[str | None] = mapped_column(String(120), nullable=True, default=None)
     billing_country_code: Mapped[str] = mapped_column(String(2), nullable=False, default="DE")
-    #: Gesetzt, sobald ein Loeschbegehren umgesetzt wurde. Danach enthaelt der
-    #: Datensatz keine personenbezogenen Daten mehr.
-    anonymized_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True, default=None
-    )
-
-    @property
-    def is_anonymized(self) -> bool:
-        return self.anonymized_at is not None

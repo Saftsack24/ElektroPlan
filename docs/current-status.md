@@ -1,7 +1,7 @@
 # Aktueller Projektstand
 
 **Letzte Aktualisierung:** 2026-09-30
-**Aktualisiert nach:** Task 0021 — Phase 4c.2 (persönliche Darstellung, Laufzeitthemes, responsive Nachkorrektur)
+**Aktualisiert nach:** Task 0022 — Phase 4d (Datenlebenszyklus, Löschregeln, Bearbeitungsmetadaten, Aktions-UX)
 
 > Dieses Dokument soll einer neuen Session in wenigen Minuten vermitteln, wo das Projekt
 > steht.
@@ -38,6 +38,9 @@ per Stilvergleich und im Browser funktional geprüft, Sichtprüfung durch den Au
 **Phase 4c.2 — persönliche Darstellung, Laufzeitthemes, responsive Nachkorrektur: ABGESCHLOSSEN**
 (automatisiert geprüft, manuell durch den Auftraggeber abgenommen) — mit diesem Checkpoint
 committet
+**Phase 4d — Datenlebenszyklus, Löschregeln, Bearbeitungsmetadaten, Aktions-UX: ABGESCHLOSSEN**
+(automatisiert, per API und im Browser geprüft, vom Auftraggeber geprüft) — mit diesem
+Checkpoint committet
 **Phase 5 — Electrical Devices: NICHT BEGONNEN**
 
 > Phase 4a und 4a.1 sind als `887f254`, Phase 4.2 als `66cbff3` committet. Die
@@ -48,6 +51,39 @@ committet
 ---
 
 ## 2. Zuletzt abgeschlossene Aufgabe
+
+**Task 0022 — Phase 4d: Datenlebenszyklus**
+([ADR 0020](decisions/0020-data-lifecycle-deletion-and-reopen.md), Migration `0006`)
+
+1. **Projekte löschen:** nur `draft`/`active`. **Leer** = keine Datei, höchstens ein
+   Gebäude mit höchstens einem Geschoss, kein Modul meldet Inhalt. Leer:
+   `project.record.delete` (Administrator, Planer). Mit Inhalt: `project.record.purge`
+   (nur Administrator) und `confirm_project_number`. Abgeschlossen/archiviert: `409`.
+2. **Wiedereröffnen** `completed → active`: `POST /projects/{id}/reopen`,
+   `project.record.reopen` (nur Administrator); `archived` bleibt endgültig.
+3. **Kunden löschen** physisch, nur Administrator, nur ohne Projekte (jeder Status, auch
+   früher ausgeblendete). Anonymisierung entfernt (Route, Service, Recht, Spalte, Oberfläche).
+   **Soft Delete für Kunden und Projekte abgeschafft:** `0006` entfernt beide `deleted_at`,
+   löscht keine Zeile; früher Ausgeblendetes ist wieder sichtbar und unterliegt den neuen
+   Regeln. Archivierung = ausschließlich Status `archived`.
+4. **Löschschutz-Protokoll** `ProjectContentParticipant` über `ModuleDescriptor.provides`;
+   Electrical-Teilnehmer; alles in einer Transaktion unter der Projektsperre.
+5. **Storage:** `storage_cleanup_jobs` (vorgemerkt vor dem Löschen der Dateizeilen,
+   gelöscht nach dem Commit, Fehler bleiben mit Zähler), CLI `storage-cleanup`.
+6. **Bearbeiter:** `created_by`/`updated_by` an Kunden und Projekten; Core und Electrical
+   „berühren" das Projekt ohne Versionssprung.
+7. **Oberfläche:** laufende/historische Projektliste per URL, Löschdialoge (leer / mit
+   Inhalt + Projektnummer), Wiedereröffnungs- und Kundenlöschdialog, Metadatenbereich,
+   gekürztes Kundensuchfeld, Icon-System mit `lucide-react`.
+8. **Tests:** 792 Backend (vorher 736, 0 übersprungen), 681 Frontend (vorher 653);
+   Nebenläufigkeit Löschen gegen Upload, Raumanlage und Statuswechsel mit echtem
+   PostgreSQL – ohne Sperre fallen 4 von 7 um.
+
+**Abnahme:** API-Skript im frisch gebauten Compose-System 14/14; Browserabnahme im
+Claude-Browserbereich (Löschen als Planer und Administrator, Projektnummer, historische
+Ansicht, Zurück, Wiedereröffnung, Kundenlöschung, 420/360/320 px). Zwei Befunde dabei
+behoben (Nachlade-404 nach Löschung, ASCII-Meldung). Browserzoom nicht aussagekräftig
+geprüft. Details: `docs/task-history.md`, Task 0022.
 
 **Task 0021 — Phase 4c.2: persönliche Darstellung** (ADR 0018 präzisiert,
 [ADR 0019](decisions/0019-personal-display-preferences-local-storage.md))
@@ -366,12 +402,16 @@ Die offene fachliche Entscheidung **T0 ist getroffen**: Ein archiviertes Projekt
 | Projektstammdaten, Gebäude, Geschosse ändern oder löschen | `409 project-archived` |
 | Neuer Datei-Upload | `409 project-archived` |
 | Statuswechsel aus `archived` | `409` (unverändert) |
-| Projekt ausblenden (`deleted_at`) | **erlaubt** — bewusste Ausnahme |
 
-Die Ausnahme beim Ausblenden ist notwendig: Ohne sie ließe sich ein Kunde mit
-archiviertem Projekt nie mehr ausblenden, weil die Kundenlöschung offene Projekte zählt.
-Eine Wiederherstellung aus `archived` gibt es nicht; sie wäre ein eigener
-administrativer Vorgang mit eigener Berechtigung.
+> **Abgelöst durch Phase 4d ([ADR 0020](decisions/0020-data-lifecycle-deletion-and-reopen.md)):**
+> Soft Delete für Kunden und Projekte ist abgeschafft; `customers.deleted_at` und
+> `projects.deleted_at` sind mit Migration `0006` entfernt. Archivierung erfolgt
+> ausschließlich über den Projektstatus `archived`. Archivierte Projekte bleiben
+> endgültig bestehen und verhindern daher weiterhin die physische Löschung des
+> zugehörigen Kunden.
+> Die damalige Ausnahme „archiviertes Projekt ausblenden“ gibt es deshalb nicht mehr;
+> `DELETE /projects/{id}` antwortet für archivierte Projekte mit `409`. Eine
+> Wiederherstellung aus `archived` gibt es weiterhin nicht.
 
 Die Regel steht als **eine** Service-Vorbedingung, nicht verstreut je Endpunkt. Für
 Gebäude und Geschosse wird die Eigentümerkette bis zum Projekt aufgelöst. Die Oberfläche
@@ -395,6 +435,10 @@ prüft am Ende den Datenbankzustand, nicht nur die Antwort.
 | 2 | Kunde ausblenden gegen Projekt anlegen | sichtbares Projekt an ausgeblendetem Kunden möglich | beide Seiten sperren zuerst die Kundenzeile; nur `409` oder `404` als Ausgang |
 | 3 | Anonymisierter Kunde | für neue Projekte wiederverwendbar | für neue Zuordnungen `404`, für bestehende lesbar |
 | 4 | Zwei Anfragen legen dieselbe Geschossebene an | `IntegrityError` → `500` | `422` wie im sequenziellen Fall, nur für die erwartete Constraint |
+
+> Zeilen 2 und 3 beschreiben den damaligen Stand. Seit Phase 4d gibt es weder
+> Ausblenden noch Anonymisierung; die Kundenzeilensperre schützt jetzt die physische
+> Kundenlöschung gegen die Projektanlage (ADR 0020).
 
 Dazu zwei Klarstellungen:
 
@@ -429,6 +473,7 @@ Die erste Phase mit Fachlichkeit. Neu im System:
 7. **Anonymisierung von Kunden** (Art. 17 DSGVO): personenbezogene Felder werden
    überschrieben, Kundennummer und Belegzuordnung bleiben. Nicht umkehrbar, eigene
    Berechtigung, nur Administrator, protokolliert **ohne** die gelöschten Werte.
+   *(Abgelöst in Phase 4d durch die physische Kundenlöschung, ADR 0020.)*
 8. **Oberfläche**: Kundenliste und -detail, Projektliste mit Filtern, Projektdetail mit
    Tabs (Stammdaten, Gebäude & Geschosse, Dateien). Der Beitragspunkt für Projekt-Tabs
    der Fachmodule ist live und getestet — ab Phase 3 hängt sich die Elektroplanung dort
@@ -598,7 +643,8 @@ Aktionen; Abmelden und Neuladen einer Projekt-URL landet auf der Anmeldung.
 **Zusätzlich im laufenden System geprüft:** `PATCH` ohne `If-Match` → `428`, mit
 veralteter Version → `409`; Anonymisierung überschreibt die Felder und hinterlässt keine
 personenbezogenen Daten im Protokoll; ein Kunde mit offenem Projekt lässt sich nicht
-ausblenden (`409`).
+ausblenden (`409`). *(Damaliger Stand – Anonymisierung und Ausblenden sind seit Phase 4d
+durch die physische Löschung ersetzt.)*
 
 ---
 
@@ -660,8 +706,10 @@ nennt den Stand nach Phase 3.
   Freitextsuche, Filtern und Keyset-Pagination (Phase 2).
 - **Optimistisches Sperren** über `If-Match` auf allen versionierten Entitäten;
   fehlender Header `428`, veraltete Version `409`.
-- **Anonymisierung von Kunden** nach Art. 17 DSGVO, nicht umkehrbar, eigene
-  Berechtigung, protokolliert ohne die gelöschten Werte.
+- **Endgültiges Löschen** von Kunden (nur Administrator, nur ohne Projekte) und Projekten
+  (leer: Bearbeiter; mit Inhalt: Administrator mit Projektnummer), **Wiedereröffnung**
+  abgeschlossener Projekte, Löschschutz-Protokoll und Storage-Aufräumwarteschlange
+  (Phase 4d, ADR 0020). Die Anonymisierung aus Phase 2 ist entfallen.
 - **Authentifizierung:** Argon2id, Access Token ohne Berechtigungen im Token,
   Refresh Token **ausschließlich** im HttpOnly-Cookie, Rotation mit
   `SELECT … FOR UPDATE`, Diebstahlserkennung mit Toleranzfenster für parallele
@@ -726,14 +774,14 @@ was offen ist, ist eine Schuld.
 | Ausgeblendete Aktionen bei archivierten Projekten | 6 Komponententests; der verbindliche Schutz bleibt serverseitig |
 | Schreibschutz archivierter Projekte | alle sieben schreibenden Unterressourcen liefern `409 project-archived`; Lesen und Download bleiben geprüft möglich |
 | Paralleler Versionskonflikt ist `409` | zwei Sessions, zwei Threads, Barriere: genau ein Gewinner, Verlierer mit `version-conflict`; Version genau einmal weitergezählt |
-| Kunde ausblenden gegen Projekt anlegen | Paralleltest prüft den Datenbankzustand; die verbotene Kombination kann nicht entstehen |
-| Kundenzeile wird wirklich gesperrt | mitgeschriebenes SQL belegt `SELECT … FOR UPDATE` bei Anlage, Neuzuordnung und Ausblenden |
-| Anonymisierter Kunde für neue Zuordnungen gesperrt | Tests für Anlage und Umhängen; bestehendes Projekt bleibt lesbar, Liste zeigt nur den Platzhalter |
+| Kunde löschen gegen Projekt anlegen (bis 4d: ausblenden) | Paralleltest prüft den Datenbankzustand; die verbotene Kombination kann nicht entstehen |
+| Kundenzeile wird wirklich gesperrt | mitgeschriebenes SQL belegt `SELECT … FOR UPDATE` bei Anlage, Neuzuordnung und Löschung |
+| ~~Anonymisierter Kunde für neue Zuordnungen gesperrt~~ (entfallen mit Phase 4d) | Tests für Anlage und Umhängen; bestehendes Projekt bleibt lesbar, Liste zeigt nur den Platzhalter |
 | Parallele Geschossebene | Paralleltest plus threadfreier Test des Index-Pfads; genau ein Datensatz in der Datenbank |
 | `If-Match`-Syntax | 35 parametrisierte Fälle |
 | Nummernvergabe nebenläufigkeitssicher | Test mit zwei echten Threads und Barrier: zwei verschiedene Nummern |
 | Optimistisches Sperren | Tests für fehlenden Header (`428`), veraltete Version (`409`) und ETag-Schreibweise |
-| Anonymisierung nach Art. 17 DSGVO | Felder in der Datenbank geprüft; Protokoll enthält die gelöschten Werte nachweislich nicht; Berechtigung liegt nur beim Administrator |
+| ~~Anonymisierung nach Art. 17 DSGVO~~ (ersetzt durch physische Löschung, Phase 4d) | Felder in der Datenbank geprüft; Protokoll enthält die gelöschten Werte nachweislich nicht; Berechtigung liegt nur beim Administrator |
 | Keyset-Pagination | Test läuft über mehrere Seiten und prüft, dass jeder Datensatz genau einmal erscheint |
 | Projekt → Kunde mandantenübergreifend | PostgreSQL lehnt den Verweis selbst ab (IntegrityError) |
 | Plan-PDF hoch- und herunterladen | gegen echtes MinIO, Inhalt byteweise verglichen |
@@ -809,7 +857,11 @@ was offen ist, ist eine Schuld.
 | Die Projektsperre serialisiert **alle** Schreibvorgänge eines Projekts | Im Baualltag (ein bis zwei Bearbeiter je Projekt) unkritisch; nicht gemessen | wenn mehrere Personen gleichzeitig an einem Projekt arbeiten |
 | Offset-Seiten bei Kunden und Projekten (ADR 0017) | Ändert sich die Liste zwischen zwei Seitenaufrufen, verschiebt sich ein Eintrag um eine Position; `COUNT` je Seite nicht gemessen | bei Bedarf (Export/Sync bleiben Cursor-Sache) |
 | Nativer `beforeunload`-Dialog im Browser nicht visuell bestätigt | Handler nachweislich aktiv (Test, Konsole: Chromium blockiert ihn ohne Benutzergeste); der Browserdialog erscheint nicht im Screenshot | bei einer Abnahme mit Mensch am Gerät |
-| Anonymisieren fragt noch per `window.confirm` | keine ungespeicherten Änderungen betroffen, deshalb außerhalb des Auftrags | bei Gelegenheit auf `Rueckfrage` umstellen |
+| ~~Anonymisieren fragt noch per `window.confirm`~~ | **Erledigt in 4d:** Anonymisierung entfallen, alle Lösch- und Statusdialoge nutzen `Bestaetigung` | — |
+| `storage_cleanup_jobs` wird nicht zeitgesteuert abgearbeitet (4d) | fehlgeschlagene Storage-Löschungen bleiben bis zum CLI-Lauf stehen | mit dem ersten Betriebs-Scheduler |
+| Verwaiste Objekte aus fehlgeschlagenem Upload-Commit laufen noch nicht über `storage_cleanup_jobs` (4d) | weiterhin nur Log `orphan_object_cleanup_failed` | Upload-Pfad bei Gelegenheit an die Warteschlange anschließen |
+| Servermeldungen in ASCII-Umschrift | Die Oberfläche zeigt für Lösch-Sperrgründe eigene deutsche Texte (4d), Meldungen wie `customer-has-projects` erscheinen weiter in Umschrift | mit der Entscheidung zur Schreibweise der Servermeldungen |
+| `lint-imports` lokal durch Windows-Anwendungssteuerung blockiert (4d) | die native `grimp`-DLL darf nicht laden; import-linter lief deshalb in einem Wegwerf-Container | Ausnahme für `.venv` oder Lauf in CI |
 | Ein Datei-Upload kann nach vollständiger Übertragung noch mit `409` scheitern | Bewusster Tausch: Die Sperre wird nicht über die Übertragung gehalten. Das Objekt wird verworfen | keine Absicht, das zu ändern |
 
 ### Offene fachliche Entscheidungen
@@ -850,7 +902,7 @@ sein. Stand nach Phase 2:
 | 2 | Datenminimierung: Feldliste je Entität mit Zweck | **dokumentiert** |
 | 3 | Auskunft und Export | offen |
 | 4 | Berichtigung | **umgesetzt** (Stammdaten änderbar, Belege unberührt) |
-| 5 | Löschung / Anonymisierung | **umgesetzt und getestet** |
+| 5 | Löschung | **umgesetzt und getestet** – seit Phase 4d physische Löschung aus der operativen Datenbank; Backups behalten Daten bis zum Fristablauf |
 | 6 | Aufbewahrungspflichten | offen (Festlegung je Dokumentart) |
 | 7 | Trennung löschbar / aufbewahrungspflichtig | teilweise: für `customers` entschieden, für spätere Belegtabellen offen |
 | 8 | Backup- und Restore-Wirkung auf Löschungen | offen |
@@ -880,6 +932,10 @@ HSTS, Virenscan, MFA für administrative Konten.
 ---
 
 ## 9. Nächste geplante Aufgabe
+
+**Nach Phase 4d (Stand 2026-10-01):** Phase 4d ist abgeschlossen und mit diesem Checkpoint
+committet (nicht gepusht). Nach dem Aktualisieren anderer Umgebungen: Migration `0006`,
+dann Seed. Phase 5 ist **nicht begonnen** und erst nach ausdrücklicher Freigabe.
 
 **Nach Phase 4c.2 (Stand 2026-09-30):** Phase 4c.2 ist abgenommen und mit diesem
 Checkpoint committet (nicht gepusht). Phase 5 ist **nicht begonnen** und erst nach

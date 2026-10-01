@@ -4,6 +4,7 @@ python -m app.cli seed
 python -m app.cli check-modules
 python -m app.cli export-openapi [pfad]
 python -m app.cli purge-invitations
+python -m app.cli storage-cleanup
 """
 
 from __future__ import annotations
@@ -13,6 +14,8 @@ import sys
 from pathlib import Path
 
 from app.config import get_settings
+from app.core.files import cleanup
+from app.core.files.storage import get_object_storage
 from app.core.invitations.service import purge_invitations
 from app.core.seed import seed_initial_data
 from app.db.mixins import utcnow
@@ -62,11 +65,26 @@ def cmd_purge_invitations(_: list[str]) -> int:
     return 0
 
 
+def cmd_storage_cleanup(_: list[str]) -> int:
+    """Arbeitet offene Storage-Aufraeumauftraege ab (ADR 0020).
+
+    Idempotent: Erledigte Auftraege verschwinden, gescheiterte bleiben mit
+    Versuchszaehler und letzter Meldung stehen. Rueckgabe 1, wenn danach noch
+    Auftraege offen sind - damit ein Betriebsjob den Rest bemerkt.
+    """
+    with session_scope() as session:
+        result = cleanup.process_jobs(session, get_object_storage())
+        remaining = cleanup.pending_count(session)
+    print(f"Entfernt: {result.removed}, fehlgeschlagen: {result.failed}, offen: {remaining}")
+    return 1 if remaining else 0
+
+
 COMMANDS = {
     "seed": cmd_seed,
     "check-modules": cmd_check_modules,
     "export-openapi": cmd_export_openapi,
     "purge-invitations": cmd_purge_invitations,
+    "storage-cleanup": cmd_storage_cleanup,
 }
 
 
