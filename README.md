@@ -165,6 +165,14 @@ Icons (`lucide-react`). Regeln und Protokoll:
 > `lucide-react`). Offene Storage-Aufräumaufträge arbeitet
 > `python -m app.cli storage-cleanup` ab.
 
+**Phase 4f — Wand- und Deckenansicht — abgeschlossen**
+(vom Auftraggeber manuell abgenommen, mit diesem Checkpoint committet)
+
+Wand frontal aus dem Raum bearbeiten (Türen, Fenster, Durchgänge mit Hilfslinien und
+Einrasten), Deckenansicht je Raum; abgeschlossene Projekte sind schreibgeschützt; eine neue
+Geschoss-Standardhöhe wird gegen vorhandene Öffnungen geprüft. Keine Migration.
+Entscheidung: [ADR 0022](docs/decisions/0022-wall-and-ceiling-view.md).
+
 **Phase 4e — Benutzerlebenszyklus und serverseitige Einstellungen — abgeschlossen**
 (vom Auftraggeber geprüft, mit diesem Checkpoint committet). Darstellung, Akzentfarbe und
 Maßeinheit liegen jetzt **auf dem Server** je Benutzer und Betrieb (der Browser hält nur einen

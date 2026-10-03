@@ -66,7 +66,17 @@ function Hinweisliste({
   );
 }
 
-function Auswahlinfo({ modell, objekt }: { modell: Szenenmodell; objekt: Objekt }) {
+function Auswahlinfo({
+  modell,
+  objekt,
+  onAuswahl,
+  onWandansicht,
+}: {
+  modell: Szenenmodell;
+  objekt: Objekt;
+  onAuswahl: (auswahl: Auswahl | null) => void;
+  onWandansicht?: (ziel: { raumId: string; wandId: string; seite: "innen" | "aussen" }) => void;
+}) {
   // Längen in der persönlichen Anzeigeeinheit - dieselbe wie im 2D-Editor.
   const { anzeigen: mm } = useMasse();
   const name = (raumId: string) => {
@@ -88,6 +98,121 @@ function Auswahlinfo({ modell, objekt }: { modell: Szenenmodell; objekt: Objekt 
             ["Wände", String(raum.wandanzahl)],
           ]}
         />
+      </>
+    );
+  }
+
+  if (objekt.art === "raumwand") {
+    const { raumwand: w } = objekt;
+    const hoehe = (raumId: string) => modell.raeume.find((r) => r.id === raumId)?.hoeheMm ?? null;
+    return (
+      <>
+        <h3 className="mt-0 mb-1.5 text-[1rem]">
+          Wand {w.nummer} von „{name(w.raumId)}“
+        </h3>
+        <Werte
+          zeilen={[
+            ["Länge", `${mm(w.laengeMm)} (ganze Wand dieses Raums)`],
+            ["Stärke", mm(w.staerkeMm)],
+            ["Raumhöhe", mm(w.hoeheMm)],
+            ["Öffnungen", String(w.oeffnungIds.length)],
+          ]}
+        />
+        <p className="mt-0 mb-1 text-muted">Abschnitte (ab Wandanfang):</p>
+        <ul className="mt-0 mb-2 pl-[18px] text-small" aria-label="Abschnitte der Wand">
+          {w.abschnitte.map((a) => (
+            <li key={a.id}>
+              {mm(a.vonMm)} bis {mm(a.bisMm)}:{" "}
+              {a.mehrdeutig
+                ? "mehr als zwei Räume – Zuordnung nicht eindeutig"
+                : a.nachbarn.length === 0
+                  ? "nicht geteilt (außen)"
+                  : `grenzt an ${a.nachbarn
+                      .map((n) => {
+                        const h = hoehe(n);
+                        return `„${name(n)}“${h !== null && h !== w.hoeheMm ? ` (Raumhöhe ${mm(h)})` : ""}`;
+                      })
+                      .join(", ")}`}
+            </li>
+          ))}
+        </ul>
+        {onWandansicht !== undefined && (
+          <button type="button" className={`${knopf("primaer")} mb-2`} onClick={() => onWandansicht({ raumId: w.raumId, wandId: w.id, seite: "innen" })}>
+            In der Wandansicht öffnen (Innenseite)
+          </button>
+        )}
+      </>
+    );
+  }
+
+  if (objekt.art === "fassade") {
+    const { fassade, abschnitt } = objekt;
+    const angeklickt = fassade.abschnitte.find((a) => a.id === abschnitt);
+    // Von außen gewählt: die Außenseite der eindeutig gewählten Raumwand.
+    const ziel = (a: (typeof fassade.abschnitte)[number]) => ({ raumId: a.raumId, wandId: a.wandId, seite: "aussen" as const });
+    return (
+      <>
+        <h3 className="mt-0 mb-1.5 text-[1rem]">Außenwand (Fassade)</h3>
+        <Werte
+          zeilen={[
+            ["Länge", `${mm(fassade.laengeMm)} (durchgehend)`],
+            ["Räume dahinter", String(new Set(fassade.abschnitte.map((a) => a.raumId)).size)],
+            ["Öffnungen", String(fassade.oeffnungIds.length)],
+          ]}
+        />
+        <p className="mt-0 mb-1 text-muted">
+          Ansichtsgruppe aus den nicht geteilten Wandstücken auf einer Linie – nicht gespeichert.
+        </p>
+        <ul className="mt-0 mb-2 pl-[18px] text-small" aria-label="Abschnitte der Fassade">
+          {fassade.abschnitte.map((a) => (
+            <li key={a.id}>
+              {mm(a.vonMm)} bis {mm(a.bisMm)}: Wand von „{name(a.raumId)}“{a.id === abschnitt ? " (angeklickt)" : ""}
+            </li>
+          ))}
+        </ul>
+        {onWandansicht !== undefined &&
+          (angeklickt !== undefined ? (
+            <button type="button" className={`${knopf("primaer")} mb-2`} onClick={() => onWandansicht(ziel(angeklickt))}>
+              In der Wandansicht öffnen (Außenseite, Wand von „{name(angeklickt.raumId)}“)
+            </button>
+          ) : (
+            <div className="mb-2 flex flex-col gap-1">
+              <p className="m-0">In der Wandansicht öffnen – welcher Raum?</p>
+              {fassade.abschnitte.map((a) => (
+                <button key={a.id} type="button" className={knopf()} onClick={() => onWandansicht(ziel(a))}>
+                  Wand von „{name(a.raumId)}“ ({mm(a.vonMm)} bis {mm(a.bisMm)})
+                </button>
+              ))}
+            </div>
+          ))}
+      </>
+    );
+  }
+
+  if (objekt.art === "wandseite") {
+    // Krone oder Stirnseite einer gemeinsamen Wand: Welche Raumseite gemeint
+    // ist, lässt sich nicht bestimmen - nichts raten, ausdrücklich wählen lassen.
+    const quellen = [...objekt.wand.quellen].sort((a, b) => name(a.raumId).localeCompare(name(b.raumId), "de"));
+    const fassade = objekt.wand.lage === "aussen" ? modell.fassaden.find((f) => f.abschnitte.some((a) => a.id === objekt.wand.id)) : undefined;
+    return (
+      <>
+        <h3 className="mt-0 mb-1.5 text-[1rem]">Welche Wandseite?</h3>
+        <p className="mt-0 mb-1.5">
+          Getroffen wurde die Oberkante oder eine Stirnseite der Wand. Von hier aus ist nicht eindeutig, welche Seite gemeint
+          ist. Bitte wählen:
+        </p>
+        <div className="mb-2 flex flex-col gap-1">
+          {quellen.map((q) => (
+            <button key={q.id} type="button" className={knopf()} onClick={() => onAuswahl({ art: "raumwand", id: q.id })}>
+              Innenseite – Wand von „{name(q.raumId)}“
+            </button>
+          ))}
+          {fassade !== undefined && (
+            <button type="button" className={knopf()} onClick={() => onAuswahl({ art: "fassade", id: fassade.id, abschnitt: objekt.wand.id })}>
+              Außenseite – Fassade
+            </button>
+          )}
+        </div>
       </>
     );
   }
@@ -159,11 +284,14 @@ export function Seitenleiste({
   auswahl,
   objekt,
   onAuswahl,
+  onWandansicht,
 }: {
   modell: Szenenmodell;
   auswahl: Auswahl | null;
   objekt: Objekt | null;
   onAuswahl: (auswahl: Auswahl | null) => void;
+  /** Phase 4f: die gewählte Raumwand in der Wandansicht des 2D-Editors öffnen. */
+  onWandansicht?: (ziel: { raumId: string; wandId: string; seite: "innen" | "aussen" }) => void;
 }) {
   const eigene = auswahl !== null && objekt !== null ? warnungenZu(modell, auswahl) : [];
   return (
@@ -177,7 +305,7 @@ export function Seitenleiste({
           </p>
         ) : (
           <>
-            <Auswahlinfo modell={modell} objekt={objekt} />
+            <Auswahlinfo modell={modell} objekt={objekt} onAuswahl={onAuswahl} {...(onWandansicht !== undefined ? { onWandansicht } : {})} />
             {eigene.length > 0 && <Hinweisliste warnungen={eigene} />}
             <button type="button" className={knopf()} onClick={() => onAuswahl(null)}>
               Auswahl aufheben (Esc)

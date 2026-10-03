@@ -2,7 +2,8 @@
 
 Art: Fachmodul · Präfix: `electrical_` · Status: **Raummodell umgesetzt (Phase 3)**,
 **grafischer 2D-Editor umgesetzt (Phase 4a)**, **abgeleitete 3D-Ansicht umgesetzt
-(Phase 4b)**, Geräte/Stromkreise/Leitungswege geplant (Phasen 5–6)
+(Phase 4b)**, **Wand- und Deckenansicht umgesetzt (Phase 4f)**, Geräte/Stromkreise/Leitungswege
+geplant (Phasen 5–6)
 Abhängig von: **Phasen 3–6 nur `core`** · ab Phase 7 zusätzlich `materials`
 
 > Die Module Registry verweigert den Start bei einer Abhängigkeit auf ein nicht
@@ -110,7 +111,13 @@ Rahmenpfosten sind übliche Praxis. Unterkante + Höhe darf die geltende Raumhö
 
 **Folgen einer Änderung:** Würde eine Wandänderung oder eine neue Raumhöhe eine
 vorhandene Öffnung ungültig machen, wird die Änderung mit `422` **abgelehnt** und die
-betroffene Öffnung benannt. Eine Tür wird nicht stillschweigend ungültig.
+betroffene Öffnung benannt. Eine Tür wird nicht stillschweigend ungültig. **Seit Phase 4f**
+gilt das auch für eine abgesenkte **Standard-Deckenhöhe des Geschosses** (Räume ohne eigene
+Höhe): Electrical prüft sie als `FloorCeilingHeightParticipant` (`floor_height.py`,
+ADR 0022), der Geschoss-PATCH scheitert mit `422` und nennt Raum und Wand. Auch ein
+bestehender Konflikt darf durch eine weitere Absenkung nicht größer werden; eine
+unveränderte oder höhere Standardhöhe bleibt immer zulässig. Im Editor lässt
+sich eine Wand nicht mehr unter eine ihrer Öffnungen kürzen (verständliche Ablehnung).
 
 **Löschregeln:**
 
@@ -517,7 +524,7 @@ Serverprüfung bleibt verbindlich. Gegen Drift prüfen Backend und Frontend dies
 versionierte Fixture `testdata/geometry/raumgeometrie.v1.json` (kein API-Vertrag).
 
 **Berechtigungen:** Ansicht mit `electrical.plan.read`, Bearbeitung mit
-`electrical.plan.write`. Ohne Schreibrecht oder bei archiviertem Projekt: nur Auswählen,
+`electrical.plan.write`. Ohne Schreibrecht oder bei abgeschlossenem bzw. archiviertem Projekt (seit 4f auch `completed`): nur Auswählen,
 Verschieben, Zoom; keine Griffe, kein Speichern („Nur Ansicht").
 
 **Barrierearmer Weg:** Die Ansicht „Tabellen & Details" bleibt vollständig nutzbar; die
@@ -654,6 +661,90 @@ automatisch kreisende Kamera, kein Vollbild, Seitenleiste unter 960 px unter der
 Stromkreise, Leitungswege, Installationszonen, Materialermittlung, Kalkulation, AR,
 Offline-Sync, Grundrissimport, Decken, Dachformen, Kniestock, Wandbauarten, Texturen,
 Schatten, physische Wandidentität.
+
+### Wand- und Deckenansicht (Phase 4f) — umgesetzt
+
+Entscheidung: [ADR 0022](../decisions/0022-wall-and-ceiling-view.md). Code:
+`apps/planner/src/modules/electrical/wandansicht/` und `…/deckenansicht/`. Keine Migration,
+keine neue API-Route.
+
+**Standardweg (Nachtrag 2026-10-03):** Werkzeuge Tür (T), Fenster (N), Durchgang (D):
+Klick auf eine Wand wählt die Wand der **angeklickten Raumseite** und öffnet ihre Wandansicht
+mit diesem Werkzeug – der Klick im Grundriss legt nichts an. Vorhandene Öffnung mit dem
+Werkzeug anklicken oder doppelklicken: Wandansicht mit Auswahl. In 3D wählt ein Wandtreffer
+die ganze Wand des getroffenen Raums (volle Länge, Abschnitte als Zusatz, „In der
+Wandansicht öffnen“); bei Krone/Stirnseite einer gemeinsamen Wand ausdrückliche Raumwahl. Von
+außen auf eine Außenwand geklickt: die ganze durchgehende Fassade (gleiche Gerade, lückenlos,
+nicht um Ecken), mit Gesamtlänge und Raumabschnitten; Wandansicht über den angeklickten
+Abschnitt oder Raumwahl. Jede Wandansicht hat eine **Seite** (Innenseite des Raums oder
+Außenseite/Fassade), deutlich bezeichnet und umschaltbar; von außen sind links/rechts
+gespiegelt, gespeichert bleibt dieselbe Wand. Aus 3D geöffnet führt Schließen mit Kamera und
+Auswahl zurück nach 3D.
+
+**Einstieg:** Im Grundriss eine Wand des aktiven Raums wählen → „Wand bearbeiten“ (ohne
+Schreibrecht „Wand ansehen“); bei einer gewählten Öffnung „In der Wandansicht zeigen“; im
+Raumkopf „Deckenansicht“. Beide brauchen eine geschlossene Kontur (sonst gesperrt, mit
+Grund). Großer Dialog (`Dialog groesse="gross"`): ab 960 px Zeichenfläche und Seitenleiste
+nebeneinander, nur die Seitenleiste scrollt; darunter gestapelt, der Dialoginhalt scrollt.
+
+**Blickrichtung und Maßbezug** (`wandbezug.ts`): Blick aus dem Raum auf die Wand. Kontur gegen
+den Uhrzeigersinn → Wandende links; im Uhrzeigersinn → Wandanfang links. Transformation
+`links = anfangLinks ? offset : L − offset − breite` (eigene Umkehrung, ganzzahlig), Höhe
+über Fertigfußboden. Kopf nennt Raum, „Blick aus Raum …“, Blickrichtung im Grundriss,
+Wandnummern links/rechts, Breite, Raumhöhe, Stärke; über der Decke ein Band je Abschnitt
+(„angrenzend: Flur“, „nicht geteilt“, „mehrdeutig“) und, wo ein Nachbarraum anders hoch ist,
+dessen Deckenhöhe gestrichelt („abweichend“) – ohne irgendetwas abzuleiten oder zu ändern.
+
+**Öffnungen** (`wandmodell.ts`, `WandZeichenflaeche.tsx`): eigene Öffnungen bearbeitbar,
+abgeleitete (aus dem Nachbarraum) gestrichelt mit „aus …“, gleiche ID, gespiegelt über die
+Topologie. Werkzeuge Tür (T), Fenster (N), Durchgang (D): Vorschau unter dem Zeiger
+(gültig gestrichelt im Akzent, ungültig rot mit „nicht möglich“ und Grund in der
+Statuszeile), Klick oder Ziehen und Loslassen setzt mit Standardmaßen (Tür/Durchgang auf
+dem Boden, Fenster mit 90 cm Brüstung). Ziehen verschiebt waagerecht, Fenster auch
+senkrecht; Griffe links/rechts (Breite, Gegenkante bleibt), oben (Höhe), unten beim Fenster
+(Brüstung, Oberkante bleibt). Pointer Capture, `pointercancel` und Verlust des Zeigers
+brechen ab; Escape bricht zuerst die Bewegung ab, dann das Werkzeug, dann die Auswahl, und
+erst danach schließt der Dialog. Pfeiltasten 1 cm, mit Umschalt 10 cm; Entf entfernt.
+Keine Anschlag- oder Öffnungsrichtung (nicht im Modell).
+
+**Hilfslinien** (`masslinien.ts`): zur gewählten bzw. bewegten Öffnung Abstand von links,
+Breite, Abstand von rechts (unter dem Boden), freier Abstand zur nächsten Öffnung links und
+rechts (über der Öffnung), Brüstung, Höhe, Abstand zur Decke (rechts daneben). Kurze
+Strecken tragen ihren Text versetzt. Überschneidung erscheint als „überschneidet“.
+
+**Einrasten** (`wandfang.ts`): siehe ADR 0022 – Toleranz 10 px, Prioritäten Wandkante →
+Öffnungskante → gleiche Höhe → Wandmitte → Öffnungsmitte, Hysterese, Rückfall Raster,
+Schalter „Einrasten“ (gemeinsam mit dem Fang des Grundrisses), `Alt` setzt aus; exakte
+Eingaben werden nie gefangen.
+
+**Prüfung** (`wandpruefung.ts`): dieselben Regeln wie Grundriss und Server
+(`bereichPruefen`, `oeffnungsHoehenBefunde`); unzulässige Lagen werden nicht übernommen.
+Die Seitenleiste nennt ungültigen Bestand (zu hoch, außerhalb, Konflikt) ausdrücklich –
+nichts wird verschoben oder gelöscht.
+
+**Eigenschaften:** Art, Abstand von links, Abstand von rechts, Breite (linke Kante bleibt),
+Höhe (Unterkante bleibt), Brüstung über Boden (nur Fenster, Höhe bleibt), Abstand zur Decke
+und Achsmaß (nur Anzeige). Übernahme mit Enter oder beim Verlassen des Felds, in mm/cm/m mit
+Komma oder Punkt und Einheitenzeichen (`core/masse.ts`), exakt wie eingegeben.
+
+**Gemeinsamer Entwurf:** derselbe Reducer, dieselbe Auswahl und Undo-Historie wie der
+Grundriss; eine Ziehbewegung = ein Schritt; „Speichern“/„Änderungen verwerfen“ in der
+Wandansicht sind dieselben Aktionen wie im Grundriss (`PUT …/contour` mit Raumversion,
+Konfliktbehandlung unverändert). Schließen speichert nicht und meldet den offenen Entwurf.
+Bearbeitbar ist nur eine Wand des aktiven Raums; „Gegenseite aus … ansehen“ zeigt die
+deckungsgleiche Wand des Nachbarraums schreibgeschützt, „In … bearbeiten“ wechselt über den
+üblichen Raumwechsel (Rückfrage bei ungespeicherten Änderungen) zur Quelle.
+
+**Deckenansicht** (`deckenmodell.ts`, `Deckenansicht.tsx`): reale Kontur, Ausrichtung wie
+der Grundriss (Deckenspiegel, nicht seitenverkehrt), Wandbeschriftung „W n · Länge“ im
+Rauminneren, Fläche, Umfang, Deckenhöhe (eigene oder Geschossstandard), Raummaß nur für
+achsparallele Rechtecke, Raster, Zoom, Verschieben (Ziehen), „Ansicht zurücksetzen“, am
+Zeiger der senkrechte Abstand zur tatsächlich nächsten Wand. Speichert nichts; Geräte folgen
+mit Phase 5.
+
+**Lesemodus:** ohne `electrical.plan.write` oder bei abgeschlossenem/archiviertem Projekt nur
+Auswählen, Verschieben der Ansicht, Zoom und Maße; keine Werkzeuge, keine Griffe, Felder
+gesperrt, „Nur Ansicht“.
 
 ### Ausdrücklich nicht in Phase 4a
 

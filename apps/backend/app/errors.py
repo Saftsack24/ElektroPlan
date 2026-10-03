@@ -160,6 +160,24 @@ class ProjectArchivedError(ConflictError):
     title = "Projekt ist archiviert"
 
 
+class ProjectCompletedError(ConflictError):
+    """Schreibender Zugriff auf ein abgeschlossenes Projekt (Phase 4f, ADR 0020).
+
+    ``completed`` ist wie ``archived`` gegen fachliche Aenderungen geschuetzt:
+    Stammdaten, Gebaeude, Geschosse, Dateien und die Planungsdaten der
+    Fachmodule bleiben unveraendert. Anders als ``archived`` ist der Zustand
+    nicht endgueltig - ein Administrator setzt das Projekt ueber den eigenen
+    Endpunkt ``POST /projects/{id}/reopen`` wieder in Bearbeitung, und die
+    Archivierung bleibt nach den Statusregeln moeglich.
+
+    Eigener ``type``, damit ein Client den Fall erklaeren kann, ohne die
+    Meldung auszuwerten.
+    """
+
+    error_type = "project-completed"
+    title = "Projekt ist abgeschlossen"
+
+
 class ProjectNotDeletableError(ConflictError):
     """Das Projekt ist abgeschlossen oder archiviert und darf nicht geloescht werden.
 

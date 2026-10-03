@@ -40,9 +40,8 @@ import {
   OEFFNUNG_FANG_MM,
   platzierungBerechnen,
   platzierungsText,
-  standardbreite,
+  raumwandUnterZeiger,
   verbindungsText,
-  wandUnterZeiger,
 } from "./platzierung";
 import type { Aktion, Auswahl, EditorZustand } from "./zustand";
 
@@ -78,8 +77,13 @@ interface Props {
   onWaehlen: (auswahl: Auswahl) => void;
   onPolygonFertig: (punkte: readonly Punkt[]) => void;
   onRechteckFertig: (a: Punkt, b: Punkt) => void;
-  /** Setzt eine neue Öffnung an einem bereits berechneten, gültigen Abstand. */
-  onOeffnungSetzen: (raumId: string, wandId: string, offsetMm: number) => void;
+  /**
+   * Werkzeug Tür/Fenster/Durchgang (Phase 4f): Der Klick wählt nur die Wand der
+   * angeklickten Raumseite - gesetzt wird in deren Wandansicht.
+   */
+  onWandFuerOeffnung: (raumId: string, wandId: string) => void;
+  /** Eine vorhandene Öffnung in ihrer Wandansicht bearbeiten (an der Eigentümerwand). */
+  onOeffnungBearbeiten: (raumId: string, wandId: string, oeffnungId: string) => void;
   /** Kurzer Hinweis über der Zeichenfläche; `null` räumt ihn. */
   onHinweis: (text: string | null) => void;
   oeffnungsart: Oeffnungsart;
@@ -116,6 +120,13 @@ interface Oeffnungsvorschau {
   readonly text: string;
 }
 
+/** Hervorgehobene Wand beim Werkzeug Tür/Fenster/Durchgang - reine Anzeige. */
+interface Wandvorschau {
+  readonly wandId: string | null;
+  readonly text: string;
+  readonly ok: boolean;
+}
+
 /** Fangradius für Wände in Bildschirmpixeln (zusätzlich zur halben Wandstärke). */
 const WANDRADIUS_PX = 10;
 
@@ -146,6 +157,7 @@ export function Zeichenflaeche(props: Props) {
   const [groesse, setGroesse] = useState<Groesse>(RUECKFALL_GROESSE);
   const [zeiger, setZeiger] = useState<{ punkt: Punkt; ziel: Fangziel } | null>(null);
   const [vorschau, setVorschau] = useState<Oeffnungsvorschau | null>(null);
+  const [wandvorschau, setWandvorschau] = useState<Wandvorschau | null>(null);
   const ziehen = useRef<Ziehen>(null);
   // Zeiger, der während einer Ziehbewegung eingefangen ist - damit Escape
   // und Abbruch ihn sicher wieder freigeben.
@@ -243,17 +255,21 @@ export function Zeichenflaeche(props: Props) {
 
   const fangMm = (altKey: boolean) => (fangAktiv && !altKey ? OEFFNUNG_FANG_MM : 1);
 
-  /** Platzierung einer neuen Öffnung an der Zeigerposition - oder `null` ohne Wand. */
-  const neuePlatzierung = (welt: Punkt, altKey: boolean): Platzierung | null => {
-    const treffer = wandUnterZeiger(props.topologie, welt, WANDRADIUS_PX / viewport.massstab, aktiverRaum);
-    const teilung = treffer === null ? undefined : props.topologie.teilung.get(treffer.wandId);
-    if (teilung === undefined) return null;
-    return platzierungBerechnen(teilung, welt, {
-      breiteMm: standardbreite(props.oeffnungsart),
-      fangMm: fangMm(altKey),
-      laengeText: masse.anzeigen,
-      raumName: props.raumName,
-    });
+  /** Die Wand der angeklickten Raumseite - für Tür, Fenster, Durchgang. */
+  const raumwand = (welt: Punkt) =>
+    raumwandUnterZeiger(props.topologie, welt, WANDRADIUS_PX / viewport.massstab, raeume, aktiverRaum);
+
+  const wandvorschauFuer = (welt: Punkt): Wandvorschau | null => {
+    const e = raumwand(welt);
+    if (e === null) return null;
+    if (!e.ok) return { wandId: null, text: e.grund, ok: false };
+    const raum = raeume.find((r) => r.id === e.treffer.raumId);
+    const nummer = (raum?.walls.findIndex((w) => w.id === e.treffer.wandId) ?? -1) + 1;
+    return {
+      wandId: e.treffer.wandId,
+      ok: true,
+      text: `Wand ${nummer} von „${props.raumName(e.treffer.raumId)}“ – Klick öffnet die Wandansicht (${OEFFNUNGSART_LABEL[props.oeffnungsart]} setzen)`,
+    };
   };
 
   /** Beginnt das Verschieben einer Öffnung des aktiven Raums. */
@@ -292,12 +308,15 @@ export function Zeichenflaeche(props: Props) {
     // Eine vorhandene Öffnung greifen - im Auswahl- und im Öffnungswerkzeug.
     // Die (auch abgeleitete) Darstellung trägt immer die Eigentümerwand: Ein
     // Klick wählt also stets die eine gespeicherte Öffnung.
-    if (
-      (zustand.werkzeug === "auswahl" || zustand.werkzeug === "oeffnung") &&
-      raumId !== undefined &&
-      daten?.oeffnung !== undefined &&
-      daten.wand !== undefined
-    ) {
+    // Werkzeug Tür/Fenster/Durchgang: Eine vorhandene Öffnung wird in ihrer
+    // Wandansicht bearbeitet - nicht von oben verschoben.
+    if (zustand.werkzeug === "oeffnung" && raumId !== undefined && daten?.oeffnung !== undefined && daten.wand !== undefined) {
+      klickVerbraucht.current = true;
+      setWandvorschau(null);
+      props.onOeffnungBearbeiten(raumId, daten.wand, daten.oeffnung);
+      return;
+    }
+    if (zustand.werkzeug === "auswahl" && raumId !== undefined && daten?.oeffnung !== undefined && daten.wand !== undefined) {
       klickVerbraucht.current = true;
       setVorschau(null);
       props.onWaehlen({ art: "oeffnung", raumId, wandId: daten.wand, oeffnungId: daten.oeffnung });
@@ -370,18 +389,19 @@ export function Zeichenflaeche(props: Props) {
           klickVerbraucht.current = false;
           return;
         }
-        // Dieselbe Rechnung wie die Vorschau: Was angezeigt wird, wird gesetzt.
-        const platzierung = neuePlatzierung(welt, event.altKey);
-        if (platzierung === null) {
-          props.onHinweis("Zum Setzen einer Öffnung auf eine Wand klicken.");
+        // Nur die Wand wählen - gesetzt wird in der Wandansicht (Phase 4f).
+        const e = raumwand(welt);
+        if (e === null) {
+          props.onHinweis("Auf eine Wand klicken - die Wandansicht öffnet sich zum Setzen.");
           return;
         }
-        if (!platzierung.ok) {
-          props.onHinweis(platzierung.grund);
+        if (!e.ok) {
+          props.onHinweis(e.grund);
           return;
         }
         props.onHinweis(null);
-        props.onOeffnungSetzen(platzierung.raumId, platzierung.wandId, platzierung.offsetMm);
+        setWandvorschau(null);
+        props.onWandFuerOeffnung(e.treffer.raumId, e.treffer.wandId);
         return;
       }
       default:
@@ -427,18 +447,8 @@ export function Zeichenflaeche(props: Props) {
       });
       return;
     }
-    if (zustand.werkzeug === "oeffnung" && darfSchreiben) {
-      const platzierung = neuePlatzierung(welt, event.altKey);
-      setVorschau(
-        platzierung === null
-          ? null
-          : {
-              platzierung,
-              art: props.oeffnungsart,
-              text: platzierungsText(platzierung, props.oeffnungsart, props.raumName, masse.anzeigen),
-            },
-      );
-    }
+    if (zustand.werkzeug === "oeffnung" && darfSchreiben) setWandvorschau(wandvorschauFuer(welt));
+    else if (wandvorschau !== null) setWandvorschau(null);
     setZeiger(gefangen(welt, event.altKey));
   };
 
@@ -475,7 +485,12 @@ export function Zeichenflaeche(props: Props) {
     if (laufend.art !== "pan") dispatch({ typ: "ziehen-abbrechen" });
   };
 
-  const doppelklick = () => {
+  const doppelklick = (event: ReactMouseEvent<SVGSVGElement>) => {
+    const daten = datensatz(event.target);
+    if (zustand.werkzeug === "auswahl" && daten?.raum !== undefined && daten.oeffnung !== undefined && daten.wand !== undefined) {
+      props.onOeffnungBearbeiten(daten.raum, daten.wand, daten.oeffnung);
+      return;
+    }
     if (zustand.werkzeug === "polygon" && zustand.zeichnung.length >= 3) {
       props.onPolygonFertig(zustand.zeichnung);
       dispatch({ typ: "zeichnung", punkte: [] });
@@ -512,6 +527,7 @@ export function Zeichenflaeche(props: Props) {
         }}
         onPointerLeave={() => {
           setZeiger(null);
+          setWandvorschau(null);
           if (ziehen.current === null) setVorschau(null);
         }}
         onClick={klicken}
@@ -545,6 +561,7 @@ export function Zeichenflaeche(props: Props) {
         )}
         <Vorschau zustand={zustand} zeiger={zeiger} viewport={viewport} />
         {vorschau !== null && <Oeffnungsvorschaubild vorschau={vorschau} topologie={props.topologie} viewport={viewport} />}
+        {wandvorschau !== null && <Wandvorschaubild vorschau={wandvorschau} topologie={props.topologie} viewport={viewport} />}
       </svg>
       <p
         className="absolute inset-x-0 bottom-0 m-0 flex justify-between gap-3 border-t border-line bg-page px-2 py-[3px] text-[0.78rem] text-muted"
@@ -774,6 +791,32 @@ function Oeffnungsvorschaubild({
   );
 }
 
+
+/** Hervorhebung der ganzen Wand der angeklickten Raumseite samt Erklärung. */
+function Wandvorschaubild({
+  vorschau,
+  topologie,
+  viewport,
+}: {
+  vorschau: Wandvorschau;
+  topologie: EditorTopologie;
+  viewport: Viewport;
+}) {
+  const wand = vorschau.wandId === null ? undefined : topologie.teilung.get(vorschau.wandId)?.wand;
+  const p1 = wand === undefined ? null : weltZuBild(viewport, wand.start);
+  const p2 = wand === undefined ? null : weltZuBild(viewport, wand.ende);
+  const breitePx = wand === undefined ? 0 : Math.max(6, wand.staerkeMm * viewport.massstab + 4);
+  return (
+    <g className={vorschau.ok ? "grundriss__oeffnungsvorschau" : "grundriss__oeffnungsvorschau grundriss__oeffnungsvorschau--fehler"} data-testid="wandvorschau" aria-hidden="true">
+      {p1 !== null && p2 !== null && (
+        <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} strokeWidth={breitePx} className="grundriss__oeffnungsvorschau-flaeche" />
+      )}
+      <text x={12} y={22} className="grundriss__oeffnungsvorschau-text">
+        {vorschau.text}
+      </text>
+    </g>
+  );
+}
 
 // ----------------------------------------------------------------- Eckgriffe
 

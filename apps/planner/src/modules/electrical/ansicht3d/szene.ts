@@ -49,6 +49,7 @@ import { bodenGeometrie, oeffnungsGeometrie, umrissGeometrie, wandGeometrie } fr
 import { MESSUNG, messen } from "./messung";
 import type { Auswahl, Szenenmodell } from "./modell";
 import { auswahlSchluessel } from "./modell";
+import { raumseiteAuswahl } from "./raumwand";
 import { LEERES_MODELL } from "./szenenmodell";
 
 // ------------------------------------------------------------ Grenzen
@@ -229,10 +230,21 @@ function alleMaterialien(m: Materialien): Material[] {
   ];
 }
 
+/**
+ * Kamerastand als einfache Zahlen - zum Merken beim Verlassen der 3D-Ansicht
+ * und Wiederherstellen bei der Rückkehr (Phase 4f). Reine Ansicht, nie gespeichert.
+ */
+export interface Kamerastand {
+  readonly position: readonly [number, number, number];
+  readonly ziel: readonly [number, number, number];
+}
+
 interface Auswahlobjekt {
   readonly mesh: Mesh;
   readonly normal: Material | Material[];
   readonly hervorgehoben: Material | Material[];
+  /** Alle Auswahlschlüssel, unter denen dieses Objekt hervorgehoben wird. */
+  readonly schluessel: ReadonlySet<string>;
 }
 
 // ------------------------------------------------------------ Szene
@@ -450,10 +462,18 @@ export class Grundrissszene {
       const koerper = wandGeometrie(wand, t);
       if (koerper !== null) {
         const seite = wand.lage === "gemeinsam" ? m.wandGemeinsam : m.wandAussen;
-        this.auswaehlbarHinzufuegen(new Mesh(koerper, [seite, m.krone]), { art: "wand", id: wand.id }, [
-          m.wandAuswahl,
-          m.kroneAuswahl,
-        ]);
+        // Ein Körper je Abschnitt; hervorgehoben auch, wenn die ganze Wand eines
+        // Raums gewählt ist, die ihn überdeckt (Phase 4f, `raumwand.ts`).
+        this.auswaehlbarHinzufuegen(
+          new Mesh(koerper, [seite, m.krone]),
+          { art: "wand", id: wand.id },
+          [m.wandAuswahl, m.kroneAuswahl],
+          [
+            { art: "wandseite", id: wand.id },
+            ...wand.quellen.map((q) => ({ art: "raumwand" as const, id: q.id })),
+            ...modell.fassaden.filter((f) => f.abschnitte.some((a) => a.id === wand.id)).map((f) => ({ art: "fassade" as const, id: f.id })),
+          ],
+        );
       }
       for (const oeffnung of wand.oeffnungen) {
         const flaeche = new Mesh(
@@ -472,14 +492,22 @@ export class Grundrissszene {
     this.planGruppe.add(objekt);
   }
 
-  private auswaehlbarHinzufuegen(mesh: Mesh, auswahl: Auswahl, hervorgehoben: Material | Material[]) {
+  private auswaehlbarHinzufuegen(
+    mesh: Mesh,
+    auswahl: Auswahl,
+    hervorgehoben: Material | Material[],
+    weitere: readonly Auswahl[] = [],
+  ) {
     mesh.userData = { auswahl };
     this.planHinzufuegen(mesh);
     this.auswaehlbar.push(mesh);
-    const schluessel = auswahlSchluessel(auswahl);
-    const liste = this.nachSchluessel.get(schluessel) ?? [];
-    liste.push({ mesh, normal: mesh.material, hervorgehoben });
-    this.nachSchluessel.set(schluessel, liste);
+    const schluessel = new Set([auswahl, ...weitere].map(auswahlSchluessel));
+    const objekt: Auswahlobjekt = { mesh, normal: mesh.material, hervorgehoben, schluessel };
+    for (const s of schluessel) {
+      const liste = this.nachSchluessel.get(s) ?? [];
+      liste.push(objekt);
+      this.nachSchluessel.set(s, liste);
+    }
   }
 
   /** Ersetzte GPU-Ressourcen freigeben. Materialien gehören der Szene, nicht dem Plan. */
@@ -523,7 +551,17 @@ export class Grundrissszene {
     // Nur die auswählbaren Objekte - Raster, Umrisse und Lichter nicht.
     const treffer = this.raycaster.intersectObjects(this.auswaehlbar, false)[0];
     const auswahl = treffer?.object.userData["auswahl"] as Auswahl | undefined;
-    return auswahl ?? null;
+    if (auswahl?.art !== "wand" || treffer?.face == null) return auswahl ?? null;
+    // Wandkörper: die ganze Wand der angeklickten Raumseite (Phase 4f). Die
+    // Normale der getroffenen Fläche sagt, welche Seite es war - Grundriss-x
+    // ist +X, Grundriss-y ist -Z.
+    const wand = this.modell.waende.find((w) => w.id === auswahl.id);
+    if (wand === undefined) return auswahl;
+    const n = treffer.face.normal.clone().transformDirection(treffer.object.matrixWorld);
+    const fassaden = this.modell.fassaden;
+    return raumseiteAuswahl(wand, this.modell.raeume, { x: n.x, y: -n.z, hoehe: n.y }, (id) =>
+      fassaden.find((f) => f.abschnitte.some((a) => a.id === id))?.id,
+    );
   }
 
   setzeAuswahl(auswahl: Auswahl | null) {
@@ -539,9 +577,8 @@ export class Grundrissszene {
 
   private hervorhebungAnwenden() {
     const aktiv = this.auswahl === null ? null : auswahlSchluessel(this.auswahl);
-    for (const [schluessel, objekte] of this.nachSchluessel) {
-      for (const o of objekte) o.mesh.material = schluessel === aktiv ? o.hervorgehoben : o.normal;
-    }
+    const objekte = new Set([...this.nachSchluessel.values()].flat());
+    for (const o of objekte) o.mesh.material = aktiv !== null && o.schluessel.has(aktiv) ? o.hervorgehoben : o.normal;
   }
 
   // ------------------------------------------------------------ Kamera
@@ -580,6 +617,21 @@ export class Grundrissszene {
   }
 
   /** Gesamten Grundriss zeigen - aus der aktuellen Blickrichtung. */
+  kamerastand(): Kamerastand {
+    const p = this.kamera.position;
+    const z = this.controls.target;
+    return { position: [p.x, p.y, p.z], ziel: [z.x, z.y, z.z] };
+  }
+
+  kamerastandSetzen(stand: Kamerastand) {
+    if (this.entsorgt) return;
+    this.kamera.position.set(...stand.position);
+    this.controls.target.set(...stand.ziel);
+    this.kamera.lookAt(this.controls.target);
+    this.controls.update();
+    this.anfordern();
+  }
+
   einpassen() {
     const richtung = this.kamera.position.clone().sub(this.controls.target);
     this.blickSetzen(richtung.lengthSq() > 0 ? richtung : ISO_RICHTUNG);

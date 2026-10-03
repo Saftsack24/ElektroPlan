@@ -197,6 +197,10 @@ describe("Benutzerliste", () => {
     expect(within(zeile).queryByRole("link", { name: /Verwalten/ })).toBeNull();
     expect(within(tabelle).getByRole("columnheader", { name: "Erstellt am" })).toBeInTheDocument();
     expect(within(tabelle).getByRole("columnheader", { name: "Zuletzt geändert" })).toBeInTheDocument();
+    // Aktionen mit sichtbarer Überschrift; die Zelle bleibt eine Tabellenzelle
+    // (Flex nur am inneren Wrapper), sonst liegen ihre Trennlinien versetzt.
+    expect(within(tabelle).getByRole("columnheader", { name: "Aktionen" })).toBeInTheDocument();
+    for (const zelle of tabelle.querySelectorAll("td")) { expect(zelle.className.split(" ")).not.toContain("flex"); expect(zelle.className.split(" ")).not.toContain("grid"); }
   });
 
   it("filtert nach Status", async () => {

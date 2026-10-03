@@ -1042,7 +1042,7 @@
           "projects"
         ],
         "summary": "Projekt bearbeiten",
-        "description": "Aendert Stammdaten. Status und Projektnummer bleiben unberuehrt.\n\nEin archiviertes Projekt ist schreibgeschuetzt und liefert ``409``.",
+        "description": "Aendert Stammdaten. Status und Projektnummer bleiben unberuehrt.\n\nEin archiviertes oder abgeschlossenes Projekt ist schreibgeschuetzt und liefert ``409``.",
         "operationId": "updateProject",
         "parameters": [
           {
@@ -1104,7 +1104,7 @@
             }
           },
           "409": {
-            "description": "Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt",
+            "description": "Versionskonflikt, unzulaessiger Statuswechsel, archiviertes oder abgeschlossenes Projekt",
             "content": {
               "application/json": {
                 "schema": {
@@ -1368,7 +1368,7 @@
             }
           },
           "409": {
-            "description": "Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt",
+            "description": "Versionskonflikt, unzulaessiger Statuswechsel, archiviertes oder abgeschlossenes Projekt",
             "content": {
               "application/json": {
                 "schema": {
@@ -1458,7 +1458,7 @@
             }
           },
           "409": {
-            "description": "Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt",
+            "description": "Versionskonflikt, unzulaessiger Statuswechsel, archiviertes oder abgeschlossenes Projekt",
             "content": {
               "application/json": {
                 "schema": {
@@ -1548,7 +1548,7 @@
             }
           },
           "409": {
-            "description": "Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt",
+            "description": "Versionskonflikt, unzulaessiger Statuswechsel, archiviertes oder abgeschlossenes Projekt",
             "content": {
               "application/json": {
                 "schema": {
@@ -1648,7 +1648,7 @@
             }
           },
           "409": {
-            "description": "Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt",
+            "description": "Versionskonflikt, unzulaessiger Statuswechsel, archiviertes oder abgeschlossenes Projekt",
             "content": {
               "application/json": {
                 "schema": {
@@ -1788,7 +1788,7 @@
             }
           },
           "409": {
-            "description": "Projekt ist archiviert",
+            "description": "Projekt ist archiviert oder abgeschlossen",
             "content": {
               "application/json": {
                 "schema": {
@@ -1878,7 +1878,7 @@
             }
           },
           "409": {
-            "description": "Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt",
+            "description": "Versionskonflikt, unzulaessiger Statuswechsel, archiviertes oder abgeschlossenes Projekt",
             "content": {
               "application/json": {
                 "schema": {
@@ -1959,7 +1959,7 @@
             }
           },
           "409": {
-            "description": "Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt",
+            "description": "Versionskonflikt, unzulaessiger Statuswechsel, archiviertes oder abgeschlossenes Projekt",
             "content": {
               "application/json": {
                 "schema": {
@@ -2099,7 +2099,7 @@
             }
           },
           "409": {
-            "description": "Projekt ist archiviert",
+            "description": "Projekt ist archiviert oder abgeschlossen",
             "content": {
               "application/json": {
                 "schema": {
@@ -2127,7 +2127,7 @@
           "projects"
         ],
         "summary": "Geschoss bearbeiten",
-        "description": "Aendert Name, Ebene oder Hoehenangaben eines Geschosses.",
+        "description": "Aendert Name, Ebene oder Hoehenangaben eines Geschosses.\n\nEine neue Standard-Deckenhoehe pruefen die Fachmodule vorher (ADR 0022):\nWuerde sie eine vorhandene Oeffnung ungueltig machen, ``422``.",
         "operationId": "updateFloor",
         "parameters": [
           {
@@ -2189,7 +2189,7 @@
             }
           },
           "409": {
-            "description": "Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt",
+            "description": "Versionskonflikt, unzulaessiger Statuswechsel, archiviertes oder abgeschlossenes Projekt",
             "content": {
               "application/json": {
                 "schema": {
@@ -2270,7 +2270,7 @@
             }
           },
           "409": {
-            "description": "Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt",
+            "description": "Versionskonflikt, unzulaessiger Statuswechsel, archiviertes oder abgeschlossenes Projekt",
             "content": {
               "application/json": {
                 "schema": {
@@ -2308,7 +2308,7 @@
           "files"
         ],
         "summary": "Datei hochladen",
-        "description": "Nimmt eine Datei entgegen, prueft sie und legt sie im Storage ab.\n\nMit ``project_id`` wird die Datei einem Projekt zugeordnet; das Projekt\nmuss der eigenen Organisation gehoeren und darf nicht archiviert sein.",
+        "description": "Nimmt eine Datei entgegen, prueft sie und legt sie im Storage ab.\n\nMit ``project_id`` wird die Datei einem Projekt zugeordnet; das Projekt\nmuss der eigenen Organisation gehoeren und darf weder archiviert noch\nabgeschlossen sein.",
         "operationId": "uploadFile",
         "requestBody": {
           "content": {
@@ -2342,7 +2342,7 @@
             }
           },
           "409": {
-            "description": "Projekt ist archiviert",
+            "description": "Projekt ist archiviert oder abgeschlossen",
             "content": {
               "application/json": {
                 "schema": {
@@ -4325,7 +4325,7 @@
             }
           },
           "409": {
-            "description": "Projekt ist archiviert",
+            "description": "Projekt ist archiviert oder abgeschlossen",
             "content": {
               "application/json": {
                 "schema": {
@@ -4467,7 +4467,7 @@
             }
           },
           "409": {
-            "description": "Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen",
+            "description": "Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen",
             "content": {
               "application/json": {
                 "schema": {
@@ -4548,7 +4548,7 @@
             }
           },
           "409": {
-            "description": "Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen",
+            "description": "Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen",
             "content": {
               "application/json": {
                 "schema": {
@@ -4700,7 +4700,7 @@
             }
           },
           "409": {
-            "description": "Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen",
+            "description": "Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen",
             "content": {
               "application/json": {
                 "schema": {
@@ -4894,7 +4894,7 @@
             }
           },
           "409": {
-            "description": "Projekt ist archiviert",
+            "description": "Projekt ist archiviert oder abgeschlossen",
             "content": {
               "application/json": {
                 "schema": {
@@ -4984,7 +4984,7 @@
             }
           },
           "409": {
-            "description": "Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen",
+            "description": "Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen",
             "content": {
               "application/json": {
                 "schema": {
@@ -5065,7 +5065,7 @@
             }
           },
           "409": {
-            "description": "Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen",
+            "description": "Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen",
             "content": {
               "application/json": {
                 "schema": {
@@ -5169,7 +5169,7 @@
             }
           },
           "409": {
-            "description": "Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen",
+            "description": "Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen",
             "content": {
               "application/json": {
                 "schema": {
@@ -5309,7 +5309,7 @@
             }
           },
           "409": {
-            "description": "Projekt ist archiviert",
+            "description": "Projekt ist archiviert oder abgeschlossen",
             "content": {
               "application/json": {
                 "schema": {
@@ -5399,7 +5399,7 @@
             }
           },
           "409": {
-            "description": "Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen",
+            "description": "Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen",
             "content": {
               "application/json": {
                 "schema": {
@@ -5480,7 +5480,7 @@
             }
           },
           "409": {
-            "description": "Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen",
+            "description": "Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen",
             "content": {
               "application/json": {
                 "schema": {

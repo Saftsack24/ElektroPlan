@@ -93,5 +93,16 @@
     { "name": "beruehrende Oeffnungen", "wandlaenge_mm": 5000, "oeffnung": [1000, 1000], "andere": [[0, 1000], [2000, 500]], "codes": [] },
     { "name": "ueberlappende Oeffnungen", "wandlaenge_mm": 5000, "oeffnung": [900, 1000], "andere": [[0, 1000]], "codes": ["openings-overlap"] },
     { "name": "negativer Abstand", "wandlaenge_mm": 5000, "oeffnung": [-10, 1000], "andere": [], "codes": ["opening-offset-negative"] }
+  ],
+  "oeffnungshoehen": [
+    { "name": "Tuer passt in den Raum", "art": "door", "hoehe_mm": 2010, "bruestung_mm": 0, "raumhoehe_mm": 2500, "codes": [] },
+    { "name": "Tuer buendig unter der Decke", "art": "door", "hoehe_mm": 2500, "bruestung_mm": 0, "raumhoehe_mm": 2500, "codes": [] },
+    { "name": "Tuer hoeher als der Raum", "art": "door", "hoehe_mm": 2010, "bruestung_mm": 0, "raumhoehe_mm": 2000, "codes": ["opening-exceeds-room-height"] },
+    { "name": "Fenster mit Bruestung passt", "art": "window", "hoehe_mm": 1260, "bruestung_mm": 900, "raumhoehe_mm": 2500, "codes": [] },
+    { "name": "Fenster Oberkante ueber der Decke", "art": "window", "hoehe_mm": 1260, "bruestung_mm": 1300, "raumhoehe_mm": 2500, "codes": ["opening-exceeds-room-height"] },
+    { "name": "Fenster ohne Bruestung", "art": "window", "hoehe_mm": 1260, "bruestung_mm": 0, "raumhoehe_mm": 2500, "codes": ["window-needs-sill"] },
+    { "name": "Tuer mit Bruestung", "art": "door", "hoehe_mm": 2010, "bruestung_mm": 100, "raumhoehe_mm": 2500, "codes": ["sill-only-for-window"] },
+    { "name": "Durchgang mit Bruestung", "art": "passage", "hoehe_mm": 2010, "bruestung_mm": 50, "raumhoehe_mm": 2500, "codes": ["sill-only-for-window"] },
+    { "name": "Hoehe null", "art": "door", "hoehe_mm": 0, "bruestung_mm": 0, "raumhoehe_mm": 2500, "codes": ["opening-height-not-positive"] }
   ]
 }

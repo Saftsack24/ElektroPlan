@@ -1,0 +1,48 @@
+/*
+ * Zeichenfläche der Wand- und Deckenansicht (Phase 4f, ADR 0022, ADR 0018).
+ *
+ * Wie `editor/grundriss.css`: SVG-Regeln als CSS, Farben nur aus Tokens
+ * (`--ep-*` aus core/theme/tokens.css, `--ep-plan-*` aus darstellung.css).
+ * Auswahl und Zustand sind nie nur Farbe: Auswahl hat eine dicke Kontur und
+ * Griffe, abgeleitete Öffnungen sind gestrichelt und beschriftet, Fehler
+ * tragen ein Warnzeichen.
+ */
+@layer components {
+  .ansicht__svg { display: block; user-select: none; touch-action: none; }
+  .ansicht__svg:focus-visible { outline: 2px solid var(--ep-focus); outline-offset: -2px; }
+  .ansicht__raster { fill: none; stroke: var(--ep-canvas-grid); stroke-width: 0.5; shape-rendering: crispEdges; }
+  .ansicht__wand { fill: var(--ep-plan-wall-face); stroke: var(--ep-plan-wall-active); stroke-width: 2; }
+  .ansicht__decke-flaeche { fill: var(--ep-plan-ceiling-face); stroke: var(--ep-plan-wall-active); stroke-width: 2; }
+  .ansicht__boden { stroke: var(--ep-plan-wall-active); stroke-width: 3; }
+  .ansicht__decke { stroke: var(--ep-plan-wall-active); stroke-width: 1.5; stroke-dasharray: 8 4; }
+  .ansicht__nachbardecke { stroke: var(--ep-warning); stroke-width: 1.5; stroke-dasharray: 3 3; fill: none; }
+  .ansicht__abschnitt { fill: var(--ep-canvas); stroke: var(--ep-border); stroke-width: 1; }
+  .ansicht__abschnitt--gemeinsam { fill: var(--ep-accent); fill-opacity: 0.12; }
+  .ansicht__abschnitt--mehrdeutig { fill: var(--ep-warning); fill-opacity: 0.2; }
+  .ansicht__text { font-size: 12px; fill: var(--ep-text); paint-order: stroke; stroke: var(--ep-canvas); stroke-width: 3px; pointer-events: none; }
+  .ansicht__text--klein { font-size: 11px; fill: var(--ep-text-muted); }
+  .ansicht__text--warnung { fill: var(--ep-warning); font-weight: 600; }
+
+  .ansicht__oeffnung { fill: var(--ep-plan-opening-face); stroke-width: 2; cursor: pointer; }
+  .ansicht__oeffnung--door { stroke: var(--ep-plan-door); }
+  .ansicht__oeffnung--window { stroke: var(--ep-plan-window); }
+  .ansicht__oeffnung--passage { stroke: var(--ep-plan-passage); stroke-dasharray: 6 4; }
+  .ansicht__oeffnung--bearbeitbar { cursor: move; }
+  .ansicht__oeffnung--abgeleitet { stroke-dasharray: 5 3; fill-opacity: 0.55; }
+  .ansicht__oeffnung--fehler { stroke: var(--ep-danger); stroke-width: 3; }
+  .ansicht__oeffnung--ausgewaehlt { stroke: var(--ep-selected); stroke-width: 4; }
+  .ansicht__griff { fill: var(--ep-canvas); stroke: var(--ep-selected); stroke-width: 2; }
+  .ansicht__griff-treffer { fill: transparent; stroke: none; }
+  .ansicht__griff-treffer--ew { cursor: ew-resize; }
+  .ansicht__griff-treffer--ns { cursor: ns-resize; }
+
+  .ansicht__vorschau { fill: var(--ep-accent); fill-opacity: 0.15; stroke: var(--ep-accent); stroke-width: 2; stroke-dasharray: 6 4; pointer-events: none; }
+  .ansicht__vorschau--fehler { fill: var(--ep-danger); fill-opacity: 0.12; stroke: var(--ep-danger); }
+  .ansicht__fang { stroke: var(--ep-warning); stroke-width: 1.5; stroke-dasharray: 2 3; pointer-events: none; }
+
+  .ansicht__mass { stroke: var(--ep-text-muted); stroke-width: 1; pointer-events: none; }
+  .ansicht__mass--nachbar { stroke: var(--ep-accent); }
+  .ansicht__mass--ueberschneidung { stroke: var(--ep-danger); stroke-width: 2; }
+  .ansicht__masstext { font-size: 11px; fill: var(--ep-text); paint-order: stroke; stroke: var(--ep-canvas); stroke-width: 3px; font-variant-numeric: tabular-nums; pointer-events: none; }
+  .ansicht__masstext--ueberschneidung { fill: var(--ep-danger); font-weight: 600; }
+}

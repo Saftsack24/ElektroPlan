@@ -724,6 +724,18 @@ describe("Schreibschutz", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("abgeschlossenes Projekt: ebenso schreibgeschützt (Phase 4f)", async () => {
+    projekt = { ...PROJEKT, status: "completed" };
+    zeigen();
+    await screen.findByText("Wohnzimmer");
+
+    expect(await screen.findByText(/abgeschlossen und damit/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Raum anlegen" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Raum Wohnzimmer bearbeiten" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("zeigt trotz Schreibschutz die vorhandenen Daten", async () => {
     projekt = { ...PROJEKT, status: "archived" };
     zeigen();

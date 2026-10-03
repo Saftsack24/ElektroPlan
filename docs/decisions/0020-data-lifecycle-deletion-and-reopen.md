@@ -8,6 +8,10 @@ Baut auf: [ADR 0001](0001-modular-monolith.md), [ADR 0003](0003-module-contracts
 Hebt auf: die Kundenanonymisierung aus Phase 2 (`docs/security.md`, Abschnitt 13, Stand
 vor 4d) und das Ausblenden (Soft Delete) von Kunden und Projekten
 
+> **Erweitert in Phase 4f ([ADR 0022](0022-wall-and-ceiling-view.md)):** Auch `completed` ist
+> gegen fachliche Änderungen geschützt (`409 project-completed`). Wiedereröffnung und
+> Archivierung aus `completed` sowie die Löschregeln bleiben unverändert.
+
 ## Context
 
 Bis Phase 4c.2 kannte ElektroPlan drei „Löschwege": Ausblenden (`deleted_at`) für Kunden

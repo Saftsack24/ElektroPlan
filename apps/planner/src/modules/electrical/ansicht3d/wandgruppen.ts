@@ -256,6 +256,7 @@ function darstellungswand(
     staerkeMm,
     hoeheMm,
     lage: abschnitt.lage,
+    gerade: abschnitt.gerade,
     raumIds: abschnitt.raumIds,
     quellen,
     oeffnungen,

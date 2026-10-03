@@ -1,6 +1,6 @@
 # Roadmap
 
-Stand: 2026-10-01 (nach Task 0023 — Phase 4e: Benutzerlebenszyklus, abgeschlossen)
+Stand: 2026-10-03 (nach Task 0024 — Phase 4f: Wand- und Deckenansicht, abgeschlossen und committet)
 Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 
 ---
@@ -28,7 +28,7 @@ Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 | 4c.2 | Persönliche Darstellung, Laufzeitthemes, responsive Nachkorrektur | **DONE** (mit diesem Checkpoint committet) | 4c.1 |
 | 4d | Datenlebenszyklus: Löschregeln, Wiedereröffnung, Bearbeiter, Icons | **DONE** (mit diesem Checkpoint committet) | 4c.2 |
 | 4e | Benutzerlebenszyklus, Kontosperren, Passwortzurücksetzung, serverseitige Einstellungen, Maßeinheit m | **DONE** (mit diesem Checkpoint committet) | 4d |
-| 4f | Wand- und Deckenansicht | NICHT BEGONNEN | 4e |
+| 4f | Wand- und Deckenansicht; `completed` schreibgeschützt; Prüfung der Geschoss-Standardhöhe | DONE | 4e |
 | 5 | Electrical Devices | NOT STARTED | 4a |
 | 6 | Circuits & Cable Routes | NOT STARTED | 5 |
 | 7 | Materials | NOT STARTED | 6 |
@@ -393,9 +393,24 @@ Browser geprüft. Vom Auftraggeber geprüft; mit diesem Checkpoint committet.
 
 ---
 
-## Phase 4f — Wand- und Deckenansicht · NICHT BEGONNEN
+## Phase 4f — Wand- und Deckenansicht · DONE
 
-Erst nach ausdrücklicher Freigabe.
+Wand eines Raums frontal aus dem Raum bearbeiten (Türen, Fenster, Durchgänge setzen,
+verschieben, Größe ändern, Hilfslinien, Einrasten, exakte Eingabe), gemeinsame Öffnungen
+gespiegelt mit Bearbeitung an der Quelle, Deckenansicht je Raum als Grundlage für Phase 5.
+Freigegebene Voraussetzungen: `completed` serverseitig schreibgeschützt, Prüfung einer neuen
+Geschoss-Standardhöhe durch die Fachmodule. Entscheidung:
+[ADR 0022](decisions/0022-wall-and-ceiling-view.md). Keine Migration. Ergebnis:
+[`docs/task-history.md`](task-history.md), Task 0024.
+
+**Stand:** `tasks.ps1 check` gegen PostgreSQL grün (923 Backend, 0 übersprungen; 805
+Frontend; Build). Bestandskonflikte bei der Geschosshöhe nachgeschärft. Browserabnahme
+funktional (20 Punkte), optische Sichtprüfung offen (Fenster war ausgeblendet). Phase 5 nicht
+begonnen.
+
+**Abschluss (2026-10-03):** Nachkorrekturen (Raumwand- und Fassadenauswahl, Wandansicht als
+Standardweg, Innen-/Außenseite, Rückkehr zur Ausgangsansicht, Benutzerliste) umgesetzt;
+830 Frontendtests. Vom Auftraggeber manuell abgenommen und als Checkpoint committet.
 
 ---
 

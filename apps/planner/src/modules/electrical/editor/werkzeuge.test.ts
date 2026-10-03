@@ -93,6 +93,18 @@ describe("Kontur bearbeiten", () => {
     expect(neu.walls[1]).toMatchObject({ x1_mm: 6000, y1_mm: 0 });
   });
 
+  it("kürzt eine Wand nicht unter eine vorhandene Öffnung (Phase 4f)", () => {
+    const mitTuer = oeffnungEinfuegen(rechteck(), "w1", "door", 3_000, "t1");
+    const ergebnis = wandlaengeSetzen(mitTuer, "w1", 3_500);
+    expect(ergebnis).toHaveProperty("fehler");
+    expect("fehler" in ergebnis && ergebnis.fehler).toMatch(/endet bei 3885 mm.*nur 3500 mm/);
+    const inCm = wandlaengeSetzen(mitTuer, "w1", 3_500, (mm) => `${mm / 10} cm`);
+    expect("fehler" in inCm && inCm.fehler).toMatch(/endet bei 388.5 cm.*nur 350 cm/);
+    // Bis zur Öffnungskante kürzen bleibt erlaubt - nichts wird verschoben.
+    const knapp = wert(wandlaengeSetzen(mitTuer, "w1", 3_885));
+    expect(knapp.walls[0]?.openings[0]).toMatchObject({ offset_mm: 3_000, width_mm: 885 });
+  });
+
   it("teilt eine Wand und entfernt den Eckpunkt wieder", () => {
     const geteilt = wert(wandTeilen(rechteck(), "w1", "neu"));
     expect(geteilt.walls.map((w) => w.id)).toEqual(["w1", "neu", "w2", "w3", "w4"]);

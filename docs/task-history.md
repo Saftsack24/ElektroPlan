@@ -2600,3 +2600,196 @@ Phase 4e nach Prüfung durch den Auftraggeber als ein Commit
 `feat(platform): add user lifecycle and server preferences` festgehalten (nicht gepusht).
 Prüfgrundlage: die zuletzt grünen Läufe (Backend 875, Frontend 744); vor dem Commit nur
 Statusformulierungen geändert, daher kein erneuter Volltestlauf.
+
+## Task 0024 – Phase 4f: Wand- und Deckenansicht
+
+**Datum:** 2026-10-02 · **Status:** UMGESETZT / NICHT COMMITTET, wartet auf Prüfung ·
+Entscheidung: [ADR 0022](decisions/0022-wall-and-ceiling-view.md) · keine Migration
+
+### Ausgangslage und Analyse
+
+Ausgangsstand `79e7f55`, Arbeitsbaum sauber, ein Alembic-Head `0007_user_lifecycle_preferences`;
+Sicherung als Git-Bundle im Scratchpad außerhalb des Repositorys. Analysiert: gerichtete
+Wände und `offset_mm` ab Wandanfang (ADR 0013), Raumhöhe als Wandhöhe (ADR 0016),
+Teilwandtopologie und „eine Öffnung als Quelle“ (4b.2), Editor-Reducer mit Undo/Redo und
+Ziehschritt, `PUT …/contour`, Navigationsschutz, Serverregeln (`opening_problems`,
+`opening_height_problems`: Brüstung nur beim Fenster – Türen stehen nach geltender Regel
+immer auf dem Boden).
+
+**Gemeldete Widersprüche und Entscheidungen des Auftraggebers:**
+
+1. Auftrag: „abgeschlossene Projekte bleiben schreibgeschützt“ – der Server schützte nur
+   `archived`. Entschieden: `completed` wird zentral im Core geschützt
+   (`409 project-completed`), Wiedereröffnung und Archivierung bleiben (ADR 0020 erweitert).
+2. Lücke: Eine abgesenkte Geschoss-Standardhöhe wurde nicht gegen Öffnungen geprüft.
+   Entschieden: synchroner Validierungs-Contract `FloorCeilingHeightParticipant`.
+3. Beim Umsetzen gefunden: `writable_context` las die Geschosshöhe vor der Projektsperre
+   (Rennen Geschoss-PATCH ↔ Öffnungsänderung) – behoben.
+
+### Umsetzung
+
+* **Backend:** `ProjectCompletedError`, `_require_writable` für `completed`;
+  `contracts/v1/floor_planning.py`, `core/projects/floor_height.py` (Koordinator, 422 mit
+  Raum/Wand/Keys), `modules/electrical/floor_height.py` (nur geerbte Räume, nur „vorher
+  gültig, danach nicht“), `update_floor` mit Pflichtparameter `height_participants` und
+  Neulesen nach der Sperre, `writable_context` liest nach der Sperre neu. OpenAPI: nur Texte.
+* **Frontend – Wandansicht** (`modules/electrical/wandansicht/`): `wandbezug.ts`
+  (Blickrichtung, Transformation), `wandfang.ts` (Einrasten), `wandpruefung.ts` (dieselben
+  Regeln über `bereichPruefen` aus `platzierung.ts`), `wandmodell.ts` (eigene/abgeleitete
+  Öffnungen, Abschnitte), `masslinien.ts`, `wandziehen.ts`, `WandZeichenflaeche.tsx`,
+  `WandEigenschaften.tsx`, `Wandansicht.tsx`, `wandansicht.css`; eingebunden in
+  `GrundrissEditor` mit **demselben** Reducer und denselben Speicher-/Verwerfen-Aktionen.
+* **Frontend – Deckenansicht** (`deckenansicht/`): `deckenmodell.ts`, `Deckenansicht.tsx`.
+* **Weitere:** Core-`Dialog` (`groesse="gross"`, `onEscape`); `oeffnungsHoehenBefunde` als
+  Spiegel der Serverregel (Fixture `oeffnungshoehen`); `wandlaengeSetzen` lehnt ein Kürzen
+  unter eine Öffnung ab; lokale Höhenmarkierung im Grundriss; Oberfläche für `completed`
+  schreibgeschützt (Projektseite, Tabs, Elektroplanung, Speichermeldung).
+
+### Tests
+
+* **Frontend:** 805 Tests (vorher 744) – neu u. a. Blickrichtung beider Umlaufsinne und
+  umgekehrte Kontur, Rundreise mm/cm/m, Spiegelung aus beiden Räumen, Teilwände mit zwei
+  Nachbarn, Grenzen/Überschneidung mit der Gegenseite, Höhen- und Größenregeln, Fang
+  (Toleranz je Zoom, Priorität, Hysterese, Alt, exakte Wandmitte), Ziehen/Größe/Platzieren,
+  Maßlinien inkl. Überschneidung; Integration über den echten Editor: Einstieg, gesperrte
+  offene Kontur, Setzen mit Hilfslinien, ungültige Vorschau, ein Undo-Schritt je Ziehen,
+  Escape und `pointercancel`, Griffe, Fenster/Tür-Regeln, exakte Eingabe, Schließen behält
+  den Entwurf (Undo/Redo im Grundriss), Speichern mit Raumversion und korrektem
+  `offset_mm`, Verwerfen, abgeleitete Öffnung mit Wechsel zur Quelle und Rückfrage bei
+  ungespeicherten Änderungen, Lesemodus bei `completed`, Deckenansicht Rechteck/L-Form,
+  Dialog-Escape. Typecheck, ESLint, Modulgrenzen, Produktionsbuild grün.
+* **Backend:** `tasks.ps1 check` ohne Datenbank bestanden: Ruff, Format, mypy `--strict`
+  (111 Dateien), import-linter (4/0), ein Head, Lockfile, OpenAPI-Drift; **359 Tests bestanden,
+  560 übersprungen** (alle Datenbanktests); Fixture-Parität `oeffnungshoehen` (9 Fälle) ohne Datenbank
+  grün. Neu geschrieben: `test_completed_concurrency.py` (Abschluss gegen 7 Schreibwege in
+  beiden Reihenfolgen, ohne Rennen), `test_floor_height_check.py` (geerbt/explizit,
+  zulässig/unzulässig, unveränderte Daten, Mandant, Teilnehmer liest nur, PostgreSQL-Rennen
+  in beiden Reihenfolgen), Parametrisierung der Archiv-API-Tests auf `completed`,
+  Wiedereröffnung/Archivierung aus `completed`. **Die Datenbanktests konnten nicht gegen
+  PostgreSQL laufen** (siehe Abnahme); vor der Unterbrechung liefen 199 betroffene
+  Bestandstests mit den Backendänderungen grün.
+
+### Abnahme
+
+Docker Desktop startete die Engine (WSL `docker-desktop`) auf dem Arbeitsrechner nicht
+(mehrere Startversuche, auch `docker desktop restart`, ohne Erfolg). Deshalb **nicht
+durchgeführt:** Backendtests gegen PostgreSQL, Compose-Abnahme und die Browserabnahme
+(20 Punkte). Nachzuholen, sobald Docker läuft.
+
+### Nachtrag 2026-10-02: Bestandskonflikte, Abnahme
+
+**Regel nachgeschärft (Auftraggeber):** Eine Absenkung der Geschoss-Standardhöhe wird auch
+dann abgelehnt, wenn eine Öffnung schon vorher zu hoch war und der Konflikt größer würde.
+Unveränderte oder höhere Standardhöhen sind immer zulässig, auch als teilweise Verbesserung.
+`ElectricalFloorHeightCheck`: Konflikt ⇔ Absenkung und Öffnung danach höher als der Raum;
+eigene Meldung für den vergrößerten Bestandskonflikt; Meldungen nennen Art und Lage der
+Öffnung. Der frühere offene Punkt T11 ist damit entschieden. Neue Tests: Bestandskonflikt +
+weitere Absenkung, unveränderte Höhe, teilweise Verbesserung (und danach keine erneute
+Absenkung), vollständige Behebung, Raum mit eigener Höhe.
+
+**Befunde der Browserabnahme, behoben:** Pointer Capture ohne bekannten Zeiger warf und
+brach die Bedienung ab (jetzt abgefangen); Überschneidungsmeldung nannte in der Wandansicht
+den Abstand ab Wandanfang (jetzt „… cm von links“); doppeltes „Raster, Raster“ in der
+Statuszeile; Meldung „Wand nicht unter eine Öffnung kürzen“ stand in mm statt in der
+persönlichen Einheit.
+
+**Gegenprobe Nebenläufigkeit:** Ohne das Neulesen der Geschosshöhe nach der Projektsperre
+fällt `test_absenkung_und_hoehere_tuer_gleichzeitig[geschoss]` nachweislich (danach
+wiederhergestellt).
+
+**Tests (Abschlusslauf `tasks.ps1 check` gegen PostgreSQL 17 + MinIO):** Ruff, Format,
+mypy (111 Dateien), import-linter 4/0, ein Head `0007`, Lockfile, **Backend 923 bestanden,
+0 übersprungen** (vor 4f: 875), OpenAPI-Drift, Frontend Typecheck/ESLint/Modulgrenzen,
+**805 Frontendtests**, Produktionsbuild – alles grün.
+
+**API-Abnahme im Compose-System:** abgeschlossenes Projekt → Stammdaten- und Raum-PATCH
+`409 project-completed`; Geschoss auf 2000 mm → `422` mit drei Meldungen, Geschoss
+unverändert.
+
+**Browserabnahme** (Claude-Browserbereich, Chromium; synthetische Daten `PR-2026-0002`,
+`PR-2026-0003`). **Einschränkung:** Das App-Fenster war während der Abnahme ausgeblendet
+bzw. minimiert (`document.visibilityState = hidden`, keine Bildwiederholung). Deshalb waren
+keine Bildschirmfotos möglich, und `ResizeObserver` lieferte nicht (gilt für den bestehenden
+Grundriss genauso). Geprüft wurde **funktional** mit echten DOM-Ereignissen (PointerEvent,
+Klick, Tastatur) und Messungen, nicht optisch, nicht mit echter Maus, Touch oder Browserzoom.
+
+| # | Prüfung | Ergebnis |
+|---|---|---|
+| 1 | Wand aus dem Grundriss öffnen | bestanden |
+| 2 | Wandmaße und Blickrichtung | bestanden (400 × 250 cm, Seitenverhältnis 1,600, „nach rechts“, Tür 211,5 cm von links = 1000 mm ab Wandanfang) |
+| 3 | Tür setzen, verschieben, Größe | bestanden (Raster, Alt millimetergenau, ein Undo je Ziehen, Griff rechts, Escape) |
+| 4 | Fenster, Brüstung, Größe | bestanden (Standardbrüstung 90 cm, exakt 95,5 cm, senkrecht ziehen, zu hohe Höhe abgelehnt) |
+| 5 | Hilfslinien Kanten/Nachbarn | bestanden (Randabstände, „frei zu Tür“, Brüstung, Decke) |
+| 6 | Einrasten, Abschalten, Alt | bestanden (Fangziel „Wandmitte“ hervorgehoben) |
+| 7 | cm, mm, m exakt | Eingabe mit `m`/`mm`-Zeichen bestanden; Umschalten der **Anzeigeeinheit** im Browser nicht durchgeführt (nur automatisiert) |
+| 8 | Undo/Redo über Ansichtswechsel | bestanden |
+| 9 | Schließen, Wiederöffnen, Speichern, Verwerfen | bestanden |
+| 10 | Werte nach Reload | bestanden (API: `offset_mm` 2503, Brüstung 915) |
+| 11 | gemeinsame Öffnung aus beiden Räumen, Quelle | bestanden (gespiegelt 100 / 250,3 cm, Rückfrage bei offenem Entwurf) |
+| 12 | teilweise deckungsgleiche Wände | bestanden (Flurwand: Wohnzimmer 0–400, Bad 400–600 cm) |
+| 13 | ungültige Platzierung, Wandänderung | bestanden (Überschneidung abgelehnt, Kürzen unter Öffnung abgelehnt) |
+| 14 | Grundriss und 3D | Grundriss bestanden; 3D lädt mit Canvas und erwarteten Hinweisen, **Bild nicht optisch geprüft** |
+| 15 | Deckenansicht Rechteck/L | bestanden (Raummaß nur beim Rechteck, Wandabstand, Ausrichtung W1 unten/W2 rechts) |
+| 16 | Lesemodus abgeschlossen | bestanden (Elektroplanung); Stammdatenfelder bleiben tippbar bei gesperrtem Speichern – bestehendes Verhalten, auch bei „archiviert“ |
+| 17 | Hell/Dunkel, Akzente | per Attribut-Emulation gemessen: Auswahlkontrast 4,4–7,1 : 1, Text 13–15 : 1; **nicht optisch** |
+| 18 | 320/360/420 px | Layout gemessen: keine Überbreite, keine abgeschnittenen Bedienelemente; Größenanpassung der Zeichenfläche **nicht prüfbar** (keine Bildwiederholung) |
+| 19 | keine doppelte Scrollleiste | bestanden (je Breite genau ein Scrollbereich) |
+| 20 | keine neuen JS-Fehler | bestanden (nur 401 vor Anmeldung, Vite-WebSocket bei Neustarts, blockierter `beforeunload` beim erzwungenen Neuladen) |
+
+### Nachtrag 2026-10-03: Raumwand-Auswahl und Wandansicht als Standardweg
+
+Aus der manuellen Abnahme des Auftraggebers: (1) In 3D wurde beim Klick auf eine
+durchgehende Wand nur der Abschnitt hinter einem Nachbarraum markiert. Jetzt Auswahl
+`raumwand` = ganze gespeicherte Wand der getroffenen Raumseite (Flächennormale +
+Umlaufsinn), Hervorhebung aller überdeckten Körper, volle Länge und Abschnitte in der
+Seitenleiste, „In der Wandansicht öffnen“; nicht eindeutige Seite → Raumwahl. Im Grundriss
+dieselbe Raumseitenregel. (2) Tür/Fenster/Durchgang öffnen per Wandklick die Wandansicht
+mit aktivem Werkzeug; keine Platzierung von oben mehr als Standard; Formular eingeklappt.
+Kein Backend, keine API, keine Migration. Tests: 818 Frontend (vorher 805) – neu u. a.
+Raumseitenwahl (beide Seiten, Krone, Stirnseite, Uhrzeigersinn, Außenwand), Strahltreffer
+und Hervorhebung in der Szene, Seitenleiste mit Abschnitten und Raumwahl, Einstieg aus 3D,
+Werkzeugeinstieg T/N/D, Abbrechen ohne Öffnung, Klick/Doppelklick auf vorhandene Öffnung,
+Raumseite im Grundriss, Rückfrage bei offenem Entwurf, Undo/Redo und Speichern nach
+Platzierung in der Wandansicht. Typecheck, ESLint, Modulgrenzen, API-Drift, Build grün.
+Kein erneuter Backendlauf (Backend und Contracts unverändert). Live-Prüfung im Browser
+nicht möglich (Browserbereich 0 × 0, App-Fenster minimiert) – Sichtprüfung beim
+Auftraggeber.
+
+### Nachtrag 2026-10-03 (2): Fassadenauswahl von außen
+
+Befund aus der Sichtprüfung: Von außen wurde nur der Fassadenabschnitt eines Raums markiert.
+Jetzt: Klick von außen auf eine nicht geteilte Wand → Ansichtsgruppe `fassade` (gleiche exakte
+Gerade, lückenlos, endet an Ecken, Lücken und gemeinsamen Abschnitten; Öffnungen
+unterbrechen nicht), alle Körper hervorgehoben, Gesamtlänge und Raumabschnitte in der
+Seitenleiste, Wandansicht über den angeklickten Abschnitt oder Raumwahl. Von innen und von
+oben weiterhin die Raumwand. `gleicheAuswahl` vergleicht den angeklickten Abschnitt mit.
+Tests: 823 Frontend (vorher 818) – zwei Räume nebeneinander, Ecke, Lücke, Fenster in der
+Fassade, innen/außen/oben, Strahltreffer und Hervorhebung, Seitenleiste mit beiden
+Wandansicht-Wegen. Typecheck, ESLint, Modulgrenzen, API-Drift, Build grün; Backend
+unverändert, kein Backendlauf.
+
+### Nachtrag 2026-10-03 (3): Wandseite, Rückkehr nach 3D, Benutzerliste
+
+* **Wandseite** innen/außen als typisierter Ansichtskontext durch die ganze Kette (3D-Treffer →
+  Auswahl → Wandansicht); von außen gespiegelt, Bezeichnung „Innenseite – Raum“ /
+  „Außenseite – Fassade“, Umschalten ohne Datenänderung, Seitenwahl bei Krone/Stirnseite
+  einer Außenwand.
+* **Rückkehr:** aus 3D geöffnet → Schließen zurück nach 3D mit Kamera und Auswahl; aus 2D →
+  bleibt 2D; bestehende Rückfrage bei ungespeicherten Änderungen. Befund behoben: Eine
+  wiederhergestellte 3D-Auswahl wurde verworfen, solange der Plan noch lud.
+* **Benutzerliste:** `flex` direkt am `<td>` entfernt (innerer Wrapper), Überschrift
+  „Aktionen“.
+
+Tests: 830 Frontend (vorher 823). Typecheck, ESLint, Modulgrenzen, API-Drift, Build grün;
+Backend unverändert, kein Backendlauf. **Browser:** Benutzerliste geometrisch gemessen (alle
+Zellen bündig mit ihrer Zeile bei 1280 und 420 px, Einladungszeile mit zwei Knöpfen); keine
+Bildschirmfotos möglich (Fenster zeichnet nicht). Wand- und 3D-Ansicht im Browser nicht
+geprüft - Sichtprüfung beim Auftraggeber.
+
+### Abschluss 2026-10-03
+
+Vom Auftraggeber manuell abgenommen, einschließlich aller Nachkorrekturen. Grundlage des
+Checkpoint-Commits: vollständiger Backendlauf gegen PostgreSQL (923 bestanden,
+0 übersprungen), zuletzt 830 bestandene Frontendtests, diese manuelle Abnahme. Vor dem Commit
+kein erneuter großer Testlauf; zusätzliche Sicht-, Bildschirmfoto- oder Geräteprüfungen
+fanden nicht statt. Phase 5 nicht begonnen.

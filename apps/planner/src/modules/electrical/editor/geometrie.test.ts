@@ -8,6 +8,7 @@ import {
   ganzzahligeWurzel,
   konturbericht,
   oeffnungsBefunde,
+  oeffnungsHoehenBefunde,
   streckenlaenge,
 } from "./geometrie";
 import type { Segment } from "./geometrie";
@@ -35,6 +36,14 @@ interface Fixture {
     wandlaenge_mm: number;
     oeffnung: [number, number];
     andere: [number, number][];
+    codes: string[];
+  }[];
+  oeffnungshoehen: {
+    name: string;
+    art: "door" | "window" | "passage";
+    hoehe_mm: number;
+    bruestung_mm: number;
+    raumhoehe_mm: number;
     codes: string[];
   }[];
 }
@@ -75,6 +84,13 @@ describe("Geometrieparität mit dem Backend (Fixture v1)", () => {
       fall.wandlaenge_mm,
       fall.andere.map(([abstand, breite], index) => ({ key: `a${index}`, abstand, breite })),
     );
+    expect(befunde.map((befund) => befund.code)).toEqual(fall.codes);
+  });
+});
+
+describe("Öffnungshöhen (Fixture v1, seit Phase 4f)", () => {
+  it.each(daten.oeffnungshoehen)("Höhe: $name", (fall) => {
+    const befunde = oeffnungsHoehenBefunde("o", fall.art, fall.hoehe_mm, fall.bruestung_mm, fall.raumhoehe_mm);
     expect(befunde.map((befund) => befund.code)).toEqual(fall.codes);
   });
 });

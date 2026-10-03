@@ -7,7 +7,8 @@ Auskuenfte, und keines darf sie sich selbst beschaffen:
 1. Gehoert dieses Geschoss zu meinem Mandanten? (Sonst ``404``, ohne zu
    verraten, ob es existiert.)
 2. Zu welchem Projekt gehoert es?
-3. Darf ich darunter ueberhaupt schreiben - oder ist das Projekt archiviert?
+3. Darf ich darunter ueberhaupt schreiben - oder ist das Projekt archiviert oder
+   abgeschlossen?
 
 Diese Datei ist die **einzige** Stelle, an der ein Fachmodul das erfaehrt. Sie
 liefert einen unveraenderlichen Wertetyp, kein ORM-Objekt: ``models`` und
@@ -101,19 +102,29 @@ class FloorPlanningAccess:
         Schreibschutz.
 
         Nach der Rueckkehr gilt bis zum Ende der Transaktion: Das Projekt ist
-        nicht archiviert, und es kann auch nicht archiviert werden, solange
-        diese Transaktion laeuft. Erst danach darf ein Fachmodul seine eigenen
-        Zeilen sperren - die Reihenfolge ist ueberall **Projekt zuerst**.
+        weder archiviert noch abgeschlossen, und es kann auch nicht
+        archiviert oder abgeschlossen werden, solange diese Transaktion
+        laeuft. Erst danach darf ein Fachmodul seine eigenen Zeilen sperren -
+        die Reihenfolge ist ueberall **Projekt zuerst**.
 
-        Ein archiviertes Projekt liefert ``409 project-archived`` - dieselbe
-        Antwort wie bei den Unterressourcen des Core, damit ein Client nur
+        Ein archiviertes Projekt liefert ``409 project-archived``, ein
+        abgeschlossenes ``409 project-completed`` (seit Phase 4f) - dieselben
+        Antworten wie bei den Unterressourcen des Core, damit ein Client nur
         einen Fehlervertrag kennen muss.
         """
         context = self.context(floor_id)
-        # Sperrt die Projektzeile und wirft ProjectArchivedError, wenn das
-        # Projekt schreibgeschuetzt ist. Der Status wird dabei neu gelesen.
+        # Sperrt die Projektzeile und wirft ProjectArchivedError bzw.
+        # ProjectCompletedError, wenn das Projekt schreibgeschuetzt ist. Der
+        # Status wird dabei neu gelesen.
         self._projects.lock_writable(context.project_id)
-        return context
+        # Erst jetzt gilt der Geschossstand: Eine gleichzeitige Aenderung der
+        # Standardhoehe (``update_floor`` sperrt dieselbe Projektzeile) ist
+        # bereits committet und muss gesehen werden - sonst pruefte ein
+        # Fachmodul seine Oeffnungen gegen die alte Hoehe (ADR 0022). Die
+        # Zugehoerigkeit Geschoss -> Projekt ist unveraenderlich, nur die
+        # Werte des Geschosses werden neu gelesen.
+        self._projects.session.refresh(self._projects.floors.get_or_404(floor_id))
+        return self.context(floor_id)
 
     def record_project_change(self, project_id: uuid.UUID, *, actor_user_id: uuid.UUID) -> None:
         """Vermerkt eine Aenderung an Planungsdaten am Projekt (Phase 4d).

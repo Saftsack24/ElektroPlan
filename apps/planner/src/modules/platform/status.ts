@@ -13,9 +13,13 @@ export const STATUS_LABEL: Record<ProjectStatus, string> = {
   archived: "Archiviert",
 };
 
-/** Ein archiviertes Projekt ist serverseitig vollstaendig schreibgeschuetzt. */
+/**
+ * Archivierte und - seit Phase 4f - abgeschlossene Projekte sind serverseitig
+ * gegen fachliche Aenderungen geschuetzt (ADR 0020, Erweiterung 4f). Ein
+ * abgeschlossenes Projekt kann ein Administrator wieder in Bearbeitung setzen.
+ */
 export function istSchreibgeschuetzt(status: ProjectStatus): boolean {
-  return status === "archived";
+  return status === "archived" || status === "completed";
 }
 
 /**

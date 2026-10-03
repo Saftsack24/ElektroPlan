@@ -57,7 +57,7 @@ class FileDownloadUrl(BaseModel):
     summary="Datei hochladen",
     responses={
         404: {"model": ProblemDetail, "description": "Projekt nicht gefunden"},
-        409: {"model": ProblemDetail, "description": "Projekt ist archiviert"},
+        409: {"model": ProblemDetail, "description": "Projekt ist archiviert oder abgeschlossen"},
         422: {"model": ProblemDetail, "description": "Dateityp, Inhalt oder Groesse unzulaessig"},
     },
 )
@@ -73,7 +73,8 @@ def upload_file(
     """Nimmt eine Datei entgegen, prueft sie und legt sie im Storage ab.
 
     Mit ``project_id`` wird die Datei einem Projekt zugeordnet; das Projekt
-    muss der eigenen Organisation gehoeren und darf nicht archiviert sein.
+    muss der eigenen Organisation gehoeren und darf weder archiviert noch
+    abgeschlossen sein.
     """
     projects = ProjectService(session, current_user.organization_id)
     if project_id is not None:

@@ -273,3 +273,29 @@ export function oeffnungsBefunde(
   }
   return befunde;
 }
+
+/** Kleinste und größte Öffnungsmaße - wie `MIN_OPENING_SIZE_MM`/`MAX_OPENING_SIZE_MM`. */
+export const MIN_OEFFNUNG_MM = 100;
+export const MAX_OEFFNUNG_MM = 20_000;
+
+/**
+ * Höhenlage einer Öffnung gegen die Raumhöhe - wie `opening_height_problems`
+ * (seit Phase 4f gespiegelt, geprüft über die Fixture `oeffnungshoehen`).
+ * Tür und Durchgang stehen auf dem Boden; ein Fenster braucht eine Brüstung.
+ */
+export function oeffnungsHoehenBefunde(
+  key: string,
+  art: "door" | "window" | "passage",
+  hoeheMm: number,
+  bruestungMm: number,
+  raumhoeheMm: number,
+): Befund[] {
+  const befunde: Befund[] = [];
+  if (hoeheMm <= 0) befunde.push({ code: "opening-height-not-positive", keys: [key] });
+  if (bruestungMm < 0) befunde.push({ code: "opening-sill-negative", keys: [key] });
+  if (art === "window" && bruestungMm <= 0) befunde.push({ code: "window-needs-sill", keys: [key] });
+  if (art !== "window" && bruestungMm !== 0) befunde.push({ code: "sill-only-for-window", keys: [key] });
+  if (befunde.length > 0) return befunde;
+  if (bruestungMm + hoeheMm > raumhoeheMm) befunde.push({ code: "opening-exceeds-room-height", keys: [key] });
+  return befunde;
+}

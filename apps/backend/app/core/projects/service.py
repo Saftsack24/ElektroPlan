@@ -9,6 +9,7 @@ ab, nicht von der Eingabe.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from typing import Literal
 
 from sqlalchemy import Select, func, or_, select, update
@@ -23,10 +24,12 @@ from app.core.persistence import (
     unique_violation_translated,
 )
 from app.core.preconditions import check_version
+from app.core.projects.floor_height import HeightParticipant, require_floor_height_allowed
 from app.core.projects.models import (
     PROJECT_REOPEN_FROM,
     PROJECT_REOPEN_TO,
     PROJECT_STATUS_ARCHIVED,
+    PROJECT_STATUS_COMPLETED,
     PROJECT_STATUS_GROUPS,
     PROJECT_STATUS_TRANSITIONS,
     Building,
@@ -48,6 +51,7 @@ from app.errors import (
     ConflictError,
     NotFoundError,
     ProjectArchivedError,
+    ProjectCompletedError,
     ValidationFailedError,
 )
 
@@ -88,14 +92,26 @@ def _require_writable(project: Project) -> None:
     neue Uploads werden abgelehnt. Lesen und das Herunterladen bestehender
     Dateien bleiben erlaubt (docs/api.md, Abschnitt "Projektstatus").
 
-    Eine Wiederherstellung aus ``archived`` gibt es nicht (ADR 0020). Nur
-    ``completed`` laesst sich ueber :meth:`ProjectService.reopen` wieder in
-    Bearbeitung setzen.
+    Eine Wiederherstellung aus ``archived`` gibt es nicht (ADR 0020).
+
+    Seit Phase 4f ist auch ``completed`` gegen fachliche Aenderungen
+    geschuetzt (``409 project-completed``, ADR 0020, Erweiterung 4f). Nicht
+    hier entschieden und deshalb weiter moeglich: die Wiedereroeffnung
+    (:meth:`ProjectService.reopen`) und die Archivierung
+    (:meth:`ProjectService.change_status`) - beide sperren die Projektzeile
+    ueber :meth:`ProjectService.lock_project`, nicht ueber
+    :meth:`ProjectService.lock_writable`.
     """
     if project.status == PROJECT_STATUS_ARCHIVED:
         raise ProjectArchivedError(
             f"Projekt {project.project_number} ist archiviert und damit schreibgeschuetzt. "
             "Lesen und das Herunterladen bestehender Dateien bleiben moeglich."
+        )
+    if project.status == PROJECT_STATUS_COMPLETED:
+        raise ProjectCompletedError(
+            f"Projekt {project.project_number} ist abgeschlossen und damit schreibgeschuetzt. "
+            "Lesen und das Herunterladen bestehender Dateien bleiben moeglich; ein "
+            "Administrator kann das Projekt wieder in Bearbeitung setzen."
         )
 
 
@@ -422,13 +438,38 @@ class ProjectService:
         *,
         expected_version: int,
         actor_user_id: uuid.UUID,
+        height_participants: Sequence[HeightParticipant],
     ) -> Floor:
+        """Aendert ein Geschoss.
+
+        Eine neue Standard-Deckenhoehe pruefen vorher die Fachmodule
+        (``height_participants``, ADR 0022): Wuerde sie eine vorhandene
+        Oeffnung in einem Raum ohne eigene Hoehe ungueltig machen, scheitert
+        die gesamte Anfrage mit ``422``. Die Pruefung laeuft unter der
+        Projektsperre und in derselben Transaktion wie die Aenderung. Der
+        Parameter ist bewusst Pflicht: Ein Aufrufer soll die Pruefung nicht
+        versehentlich auslassen.
+        """
         floor, building = self._writable_floor(floor_id)
+        # Nach der Projektsperre neu lesen: Eine zwischenzeitlich committete
+        # Aenderung desselben Geschosses ist jetzt sichtbar - die
+        # Versionspruefung und die Hoehenpruefung arbeiten auf diesem Stand.
+        self.session.refresh(floor)
         check_version(floor, expected_version)
         changes = payload.model_dump(exclude_unset=True)
         new_level = changes.get("level")
         if new_level is not None and new_level != floor.level:
             self._require_free_level(floor.building_id, new_level, exclude_floor_id=floor.id)
+        new_height = changes.get("default_ceiling_height_mm")
+        if new_height is not None and new_height != floor.default_ceiling_height_mm:
+            require_floor_height_allowed(
+                self.session,
+                organization_id=self.organization_id,
+                floor_id=floor.id,
+                current_mm=floor.default_ceiling_height_mm,
+                proposed_mm=new_height,
+                participants=height_participants,
+            )
         for field, value in changes.items():
             setattr(floor, field, value)
         self._flush_floor(floor.level)

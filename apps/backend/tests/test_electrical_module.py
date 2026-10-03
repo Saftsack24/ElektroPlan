@@ -196,10 +196,12 @@ def test_descriptor_ist_ein_fachmodul() -> None:
     assert DESCRIPTOR.kind is ModuleKind.DOMAIN
     assert DESCRIPTOR.table_prefix == "electrical_"
     assert DESCRIPTOR.namespaces == ("electrical",)
-    # Seit Phase 4d genau ein Port: der Teilnehmer des Loeschprotokolls
-    # (ADR 0020). Provider-Ports fuer materials entstehen erst mit Phase 7.
+    # Seit Phase 4d der Teilnehmer des Loeschprotokolls (ADR 0020), seit
+    # Phase 4f der Pruefer einer neuen Geschoss-Standardhoehe (ADR 0022).
+    # Provider-Ports fuer materials entstehen erst mit Phase 7.
     assert [binding.port.__name__ for binding in DESCRIPTOR.provides] == [
-        "ProjectContentParticipant"
+        "ProjectContentParticipant",
+        "FloorCeilingHeightParticipant",
     ]
     assert DESCRIPTOR.subscriptions == (), "Phase 3 konsumiert keine Events"
 
@@ -223,6 +225,7 @@ def test_oeffentlicher_einstiegspunkt_exportiert_nur_den_descriptor() -> None:
     assert oeffentlich - {"DESCRIPTOR", "annotations"} <= {
         "api",
         "events",
+        "floor_height",
         "geometry",
         "lifecycle",
         "models",

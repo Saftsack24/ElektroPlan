@@ -72,16 +72,28 @@ async function wohnzimmerMitTuerwerkzeug() {
   zeigen();
   await bereit();
   fireEvent.click(await screen.findByRole("button", { name: /0.01 Wohnzimmer/ }));
-  taste("o");
+  taste("t");
 }
 
-/** Tür mittig auf die gemeinsame Wand (Mitte y = 2000 → Abstand 1550). */
-async function tuerAufGemeinsamerWand() {
-  await wohnzimmerMitTuerwerkzeug();
-  zeiger(flaeche(), "pointermove", 5000, 2000);
-  klick(5000, 2000);
+/** Gespeicherte Tür(en) an der gemeinsamen Wohnzimmerwand w2. */
+function tuer(id: string, offset: number) {
+  return { id, wall_id: "w2", kind: "door" as const, offset_mm: offset, width_mm: 885, height_mm: 2010, sill_height_mm: 0, version: 1, created_at: "", updated_at: "" };
+}
+function wohnzimmerMit(...tueren: ReturnType<typeof tuer>[]) {
+  return { ...RAUM, walls: RAUM.walls.map((w) => (w.id === "w2" ? { ...w, opening_count: tueren.length, openings: tueren } : w)) };
+}
+
+/** Wohnzimmer mit einer Tür mittig auf der gemeinsamen Wand (Mitte y = 2000 → Abstand 1550), ausgewählt. */
+async function tuerAufGemeinsamerWand(weitere: ReturnType<typeof tuer>[] = []) {
+  plan = { ...plan, rooms: [wohnzimmerMit(tuer("tuer-1", 1550), ...weitere), plan.rooms[1]] };
+  zeigen();
+  await bereit();
+  fireEvent.click(await screen.findByRole("button", { name: /0.01 Wohnzimmer/ }));
+  klick(5000, 2000, await screen.findByTestId("oeffnung-tuer-1"));
   await screen.findByText(/Tür in Wand 2/);
 }
+
+const wandansicht = () => screen.queryByRole("dialog", { name: /Wandansicht/ });
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -102,79 +114,135 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("Tür per Maus platzieren", () => {
-  it("Türwerkzeug aktivieren: Werkzeug gedrückt, Art „Tür“ vorgewählt", async () => {
+describe("Tür, Fenster, Durchgang: Standardweg über die Wandansicht (Phase 4f)", () => {
+  it("drei Werkzeuge; Tür (T) ist gedrückt", async () => {
     await wohnzimmerMitTuerwerkzeug();
-    expect(screen.getByRole("button", { name: "Öffnung" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByLabelText("Art der Öffnung")).toHaveValue("door");
+    expect(screen.getByRole("button", { name: "Tür" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Fenster" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Durchgang" })).toHaveAttribute("aria-pressed", "false");
   });
 
-  it("Vorschau über einer gemeinsamen Wand nennt beide Räume; abseits keine Vorschau", async () => {
+  it("über der gemeinsamen Wand wird die ganze Wand der Raumseite unter dem Zeiger hervorgehoben", async () => {
     await wohnzimmerMitTuerwerkzeug();
-    zeiger(flaeche(), "pointermove", 2500, 2000);
+    zeiger(flaeche(), "pointermove", 4980, 2000);
+    expect(screen.getByTestId("wandvorschau")).toHaveTextContent("Wand 2 von „0.01 Wohnzimmer“ – Klick öffnet die Wandansicht (Tür setzen)");
+    zeiger(flaeche(), "pointermove", 5020, 2000);
+    expect(screen.getByTestId("wandvorschau")).toHaveTextContent("Wand 4 von „0.02 Flur“");
     expect(vorschau()).toBeNull();
-    zeiger(flaeche(), "pointermove", 5000, 2000);
-    expect(vorschau()).toHaveTextContent("Tür · verbindet „0.01 Wohnzimmer“ und „0.02 Flur“ · Abstand 155 cm");
-    zeiger(flaeche(), "pointermove", 2500, 2000);
-    expect(vorschau()).toBeNull();
   });
 
-  it("Vorschau über einer Außenwand erfindet keinen zweiten Raum", async () => {
+  it("Klick wählt nur die Wand und öffnet ihre Wandansicht mit Tür-Werkzeug - keine Öffnung entsteht", async () => {
     await wohnzimmerMitTuerwerkzeug();
-    zeiger(flaeche(), "pointermove", 2500, 0);
-    expect(vorschau()).toHaveTextContent("nicht geteilte Wand – kein zweiter Raum");
+    klick(4980, 2000);
+    const dialog = await screen.findByRole("dialog", { name: "Wandansicht · Wand 2 · 0.01 Wohnzimmer" });
+    expect(within(dialog).getByRole("button", { name: "Tür" })).toHaveAttribute("aria-pressed", "true");
+    // Die ganze Wand des Raums: 400 cm, nicht ein Abschnitt hinter dem Nachbarn.
+    expect(within(dialog).getByText(/^400 cm breit/)).toBeInTheDocument();
+    expect(oeffnungen()).toHaveLength(0);
+    expect(within(dialog).getByText("Wohnzimmer: Keine ungespeicherten Änderungen")).toBeInTheDocument();
   });
 
-  it("Klick setzt die Tür an der Vorschau-Lage und wählt sie sofort aus - mit beiden Räumen", async () => {
+  it("Fenster (N) und Durchgang (D) öffnen die Wandansicht mit ihrem Werkzeug", async () => {
+    zeigen();
+    await bereit();
+    fireEvent.click(await screen.findByRole("button", { name: /0.01 Wohnzimmer/ }));
+    taste("n");
+    klick(2500, 20);
+    let dialog = await screen.findByRole("dialog", { name: "Wandansicht · Wand 1 · 0.01 Wohnzimmer" });
+    expect(within(dialog).getByRole("button", { name: "Fenster" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Dialog schließen" }));
+    taste("d");
+    klick(2500, 20);
+    dialog = await screen.findByRole("dialog", { name: "Wandansicht · Wand 1 · 0.01 Wohnzimmer" });
+    expect(within(dialog).getByRole("button", { name: "Durchgang" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("Abbrechen ohne Platzierung legt nichts an", async () => {
+    await wohnzimmerMitTuerwerkzeug();
+    klick(4980, 2000);
+    const dialog = await screen.findByRole("dialog", { name: /Wandansicht/ });
+    // Escape: zuerst das Werkzeug, dann schließen.
+    fireEvent(dialog, new Event("cancel", { cancelable: true }));
+    expect(within(dialog).getByRole("button", { name: "Auswählen" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent(dialog, new Event("cancel", { cancelable: true }));
+    expect(wandansicht()).toBeNull();
+    expect(oeffnungen()).toHaveLength(0);
+    expect(screen.getByText(/Keine ungespeicherten Änderungen/)).toBeInTheDocument();
+    expect(api.put).not.toHaveBeenCalled();
+  });
+
+  it("Klick von der Flurseite wechselt in den Flur und öffnet dessen Wand", async () => {
+    await wohnzimmerMitTuerwerkzeug();
+    klick(5020, 2000);
+    expect(await screen.findByRole("dialog", { name: "Wandansicht · Wand 4 · 0.02 Flur" })).toBeInTheDocument();
+  });
+
+  it("mit ungespeicherten Änderungen fragt der Wechsel zur anderen Raumseite nach", async () => {
     await tuerAufGemeinsamerWand();
-    expect(abstand()).toBe("155");
-    // Kurze Beschriftung mit der Einheit aus der zentralen Maßlogik; die Bezugsstelle erklärt der Text darunter.
-    expect(screen.getByLabelText("Abstand (cm)")).toHaveValue("155");
-    expect(screen.getByText(/Der Abstand wird vom Anfang der gerichteten Wand gemessen/)).toBeInTheDocument();
-    const seite = screen.getByRole("region", { name: "Öffnung" });
-    expect(within(seite).getByText("Verbindet „0.01 Wohnzimmer“ und „0.02 Flur“")).toBeInTheDocument();
-    expect(within(seite).getByText(/Gespeichert einmal an Wand 2 von „0.01 Wohnzimmer“/)).toBeInTheDocument();
-    expect(oeffnungen()).toHaveLength(1);
+    // Tür verschieben (ungespeichert), dann von der Flurseite eine Wand wählen.
+    zeiger(oeffnungen()[0]!, "pointerdown", 5000, 2000);
+    zeiger(flaeche(), "pointermove", 5000, 2500);
+    zeiger(flaeche(), "pointerup", 5000, 2500);
+    taste("t");
+    klick(5020, 3500);
+    const frage = await screen.findByRole("dialog", { name: "Raum wechseln?" });
+    fireEvent.click(within(frage).getByRole("button", { name: "Beim Raum bleiben" }));
+    expect(wandansicht()).toBeNull();
+    expect(abstand()).toBe("205");
   });
 
-  it("die Tür ist sofort ausgewählt und exakt numerisch nachbearbeitbar", async () => {
-    await tuerAufGemeinsamerWand();
-    fireEvent.change(screen.getByLabelText(/^Abstand \(/), { target: { value: "152,5" } });
-    fireEvent.click(screen.getByRole("button", { name: "Maße übernehmen" }));
-    expect(abstand()).toBe("152,5");
-  });
-
-  it("vorhandene Öffnung blockiert eine neue - mit Meldung, ohne zweite Tür", async () => {
-    await tuerAufGemeinsamerWand();
-    zeiger(flaeche(), "pointermove", 5000, 2300);
-    expect(vorschau()).toHaveTextContent("Überschneidet sich mit der vorhandenen Tür bei 155 cm.");
-    klick(5000, 2300);
-    expect(await screen.findByText("Überschneidet sich mit der vorhandenen Tür bei 155 cm.", { selector: "span" })).toBeInTheDocument();
-    expect(oeffnungen()).toHaveLength(1);
-  });
-
-  it("Speichern sendet genau eine Öffnung - an der Eigentümerwand, kein zweiter Datensatz", async () => {
+  it("in der Wandansicht gesetzt, im Grundriss sichtbar, rückgängig zu machen und genau einmal gespeichert", async () => {
     api.put.mockImplementation((_pfad: string, optionen: { body: unknown }) => Promise.resolve({ ...RAUM, version: 6, ...(optionen.body as object) }));
-    await tuerAufGemeinsamerWand();
+    await wohnzimmerMitTuerwerkzeug();
+    klick(4980, 2000);
+    const dialog = await screen.findByRole("dialog", { name: /Wandansicht/ });
+    const wand = within(dialog).getByTestId("wandflaeche");
+    const x = Number(wand.getAttribute("x")) + Number(wand.getAttribute("width")) / 2;
+    const y = Number(wand.getAttribute("y")) + Number(wand.getAttribute("height")) / 2;
+    const svg = dialog.querySelector("svg.ansicht__svg")!;
+    for (const typ of ["pointermove", "pointerdown", "pointerup"]) {
+      fireEvent(svg, new MouseEvent(typ, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y }));
+    }
+    await within(dialog).findByText(/Tür gesetzt/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Dialog schließen" }));
+    expect(oeffnungen()).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Rückgängig" }));
+    expect(oeffnungen()).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Wiederholen" }));
+    expect(oeffnungen()).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "Speichern" }));
     await screen.findByText(/Gespeichert/);
-    expect(api.put).toHaveBeenCalledTimes(1);
-    const [, optionen] = api.put.mock.calls[0] as [string, { path: { room_id: string }; body: { walls: { id: string; openings: { offset_mm: number; kind: string }[] }[] } }];
-    expect(optionen.path.room_id).toBe("raum-1");
+    const [, optionen] = api.put.mock.calls[0] as [string, { body: { walls: { id: string; openings: { kind: string }[] }[] } }];
     const alle = optionen.body.walls.flatMap((w) => w.openings.map((o) => ({ wand: w.id, ...o })));
     expect(alle).toHaveLength(1);
-    expect(alle[0]).toMatchObject({ wand: "w2", kind: "door", offset_mm: 1550 });
-    expect(api.post).not.toHaveBeenCalled();
+    expect(alle[0]).toMatchObject({ wand: "w2", kind: "door" });
   });
 
-  it("die Einheit mm ändert Anzeige und Eingabe, nicht die gespeicherte Lage", async () => {
-    act(() => masseinheitSetzen("mm"));
-    api.put.mockResolvedValue({ ...RAUM, version: 6 });
+  it("Klick mit dem Werkzeug auf eine vorhandene Öffnung öffnet ihre Wandansicht mit Auswahl", async () => {
+    plan = { ...plan, rooms: [wohnzimmerMit(tuer("tuer-1", 1550)), FLUR] };
+    await wohnzimmerMitTuerwerkzeug();
+    klick(5000, 2000, await screen.findByTestId("oeffnung-tuer-1"));
+    const dialog = await screen.findByRole("dialog", { name: "Wandansicht · Wand 2 · 0.01 Wohnzimmer" });
+    expect(within(dialog).getByRole("textbox", { name: /^Abstand von links/ })).toHaveValue("156,5");
+    expect(within(dialog).getByRole("button", { name: "Auswählen" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("Doppelklick im Auswahlwerkzeug öffnet die Wandansicht; die Seitenleiste bietet sie als ersten Weg an", async () => {
     await tuerAufGemeinsamerWand();
-    expect(screen.getByLabelText("Abstand (mm)")).toHaveValue("1550");
-    fireEvent.click(screen.getByRole("button", { name: "Speichern" }));
-    const [, optionen] = api.put.mock.calls[0] as [string, { body: { walls: { openings: { offset_mm: number }[] }[] } }];
-    expect(optionen.body.walls.flatMap((w) => w.openings)[0]?.offset_mm).toBe(1550);
+    expect(screen.getByRole("button", { name: "In der Wandansicht bearbeiten" })).toBeInTheDocument();
+    zeiger(screen.getByTestId("oeffnung-tuer-1"), "dblclick", 5000, 2000);
+    expect(await screen.findByRole("dialog", { name: "Wandansicht · Wand 2 · 0.01 Wohnzimmer" })).toBeInTheDocument();
+  });
+
+  it("die Einheit mm folgt auch in der Wandansicht - gespeichert bleibt der Abstand ab Wandanfang", async () => {
+    act(() => masseinheitSetzen("mm"));
+    plan = { ...plan, rooms: [wohnzimmerMit(tuer("tuer-1", 1550)), FLUR] };
+    await wohnzimmerMitTuerwerkzeug();
+    klick(5000, 2000, await screen.findByTestId("oeffnung-tuer-1"));
+    const dialog = await screen.findByRole("dialog", { name: /Wandansicht/ });
+    // Blick nach Osten: links ist Norden - 4000 − 1550 − 885 = 1565 mm.
+    expect(within(dialog).getByRole("textbox", { name: "Abstand von links (mm)" })).toHaveValue("1565");
+    act(() => masseinheitSetzen("cm"));
   });
 });
 
@@ -206,14 +274,9 @@ describe("Tür per Maus verschieben", () => {
   });
 
   it("Kollision beim Ziehen: die letzte gültige Lage bleibt, die Vorschau nennt den Grund", async () => {
-    await tuerAufGemeinsamerWand();
     // Zweite Tür nahe dem Wandanfang (Abstand 0 … 885).
-    zeiger(flaeche(), "pointermove", 5000, 300);
-    klick(5000, 300);
-    await screen.findByText(/Tür in Wand 2/);
-    // Zurück zur ersten Tür und in die zweite hineinziehen.
-    fireEvent.click(screen.getByRole("button", { name: "Auswählen" }));
-    const erste = oeffnungen().find((o) => o.getAttribute("data-oeffnung") !== document.querySelector(".grundriss__oeffnung--ausgewaehlt [data-oeffnung]")?.getAttribute("data-oeffnung"))!;
+    await tuerAufGemeinsamerWand([tuer("tuer-0", 0)]);
+    const erste = screen.getByTestId("oeffnung-tuer-1");
     zeiger(erste, "pointerdown", 5000, 2000);
     zeiger(flaeche(), "pointermove", 5000, 2600);
     zeiger(flaeche(), "pointermove", 5000, 900);
@@ -263,12 +326,13 @@ describe("Tür per Maus verschieben", () => {
 
   it("Wechsel vom gemeinsamen auf ein nicht geteiltes Wandstück wird klar gemeldet", async () => {
     // Der Flur ist kürzer: nur 0 … 2000 der Wohnzimmerwand ist gemeinsam.
-    plan = { ...plan, rooms: [RAUM, rechteck("raum-2", "Flur", [5000, 0], [7000, 2000], { nummer: "0.02" })] };
-    await wohnzimmerMitTuerwerkzeug();
-    zeiger(flaeche(), "pointermove", 5000, 1000);
-    expect(vorschau()).toHaveTextContent("verbindet „0.01 Wohnzimmer“ und „0.02 Flur“");
-    klick(5000, 1000);
+    plan = { ...plan, rooms: [wohnzimmerMit(tuer("tuer-1", 550)), rechteck("raum-2", "Flur", [5000, 0], [7000, 2000], { nummer: "0.02" })] };
+    zeigen();
+    await bereit();
+    fireEvent.click(await screen.findByRole("button", { name: /0.01 Wohnzimmer/ }));
+    klick(5000, 1000, await screen.findByTestId("oeffnung-tuer-1"));
     await screen.findByText(/Tür in Wand 2/);
+    expect(screen.getByText("Verbindet „0.01 Wohnzimmer“ und „0.02 Flur“")).toBeInTheDocument();
     greifen();
     zeiger(flaeche(), "pointermove", 5000, 3000);
     expect(vorschau()).toHaveTextContent("nicht geteilte Wand – kein zweiter Raum");
@@ -278,6 +342,9 @@ describe("Tür per Maus verschieben", () => {
 
   it("ungespeicherte Tür: Raumwechsel fragt über den eigenen Dialog", async () => {
     await tuerAufGemeinsamerWand();
+    greifen();
+    zeiger(flaeche(), "pointermove", 5000, 2600);
+    zeiger(flaeche(), "pointerup", 5000, 2600);
     expect(screen.getByText(/Ungespeicherte Änderungen/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /0.02 Flur/ }));
     expect(await screen.findByRole("dialog", { name: "Raum wechseln?" })).toBeInTheDocument();

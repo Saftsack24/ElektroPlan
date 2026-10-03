@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { useAuth, usePermission } from "../../core/auth/AuthProvider";
+import { istSchreibgeschuetzt } from "./status";
 import { Feld } from "../../core/ui/Feld";
 import { FORMULARRASTER, FORMULARRASTER_AKTIONEN, karte, knopf, meldungsflaeche } from "../../core/ui/stil";
 import { AKTION } from "../../core/ui/aktionssymbole";
@@ -32,8 +33,8 @@ export function ProjectMasterDataTab({ projekt }: { projekt: ProjectOut }) {
 
   const [entwurf, setEntwurf] = useState<Bearbeitbar | null>(null);
   const [fehler, setFehler] = useState<string | null>(null);
-  // Ein archiviertes Projekt ist schreibgeschützt; der Server lehnt ab (409).
-  const gesperrt = !darfSchreiben || projekt.status === "archived";
+  // Archivierte und abgeschlossene Projekte sind schreibgeschützt; der Server lehnt ab (409).
+  const gesperrt = !darfSchreiben || istSchreibgeschuetzt(projekt.status);
 
   const speichern = useMutation({
     mutationFn: (werte: Bearbeitbar) =>

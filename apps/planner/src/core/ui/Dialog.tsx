@@ -39,12 +39,26 @@ export function Dialog({
   titel,
   beschreibung,
   onClose,
+  onEscape,
+  groesse = "normal",
   children,
 }: {
   offen: boolean;
   titel: string;
   beschreibung?: string;
   onClose: () => void;
+  /**
+   * Escape zuerst dem Inhalt anbieten - etwa um eine laufende Ziehbewegung
+   * abzubrechen, statt den Dialog zu schließen. `true`: erledigt, der Dialog
+   * bleibt offen.
+   */
+  onEscape?: () => boolean;
+  /**
+   * `gross`: fast die ganze Fläche für Arbeitsansichten (Phase 4f). Der Inhalt
+   * scrollt dann nur auf schmalen Flächen; ab der Breite `split` ordnet er
+   * sich selbst an und bestimmt seinen einen Scrollbereich.
+   */
+  groesse?: "normal" | "gross";
   children: ReactNode;
 }) {
   const element = useRef<HTMLDialogElement>(null);
@@ -115,16 +129,22 @@ export function Dialog({
   return (
     <dialog
       ref={element}
-      className="max-h-[calc(100dvh-32px)] w-[min(720px,calc(100vw-32px))] overflow-hidden rounded-ep border border-line bg-raised p-0 text-fg open:flex open:flex-col max-sm:h-dvh max-sm:max-h-dvh max-sm:w-screen max-sm:max-w-screen max-sm:rounded-none"
+      className={
+        groesse === "gross"
+          ? "h-[calc(100dvh-32px)] max-h-[calc(100dvh-32px)] w-[calc(100vw-32px)] max-w-[1600px] overflow-hidden rounded-ep border border-line bg-raised p-0 text-fg open:flex open:flex-col max-sm:h-dvh max-sm:max-h-dvh max-sm:w-screen max-sm:max-w-screen max-sm:rounded-none"
+          : "max-h-[calc(100dvh-32px)] w-[min(720px,calc(100vw-32px))] overflow-hidden rounded-ep border border-line bg-raised p-0 text-fg open:flex open:flex-col max-sm:h-dvh max-sm:max-h-dvh max-sm:w-screen max-sm:max-w-screen max-sm:rounded-none"
+      }
       aria-labelledby={titelId.current}
       onCancel={(event) => {
         // Escape: Der Browser würde das Element ohne unser Wissen schließen.
         event.preventDefault();
+        if (onEscape?.() === true) return;
         onClose();
       }}
       onClick={(event) => {
-        // Ein Klick auf den Backdrop trifft das <dialog> selbst.
-        if (event.target === element.current) onClose();
+        // Ein Klick auf den Backdrop trifft das <dialog> selbst. Eine große
+        // Arbeitsansicht schließt so nicht versehentlich am schmalen Rand.
+        if (event.target === element.current && groesse === "normal") onClose();
       }}
     >
       <div className="flex flex-none items-center justify-between gap-3 px-5 pt-4 pb-2">
@@ -142,7 +162,11 @@ export function Dialog({
         </button>
       </div>
       <div
-        className="min-h-0 flex-auto overflow-y-auto overscroll-contain px-5 after:block after:h-4 after:content-['']"
+        className={
+          groesse === "gross"
+            ? "min-h-0 flex-auto overflow-y-auto overscroll-contain px-5 pb-4 split:overflow-hidden"
+            : "min-h-0 flex-auto overflow-y-auto overscroll-contain px-5 after:block after:h-4 after:content-['']"
+        }
         data-dialog-scrollbereich
       >
         {beschreibung !== undefined && <p className="text-muted">{beschreibung}</p>}

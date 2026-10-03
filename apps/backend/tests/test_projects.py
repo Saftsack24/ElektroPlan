@@ -794,8 +794,32 @@ def test_unbekannter_kunde_liefert_beim_umhaengen_404(
 # ------------------------------------------- Bedeutung des Status "archived"
 
 
+def _schreibschutz_herstellen(
+    api: TestClient, token: str, projekt_id: object, zielstatus: str
+) -> dict[str, object]:
+    """Bringt ein neues Projekt (Version 1, ``draft``) in ``archived`` oder ``completed``.
+
+    ``completed`` entsteht ueber den regulaeren Statuslauf
+    ``draft -> active -> completed``; ``archived`` direkt aus dem Entwurf.
+    """
+    schritte = ["archive"] if zielstatus == "archived" else ["activate", "complete"]
+    version = 1
+    antwort: dict[str, object] = {}
+    for schritt in schritte:
+        response = api.post(
+            f"/api/v1/projects/{projekt_id}/{schritt}",
+            headers={**auth_headers(token), "If-Match": str(version)},
+        )
+        assert response.status_code == 200, response.text
+        antwort = dict(response.json())
+        version = int(str(antwort["version"]))
+    assert antwort["status"] == zielstatus
+    return antwort
+
+
+@pytest.mark.parametrize("zielstatus", ["archived", "completed"])
 def test_archiviertes_projekt_ist_vollstaendig_schreibgeschuetzt(
-    api: TestClient, token: str, kunde: dict[str, object]
+    api: TestClient, token: str, kunde: dict[str, object], zielstatus: str
 ) -> None:
     """``archived`` ist ein Endzustand **und** ein Schreibschutz.
 
@@ -805,6 +829,9 @@ def test_archiviertes_projekt_ist_vollstaendig_schreibgeschuetzt(
 
     Dieser Test hat zuvor das Gegenteil festgehalten - der Ist-Zustand war
     bewusst dokumentiert, bis die Entscheidung getroffen war.
+
+    Seit Phase 4f gilt dasselbe fuer ``completed`` (``409 project-completed``,
+    ADR 0020, Erweiterung 4f).
     """
     projekt = _projekt(api, token, kunde["id"])
     gebaeude_id = api.post(
@@ -818,11 +845,7 @@ def test_archiviertes_projekt_ist_vollstaendig_schreibgeschuetzt(
         json={"name": "Erdgeschoss", "level": 0},
     ).json()
 
-    archiviert = api.post(
-        f"/api/v1/projects/{projekt['id']}/archive",
-        headers={**auth_headers(token), "If-Match": "1"},
-    ).json()
-    assert archiviert["status"] == "archived"
+    archiviert = _schreibschutz_herstellen(api, token, projekt["id"], zielstatus)
     version = str(archiviert["version"])
 
     versuche = {
@@ -863,7 +886,51 @@ def test_archiviertes_projekt_ist_vollstaendig_schreibgeschuetzt(
 
     for bezeichnung, antwort in versuche.items():
         assert antwort.status_code == 409, f"{bezeichnung}: {antwort.status_code}"
-        assert antwort.json()["type"].endswith("/project-archived"), bezeichnung
+        erwartet = "/project-archived" if zielstatus == "archived" else "/project-completed"
+        assert antwort.json()["type"].endswith(erwartet), bezeichnung
+
+
+def test_abgeschlossenes_projekt_laesst_sich_wiedereroeffnen_und_archivieren(
+    api: TestClient, token: str, kunde: dict[str, object]
+) -> None:
+    """Der Schreibschutz von ``completed`` sperrt nur fachliche Aenderungen.
+
+    Wiedereroeffnung und Archivierung haben eigene Endpunkte mit eigener
+    Berechtigung und Versionspruefung und bleiben moeglich; nach der
+    Wiedereroeffnung ist das Projekt wieder beschreibbar.
+    """
+    projekt = _projekt(api, token, kunde["id"])
+    abgeschlossen = _schreibschutz_herstellen(api, token, projekt["id"], "completed")
+
+    gesperrt = api.patch(
+        f"/api/v1/projects/{projekt['id']}",
+        headers={**auth_headers(token), "If-Match": str(abgeschlossen["version"])},
+        json={"site_city": "Celle"},
+    )
+    assert gesperrt.status_code == 409
+    assert gesperrt.json()["type"].endswith("/project-completed")
+
+    wieder = api.post(
+        f"/api/v1/projects/{projekt['id']}/reopen",
+        headers={**auth_headers(token), "If-Match": str(abgeschlossen["version"])},
+    )
+    assert wieder.status_code == 200, wieder.text
+    assert wieder.json()["status"] == "active"
+    geaendert = api.patch(
+        f"/api/v1/projects/{projekt['id']}",
+        headers={**auth_headers(token), "If-Match": str(wieder.json()["version"])},
+        json={"site_city": "Celle"},
+    )
+    assert geaendert.status_code == 200, geaendert.text
+
+    zweites = _projekt(api, token, kunde["id"], name="Zweites")
+    erneut = _schreibschutz_herstellen(api, token, zweites["id"], "completed")
+    archiviert = api.post(
+        f"/api/v1/projects/{zweites['id']}/archive",
+        headers={**auth_headers(token), "If-Match": str(erneut["version"])},
+    )
+    assert archiviert.status_code == 200, archiviert.text
+    assert archiviert.json()["status"] == "archived"
 
 
 def test_archiviertes_projekt_bleibt_vollstaendig_lesbar(

@@ -1,3 +1,4 @@
+import type { Rueckkehr3d, Wandansichtsziel3d } from "./Ansicht3d";
 import { Component, Suspense, lazy, useMemo, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 
@@ -13,7 +14,14 @@ import type { Ansichtsziel } from "./Ansicht3d";
  * und fängt ein Scheitern des Nachladens ab, statt den Tab abstürzen zu
  * lassen.
  */
-type Props = { floorId: string; geschossLabel: string; onAnsicht: (ziel: Ansichtsziel) => void };
+type Props = {
+  floorId: string;
+  geschossLabel: string;
+  onAnsicht: (ziel: Ansichtsziel) => void;
+  /** Phase 4f: eine gewählte Wand in der Wandansicht öffnen - mit Seite und Rückkehrzustand. */
+  onWandansicht?: (ziel: Wandansichtsziel3d, rueckkehr: Rueckkehr3d) => void;
+  anfang?: Rueckkehr3d | null;
+};
 type Modul = { default: ComponentType<Props> };
 
 const standardLaden = (): Promise<Modul> => import("./Ansicht3d");

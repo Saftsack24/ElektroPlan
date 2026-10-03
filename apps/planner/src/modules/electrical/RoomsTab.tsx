@@ -12,6 +12,8 @@ import { useRueckfrage, verwerfenOptionen } from "../../core/ui/Rueckfrage";
 import { KARTENKOPF, KARTENTITEL, KNOPFZEILE, STAPEL, TABELLE, karte, knopf, meldungsflaeche, reiter } from "../../core/ui/stil";
 import { Ansicht3dLaden } from "./ansicht3d/Ansicht3dLaden";
 import { GrundrissEditor } from "./editor/GrundrissEditor";
+import type { Rueckkehr3d } from "./ansicht3d/Ansicht3d";
+import type { Wandziel } from "./wandansicht/Wandansicht";
 import { planSchluessel } from "./plan";
 import { RaumDetail } from "./RaumDetail";
 import { RaumDialog } from "./RaumDialog";
@@ -95,6 +97,10 @@ export default function RoomsTab() {
   const [offenerRaum, setOffenerRaum] = useState<string | null>(null);
   const [fehler, setFehler] = useState<string | null>(null);
   const [ansicht, setAnsicht] = useState<Ansicht>(gemerkteAnsicht);
+  // Aus der 3D-Auswahl angeforderte Wandansicht (Phase 4f) - der 2D-Editor öffnet sie nach dem
+  // Laden. Kamera und Auswahl der 3D-Ansicht werden für die Rückkehr gemerkt (reine Ansicht).
+  const [startWandansicht, setStartWandansicht] = useState<Wandziel | null>(null);
+  const [rueckkehr3d, setRueckkehr3d] = useState<Rueckkehr3d | null>(null);
   // Ungespeicherte Änderungen im Editor - für Geschoss- und Ansichtswechsel.
   const editorOffen = useRef(false);
   const ungespeichertMelden = useCallback((offen: boolean) => {
@@ -143,7 +149,11 @@ export default function RoomsTab() {
     enabled: aktivesGeschoss !== undefined,
   });
 
-  const archiviert = projekt.data?.status === "archived";
+  // Archivierte und - seit Phase 4f - abgeschlossene Projekte sind serverseitig
+  // schreibgeschützt (ADR 0020, Erweiterung 4f). Die Regel steht im Core; die
+  // Oberfläche spiegelt sie nur (``409 project-archived`` / ``project-completed``).
+  const projektstatus = projekt.data?.status;
+  const archiviert = projektstatus === "archived" || projektstatus === "completed";
   const darfSchreiben = darfSchreibenGrundsaetzlich && !archiviert;
 
   const raeumeNeuLaden = async () => {
@@ -179,12 +189,15 @@ export default function RoomsTab() {
     return true;
   };
 
-  const ansichtWechseln = async (neu: Ansicht) => {
+  const ansichtWechseln = async (neu: Ansicht, optionen: { rueckkehr?: boolean } = {}) => {
     if (neu === ansicht) return;
     const ziel = ANSICHTEN.find((a) => a.wert === neu)?.label ?? neu;
     if (ansicht === "editor" && !(await editorVerlassen("Ansicht wechseln?", `Sie wollen zur Ansicht „${ziel}“ wechseln.`))) {
       return;
     }
+    // Ein gewöhnlicher Ansichtswechsel vergisst den gemerkten 3D-Stand; nur der
+    // Weg Wandansicht hin und zurück stellt ihn wieder her.
+    if (optionen.rueckkehr !== true) setRueckkehr3d(null);
     ansichtMerken(neu);
     setAnsicht(neu);
   };
@@ -279,8 +292,9 @@ export default function RoomsTab() {
 
         {archiviert && (
           <p className={meldungsflaeche("schlicht")}>
-            Dieses Projekt ist archiviert und damit <strong>schreibgeschützt</strong>.
-            Räume, Wände und Öffnungen lassen sich ansehen, aber nicht mehr ändern.
+            Dieses Projekt ist {projektstatus === "completed" ? "abgeschlossen" : "archiviert"} und damit{" "}
+            <strong>schreibgeschützt</strong>. Räume, Wände und Öffnungen lassen sich ansehen, aber
+            nicht mehr ändern.
           </p>
         )}
 
@@ -409,6 +423,9 @@ export default function RoomsTab() {
             darfSchreiben={darfSchreiben}
             onUngespeichert={ungespeichertMelden}
             onGespeichert={nachEditorSpeichern}
+            startWandansicht={startWandansicht}
+            onStartVerbraucht={() => setStartWandansicht(null)}
+            onZurueck3d={() => void ansichtWechseln("3d", { rueckkehr: true })}
           />
         </section>
       )}
@@ -419,6 +436,13 @@ export default function RoomsTab() {
             floorId={aktivesGeschoss.id}
             geschossLabel={aktivesGeschoss.label}
             onAnsicht={(ziel) => void ansichtWechseln(ziel)}
+            anfang={rueckkehr3d}
+            onWandansicht={(ziel, rueckkehr) => {
+              // Die 3D-Ansicht hat keinen Entwurf - der Wechsel zum Editor fragt nichts.
+              setRueckkehr3d(rueckkehr);
+              setStartWandansicht({ ...ziel, herkunft: "3d" });
+              void ansichtWechseln("editor", { rueckkehr: true });
+            }}
           />
         </section>
       )}

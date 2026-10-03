@@ -326,6 +326,12 @@ werden mit Phase 10 ergänzt — nicht vorweggenommen.
 
 ### Sperrreihenfolge und Nebenläufigkeit
 
+> **Phase 4f:** `PATCH /floors/{id}` sperrt wie bisher die Projektzeile, liest das Geschoss
+> danach neu und lässt eine geänderte Standardhöhe von den Fachmodulen prüfen
+> (`FloorCeilingHeightParticipant`, nur lesend). `FloorPlanningAccess.writable_context` liest
+> das Geschoss nach der Projektsperre neu, damit eine wartende Öffnungsänderung die neue
+> Standardhöhe sieht. Keine Schemaänderung, keine Migration.
+
 Zwei Invarianten lassen sich nicht allein mit einer Vorabprüfung halten — zwei
 gleichzeitige Transaktionen können beide bestehen. Beide werden über **Zeilensperren
 in derselben Transaktion** abgesichert.

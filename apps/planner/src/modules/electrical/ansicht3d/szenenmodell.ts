@@ -15,6 +15,8 @@
  * * Alle Werte bleiben ganze Millimeter; die Transformation in Szenenmeter
  *   steht im Modell und wird erst beim Geometrieaufbau angewandt.
  */
+import type { Fassade3d, Raumwand3d } from "./raumwand";
+import { fassadenAus, raumwaendeAus } from "./raumwand";
 import type {
   Auswahl,
   AusgelassenerRaum,
@@ -42,6 +44,8 @@ export const LEERES_MODELL: Szenenmodell = {
   raumanzahlGesamt: 0,
   raeume: [],
   waende: [],
+  raumwaende: [],
+  fassaden: [],
   oeffnungen: [],
   ausgelassen: [],
   warnungen: [],
@@ -167,6 +171,8 @@ export function szenenmodellAus(
     raumanzahlGesamt: rooms.length,
     raeume,
     waende,
+    raumwaende: raumwaendeAus(raeume, logisch, waende),
+    fassaden: fassadenAus(waende),
     oeffnungen,
     ausgelassen,
     warnungen,
@@ -178,6 +184,9 @@ export function szenenmodellAus(
 export type Objekt =
   | { readonly art: "raum"; readonly raum: Raum3d }
   | { readonly art: "wand"; readonly wand: Wand3d }
+  | { readonly art: "raumwand"; readonly raumwand: Raumwand3d }
+  | { readonly art: "wandseite"; readonly wand: Wand3d }
+  | { readonly art: "fassade"; readonly fassade: Fassade3d; readonly abschnitt: string | null }
   | { readonly art: "oeffnung"; readonly oeffnung: Oeffnung3d; readonly wand: Wand3d };
 
 /** Das fachliche Objekt hinter einer Auswahl - oder `null`, wenn es fehlt. */
@@ -187,9 +196,19 @@ export function objektZu(modell: Szenenmodell, auswahl: Auswahl | null): Objekt 
     const raum = modell.raeume.find((r) => r.id === auswahl.id);
     return raum === undefined ? null : { art: "raum", raum };
   }
-  if (auswahl.art === "wand") {
+  if (auswahl.art === "wand" || auswahl.art === "wandseite") {
     const wand = modell.waende.find((w) => w.id === auswahl.id);
-    return wand === undefined ? null : { art: "wand", wand };
+    return wand === undefined ? null : auswahl.art === "wand" ? { art: "wand", wand } : { art: "wandseite", wand };
+  }
+  if (auswahl.art === "fassade") {
+    const fassade = modell.fassaden.find((f) => f.id === auswahl.id);
+    if (fassade === undefined) return null;
+    const abschnitt = fassade.abschnitte.some((a) => a.id === auswahl.abschnitt) ? (auswahl.abschnitt ?? null) : null;
+    return { art: "fassade", fassade, abschnitt };
+  }
+  if (auswahl.art === "raumwand") {
+    const raumwand = modell.raumwaende.find((w) => w.id === auswahl.id);
+    return raumwand === undefined ? null : { art: "raumwand", raumwand };
   }
   const oeffnung = modell.oeffnungen.find((o) => o.id === auswahl.id);
   const wand = oeffnung && modell.waende.find((w) => w.id === oeffnung.wandId);

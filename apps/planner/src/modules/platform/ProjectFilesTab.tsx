@@ -84,8 +84,8 @@ export function ProjectFilesTab({
       {fehler && <p className={meldungsflaeche()}>{fehler}</p>}
       {schreibgeschuetzt && (
         <p className="text-muted">
-          Das Projekt ist archiviert — neue Uploads sind nicht möglich. Bestehende
-          Dateien lassen sich weiterhin herunterladen.
+          Das Projekt ist abgeschlossen oder archiviert — neue Uploads sind nicht möglich.
+          Bestehende Dateien lassen sich weiterhin herunterladen.
         </p>
       )}
 

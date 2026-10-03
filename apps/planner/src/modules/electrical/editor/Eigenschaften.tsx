@@ -128,6 +128,8 @@ export function Eigenschaften({
   onAendern,
   onWaehlen,
   onRaumBearbeiten,
+  onWandansicht,
+  onDeckenansicht,
   neueId,
   einordnung,
   topologie,
@@ -139,6 +141,9 @@ export function Eigenschaften({
   onAendern: (entwurf: Raumentwurf) => void;
   onWaehlen: (auswahl: Auswahl) => void;
   onRaumBearbeiten: () => void;
+  /** Phase 4f: Wand frontal bzw. Decke des aktiven Raums zeigen. */
+  onWandansicht: (wandId: string, oeffnungId?: string) => void;
+  onDeckenansicht: () => void;
   neueId: () => string;
   /** Abgeleitete Raumverbindungen und Wandabschnitte (Phase 4b.2). */
   einordnung: EditorEinordnung;
@@ -186,11 +191,22 @@ export function Eigenschaften({
           {basis.raum.room_number !== null ? `${basis.raum.room_number} ` : ""}
           {basis.raum.name}
         </h3>
-        {darfSchreiben && (
-          <button type="button" className={knopf()} onClick={onRaumBearbeiten}>
-            Raumdaten
+        <span className="flex flex-wrap gap-1">
+          {darfSchreiben && (
+            <button type="button" className={knopf()} onClick={onRaumBearbeiten}>
+              Raumdaten
+            </button>
+          )}
+          <button
+            type="button"
+            className={knopf()}
+            disabled={bericht.status !== "valid"}
+            title={bericht.status !== "valid" ? "Erst mit geschlossener Raumkontur" : "Decke des Raums zeigen"}
+            onClick={onDeckenansicht}
+          >
+            Deckenansicht
           </button>
-        )}
+        </span>
       </div>
       <p className="m-0">
         <strong>{KONTURZUSTAND_LABEL[bericht.status]}</strong> · {entwurf.walls.length} Wände · Fläche{" "}
@@ -230,6 +246,11 @@ export function Eigenschaften({
           <h4>
             Wand {wandNummer} · {masse.anzeigen(streckenlaenge(start(wand), ende(wand)))}
           </h4>
+          <WandansichtKnopf
+            geschlossen={bericht.status === "valid"}
+            label={darfSchreiben ? "Wand bearbeiten" : "Wand ansehen"}
+            onClick={() => onWandansicht(wand.id)}
+          />
           <Zahlenformular
             key={`wand-${wand.id}-${wand.x1_mm},${wand.y1_mm},${wand.x2_mm},${wand.y2_mm},${wand.thickness_mm}`}
             id="wand"
@@ -260,7 +281,7 @@ export function Eigenschaften({
             gesperrt={gesperrt}
             aktion="Länge setzen"
             felder={[{ name: "laenge", label: "Länge", wert: streckenlaenge(start(wand), ende(wand)) }]}
-            onUebernehmen={(w) => anwenden(wandlaengeSetzen(entwurf, wand.id, w.laenge as number))}
+            onUebernehmen={(w) => anwenden(wandlaengeSetzen(entwurf, wand.id, w.laenge as number, masse.anzeigen))}
           />
           {darfSchreiben && (
             <div className={KNOPFZEILE}>
@@ -298,6 +319,11 @@ export function Eigenschaften({
             {OEFFNUNGSART_LABEL[oeffnung.kind]} in Wand {wandNummer} · {masse.anzeigen(oeffnung.width_mm)} breit
           </h4>
           <Verbindung einordnung={einordnung} oeffnungId={oeffnung.id} raumName={raumName} wandNummer={wandNummer} />
+          <WandansichtKnopf
+            geschlossen={bericht.status === "valid"}
+            label={darfSchreiben ? "In der Wandansicht bearbeiten" : "In der Wandansicht ansehen"}
+            onClick={() => onWandansicht(wand.id, oeffnung.id)}
+          />
           {darfSchreiben ? (
             <label className={FELD} htmlFor="oeffnung-art">
               <span className={FELD_BESCHRIFTUNG}>Art</span>
@@ -323,29 +349,33 @@ export function Eigenschaften({
               </select>
             </label>
           ) : null}
-          <Zahlenformular
-            key={`oeffnung-${oeffnung.id}-${oeffnung.offset_mm}-${oeffnung.width_mm}-${oeffnung.height_mm}-${oeffnung.sill_height_mm}`}
-            id="oeffnung"
-            gesperrt={gesperrt}
-            aktion="Maße übernehmen"
-            felder={[
-              { name: "offset_mm", label: "Abstand", wert: oeffnung.offset_mm },
-              { name: "width_mm", label: "Breite", wert: oeffnung.width_mm },
-              { name: "height_mm", label: "Höhe", wert: oeffnung.height_mm },
-              { name: "sill_height_mm", label: "Brüstung", wert: oeffnung.sill_height_mm },
-            ]}
-            onUebernehmen={(w) =>
-              anwenden({
-                wert: oeffnungAendern(entwurf, wand.id, oeffnung.id, {
-                  offset_mm: w.offset_mm as number,
-                  width_mm: w.width_mm as number,
-                  height_mm: w.height_mm as number,
-                  sill_height_mm: w.sill_height_mm as number,
-                }),
-              })
-            }
-          />
-          <p className="text-muted">Der Abstand wird vom Anfang der gerichteten Wand gemessen ({masse.punkt(wand.x1_mm, wand.y1_mm)}).</p>
+          {/* Nachrangiger Weg (Phase 4f): Werte ab Wandanfang. Der Standard ist die Wandansicht. */}
+          <details className="mb-2">
+            <summary className="cursor-pointer text-muted">Werte ab Wandanfang (Formular)</summary>
+            <Zahlenformular
+              key={`oeffnung-${oeffnung.id}-${oeffnung.offset_mm}-${oeffnung.width_mm}-${oeffnung.height_mm}-${oeffnung.sill_height_mm}`}
+              id="oeffnung"
+              gesperrt={gesperrt}
+              aktion="Maße übernehmen"
+              felder={[
+                { name: "offset_mm", label: "Abstand", wert: oeffnung.offset_mm },
+                { name: "width_mm", label: "Breite", wert: oeffnung.width_mm },
+                { name: "height_mm", label: "Höhe", wert: oeffnung.height_mm },
+                { name: "sill_height_mm", label: "Brüstung", wert: oeffnung.sill_height_mm },
+              ]}
+              onUebernehmen={(w) =>
+                anwenden({
+                  wert: oeffnungAendern(entwurf, wand.id, oeffnung.id, {
+                    offset_mm: w.offset_mm as number,
+                    width_mm: w.width_mm as number,
+                    height_mm: w.height_mm as number,
+                    sill_height_mm: w.sill_height_mm as number,
+                  }),
+                })
+              }
+            />
+            <p className="text-muted">Der Abstand wird vom Anfang der gerichteten Wand gemessen ({masse.punkt(wand.x1_mm, wand.y1_mm)}).</p>
+          </details>
           {darfSchreiben && (
             <button
               type="button"
@@ -371,6 +401,22 @@ export function Eigenschaften({
 
       <h4>Räume dieses Geschosses</h4>
       <Raumliste raeume={raeume} auswahl={auswahl} onWaehlen={onWaehlen} />
+    </div>
+  );
+}
+
+/**
+ * Öffnet die Wandansicht (Phase 4f). Sie braucht eine geschlossene Kontur,
+ * sonst ist nicht eindeutig, welche Seite der Wand innen liegt - dann bleibt
+ * der Knopf sichtbar, aber gesperrt, mit Begründung.
+ */
+function WandansichtKnopf({ geschlossen, label, onClick }: { geschlossen: boolean; label: string; onClick: () => void }) {
+  return (
+    <div className="mb-2 flex flex-col gap-1">
+      <button type="button" className={knopf("primaer")} disabled={!geschlossen} onClick={onClick}>
+        {label}
+      </button>
+      {!geschlossen && <p className="m-0 text-muted">Die Wandansicht braucht eine geschlossene Raumkontur.</p>}
     </div>
   );
 }

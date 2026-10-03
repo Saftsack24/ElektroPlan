@@ -24,6 +24,10 @@
   --ep-plan-door: #b35c00;
   --ep-plan-window: #1f7ab8;
   --ep-plan-passage: var(--ep-text-muted);
+  /* Wand- und Deckenansicht (Phase 4f) */
+  --ep-plan-wall-face: #e7ebf0;
+  --ep-plan-ceiling-face: #eef1f5;
+  --ep-plan-opening-face: #ffffff;
 
   /* 3D */
   --ep-plan3d-background: #f4f6f8;
@@ -41,6 +45,9 @@
 
 :root[data-theme="dark"] {
   --ep-plan-wall: #7d8896;
+  --ep-plan-wall-face: #2b333d;
+  --ep-plan-ceiling-face: #262d36;
+  --ep-plan-opening-face: #161b21;
   --ep-plan-wall-active: #dfe5ec;
   --ep-plan-door: #f0a35a;
   --ep-plan-window: #6cb8ea;

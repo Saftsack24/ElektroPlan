@@ -156,6 +156,8 @@ export function wandlaengeSetzen(
   entwurf: Raumentwurf,
   wandId: string,
   laenge: number,
+  /** Anzeige in der persönlichen Einheit (`core/masse.ts`); ohne Angabe Millimeter. */
+  mm: (wert: number) => string = (wert) => `${wert} mm`,
 ): Ergebnis<Raumentwurf> {
   const w = entwurf.walls[wandIndex(entwurf, wandId)] as EntwurfWand;
   const dx = w.x2_mm - w.x1_mm;
@@ -169,6 +171,15 @@ export function wandlaengeSetzen(
     x: Math.round(w.x1_mm + (dx / exakt) * laenge) + 0,
     y: Math.round(w.y1_mm + (dy / exakt) * laenge) + 0,
   };
+  // Öffnungen werden nie still verschoben oder ungültig (Phase 4f): Passt eine
+  // nicht mehr in die neue Länge, wird die Änderung verständlich abgelehnt.
+  const neueLaenge = streckenlaenge(start(w), neuesEnde);
+  const zuLang = w.openings.find((o) => o.offset_mm + o.width_mm > neueLaenge);
+  if (zuLang !== undefined) {
+    return {
+      fehler: `Eine Öffnung dieser Wand endet bei ${mm(zuLang.offset_mm + zuLang.width_mm)} ab Wandanfang; die Wand wäre nur ${mm(neueLaenge)} lang. Bitte zuerst die Öffnung verschieben oder verkleinern.`,
+    };
+  }
   return { wert: eckeVerschieben(entwurf, ende(w), neuesEnde) };
 }
 

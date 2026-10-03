@@ -326,7 +326,7 @@ export interface paths {
          * Projekt bearbeiten
          * @description Aendert Stammdaten. Status und Projektnummer bleiben unberuehrt.
          *
-         *     Ein archiviertes Projekt ist schreibgeschuetzt und liefert ``409``.
+         *     Ein archiviertes oder abgeschlossenes Projekt ist schreibgeschuetzt und liefert ``409``.
          */
         patch: operations["updateProject"];
         trace?: never;
@@ -529,6 +529,9 @@ export interface paths {
         /**
          * Geschoss bearbeiten
          * @description Aendert Name, Ebene oder Hoehenangaben eines Geschosses.
+         *
+         *     Eine neue Standard-Deckenhoehe pruefen die Fachmodule vorher (ADR 0022):
+         *     Wuerde sie eine vorhandene Oeffnung ungueltig machen, ``422``.
          */
         patch: operations["updateFloor"];
         trace?: never;
@@ -547,7 +550,8 @@ export interface paths {
          * @description Nimmt eine Datei entgegen, prueft sie und legt sie im Storage ab.
          *
          *     Mit ``project_id`` wird die Datei einem Projekt zugeordnet; das Projekt
-         *     muss der eigenen Organisation gehoeren und darf nicht archiviert sein.
+         *     muss der eigenen Organisation gehoeren und darf weder archiviert noch
+         *     abgeschlossen sein.
          */
         post: operations["uploadFile"];
         delete?: never;
@@ -3843,7 +3847,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt */
+            /** @description Versionskonflikt, unzulaessiger Statuswechsel, archiviertes oder abgeschlossenes Projekt */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3943,7 +3947,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt */
+            /** @description Versionskonflikt, unzulaessiger Statuswechsel, archiviertes oder abgeschlossenes Projekt */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -4003,7 +4007,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt */
+            /** @description Versionskonflikt, unzulaessiger Statuswechsel, archiviertes oder abgeschlossenes Projekt */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -4063,7 +4067,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt */
+            /** @description Versionskonflikt, unzulaessiger Statuswechsel, archiviertes oder abgeschlossenes Projekt */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -4132,7 +4136,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt */
+            /** @description Versionskonflikt, unzulaessiger Statuswechsel, archiviertes oder abgeschlossenes Projekt */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -4234,7 +4238,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Projekt ist archiviert */
+            /** @description Projekt ist archiviert oder abgeschlossen */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -4283,7 +4287,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt */
+            /** @description Versionskonflikt, unzulaessiger Statuswechsel, archiviertes oder abgeschlossenes Projekt */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -4347,7 +4351,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt */
+            /** @description Versionskonflikt, unzulaessiger Statuswechsel, archiviertes oder abgeschlossenes Projekt */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -4449,7 +4453,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Projekt ist archiviert */
+            /** @description Projekt ist archiviert oder abgeschlossen */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -4498,7 +4502,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt */
+            /** @description Versionskonflikt, unzulaessiger Statuswechsel, archiviertes oder abgeschlossenes Projekt */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -4562,7 +4566,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt */
+            /** @description Versionskonflikt, unzulaessiger Statuswechsel, archiviertes oder abgeschlossenes Projekt */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -4622,7 +4626,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Projekt ist archiviert */
+            /** @description Projekt ist archiviert oder abgeschlossen */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -6044,7 +6048,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Projekt ist archiviert */
+            /** @description Projekt ist archiviert oder abgeschlossen */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -6133,7 +6137,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen */
+            /** @description Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -6197,7 +6201,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen */
+            /** @description Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -6301,7 +6305,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen */
+            /** @description Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -6443,7 +6447,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Projekt ist archiviert */
+            /** @description Projekt ist archiviert oder abgeschlossen */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -6492,7 +6496,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen */
+            /** @description Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -6556,7 +6560,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen */
+            /** @description Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -6620,7 +6624,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen */
+            /** @description Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -6722,7 +6726,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Projekt ist archiviert */
+            /** @description Projekt ist archiviert oder abgeschlossen */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -6771,7 +6775,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen */
+            /** @description Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -6835,7 +6839,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
-            /** @description Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen */
+            /** @description Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen */
             409: {
                 headers: {
                     [name: string]: unknown;

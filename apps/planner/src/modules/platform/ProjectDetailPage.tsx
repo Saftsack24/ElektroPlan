@@ -137,10 +137,11 @@ export default function ProjectDetailPage() {
         />
         {schreibgeschuetzt && (
           <p className={meldungsflaeche("schlicht")}>
-            Dieses Projekt ist archiviert und damit <strong>schreibgeschützt</strong>.
-            Stammdaten, Gebäude, Geschosse und Dateien lassen sich nicht mehr ändern, und
-            es sind keine neuen Uploads möglich. Lesen und das Herunterladen bestehender
-            Dateien bleiben erlaubt.
+            Dieses Projekt ist {daten.status === "completed" ? "abgeschlossen" : "archiviert"} und damit{" "}
+            <strong>schreibgeschützt</strong>. Stammdaten, Gebäude, Geschosse, Dateien und die
+            Planung lassen sich nicht mehr ändern, und es sind keine neuen Uploads möglich. Lesen
+            und das Herunterladen bestehender Dateien bleiben erlaubt.
+            {daten.status === "completed" && " Ein Administrator kann das Projekt wieder in Bearbeitung setzen."}
           </p>
         )}
         {meldung && (

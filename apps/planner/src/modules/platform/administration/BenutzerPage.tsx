@@ -341,9 +341,7 @@ function Benutzertabelle({
             <th scope="col" className="max-lg:hidden">
               Letzte Anmeldung
             </th>
-            <th scope="col">
-              <span className="sr-only">Aktionen</span>
-            </th>
+            <th scope="col">Aktionen</th>
           </tr>
         </thead>
         <tbody>
@@ -388,34 +386,38 @@ function Benutzertabelle({
                     ? `gültig bis ${datum(eintrag.invitation_expires_at)}`
                     : datum(eintrag.last_login_at)}
                 </td>
-                <td className="flex flex-wrap gap-1.5 whitespace-nowrap">
-                  {eintrag.kind === "member" ? (
-                    !entfernt && (
-                      <Link to={`/administration/users/${eintrag.id}`}>
-                        Verwalten<span className="sr-only"> ({eintrag.full_name})</span>
-                      </Link>
-                    )
-                  ) : (
-                    darfSchreiben && (
-                      <>
-                        <button
-                          type="button"
-                          className={knopf("neutral", { klein: true })}
-                          onClick={() => onAktion({ art: "neu", eintrag })}
-                        >
-                          Neu ausstellen
-                          <span className="sr-only"> ({eintrag.email})</span>
-                        </button>
-                        <button
-                          type="button"
-                          className={knopf("neutral", { klein: true })}
-                          onClick={() => onAktion({ art: "widerrufen", eintrag })}
-                        >
-                          Widerrufen<span className="sr-only"> ({eintrag.email})</span>
-                        </button>
-                      </>
-                    )
-                  )}
+                {/* Die Zelle bleibt eine Tabellenzelle (kein Flex direkt am <td>): Sonst fällt
+                    sie aus dem Tabellenlayout und ihre Trennlinien liegen versetzt. */}
+                <td>
+                  <div className="flex flex-wrap gap-1.5 whitespace-nowrap">
+                    {eintrag.kind === "member" ? (
+                      !entfernt && (
+                        <Link to={`/administration/users/${eintrag.id}`}>
+                          Verwalten<span className="sr-only"> ({eintrag.full_name})</span>
+                        </Link>
+                      )
+                    ) : (
+                      darfSchreiben && (
+                        <>
+                          <button
+                            type="button"
+                            className={knopf("neutral", { klein: true })}
+                            onClick={() => onAktion({ art: "neu", eintrag })}
+                          >
+                            Neu ausstellen
+                            <span className="sr-only"> ({eintrag.email})</span>
+                          </button>
+                          <button
+                            type="button"
+                            className={knopf("neutral", { klein: true })}
+                            onClick={() => onAktion({ art: "widerrufen", eintrag })}
+                          >
+                            Widerrufen<span className="sr-only"> ({eintrag.email})</span>
+                          </button>
+                        </>
+                      )
+                    )}
+                  </div>
                 </td>
               </tr>
             );

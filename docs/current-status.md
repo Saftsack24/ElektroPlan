@@ -1,7 +1,7 @@
 # Aktueller Projektstand
 
-**Letzte Aktualisierung:** 2026-10-01
-**Aktualisiert nach:** Task 0023 — Phase 4e (Benutzerlebenszyklus, serverseitige Einstellungen) – abgeschlossen, mit diesem Checkpoint committet
+**Letzte Aktualisierung:** 2026-10-03
+**Aktualisiert nach:** Task 0024 — Phase 4f (Wand- und Deckenansicht) – abgeschlossen, vom Auftraggeber manuell abgenommen, mit diesem Checkpoint committet
 
 > Dieses Dokument soll einer neuen Session in wenigen Minuten vermitteln, wo das Projekt
 > steht.
@@ -44,7 +44,9 @@ Checkpoint committet
 **Phase 4e — Benutzerlebenszyklus und serverseitige Einstellungen: ABGESCHLOSSEN**
 (automatisiert, per API und im Browser geprüft, vom Auftraggeber geprüft) — mit diesem
 Checkpoint committet
-**Phase 4f — Wand- und Deckenansicht: NICHT BEGONNEN**
+**Phase 4f — Wand- und Deckenansicht: ABGESCHLOSSEN**
+(Abschlusslauf gegen PostgreSQL grün, vom Auftraggeber manuell abgenommen, siehe Abschnitt 2) —
+mit diesem Checkpoint committet
 **Phase 5 — Electrical Devices: NICHT BEGONNEN**
 
 > Phase 4a und 4a.1 sind als `887f254`, Phase 4.2 als `66cbff3` committet. Die
@@ -55,6 +57,51 @@ Checkpoint committet
 ---
 
 ## 2. Zuletzt abgeschlossene Aufgabe
+
+**Task 0024 — Phase 4f: Wand- und Deckenansicht**
+([ADR 0022](decisions/0022-wall-and-ceiling-view.md), keine Migration) — **ABGESCHLOSSEN**,
+vom Auftraggeber manuell abgenommen, mit diesem Checkpoint committet (nicht gepusht)
+
+1. **Wandansicht** aus dem Grundriss („Wand bearbeiten“): Wand frontal aus dem Raum, Links
+   und rechts aus der Blickrichtung (Umlaufsinn), eine ganzzahlige Transformation
+   `offset ↔ von links`; Tür/Fenster/Durchgang setzen, verschieben, Größe über Griffe,
+   Hilfslinien (Randabstände, Nachbarn, Brüstung, Decke), Einrasten mit Prioritäten und
+   Hysterese, `Alt`, exakte Eingabe in mm/cm/m.
+2. **Ein Entwurf:** derselbe Reducer, dieselbe Undo-Historie und derselbe Speicherweg wie
+   der Grundriss; Schließen behält den Entwurf, speichert nie.
+3. **Gemeinsame Öffnungen** auf der Gegenseite gespiegelt und abgeleitet; Bearbeiten über
+   die Quelle mit der üblichen Raumwechsel-Rückfrage.
+4. **Deckenansicht** je Raum in Grundrissausrichtung (nicht seitenverkehrt), Raummaß nur bei
+   Rechtecken, Abstand zur nächsten echten Wand.
+5. **Freigegebene Voraussetzungen:** `completed` serverseitig schreibgeschützt
+   (`409 project-completed`); neue Geschoss-Standardhöhe von den Fachmodulen geprüft
+   (`FloorCeilingHeightParticipant`, `422`); Rennen Geschosshöhe ↔ Öffnung behoben.
+6. **Bestandskonflikte (nachgeschärft):** Auch ein schon bestehender Höhenkonflikt darf
+   durch eine weitere Absenkung nicht größer werden; unveränderte oder höhere Standardhöhen
+   bleiben zulässig (früherer Punkt T11 entschieden).
+7. **Tests:** `tasks.ps1 check` gegen PostgreSQL grün: **923 Backend, 0 übersprungen**
+   (vorher 875), **805 Frontend** (vorher 744); Gegenprobe: ohne den Rennen-Fix fällt der
+   Nebenläufigkeitstest.
+
+8. **Nachtrag 2026-10-03:** ganze raumseitige Wand statt Abschnitt (2D und 3D, Raumwahl bei
+   nicht eindeutiger Seite); Tür/Fenster/Durchgang öffnen per Wandklick die Wandansicht
+   (Standardweg). Von außen wählt 3D die ganze durchgehende Fassade (Ansichtsgruppe).
+   Wandseite innen/außen als Ansichtskontext; Rückkehr zur Ausgangsansicht (3D mit Kamera);
+   Benutzerliste mit bündiger Aktionsspalte. 830 Frontendtests; Backend unverändert.
+
+**Abnahme:** API im Compose-System bestanden; Browserabnahme 20 Punkte **funktional** mit
+echten DOM-Ereignissen bestanden bzw. eingeschränkt (Tabelle in `docs/task-history.md`,
+Task 0024, Nachtrag). Das App-Fenster war ausgeblendet: keine Bildschirmfotos, keine
+optische Prüfung, kein echter Mauszeiger, kein Touch, kein Browserzoom; Größenanpassung der
+Zeichenfläche bei schmalen Breiten und das 3D-Bild nicht optisch geprüft. Vier kleine
+Befunde der Abnahme sind behoben.
+
+**Abschlussabnahme (2026-10-03):** manuell durch den Auftraggeber geprüft und freigegeben,
+einschließlich aller Nachkorrekturen. Grundlage des Checkpoints: vollständiger Backendlauf
+gegen PostgreSQL (923 bestanden, 0 übersprungen), zuletzt 830 bestandene Frontendtests und
+diese manuelle Abnahme. Darüber hinaus wurden keine weiteren automatisierten Sicht-,
+Bildschirmfoto- oder Geräteprüfungen durchgeführt.
+
 
 **Task 0023 — Phase 4e: Benutzerlebenszyklus und serverseitige Einstellungen**
 ([ADR 0021](decisions/0021-user-lifecycle-account-locks-password-reset-preferences.md),
@@ -982,6 +1029,17 @@ HSTS, Virenscan, MFA für administrative Konten.
 ---
 
 ## 9. Nächste geplante Aufgabe
+
+**Nach Phase 4f (Stand 2026-10-03):** Phase 4f ist abgeschlossen, vom Auftraggeber manuell
+abgenommen und mit diesem Checkpoint committet (nicht gepusht). Keine Migration, kein Seed.
+Phase 5 ist **nicht begonnen** und erst nach ausdrücklicher Freigabe; offen davor T1
+(Symbolbibliothek) und T7 (Raumtyp).
+
+*Vorheriger Stand (2026-10-02):* umgesetzt und technisch abgenommen, **nicht
+committet**, wartete auf die Prüfung durch den Auftraggeber – insbesondere die optische
+Sichtprüfung mit sichtbarem Browser (Wand- und Deckenansicht, schmale Breiten, Hell/Dunkel,
+3D). Keine Migration, kein Seed. Phase 5 ist **nicht begonnen**.
+
 
 **Nach Phase 4e (Stand 2026-10-01):** Phase 4e ist abgeschlossen und mit diesem Checkpoint
 committet (nicht gepusht). Nach dem

@@ -302,7 +302,11 @@ def test_dieselbe_behandlung_gilt_fuer_alle_versionierten_entitaeten(
             service.floors.get_or_404(ziel_id)
             barriere.wait()
             service.update_floor(
-                ziel_id, FloorUpdate(name=f"Ebene {name}"), expected_version=1, actor_user_id=ACTOR
+                ziel_id,
+                FloorUpdate(name=f"Ebene {name}"),
+                expected_version=1,
+                actor_user_id=ACTOR,
+                height_participants=(),
             )
         else:
             service.buildings.get_or_404(ziel_id)
@@ -648,7 +652,11 @@ def test_paralleles_verschieben_auf_dieselbe_ebene_wird_abgefangen(
         service.floors.get_or_404(ids[name])
         barriere.wait()
         service.update_floor(
-            ids[name], FloorUpdate(level=5), expected_version=1, actor_user_id=ACTOR
+            ids[name],
+            FloorUpdate(level=5),
+            expected_version=1,
+            actor_user_id=ACTOR,
+            height_participants=(),
         )
         return name
 

@@ -953,9 +953,16 @@ def test_etag_schreibweise_wird_akzeptiert(
 # ---------------------------------------------------- archiviertes Projekt
 
 
-@pytest.fixture
-def archiviert(api: TestClient, token: str, geschoss: dict[str, Any]) -> dict[str, Any]:
-    """Raum mit Wand und Oeffnung, danach das Projekt archivieren."""
+@pytest.fixture(params=["archived", "completed"])
+def archiviert(
+    request: pytest.FixtureRequest, api: TestClient, token: str, geschoss: dict[str, Any]
+) -> dict[str, Any]:
+    """Raum mit Wand und Oeffnung, danach das Projekt archivieren oder abschliessen.
+
+    Seit Phase 4f ist ``completed`` ebenso schreibgeschuetzt wie ``archived``
+    (``409 project-completed``); jeder Test mit dieser Fixture laeuft fuer
+    beide Zustaende.
+    """
     raum = raum_anlegen(api, token, geschoss["floor"]["id"])
     waende = rechteck_anlegen(api, token, raum["id"])
     oeffnung = api.post(
@@ -964,12 +971,17 @@ def archiviert(api: TestClient, token: str, geschoss: dict[str, Any]) -> dict[st
         json={"kind": "door", "offset_mm": 1_000, "width_mm": 1_010, "height_mm": 2_010},
     )
     assert oeffnung.status_code == 201, oeffnung.text
-    archivieren = api.post(
-        f"/api/v1/projects/{geschoss['project']['id']}/archive",
-        headers={**auth_headers(token), "If-Match": str(geschoss["project"]["version"])},
-    )
-    assert archivieren.status_code == 200, archivieren.text
+    zielstatus = str(request.param)
+    version = int(geschoss["project"]["version"])
+    for schritt in ["archive"] if zielstatus == "archived" else ["activate", "complete"]:
+        wechsel = api.post(
+            f"/api/v1/projects/{geschoss['project']['id']}/{schritt}",
+            headers={**auth_headers(token), "If-Match": str(version)},
+        )
+        assert wechsel.status_code == 200, wechsel.text
+        version = int(wechsel.json()["version"])
     return {
+        "status": zielstatus,
         "floor": geschoss["floor"],
         "room": raum,
         "walls": waende,
@@ -1003,7 +1015,7 @@ def test_archiviertes_projekt_bleibt_lesbar(
 def test_archiviertes_projekt_ist_vollstaendig_schreibgeschuetzt(
     api: TestClient, token: str, archiviert: dict[str, Any]
 ) -> None:
-    """Alle schreibenden Endpunkte liefern ``409 project-archived``."""
+    """Alle schreibenden Endpunkte liefern ``409 project-archived`` bzw. ``project-completed``."""
     kopf = auth_headers(token)
     mit_version = {**kopf, "If-Match": "1"}
     raum_id = archiviert["room"]["id"]
@@ -1063,7 +1075,10 @@ def test_archiviertes_projekt_ist_vollstaendig_schreibgeschuetzt(
     for bezeichnung, methode, pfad, kopfzeilen, koerper in versuche:
         antwort = api.request(methode, pfad, headers=kopfzeilen, json=koerper)
         assert antwort.status_code == 409, f"{bezeichnung}: {antwort.status_code} {antwort.text}"
-        assert antwort.json()["type"].endswith("/project-archived"), bezeichnung
+        erwartet = (
+            "/project-archived" if archiviert["status"] == "archived" else "/project-completed"
+        )
+        assert antwort.json()["type"].endswith(erwartet), bezeichnung
 
 
 # -------------------------------------------------------------- Berechtigungen

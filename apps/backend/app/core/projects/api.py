@@ -29,6 +29,7 @@ from app.core.projects.deletion import (
     ProjectDeletionService,
     registered_participants,
 )
+from app.core.projects.floor_height import HeightParticipant, registered_height_participants
 from app.core.projects.models import (
     PROJECT_STATUS_ACTIVE,
     PROJECT_STATUS_ARCHIVED,
@@ -65,20 +66,28 @@ _WRITE_RESPONSES: dict[int | str, dict[str, object]] = {
     404: {"model": ProblemDetail, "description": "Nicht gefunden"},
     409: {
         "model": ProblemDetail,
-        "description": "Versionskonflikt, unzulaessiger Statuswechsel oder archiviertes Projekt",
+        "description": (
+            "Versionskonflikt, unzulaessiger Statuswechsel, archiviertes oder "
+            "abgeschlossenes Projekt"
+        ),
     },
     428: {"model": ProblemDetail, "description": "If-Match fehlt"},
 }
 
 _SUBRESOURCE_RESPONSES: dict[int | str, dict[str, object]] = {
     404: {"model": ProblemDetail, "description": "Nicht gefunden"},
-    409: {"model": ProblemDetail, "description": "Projekt ist archiviert"},
+    409: {"model": ProblemDetail, "description": "Projekt ist archiviert oder abgeschlossen"},
 }
 
 
 def get_project_participants() -> tuple[Participant, ...]:
     """Teilnehmer des Loeschprotokolls aus der Module Registry (ADR 0020)."""
     return registered_participants()
+
+
+def get_height_participants() -> tuple[HeightParticipant, ...]:
+    """Pruefer einer neuen Geschoss-Standardhoehe aus der Module Registry (ADR 0022)."""
+    return registered_height_participants()
 
 
 def _project_out(session: Session, current_user: CurrentUser, project: Project) -> ProjectOut:
@@ -242,7 +251,7 @@ def update_project(
 ) -> ProjectOut:
     """Aendert Stammdaten. Status und Projektnummer bleiben unberuehrt.
 
-    Ein archiviertes Projekt ist schreibgeschuetzt und liefert ``409``.
+    Ein archiviertes oder abgeschlossenes Projekt ist schreibgeschuetzt und liefert ``409``.
     """
     service = ProjectService(session, current_user.organization_id)
     project = service.update(
@@ -642,7 +651,7 @@ def list_floors(
     summary="Geschoss anlegen",
     responses={
         404: {"model": ProblemDetail, "description": "Gebaeude nicht gefunden"},
-        409: {"model": ProblemDetail, "description": "Projekt ist archiviert"},
+        409: {"model": ProblemDetail, "description": "Projekt ist archiviert oder abgeschlossen"},
         422: {"model": ProblemDetail, "description": "Ebene bereits belegt"},
     },
 )
@@ -672,14 +681,20 @@ def update_floor(
     current_user: CurrentUser = Depends(require_permission(PROJECT_RECORD_WRITE)),
     session: Session = Depends(get_session),
     expected_version: int = Depends(require_if_match),
+    height_participants: tuple[HeightParticipant, ...] = Depends(get_height_participants),
 ) -> FloorOut:
-    """Aendert Name, Ebene oder Hoehenangaben eines Geschosses."""
+    """Aendert Name, Ebene oder Hoehenangaben eines Geschosses.
+
+    Eine neue Standard-Deckenhoehe pruefen die Fachmodule vorher (ADR 0022):
+    Wuerde sie eine vorhandene Oeffnung ungueltig machen, ``422``.
+    """
     service = ProjectService(session, current_user.organization_id)
     floor = service.update_floor(
         floor_id,
         payload,
         expected_version=expected_version,
         actor_user_id=current_user.user_id,
+        height_participants=height_participants,
     )
     session.commit()
     return FloorOut.model_validate(floor)

@@ -13,6 +13,7 @@ import type { Auswahl, Szenenmodell } from "./modell";
 import { gleicheAuswahl } from "./modell";
 import { Seitenleiste } from "./Seitenleiste";
 import { Grundrissszene } from "./szene";
+import type { Kamerastand } from "./szene";
 import type { Rueckmeldung } from "./szene";
 import { objektZu, szenenmodellAus } from "./szenenmodell";
 import { browserUmgebung } from "./umgebung";
@@ -25,7 +26,25 @@ const UEBERLAGERUNG =
 export type Szenensteuerung = Pick<
   Grundrissszene,
   "setzePlan" | "setzeAuswahl" | "einpassen" | "standardansicht" | "draufsicht" | "zoomen" | "entsorgen"
->;
+> &
+  Partial<Pick<Grundrissszene, "kamerastand" | "kamerastandSetzen">>;
+
+/**
+ * Was die 3D-Ansicht beim Wechsel in die Wandansicht abgibt und bei der
+ * Rückkehr wieder aufnimmt (Phase 4f): Kamera und Auswahl. Reine Ansicht.
+ */
+export interface Rueckkehr3d {
+  readonly floorId: string;
+  readonly kamera: Kamerastand | null;
+  readonly auswahl: Auswahl | null;
+}
+
+/** Ziel einer Wandansicht aus 3D - mit der angeklickten Seite. */
+export interface Wandansichtsziel3d {
+  readonly raumId: string;
+  readonly wandId: string;
+  readonly seite: "innen" | "aussen";
+}
 
 export type SzeneErzeugen = (behaelter: HTMLElement, rueckmeldung: Rueckmeldung) => Szenensteuerung;
 
@@ -59,11 +78,17 @@ export default function Ansicht3d({
   floorId,
   geschossLabel,
   onAnsicht,
+  onWandansicht,
+  anfang,
   szeneErzeugen = echteSzene,
 }: {
   floorId: string;
   geschossLabel: string;
   onAnsicht: (ziel: Ansichtsziel) => void;
+  /** Wandansicht öffnen; die Ansicht gibt dabei Kamera und Auswahl für die Rückkehr ab. */
+  onWandansicht?: (ziel: Wandansichtsziel3d, rueckkehr: Rueckkehr3d) => void;
+  /** Bei der Rückkehr aus der Wandansicht: Kamera und Auswahl wiederherstellen. */
+  anfang?: Rueckkehr3d | null;
   szeneErzeugen?: SzeneErzeugen;
 }) {
   const { api } = useAuth();
@@ -77,7 +102,8 @@ export default function Ansicht3d({
     [plan.data, masse],
   );
 
-  const [auswahl, setAuswahl] = useState<Auswahl | null>(null);
+  const anfangRef = useRef(anfang?.floorId === floorId ? anfang : null);
+  const [auswahl, setAuswahl] = useState<Auswahl | null>(anfangRef.current?.auswahl ?? null);
   const [stoerung, setStoerung] = useState<Stoerung>(null);
   const [start, setStart] = useState(0);
   const behaelter = useRef<HTMLDivElement>(null);
@@ -116,12 +142,22 @@ export default function Ansicht3d({
   useEffect(() => {
     const instanz = szene.current;
     if (instanz === null) return;
-    instanz.setzePlan(modell, { einpassen: gezeigtesGeschoss.current !== modell.floorId });
+    const erstesMal = gezeigtesGeschoss.current !== modell.floorId;
+    const rueckkehr = anfangRef.current;
+    if (erstesMal && rueckkehr !== null && rueckkehr.floorId === modell.floorId && rueckkehr.kamera !== null) {
+      // Rückkehr aus der Wandansicht: dieselbe Kamera wie vorher, nicht neu einpassen.
+      instanz.setzePlan(modell, { einpassen: false });
+      instanz.kamerastandSetzen?.(rueckkehr.kamera);
+      anfangRef.current = null;
+    } else {
+      instanz.setzePlan(modell, { einpassen: erstesMal });
+    }
     gezeigtesGeschoss.current = modell.floorId;
   }, [modell, start]);
 
   const objekt = objektZu(modell, auswahl);
-  const fehlt = auswahl !== null && objekt === null;
+  // Erst mit geladenem Plan entscheiden - sonst ginge eine wiederhergestellte Auswahl verloren.
+  const fehlt = auswahl !== null && objekt === null && plan.isSuccess;
   const gueltig = fehlt ? null : auswahl;
 
   // Eine Auswahl, deren Objekt nach dem Neuladen fehlt, verschwindet.
@@ -252,7 +288,18 @@ export default function Ansicht3d({
           )}
         </div>
 
-        <Seitenleiste modell={modell} auswahl={gueltig} objekt={objekt} onAuswahl={auswaehlen} />
+        <Seitenleiste
+          modell={modell}
+          auswahl={gueltig}
+          objekt={objekt}
+          onAuswahl={auswaehlen}
+          {...(onWandansicht !== undefined
+            ? {
+                onWandansicht: (ziel: Wandansichtsziel3d) =>
+                  onWandansicht(ziel, { floorId, kamera: szene.current?.kamerastand?.() ?? null, auswahl: gueltig }),
+              }
+            : {})}
+        />
       </div>
       <p className="m-0 text-label text-muted" id={zusammenfassungId}>
         {plan.isSuccess ? zusammenfassung(modell) : ""}

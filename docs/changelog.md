@@ -5,6 +5,56 @@ Einträge entstehen nach relevanten Änderungen, nicht nach jedem Commit.
 
 ---
 
+## 2026-10-02 — Phase 4f: Wand- und Deckenansicht (abgeschlossen, committet 2026-10-03)
+
+Keine Migration, keine neue API-Route, kein Seed nötig. Entscheidung:
+[ADR 0022](decisions/0022-wall-and-ceiling-view.md).
+
+### Added
+
+- **Wandansicht**: Wand des aktiven Raums frontal aus dem Raum, maßstäblich, mit Blickrichtung,
+  angrenzenden Räumen je Abschnitt (abweichende Deckenhöhen sichtbar), Boden- und
+  Deckenbezug, Zoom, Verschieben, „Ansicht zurücksetzen“. Tür, Fenster, Durchgang setzen,
+  verschieben (Fenster auch in der Höhe), Größe über Griffe ändern; Hilfslinien mit
+  Abstand von links/rechts, Breite, Höhe, Brüstung, Abstand zur Decke und freiem Abstand zu
+  den nächsten Öffnungen; Einrasten mit Prioritäten, Hysterese, Schalter und `Alt`; exakte
+  Eingabe in mm/cm/m. Gemeinsame Öffnungen auf der Gegenseite gespiegelt und abgeleitet,
+  Bearbeiten über die Quelle.
+- **Deckenansicht** je Raum: reale Kontur in Grundrissausrichtung, Wandnummern und -längen,
+  Fläche, Deckenhöhe, Raster, Zoom, Abstand zur nächsten Wand; Raummaß nur bei Rechtecken.
+- **Teilnehmer-Contract `FloorCeilingHeightParticipant`**: Eine Absenkung der
+  Geschoss-Standardhöhe, nach der eine Öffnung in einem Raum ohne eigene Höhe höher als der
+  Raum wäre (neu ungültig oder ein bestehender Konflikt, der größer würde), wird mit `422`
+  abgelehnt; Raum, Wand, Art und Lage werden genannt. Unveränderte oder höhere Werte sind
+  immer zulässig.
+- Fehlertyp **`project-completed`** (`409`).
+
+### Changed
+
+- **Wandansicht als Standardweg für Öffnungen:** Werkzeuge Tür/Fenster/Durchgang öffnen
+  per Wandklick die Wandansicht mit aktivem Werkzeug (der Klick setzt nichts); vorhandene
+  Öffnungen werden dort bearbeitet. Gewählt wird die ganze Wand der angeklickten Raumseite,
+  auch in 3D (vorher nur der Abschnitt hinter einem Nachbarn). Von außen angeklickt wählt 3D die
+  ganze durchgehende Fassade über mehrere Räume (nicht um Ecken, nicht über Lücken).
+- Wandansicht mit **Innen- und Außenseite** (Ansichtskontext, gespiegelte Darstellung, keine
+  Datenänderung); Schließen führt zur Ausgangsansicht zurück (3D mit Kamera und Auswahl).
+- **Abgeschlossene Projekte sind schreibgeschützt** wie archivierte (Stammdaten, Gebäude,
+  Geschosse, Dateien, Planung); Wiedereröffnung und Archivierung bleiben möglich (ADR 0020
+  erweitert). Oberfläche zeigt den Schreibschutz.
+- Wandlänge im Editor lässt sich nicht mehr unter eine Öffnung kürzen (verständliche Meldung).
+- Editor markiert Öffnungen, die höher als der Raum sind, bereits lokal.
+- Core-`Dialog`: Variante `groesse="gross"` und `onEscape`.
+- OpenAPI: nur Beschreibungstexte der `409`-Antworten.
+
+### Fixed
+
+- Rennen: `FloorPlanningAccess.writable_context` las die Geschosshöhe vor der Projektsperre;
+  jetzt danach. `update_floor` liest das Geschoss nach der Sperre neu.
+- Benutzerliste: Aktionsspalte mit Überschrift „Aktionen“; die Zelle bleibt eine echte
+  Tabellenzelle (Flex nur am inneren Wrapper) - Trennlinien wieder bündig.
+
+---
+
 ## 2026-10-01 — Phase 4e: Benutzerlebenszyklus und serverseitige Einstellungen
 
 Migration **`0007_user_lifecycle_preferences`**, danach **Seed ausführen**. Mit diesem Checkpoint committet. Entscheidung:

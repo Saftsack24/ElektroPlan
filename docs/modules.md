@@ -229,6 +229,7 @@ erhält, ohne das Fachmodul zu kennen.
 | `OfferItemSuggestionProvider` | `contracts/v1/offer.py` | Angebotsassistent | jedes Fachmodul | 10 |
 
 | `ProjectContentParticipant` | `contracts/v1/project_lifecycle.py` | Core (Projektlöschung) | jedes Fachmodul mit Projektdaten; heute `electrical` | 4d |
+| `FloorCeilingHeightParticipant` | `contracts/v1/floor_planning.py` | Core (Geschoss-PATCH) | jedes Fachmodul, dessen Daten von der Geschoss-Standardhöhe abhängen; heute `electrical` | 4f |
 
 Die Ports entstehen **mit dem Modul, das sie definiert** — nicht vorher. Ein Port
 ohne Aufrufer wäre tote Abstraktion.
@@ -273,6 +274,26 @@ Teilnehmer-Contract `ProjectContentParticipant`:
 Electrical meldet `electrical.rooms`, `electrical.walls`, `electrical.openings` und löscht
 die Räume (Wände und Öffnungen per Cascade). Dateien (`core.files`) und zusätzliche
 Gebäudestruktur (`core.structure`) prüft der Core selbst.
+
+### 4b. Prüfung einer neuen Geschoss-Standardhöhe (Phase 4f, ADR 0022)
+
+Räume ohne eigene Höhe erben `floors.default_ceiling_height_mm`. Senkt der Core diesen Wert,
+fragt `ProjectService.update_floor` vorher jeden Teilnehmer von
+`FloorCeilingHeightParticipant.check_floor_ceiling_height(session, FloorCeilingHeightChange)`.
+
+* **Nur lesen** – ein Teilnehmer verändert, verschiebt oder löscht nichts und committet nie.
+* **Ein Konflikt** (`FloorCeilingHeightConflict(code, message, keys)`) lässt den gesamten
+  PATCH mit `422` scheitern.
+* **Transaktion:** in der Transaktion des Core, nach der Projektsperre; das Geschoss wird
+  nach der Sperre neu gelesen. Fachmodule lesen die Standardhöhe über
+  `FloorPlanningAccess.writable_context` ebenfalls erst nach der Sperre.
+* **Pflichtparameter:** `update_floor(..., height_participants=...)` – kein Aufrufer kann
+  die Prüfung versehentlich auslassen; die API holt die Teilnehmer aus der Registry.
+
+Electrical prüft nur Räume mit `height_mm IS NULL` und meldet bei einer **Absenkung** jede
+Öffnung, die danach höher als ihr Raum wäre (`opening-exceeds-room-height`) – neu ungültig
+oder ein bestehender Konflikt, der größer würde. Unveränderte oder höhere Standardhöhen sind
+immer zulässig (ADR 0022).
 
 ---
 

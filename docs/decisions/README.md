@@ -27,8 +27,9 @@ Format: Context · Problem · Considered Options · Decision · Consequences
 | [0017](0017-numbered-pages-for-customer-and-project-lists.md) | Nummerierte Seiten für Kunden- und Projektlisten | accepted | 2026-09-28 |
 | [0018](0018-frontend-styling-tailwind-and-theme-tokens.md) | Frontend-Styling: Tailwind CSS mit semantischen Laufzeit-Tokens; präzisiert 4c.2: Wurzelattribute, Akzentschemata, Kontraste | accepted | 2026-09-29, präzisiert 2026-09-30 |
 | [0019](0019-personal-display-preferences-local-storage.md) | Persönliche Darstellungseinstellungen: lokal je Benutzer, versioniert | superseded by 0021 (Speicherort; lokal nur noch Cache) | 2026-09-30 |
-| [0020](0020-data-lifecycle-deletion-and-reopen.md) | Datenlebenszyklus: Löschregeln, Wiedereröffnung, Löschschutz-Protokoll, Storage-Aufräumen | accepted | 2026-09-30 |
+| [0020](0020-data-lifecycle-deletion-and-reopen.md) | Datenlebenszyklus: Löschregeln, Wiedereröffnung, Löschschutz-Protokoll, Storage-Aufräumen; erweitert durch 0022 (`completed` schreibgeschützt) | accepted | 2026-09-30, erweitert 2026-10-02 |
 | [0021](0021-user-lifecycle-account-locks-password-reset-preferences.md) | Benutzerlebenszyklus: exklusive Konten, Sperren mit Sitzungsversion, Passwortzurücksetzung, Entfernen als Tombstone, serverseitige Einstellungen, Maßeinheit m | accepted | 2026-10-01 |
+| [0022](0022-wall-and-ceiling-view.md) | Wand- und Deckenansicht: Blickrichtung, Maßbezug, Einrasten, gemeinsamer Entwurf; `completed` schreibgeschützt; Teilnehmer-Prüfung der Geschoss-Standardhöhe | accepted | 2026-10-02 |
 
 ## Wann ein ADR nötig ist
 

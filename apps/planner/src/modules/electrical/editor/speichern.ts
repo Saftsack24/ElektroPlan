@@ -77,11 +77,12 @@ export function fehlerAuswerten(error: unknown): Auswertung {
       },
     };
   }
-  if (error.status === 409 && typ === "project-archived") {
+  if (error.status === 409 && (typ === "project-archived" || typ === "project-completed")) {
+    const zustand = typ === "project-completed" ? "abgeschlossen" : "archiviert";
     return {
       status: "fehler",
       fehler: {
-        meldung: "Das Projekt wurde inzwischen archiviert und ist schreibgeschützt. Es wurde nichts gespeichert.",
+        meldung: `Das Projekt wurde inzwischen ${zustand} und ist schreibgeschützt. Es wurde nichts gespeichert.`,
         eintraege: [],
       },
     };

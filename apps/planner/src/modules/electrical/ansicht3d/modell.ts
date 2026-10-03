@@ -7,6 +7,7 @@
  * mitgeführte `Transformation` in Szenenmeter um. Nichts davon wird je
  * zurückgeschrieben (ADR 0016).
  */
+import type { Fassade3d, Raumwand3d } from "./raumwand";
 import type { components } from "@elektroplan/api-client";
 
 import type { Oeffnungsklasse } from "../topologie/oeffnungen";
@@ -28,7 +29,12 @@ export interface PunktMm {
 
 // ------------------------------------------------------------------ Auswahl
 
-export type Objektart = "raum" | "wand" | "oeffnung";
+/**
+ * `raumwand`: die ganze gespeicherte Wand eines Raums (Phase 4f, `raumwand.ts`);
+ * `wandseite`: ein Wandabschnitt, dessen angeklickte Raumseite nicht eindeutig
+ * war - die Seitenleiste bietet die Raumwahl an.
+ */
+export type Objektart = "raum" | "wand" | "raumwand" | "wandseite" | "fassade" | "oeffnung";
 
 /**
  * Kleine, fachliche Auswahlreferenz - das Einzige, was aus der Szene in den
@@ -44,6 +50,11 @@ export type Objektart = "raum" | "wand" | "oeffnung";
 export interface Auswahl {
   readonly art: Objektart;
   readonly id: string;
+  /**
+   * Nur bei `fassade`: der angeklickte Wandabschnitt - er bestimmt eindeutig,
+   * welche Raumwand „In der Wandansicht öffnen“ zeigt. Kein Teil des Schlüssels.
+   */
+  readonly abschnitt?: string;
 }
 
 export function auswahlSchluessel(auswahl: Auswahl): string {
@@ -51,7 +62,8 @@ export function auswahlSchluessel(auswahl: Auswahl): string {
 }
 
 export function gleicheAuswahl(a: Auswahl | null, b: Auswahl | null): boolean {
-  return a === b || (a !== null && b !== null && a.art === b.art && a.id === b.id);
+  // Der angeklickte Fassadenabschnitt zählt mit: Er bestimmt die Raumwand für die Wandansicht.
+  return a === b || (a !== null && b !== null && a.art === b.art && a.id === b.id && a.abschnitt === b.abschnitt);
 }
 
 export { gruppenId } from "../topologie/wandtopologie";
@@ -128,6 +140,8 @@ export interface Wand3d {
   /** Darstellungshöhe: größte beteiligte Raumhöhe. */
   readonly hoeheMm: number;
   readonly lage: Wandlage;
+  /** Schlüssel der unendlich gedachten Geraden (Geschoss, Richtung, Abstand) - exakt. */
+  readonly gerade: string;
   readonly raumIds: readonly string[];
   readonly quellen: readonly LogischeWand[];
   readonly oeffnungen: readonly Oeffnung3d[];
@@ -186,6 +200,10 @@ export interface Szenenmodell {
   readonly raumanzahlGesamt: number;
   readonly raeume: readonly Raum3d[];
   readonly waende: readonly Wand3d[];
+  /** Die gespeicherten Wände je Raum mit voller Länge und ihren Abschnitten (Phase 4f). */
+  readonly raumwaende: readonly Raumwand3d[];
+  /** Durchgehende, geradlinige Außenwände über mehrere Räume - reine Ansichtsgruppe (Phase 4f). */
+  readonly fassaden: readonly Fassade3d[];
   readonly oeffnungen: readonly Oeffnung3d[];
   readonly ausgelassen: readonly AusgelassenerRaum[];
   readonly warnungen: readonly Warnung[];

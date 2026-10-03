@@ -313,14 +313,14 @@ describe("Grafischer Editor", () => {
     expect(screen.getByText(/Nicht gespeichert - bitte prüfen/)).toBeInTheDocument();
   });
 
-  it("platziert eine Tür auf der angeklickten Wand", async () => {
+  it("Werkzeug Tür: Klick auf eine Wand öffnet deren Wandansicht, ohne eine Öffnung anzulegen (Phase 4f)", async () => {
     zeigen();
     await editorBereit();
-    taste("o");
-    klick(1500, 0, await screen.findByTestId("wand-w1"));
-    expect(await screen.findByText(/Tür in Wand 1 · 88,5 cm breit/)).toBeInTheDocument();
-    // Mitte unter dem Zeiger, 5-cm-Fang: 1500 − 442,5 = 1057,5 → 1050 mm.
-    expect(screen.getByLabelText("Abstand (cm)")).toHaveValue("105");
+    taste("t");
+    klick(1500, 20, await screen.findByTestId("wand-w1"));
+    const dialog = await screen.findByRole("dialog", { name: /Wandansicht · Wand 1/ });
+    expect(within(dialog).getByRole("button", { name: "Tür" })).toHaveAttribute("aria-pressed", "true");
+    expect(document.querySelectorAll("svg.grundriss__svg [data-oeffnung]")).toHaveLength(0);
   });
 
   it("warnt beim Geschosswechsel mit ungespeicherten Änderungen", async () => {

@@ -73,6 +73,23 @@ Dokumentation und Oberfläche auf Deutsch, Code und API auf Englisch.
 
 ## Elektroplanung
 
+Ergänzt in Phase 4f (Wand- und Deckenansicht, ADR 0022):
+
+| Deutsch | Englisch (Code/API) | Anmerkung |
+|---|---|---|
+| Wandansicht | wall view (`wandansicht/`) | eine Wand frontal aus ihrem Raum; keine Persistenz |
+| Deckenansicht | ceiling view (`deckenansicht/`) | Decke eines Raums wie ein Deckenspiegel, Ausrichtung wie der Grundriss |
+| Blickrichtung | view direction | aus dem Raum auf die Wand; bestimmt links und rechts |
+| Abstand von links / von rechts | — (Ansicht), gespeichert `offset_mm` | lichtes Maß Wandkante bis Öffnungskante in der Ansicht |
+| Brüstung (über Boden) | `sill_height_mm` | Fertigfußboden bis Unterkante; nur beim Fenster > 0 |
+| Abstand zur Decke | — | Oberkante bis effektive Raumhöhe |
+| Achsmaß | — | Abstand zur Mitte einer Öffnung; immer so benannt |
+| Einrasten | snap (`wandfang.ts`) | Fang an Wandkanten, Mitten, Öffnungskanten, gleichen Höhen, Raster |
+| Hilfslinie / Maßlinie | guide / dimension line | angezeigte Maße zur gewählten oder bewegten Öffnung |
+| Quellöffnung | source opening | die eine gespeicherte Öffnung an ihrer Eigentümerwand |
+| abgeleitete Öffnung | derived opening | Darstellung einer Quellöffnung auf der Gegenseite, nicht bearbeitbar |
+| Fertigfußboden (FFB) | finished floor level | Bezug aller Höhen (`z = 0`) |
+
 | Deutsch | Englisch | Anmerkung |
 |---|---|---|
 | Raum | `room` | |

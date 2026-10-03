@@ -14,7 +14,7 @@ import { Eigenschaften, flaecheText } from "./Eigenschaften";
 import type { EntwurfWand, Geschossplan, Oeffnungsart, RaumImPlan, Raumentwurf } from "./entwurf";
 import { alsKonturanfrage, basisAus, neueId, segmenteAus, STANDARD_WANDSTAERKE_MM } from "./entwurf";
 import { STANDARD_RASTER_MM } from "./fang";
-import { konturbericht, oeffnungsBefunde, streckenlaenge } from "./geometrie";
+import { konturbericht, oeffnungsBefunde, oeffnungsHoehenBefunde, streckenlaenge } from "./geometrie";
 import type { Punkt } from "./geometrie";
 import { fehlerAuswerten } from "./speichern";
 import type { Groesse, Viewport } from "./viewport";
@@ -23,7 +23,6 @@ import { Werkzeugleiste } from "./Werkzeugleiste";
 import { editorEinordnung, editorTopologie } from "./platzierung";
 import {
   letztenPunktEntfernen,
-  oeffnungEinfuegen,
   oeffnungEntfernen,
   polygonWaende,
   rechteckWaende,
@@ -32,6 +31,10 @@ import {
 import { Zeichenflaeche } from "./Zeichenflaeche";
 import type { Raumdarstellung } from "./Zeichenflaeche";
 import { ANFANG, editorReducer, fehlerhafteKeys, ungespeichert } from "./zustand";
+import { Deckenansicht } from "../deckenansicht/Deckenansicht";
+import { Wandansicht } from "../wandansicht/Wandansicht";
+import type { Wandziel } from "../wandansicht/Wandansicht";
+import { umlaufsinn } from "../wandansicht/wandbezug";
 import type { Auswahl, Speicherstatus, Werkzeug } from "./zustand";
 import { AKTION } from "../../../core/ui/aktionssymbole";
 import { Symbol } from "../../../core/ui/Symbol";
@@ -60,6 +63,19 @@ const STATUS_FARBE: Record<Speicherstatus, string> = {
 
 const RAUM_MELDUNG =
   "Der aktive Raum hat ungespeicherte Änderungen. Wenn Sie fortfahren, gehen sie verloren.";
+
+/** Wände eines Raums in Entwurfsform - Serverstand oder Entwurf. */
+function basisWaende(walls: RaumImPlan["walls"] | Raumentwurf["walls"]): Raumentwurf["walls"] {
+  return walls.map((w) => ({
+    id: w.id,
+    x1_mm: w.x1_mm,
+    y1_mm: w.y1_mm,
+    x2_mm: w.x2_mm,
+    y2_mm: w.y2_mm,
+    thickness_mm: w.thickness_mm,
+    openings: [],
+  }));
+}
 
 /** Darstellung eines nicht aktiven Raums - je Serverobjekt einmal berechnet. */
 const darstellungen = new WeakMap<RaumImPlan, Raumdarstellung>();
@@ -94,6 +110,9 @@ export function GrundrissEditor({
   darfSchreiben,
   onUngespeichert,
   onGespeichert,
+  startWandansicht = null,
+  onStartVerbraucht,
+  onZurueck3d,
 }: {
   floorId: string;
   geschossLabel: string;
@@ -102,6 +121,11 @@ export function GrundrissEditor({
   onUngespeichert: (offen: boolean) => void;
   /** Nach jedem erfolgreichen Schreibvorgang - damit die Tabellenansicht nachzieht. */
   onGespeichert: (roomId: string | null) => Promise<void>;
+  /** Phase 4f: nach dem Laden diese Wand in der Wandansicht öffnen (Einstieg aus 3D). */
+  startWandansicht?: Wandziel | null;
+  onStartVerbraucht?: () => void;
+  /** Wandansicht wurde aus 3D geöffnet und geschlossen: zurück zur 3D-Ansicht. */
+  onZurueck3d?: () => void;
 }) {
   const { api } = useAuth();
   const queryClient = useQueryClient();
@@ -115,6 +139,11 @@ export function GrundrissEditor({
   const [neuerRaum, setNeuerRaum] = useState<readonly EntwurfWand[] | null>(null);
   const [raumdaten, setRaumdaten] = useState(false);
   const [hinweis, setHinweis] = useState<string | null>(null);
+  // Wand- und Deckenansicht (Phase 4f): reine Sichten auf denselben Entwurf.
+  const [wandansicht, setWandansicht] = useState<Wandziel | null>(null);
+  // Woher die Wandansicht kam - bleibt über Seiten- und Wandwechsel erhalten.
+  const herkunft = useRef<"2d" | "3d">("2d");
+  const [deckenansicht, setDeckenansicht] = useState<string | null>(null);
   const eingepasst = useRef(false);
   const nachLadenAktivieren = useRef<string | null>(null);
 
@@ -186,9 +215,16 @@ export function GrundrissEditor({
       const laenge = streckenlaenge({ x: w.x1_mm, y: w.y1_mm }, { x: w.x2_mm, y: w.y2_mm });
       const spannen = w.openings.map((o) => ({ key: o.id, abstand: o.offset_mm, breite: o.width_mm }));
       spannen.forEach((s, i) => oeffnungsBefunde(s, laenge, spannen.slice(i + 1)).forEach((b) => b.keys.forEach((k) => keys.add(k))));
+      // Höhenlage gegen die Raumhöhe - dieselbe Regel wie der Server (Phase 4f).
+      const raumhoehe = zustand.basis?.raum.effective_height_mm;
+      if (raumhoehe !== undefined) {
+        for (const o of w.openings) {
+          oeffnungsHoehenBefunde(o.id, o.kind, o.height_mm, o.sill_height_mm, raumhoehe).forEach((b) => b.keys.forEach((k) => keys.add(k)));
+        }
+      }
     }
     return keys;
-  }, [zustand.entwurf]);
+  }, [zustand.entwurf, zustand.basis]);
 
   const fehlerKeys = useMemo(() => fehlerhafteKeys(zustand), [zustand]);
 
@@ -197,6 +233,10 @@ export function GrundrissEditor({
   // 3D-Ansicht. Daraus: welche Öffnung welche zwei Räume verbindet.
   const topologie = useMemo(() => editorTopologie(floorId, darstellung), [floorId, darstellung]);
   const einordnung = useMemo(() => editorEinordnung(topologie), [topologie]);
+  const waendeVon = useCallback(
+    (raumId: string) => darstellung.find((r) => r.id === raumId)?.walls ?? [],
+    [darstellung],
+  );
   const raumName = useCallback(
     (raumId: string) => {
       const raum = darstellung.find((r) => r.id === raumId);
@@ -274,20 +314,30 @@ export function GrundrissEditor({
     else neuenRaumVorbereiten(ergebnis.wert);
   };
 
-  /** Setzt eine neue Öffnung an einem bereits geprüften Abstand (`platzierung.ts`). */
-  const oeffnungPlatzieren = async (raumId: string, wandId: string, offsetMm: number) => {
-    let entwurf = zustand.entwurf;
-    if (entwurf === null || entwurf.roomId !== raumId) {
-      const raum = raeume.find((r) => r.id === raumId);
-      if (raum === undefined || !(await vorRaumwechsel())) return;
-      dispatch({ typ: "raum-aktivieren", raum });
-      entwurf = basisAus(raum).entwurf;
+  /**
+   * Der Standardweg für Öffnungen (Phase 4f): die Wandansicht der Wand öffnen -
+   * mit Platzierungswerkzeug (Tür, Fenster, Durchgang) oder mit einer
+   * vorhandenen Öffnung ausgewählt. Gehört die Wand zu einem anderen Raum,
+   * wird er über den üblichen Raumwechsel aktiviert (Rückfrage bei
+   * ungespeicherten Änderungen). Hier entsteht keine Öffnung.
+   */
+  const wandansichtOeffnen = async (ziel: Wandziel) => {
+    const auswahl: Auswahl =
+      ziel.oeffnungId !== undefined
+        ? { art: "oeffnung", raumId: ziel.raumId, wandId: ziel.wandId, oeffnungId: ziel.oeffnungId }
+        : { art: "wand", raumId: ziel.raumId, wandId: ziel.wandId };
+    const walls =
+      zustand.entwurf?.roomId === ziel.raumId ? zustand.entwurf.walls : (raeume.find((r) => r.id === ziel.raumId)?.walls ?? []);
+    if (umlaufsinn(basisWaende(walls)) === null) {
+      if (await raumAktivieren(ziel.raumId, auswahl)) {
+        setHinweis("Die Wandansicht braucht eine geschlossene Raumkontur. Bitte zuerst die Kontur schließen.");
+      }
+      return;
     }
-    const id = neueId();
+    if (!(await raumAktivieren(ziel.raumId, auswahl))) return;
     setHinweis(null);
-    // Genau eine neue Öffnung an genau einer Wand - ihr Nachbarraum ist abgeleitet.
-    dispatch({ typ: "aendern", entwurf: oeffnungEinfuegen(entwurf, wandId, oeffnungsart, offsetMm, id) });
-    dispatch({ typ: "auswaehlen", auswahl: { art: "oeffnung", raumId, wandId, oeffnungId: id } });
+    herkunft.current = ziel.herkunft ?? "2d";
+    setWandansicht(ziel);
   };
 
   const nachSchreiben = async (roomId: string | null) => {
@@ -427,6 +477,49 @@ export function GrundrissEditor({
     }
   };
 
+  /**
+   * Zur gespeicherten Quelle einer Öffnung bzw. in einen anderen Raum: über
+   * den üblichen Raumwechsel - bei ungespeicherten Änderungen mit Rückfrage
+   * (speichern und wechseln, verwerfen, bleiben). Kein Entwurf geht verloren.
+   */
+  const wandansichtOeffnenRef = useRef(wandansichtOeffnen);
+  useEffect(() => {
+    wandansichtOeffnenRef.current = wandansichtOeffnen;
+  });
+
+  // Einstieg aus der 3D-Ansicht: sobald der Plan da ist, genau einmal. Steht
+  // bewusst hinter der Aktualisierung des Verweises - Effekte laufen in
+  // Deklarationsreihenfolge, sonst sähe er noch die leere Raumliste.
+  const startRef = useRef(startWandansicht);
+  useEffect(() => {
+    const start = startRef.current;
+    if (start === null || !plan.isSuccess || !raeume.some((r) => r.id === start.raumId)) return;
+    startRef.current = null;
+    onStartVerbraucht?.();
+    void wandansichtOeffnenRef.current(start);
+  }, [plan.isSuccess, raeume, onStartVerbraucht]);
+
+  const quelleBearbeiten = async (ziel: Wandziel, oeffnungId: string | null) => {
+    const auswahl: Auswahl =
+      oeffnungId !== null
+        ? { art: "oeffnung", raumId: ziel.raumId, wandId: ziel.wandId, oeffnungId }
+        : { art: "wand", raumId: ziel.raumId, wandId: ziel.wandId };
+    if (await raumAktivieren(ziel.raumId, auswahl)) setWandansicht({ ...ziel, ...(oeffnungId !== null ? { oeffnungId } : {}) });
+  };
+
+  const wandansichtSchliessen = () => {
+    setWandansicht(null);
+    // Aus 3D geöffnet: dorthin zurück. Ungespeicherte Änderungen fragt der
+    // Ansichtswechsel wie immer nach - nichts wird still gespeichert oder verworfen.
+    if (herkunft.current === "3d") {
+      herkunft.current = "2d";
+      onZurueck3d?.();
+    }
+    if (offen) {
+      setHinweis(`Die Änderungen sind im Entwurf von „${zustand.basis?.raum.name ?? ""}“ erhalten – noch nicht gespeichert.`);
+    }
+  };
+
   const zoom = (faktor: number) =>
     setViewport((v) => zoomen(v, faktor, { x: groesse.current.breite / 2, y: groesse.current.hoehe / 2 }));
 
@@ -522,8 +615,14 @@ export function GrundrissEditor({
     }
     const werkzeuge: Record<string, Werkzeug> = { v: "auswahl", h: "pan" };
     if (schreibbar) Object.assign(werkzeuge, { r: "rechteck", p: "polygon", o: "oeffnung" });
+    // Tür (T), Fenster (N), Durchgang (D) - wie in der Wandansicht.
+    const arten: Record<string, Oeffnungsart> = { t: "door", n: "window", d: "passage" };
     const w = werkzeuge[k];
-    if (w !== undefined) werkzeugWaehlen(w);
+    const art = schreibbar ? arten[k] : undefined;
+    if (art !== undefined) {
+      setOeffnungsart(art);
+      werkzeugWaehlen("oeffnung");
+    } else if (w !== undefined) werkzeugWaehlen(w);
     else if (k === "f") einpassenAlle();
   };
   const tastenRef = useRef(taste);
@@ -640,7 +739,8 @@ export function GrundrissEditor({
           onWaehlen={waehlen}
           onPolygonFertig={polygonFertig}
           onRechteckFertig={rechteckFertig}
-          onOeffnungSetzen={(raumId, wandId, offsetMm) => void oeffnungPlatzieren(raumId, wandId, offsetMm)}
+          onWandFuerOeffnung={(raumId, wandId) => void wandansichtOeffnen({ raumId, wandId, werkzeug: oeffnungsart })}
+          onOeffnungBearbeiten={(raumId, wandId, oeffnungId) => void wandansichtOeffnen({ raumId, wandId, oeffnungId })}
           onHinweis={setHinweis}
           oeffnungsart={oeffnungsart}
           geschossLabel={geschossLabel}
@@ -685,6 +785,14 @@ export function GrundrissEditor({
           onAendern={aendern}
           onWaehlen={waehlen}
           onRaumBearbeiten={() => setRaumdaten(true)}
+          onWandansicht={(wandId, oeffnungId) => {
+            if (zustand.entwurf !== null) {
+              void wandansichtOeffnen({ raumId: zustand.entwurf.roomId, wandId, ...(oeffnungId !== undefined ? { oeffnungId } : {}) });
+            }
+          }}
+          onDeckenansicht={() => {
+            if (zustand.entwurf !== null) setDeckenansicht(zustand.entwurf.roomId);
+          }}
           neueId={neueId}
           einordnung={einordnung}
           topologie={topologie}
@@ -698,7 +806,7 @@ export function GrundrissEditor({
         <ul>
           <li>Rechteckraum (R): erste Ecke klicken, gegenüberliegende Ecke klicken, Namen vergeben.</li>
           <li>Polygonraum (P): Punkte nacheinander klicken; Klick auf den Startpunkt, Doppelklick oder Enter schließt. Rücktaste oder Strg+Z entfernt den letzten Punkt, Escape bricht ab.</li>
-          <li>Öffnung (O): Art wählen und über eine Wand fahren – die Vorschau zeigt Lage und verbundene Räume; ein Klick setzt die Öffnung (Fang 5 cm, Alt: millimetergenau). Eine vorhandene Öffnung lässt sich entlang ihrer Wand ziehen; Escape bricht das Ziehen ab. Genaue Werte in der Seitenleiste.</li>
+          <li>Tür (T), Fenster (N), Durchgang (D): Wand anklicken – ihre Wandansicht öffnet sich mit diesem Werkzeug, gesetzt wird dort. Der Klick im Grundriss legt noch keine Öffnung an. Bei einer gemeinsamen Wand zählt die Raumseite, auf die geklickt wurde. Eine vorhandene Öffnung mit dem Werkzeug anklicken oder doppelklicken: Sie wird in der Wandansicht bearbeitet. Im Auswahlwerkzeug lässt sie sich weiterhin entlang ihrer Wand ziehen.</li>
           <li>Eine Öffnung auf einer gemeinsamen Wand wird nur einmal gespeichert und gilt für beide Räume; im Nachbarraum erscheint sie gestrichelt als abgeleitete Darstellung.</li>
           <li>Eckpunkt ziehen verschiebt beide angrenzenden Wände. Alt beim Ziehen setzt den Fang aus.</li>
           <li>Mausrad zoomt um den Zeiger, mittlere Maustaste oder H verschiebt die Ansicht, F setzt die Ansicht zurück (ganzer Grundriss).</li>
@@ -707,6 +815,49 @@ export function GrundrissEditor({
         </ul>
       </details>
 
+      {wandansicht !== null && (
+        <Wandansicht
+          ziel={wandansicht}
+          zustand={zustand}
+          dispatch={dispatch}
+          raeume={raeume}
+          waendeVon={waendeVon}
+          topologie={topologie}
+          einordnung={einordnung}
+          raumName={raumName}
+          darfSchreiben={schreibbar}
+          rasterMm={rasterMm}
+          onRaster={setRasterMm}
+          fangAktiv={fangAktiv}
+          onFang={setFangAktiv}
+          status={{
+            text: aktiverName === undefined ? STATUS_TEXT[status] : `${aktiverName}: ${STATUS_TEXT[status]}`,
+            farbe: STATUS_FARBE[status],
+            speichert: status === "speichert",
+          }}
+          offen={offen}
+          onSpeichern={() => void speichern()}
+          onVerwerfen={() => void verwerfen()}
+          onWechseln={setWandansicht}
+          onQuelleBearbeiten={(ziel, oeffnungId) => void quelleBearbeiten(ziel, oeffnungId)}
+          onSchliessen={wandansichtSchliessen}
+        />
+      )}
+      {deckenansicht !== null && (
+        <Deckenansicht
+          raumName={raumName(deckenansicht)}
+          walls={waendeVon(deckenansicht)}
+          deckenhoeheMm={
+            zustand.basis?.raum.id === deckenansicht
+              ? zustand.basis.raum.effective_height_mm
+              : (raeume.find((r) => r.id === deckenansicht)?.effective_height_mm ?? standardhoehe_mm)
+          }
+          eigeneHoehe={(raeume.find((r) => r.id === deckenansicht)?.height_mm ?? null) !== null}
+          rasterMm={rasterMm}
+          onRaster={setRasterMm}
+          onSchliessen={() => setDeckenansicht(null)}
+        />
+      )}
       {neuerRaum !== null && (
         <RaumDialog
           key="neuer-raum"

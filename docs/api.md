@@ -112,6 +112,7 @@ Dezimalstring in Quadratmetern (`area_m2`, drei Nachkommastellen). Die Regeln st
 | Geschoss oder Gebäude mit Planungsdaten löschen | `409 conflict` (Fremdschlüssel `RESTRICT`) |
 | Änderung würde eine vorhandene Öffnung ungültig machen | `422 validation-failed`, Änderung wird **nicht** ausgeführt |
 | Projekt archiviert | `409 project-archived` — derselbe Fehlervertrag wie bei den Core-Unterressourcen |
+| Projekt abgeschlossen (seit Phase 4f) | `409 project-completed` — ebenso |
 | Fremdes oder unbekanntes Geschoss, Raum, Wand, Öffnung | `404 not-found` |
 
 **`sort_order` vergibt der Server.** `POST …/walls` hängt die Wand hinten an; Umordnen ist
@@ -314,6 +315,21 @@ jede Änderung wird abgelehnt:
 
 Der eigene Fehlertyp `project-archived` erlaubt es Clients, diesen Fall ohne Auswerten
 der Meldung von einem gewöhnlichen Konflikt zu unterscheiden.
+
+**Seit Phase 4f gilt derselbe Schutz für `completed`** ([ADR 0022](decisions/0022-wall-and-ceiling-view.md),
+Erweiterung von ADR 0020): Jede Zeile der Tabelle oben mit `project-archived` antwortet bei
+einem abgeschlossenen Projekt mit `409 project-completed`. Weiterhin erlaubt sind Lesen,
+Herunterladen, `POST /projects/{id}/reopen` (Administrator) und `POST /projects/{id}/archive`;
+`DELETE /projects/{id}` bleibt `409 project-not-deletable`. Ein Abschluss, der zuerst die
+Projektsperre erhält, führt bei einer wartenden Änderung ebenso zu `409 project-completed`.
+
+**Geschoss-Standardhöhe (seit Phase 4f).** `PATCH /floors/{id}` mit geänderter
+`default_ceiling_height_mm` wird von den Fachmodulen geprüft (`FloorCeilingHeightParticipant`).
+Wäre nach einer **Absenkung** eine vorhandene Öffnung in einem Raum ohne eigene Höhe höher als
+der Raum (neu ungültig oder ein bestehender Konflikt, der größer würde),
+lautet die Antwort `422 validation-failed` mit `errors[].field = "default_ceiling_height_mm"`,
+`code = "opening-exceeds-room-height"`, einer Meldung mit Raum und Wand und `keys` = Raum- und
+Öffnungs-ID. Das Geschoss bleibt unverändert; Öffnungen werden nie angepasst.
 
 **Auch unter Parallelität.** Wird ein Projekt archiviert, während eine Änderung an ihm
 oder an einer Unterressource läuft, gibt es genau zwei Ausgänge: Die Änderung committet

@@ -241,11 +241,83 @@ describe("Auswahl", () => {
     expect(szene.auswahlBei(...ndc(szene, new Vector3(0.3, 0, -0.3)))).toEqual({ art: "raum", id: "r1" });
 
     const nordwand = modell.waende.find((w) => w.start.y === 4000 && w.ende.y === 4000)!;
-    expect(szene.auswahlBei(...ndc(szene, new Vector3(0, 2.5, -2)))).toEqual({ art: "wand", id: nordwand.id });
+    // Phase 4f: Von oben trifft man die Krone einer Außenwand - innen oder außen ist offen,
+    // deshalb die Seitenwahl statt einer geratenen Seite.
+    expect(szene.auswahlBei(...ndc(szene, new Vector3(0, 2.5, -2)))).toEqual({ art: "wandseite", id: nordwand.id });
 
     szene.standardansicht();
     // Türmitte: s = 2000 … 3000 → x = 0, Höhe 1 m, Südwand z = +2
     expect(szene.auswahlBei(...ndc(szene, new Vector3(0, 1, 2)))).toEqual({ art: "oeffnung", id: "tuer" });
+  });
+
+  it("Wandtreffer wählt die Raumwand der getroffenen Seite; die Krone einer gemeinsamen Wand fragt nach (Phase 4f)", () => {
+    const { test, szene } = erzeugen();
+    const m = szenenmodellAus(
+      plan([
+        rechteck("flur", "Flur", [0, 4000], [6000, 6000]),
+        rechteck("bad", "Bad", [0, 0], [3000, 4000]),
+        rechteck("kueche", "Küche", [3000, 0], [6000, 4000]),
+      ]),
+    );
+    szene.setzePlan(m, { einpassen: true });
+    const t = m.transformation;
+    const punkt = (xMm: number, yMm: number, hM: number) =>
+      new Vector3((xMm - t.mitteXMm) / 1000, hM, (t.mitteYMm - yMm) / 1000);
+    // Standardansicht blickt von Süden: getroffen wird die Badseite der gemeinsamen Wand.
+    szene.standardansicht();
+    expect(szene.auswahlBei(...ndc(szene, punkt(1500, 4000 - 57, 2.3)))).toEqual({ art: "raumwand", id: "bad-w2" });
+    // Von oben trifft man die Krone: Die Raumseite ist nicht bestimmbar.
+    szene.draufsicht();
+    const krone = szene.auswahlBei(...ndc(szene, punkt(1500, 4000, 2.5)));
+    expect(krone?.art).toBe("wandseite");
+
+    // Die gewählte Flurwand hebt beide Wandkörper hervor, die sie überdeckt.
+    test.bild();
+    const koerper = m.waende.filter((w) => w.quellen.some((q) => q.id === "flur-w0")).map((w) => meshMit(test.letzteSzene(), { art: "wand", id: w.id })!);
+    const vorher = koerper.map((k) => k.material);
+    szene.setzeAuswahl({ art: "raumwand", id: "flur-w0" });
+    expect(koerper.map((k) => k.material)).not.toEqual(vorher);
+    expect((koerper[0]!.material as Material[])[0]).toBe((koerper[1]!.material as Material[])[0]);
+    szene.setzeAuswahl(null);
+    expect(koerper.map((k) => k.material)).toEqual(vorher);
+  });
+
+  it("Außenwand von außen: ganze Fassade über zwei Räume hervorgehoben; von innen nur die Raumwand", () => {
+    const { test, szene } = erzeugen();
+    const m = szenenmodellAus(
+      plan([rechteck("bad", "Bad", [0, 0], [3000, 4000]), rechteck("kueche", "Küche", [3000, 0], [6000, 4000])]),
+    );
+    szene.setzePlan(m, { einpassen: true });
+    const t = m.transformation;
+    const punkt = (xMm: number, yMm: number, hM: number) => new Vector3((xMm - t.mitteXMm) / 1000, hM, (t.mitteYMm - yMm) / 1000);
+    szene.standardansicht();
+    // Von Süden auf die Außenseite der Badsüdwand.
+    const auswahl = szene.auswahlBei(...ndc(szene, punkt(1500, -57, 1.2)));
+    const fassade = m.fassaden.find((f) => f.abschnitte.some((a) => a.wandId === "bad-w0"))!;
+    expect(auswahl).toEqual({ art: "fassade", id: fassade.id, abschnitt: fassade.abschnitte[0]!.id });
+    test.bild();
+    const badKoerper = meshMit(test.letzteSzene(), { art: "wand", id: fassade.abschnitte[0]!.id })!;
+    const kuechenKoerper = meshMit(test.letzteSzene(), { art: "wand", id: fassade.abschnitte[1]!.id })!;
+    const vorher = kuechenKoerper.material;
+    szene.setzeAuswahl(auswahl);
+    expect(kuechenKoerper.material).not.toBe(vorher);
+    expect((badKoerper.material as Material[])[0]).toBe((kuechenKoerper.material as Material[])[0]);
+    // Nur die Raumwand der Küche: der Badkörper bleibt normal.
+    szene.setzeAuswahl({ art: "raumwand", id: "kueche-w0" });
+    expect((badKoerper.material as Material[])[0]).not.toBe((kuechenKoerper.material as Material[])[0]);
+  });
+
+  it("Kamerastand lässt sich merken und wiederherstellen (Rückkehr aus der Wandansicht)", () => {
+    const { szene } = erzeugen();
+    szene.setzePlan(einRaum(), { einpassen: true });
+    szene.draufsicht();
+    const stand = szene.kamerastand();
+    szene.standardansicht();
+    expect(szene.kamerastand()).not.toEqual(stand);
+    szene.kamerastandSetzen(stand);
+    const nachher = szene.kamerastand();
+    nachher.position.forEach((v, i) => expect(v).toBeCloseTo(stand.position[i]!, 6));
+    nachher.ziel.forEach((v, i) => expect(v).toBeCloseTo(stand.ziel[i]!, 6));
   });
 
   it("außerhalb des Plans ist nichts ausgewählt", () => {

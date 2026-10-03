@@ -168,6 +168,12 @@ Siehe [ADR 0003](decisions/0003-module-contracts-and-provider-ports.md).
 
 ---
 
+**Teilnehmer-Contracts** sind die synchrone Ausnahme für vom Core koordinierte Vorgänge:
+`ProjectContentParticipant` (Projektlöschung, ADR 0020) und seit Phase 4f
+`FloorCeilingHeightParticipant` (Prüfung einer neuen Geschoss-Standardhöhe, nur lesend,
+ADR 0022). Beide laufen in der Transaktion des Core unter der Projektsperre und werden über
+`ModuleDescriptor.provides` gebunden.
+
 ## 6. Schichten innerhalb eines Moduls
 
 ```

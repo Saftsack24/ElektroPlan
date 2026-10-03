@@ -15,7 +15,16 @@ const WERKZEUGE: readonly { wert: Werkzeug; label: string; taste: string; schrei
   { wert: "pan", label: "Verschieben", taste: "H", schreibend: false },
   { wert: "rechteck", label: "Rechteckraum", taste: "R", schreibend: true },
   { wert: "polygon", label: "Polygonraum", taste: "P", schreibend: true },
-  { wert: "oeffnung", label: "Öffnung", taste: "O", schreibend: true },
+];
+
+/**
+ * Tür, Fenster, Durchgang (Phase 4f): Ein Klick auf eine Wand öffnet deren
+ * Wandansicht mit diesem Werkzeug - gesetzt wird dort, nicht von oben.
+ */
+const OEFFNUNGSWERKZEUGE: readonly { art: Oeffnungsart; label: string; taste: string }[] = [
+  { art: "door", label: "Tür", taste: "T" },
+  { art: "window", label: "Fenster", taste: "N" },
+  { art: "passage", label: "Durchgang", taste: "D" },
 ];
 
 /**
@@ -71,18 +80,25 @@ export function Werkzeugleiste({
             {w.label}
           </button>
         ))}
-        {darfSchreiben && werkzeug === "oeffnung" && (
-          <select
-            aria-label="Art der Öffnung"
-            className={eingabefeld({ kompakt: true })}
-            value={oeffnungsart}
-            onChange={(event) => onOeffnungsart(event.target.value as Oeffnungsart)}
-          >
-            <option value="door">Tür</option>
-            <option value="window">Fenster</option>
-            <option value="passage">Durchgang</option>
-          </select>
-        )}
+        {darfSchreiben &&
+          OEFFNUNGSWERKZEUGE.map((o) => {
+            const aktiv = werkzeug === "oeffnung" && oeffnungsart === o.art;
+            return (
+              <button
+                key={o.art}
+                type="button"
+                className={aktiv ? WERKZEUG_AKTIV : WERKZEUG}
+                aria-pressed={aktiv}
+                title={`${o.label} (${o.taste}): Wand anklicken – die Wandansicht öffnet sich zum Setzen`}
+                onClick={() => {
+                  onOeffnungsart(o.art);
+                  onWerkzeug("oeffnung");
+                }}
+              >
+                {o.label}
+              </button>
+            );
+          })}
       </div>
 
       {darfSchreiben && (

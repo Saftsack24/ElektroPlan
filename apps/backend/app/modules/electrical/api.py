@@ -66,7 +66,7 @@ _READ_RESPONSES: dict[int | str, dict[str, object]] = {
 
 _CREATE_RESPONSES: dict[int | str, dict[str, object]] = {
     404: {"model": ProblemDetail, "description": "Nicht gefunden"},
-    409: {"model": ProblemDetail, "description": "Projekt ist archiviert"},
+    409: {"model": ProblemDetail, "description": "Projekt ist archiviert oder abgeschlossen"},
     422: {"model": ProblemDetail, "description": "Geometrie oder Eingabe unzulaessig"},
 }
 
@@ -74,7 +74,9 @@ _WRITE_RESPONSES: dict[int | str, dict[str, object]] = {
     404: {"model": ProblemDetail, "description": "Nicht gefunden"},
     409: {
         "model": ProblemDetail,
-        "description": "Versionskonflikt, archiviertes Projekt oder Wand mit Oeffnungen",
+        "description": (
+            "Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen"
+        ),
     },
     422: {"model": ProblemDetail, "description": "Geometrie oder Eingabe unzulaessig"},
     428: {"model": ProblemDetail, "description": "If-Match fehlt"},

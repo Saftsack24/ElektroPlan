@@ -122,6 +122,53 @@ export function wandUnterZeiger(
   return bester?.treffer ?? null;
 }
 
+/** Ergebnis der Raumseitenwahl: eine Wand - oder ein verständlicher Grund. */
+export type Raumwandtreffer = { readonly ok: true; readonly treffer: Wandtreffer } | { readonly ok: false; readonly grund: string };
+
+/**
+ * Die Wand **der angeklickten Raumseite** (Phase 4f): Liegen Wände mehrerer
+ * Räume übereinander (gemeinsame Wand), entscheidet, auf welcher Seite der
+ * Wandlinie der Zeiger steht - also in welchem Raum. Die Innenseite einer Wand
+ * folgt aus dem Umlaufsinn ihres Raums (gegen den Uhrzeigersinn: links der
+ * Wandrichtung). Steht der Zeiger genau auf der Linie oder außerhalb beider
+ * Räume, wird nichts geraten: Dann gilt der bearbeitete Raum, sonst ein Grund.
+ */
+export function raumwandUnterZeiger(
+  topologie: EditorTopologie,
+  welt: Punkt,
+  radiusMm: number,
+  raeume: readonly Raumwaende[],
+  aktiverRaum: string | null,
+): Raumwandtreffer | null {
+  const kandidaten: { treffer: Wandtreffer; abstand: number; innen: boolean }[] = [];
+  const innenLinks = new Map(
+    raeume.map((r) => [r.id, doppelteFlaecheVon(r.walls) > 0] as const),
+  );
+  for (const teilung of topologie.teilung.values()) {
+    const w = teilung.wand;
+    const abstand = abstandZurStrecke(welt, w.start, w.ende);
+    if (abstand > w.staerkeMm / 2 + radiusMm) continue;
+    const kreuz = (w.ende.x - w.start.x) * (welt.y - w.start.y) - (w.ende.y - w.start.y) * (welt.x - w.start.x);
+    const links = innenLinks.get(w.raumId) ?? true;
+    const innen = links ? kreuz > 0 : kreuz < 0;
+    kandidaten.push({ treffer: { raumId: w.raumId, wandId: w.id }, abstand, innen });
+  }
+  if (kandidaten.length === 0) return null;
+  const naechste = (liste: typeof kandidaten) =>
+    [...liste].sort((a, b) => a.abstand - b.abstand || (a.treffer.wandId < b.treffer.wandId ? -1 : 1))[0]?.treffer;
+  const raumIds = new Set(kandidaten.map((k) => k.treffer.raumId));
+  if (raumIds.size === 1) return { ok: true, treffer: naechste(kandidaten) as Wandtreffer };
+  const innen = kandidaten.filter((k) => k.innen);
+  if (new Set(innen.map((k) => k.treffer.raumId)).size === 1) return { ok: true, treffer: naechste(innen) as Wandtreffer };
+  const aktiv = kandidaten.filter((k) => k.treffer.raumId === aktiverRaum);
+  if (aktiv.length > 0) return { ok: true, treffer: naechste(aktiv) as Wandtreffer };
+  return { ok: false, grund: "Hier liegen Wände mehrerer Räume übereinander. Bitte etwas weiter in den gewünschten Raum klicken." };
+}
+
+function doppelteFlaecheVon(walls: Raumentwurf["walls"]): number {
+  return walls.reduce((s, w) => s + (w.x1_mm * w.y2_mm - w.x2_mm * w.y1_mm), 0);
+}
+
 // ------------------------------------------------------------ Platzierung
 
 export type Platzierung =
@@ -150,9 +197,15 @@ export interface Platzierungsoptionen {
   /** Fangschritt in mm; 1 bedeutet: ganze Millimeter, kein Fang. */
   readonly fangMm: number;
   /** Beim Verschieben: die bewegte Öffnung selbst. */
-  readonly ohneOeffnungId?: string;
+  readonly ohneOeffnungId?: string | undefined;
   readonly laengeText: (mm: number) => string;
   readonly raumName: (raumId: string) => string;
+  /**
+   * Wie eine vorhandene Öffnung in Meldungen benannt wird. Standard: Abstand
+   * ab Wandanfang („bei 100 cm“) wie im Grundriss; die Wandansicht nennt die
+   * Lage in ihrem eigenen Bezug („211,5 cm von links“).
+   */
+  readonly lageText?: ((offsetMm: number, breiteMm: number) => string) | undefined;
 }
 
 /**
@@ -201,29 +254,68 @@ export function platzierungBerechnen(
   const gefangen = optionen.fangMm > 1 ? Math.round(roh / optionen.fangMm) * optionen.fangMm : Math.round(roh);
   const offsetMm = Math.min(Math.max(gefangen, unten), oben - breiteMm) + 0;
 
-  // 4. Dieselbe exakte Einordnung wie für gespeicherte Öffnungen.
+  // 4.-5. Einordnung und Überlappung - dieselbe Prüfung wie in der Wandansicht.
+  const pruefung = bereichPruefen(teilung, offsetMm, breiteMm, optionen);
+  if (!pruefung.ok) return { ok: false, ...basis, offsetMm, grund: pruefung.grund };
+  return { ok: true, ...basis, offsetMm, klasse: pruefung.klasse, nachbarRaumId: pruefung.nachbarRaumId, abschnitt: pruefung.abschnitt };
+}
+
+export type Bereichspruefung =
+  | {
+      readonly ok: true;
+      readonly klasse: "gemeinsam" | "aussen";
+      readonly nachbarRaumId: string | null;
+      readonly abschnitt: Wandabschnitt<EditorWand>;
+    }
+  | { readonly ok: false; readonly grund: string };
+
+/**
+ * Darf eine Öffnung den waagerechten Bereich `[offset, offset + breite]` ihrer
+ * Wand einnehmen? Dieselbe Regel für Platzieren und Verschieben im
+ * Grundriss und in der Wandansicht (Phase 4f):
+ *
+ * 1. vollständig in der Wand (gerundete Länge),
+ * 2. eindeutige Raumverbindung - exakt wie bei gespeicherten Öffnungen,
+ * 3. keine Überlappung mit Öffnungen dieser Wand,
+ * 4. keine Überlappung mit Öffnungen, die ein Nachbarraum auf derselben
+ *    Wand gespeichert hat.
+ *
+ * Berührung an einer Kante ist erlaubt - wie beim Server.
+ */
+export function bereichPruefen(
+  teilung: Wandteilung<EditorWand>,
+  offsetMm: number,
+  breiteMm: number,
+  optionen: Pick<Platzierungsoptionen, "ohneOeffnungId" | "laengeText" | "raumName" | "lageText">,
+): Bereichspruefung {
+  const { wand, mass } = teilung;
+  const { laengeText: mm, raumName } = optionen;
+  if (!Number.isSafeInteger(offsetMm) || !Number.isSafeInteger(breiteMm) || breiteMm <= 0) {
+    return { ok: false, grund: "Lage und Breite müssen ganze Millimeter sein." };
+  }
+  if (offsetMm < 0 || offsetMm + breiteMm > teilung.laengeMm) {
+    return { ok: false, grund: `Die Öffnung muss vollständig in der Wand (${mm(teilung.laengeMm)}) liegen.` };
+  }
   const e = bereichEinordnen(teilung, offsetMm, breiteMm);
   if (e.klasse === "konflikt" || e.klasse === "ungueltig") {
     const grund =
       e.grund === "mehrdeutig"
         ? `Hier liegen Wände von mehr als zwei Räumen (${e.raumIds.map((r) => `„${raumName(r)}“`).join(", ")}). Eine Raumverbindung wäre nicht eindeutig - bitte an anderer Stelle setzen.`
-        : "An dieser Stelle ist die Raumverbindung nicht eindeutig - bitte etwas verschieben.";
-    return { ok: false, ...basis, offsetMm, grund };
+        : e.grund === "teilweise"
+          ? "Die Öffnung läge nur teilweise auf der gemeinsamen Wand - bitte ganz auf das gemeinsame oder ganz auf das nicht geteilte Wandstück setzen."
+          : e.grund === "grenze"
+            ? "Die Öffnung reichte über die Grenze zweier Nachbarräume - bitte etwas verschieben."
+            : "An dieser Stelle ist die Raumverbindung nicht eindeutig - bitte etwas verschieben.";
+    return { ok: false, grund };
   }
 
-  // 5. Keine Überlappung - weder mit Öffnungen dieser Wand noch mit solchen,
-  //    die ein Nachbarraum auf derselben Wand gespeichert hat.
   const ende = offsetMm + breiteMm;
   const eigene = wand.oeffnungen.find(
     (o) => o.oeffnungId !== optionen.ohneOeffnungId && offsetMm < o.offsetMm + o.breiteMm && o.offsetMm < ende,
   );
   if (eigene !== undefined) {
-    return {
-      ok: false,
-      ...basis,
-      offsetMm,
-      grund: `Überschneidet sich mit ${VORHANDEN[eigene.art]} bei ${mm(eigene.offsetMm)}.`,
-    };
+    const lage = optionen.lageText?.(eigene.offsetMm, eigene.breiteMm) ?? `bei ${mm(eigene.offsetMm)}`;
+    return { ok: false, grund: `Überschneidet sich mit ${VORHANDEN[eigene.art]} ${lage}.` };
   }
   const fremde = fremdeBereiche(teilung).find(
     (f) =>
@@ -234,20 +326,10 @@ export function platzierungBerechnen(
   if (fremde !== undefined) {
     return {
       ok: false,
-      ...basis,
-      offsetMm,
       grund: `Überschneidet sich mit einer Öffnung, die in „${raumName(fremde.raumId)}“ an dieser Wand gespeichert ist.`,
     };
   }
-
-  return {
-    ok: true,
-    ...basis,
-    offsetMm,
-    klasse: e.klasse,
-    nachbarRaumId: e.nachbarRaumId,
-    abschnitt: e.abschnitte[0] as Wandabschnitt<EditorWand>,
-  };
+  return { ok: true, klasse: e.klasse, nachbarRaumId: e.nachbarRaumId, abschnitt: e.abschnitte[0] as Wandabschnitt<EditorWand> };
 }
 
 /** Standardbreite einer neuen Öffnung dieser Art. */

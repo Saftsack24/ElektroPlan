@@ -18,10 +18,12 @@ from typing import Any
 import pytest
 
 from app.modules.electrical.geometry import (
+    OpeningKind,
     OpeningSpan,
     Point,
     Segment,
     contour_report,
+    opening_height_problems,
     opening_problems,
     segment_length_mm,
 )
@@ -65,5 +67,18 @@ def test_oeffnung(fall: dict[str, Any]) -> None:
         opening=OpeningSpan(key="o", offset_mm=offset, width_mm=breite),
         wall_length_mm=fall["wandlaenge_mm"],
         others=andere,
+    )
+    assert [befund.code for befund in befunde] == fall["codes"]
+
+
+@pytest.mark.parametrize("fall", DATEN["oeffnungshoehen"], ids=lambda fall: fall["name"])
+def test_oeffnungshoehe(fall: dict[str, Any]) -> None:
+    """Hoehenlage gegen die Raumhoehe (seit Phase 4f auch im Editor gespiegelt)."""
+    befunde = opening_height_problems(
+        key="o",
+        kind=OpeningKind(fall["art"]),
+        height_mm=fall["hoehe_mm"],
+        sill_height_mm=fall["bruestung_mm"],
+        room_height_mm=fall["raumhoehe_mm"],
     )
     assert [befund.code for befund in befunde] == fall["codes"]

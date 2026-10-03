@@ -66,7 +66,7 @@ export function ProjectStructureTab({
         <h2>Gebäude und Geschosse</h2>
         {schreibgeschuetzt && (
           <p className="text-muted">
-            Das Projekt ist archiviert — die Struktur ist schreibgeschützt.
+            Das Projekt ist abgeschlossen oder archiviert — die Struktur ist schreibgeschützt.
           </p>
         )}
         {haeuser.length === 0 ? (

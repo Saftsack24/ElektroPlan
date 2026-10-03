@@ -11,6 +11,8 @@ import { Grundrissszene } from "./szene";
 import type { Rueckmeldung } from "./szene";
 import { testumgebung } from "./szenentest";
 import { einfamilienhaus, plan, rechteck } from "./testplan";
+import { szenenmodellAus } from "./szenenmodell";
+import { mmAnzeigen } from "../../../core/masse";
 
 /**
  * 3D-Ansicht als React-Komponente (Phase 4b).
@@ -33,6 +35,8 @@ class Attrappe {
   readonly draufsicht = vi.fn();
   readonly zoomen = vi.fn<(faktor: number) => void>();
   readonly entsorgen = vi.fn();
+  readonly kamerastand = vi.fn(() => ({ position: [1, 2, 3] as const, ziel: [0, 0, 0] as const }));
+  readonly kamerastandSetzen = vi.fn();
   constructor(
     readonly behaelter: HTMLElement,
     readonly rueckmeldung: Rueckmeldung,
@@ -43,6 +47,7 @@ let szenen: Attrappe[];
 let fabrik: ReturnType<typeof vi.fn<(b: HTMLElement, r: Rueckmeldung) => Attrappe>>;
 let plaene: Record<string, Geschossplan | Error>;
 const onAnsicht = vi.fn();
+const onWandansicht = vi.fn();
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -75,6 +80,7 @@ function zeigen(
           floorId={p.floorId ?? "geschoss-1"}
           geschossLabel="Hauptgebäude · Erdgeschoss"
           onAnsicht={onAnsicht}
+          onWandansicht={onWandansicht}
           szeneErzeugen={p.szeneErzeugen ?? fabrik}
         />,
       )}
@@ -320,6 +326,111 @@ describe("Auswahl und Bedienung", () => {
     expect(within(seite).getByText("11,5 cm")).toBeInTheDocument();
     expect(within(seite).getByText(/Gemeinsame Wand \(innen\) zwischen „0.03 Flur“ und „0.05 HWR“/)).toBeInTheDocument();
     expect(within(seite).getByText("0.03 Flur, 0.05 HWR")).toBeInTheDocument();
+  });
+
+  it("Raumwand: ganze Wand des Raums mit voller Länge, Nachbarabschnitten und Weg zur Wandansicht (Phase 4f)", async () => {
+    // Flur-Südwand über zwei Nachbarn: Bad 0…3000, Küche 3000…6000.
+    plaene["geschoss-1"] = plan([
+      rechteck("flur", "Flur", [0, 4000], [6000, 6000], { nummer: "0.03" }),
+      rechteck("bad", "Bad", [0, 0], [3000, 4000], { nummer: "0.01" }),
+      rechteck("kueche", "Küche", [3000, 0], [6000, 4000], { nummer: "0.02", hoehe: 2600 }),
+    ]);
+    const modell = szenenmodellAus(plaene["geschoss-1"]);
+    const wand = modell.raumwaende.find((w) => w.id === "flur-w0")!;
+    expect(wand.abschnitte).toHaveLength(2);
+    zeigen();
+    await screen.findByText(/3 von 3 Räumen dargestellt/);
+    waehlen({ art: "raumwand", id: wand.id });
+    const seite = screen.getByRole("complementary", { name: "Informationen zur 3D-Ansicht" });
+    expect(within(seite).getByRole("heading", { name: new RegExp(`^Wand ${wand.nummer} von „`) })).toBeInTheDocument();
+    expect(within(seite).getByText(`${mmAnzeigen(wand.laengeMm, "cm")} (ganze Wand dieses Raums)`)).toBeInTheDocument();
+    const abschnitte = within(seite).getByRole("list", { name: "Abschnitte der Wand" });
+    expect(abschnitte).toHaveTextContent("0 cm bis 300 cm: grenzt an „0.01 Bad“");
+    expect(abschnitte).toHaveTextContent("300 cm bis 600 cm: grenzt an „0.02 Küche“ (Raumhöhe 260 cm)");
+    fireEvent.click(within(seite).getByRole("button", { name: "In der Wandansicht öffnen (Innenseite)" }));
+    // Seite und Rückkehrzustand (Geschoss, Kamera, Auswahl) gehen mit.
+    expect(onWandansicht).toHaveBeenCalledWith(
+      { raumId: wand.raumId, wandId: wand.id, seite: "innen" },
+      { floorId: "geschoss-1", kamera: { position: [1, 2, 3], ziel: [0, 0, 0] }, auswahl: { art: "raumwand", id: wand.id } },
+    );
+    expect(szenen[0]!.setzeAuswahl).toHaveBeenLastCalledWith({ art: "raumwand", id: wand.id });
+  });
+
+  it("Fassade: Gesamtlänge, Raumabschnitte; Wandansicht über den angeklickten Abschnitt oder die Raumwahl", async () => {
+    plaene["geschoss-1"] = plan([
+      rechteck("bad", "Bad", [0, 0], [3000, 4000], { nummer: "0.01" }),
+      rechteck("kueche", "Küche", [3000, 0], [6000, 4000], { nummer: "0.02" }),
+    ]);
+    const fassade = szenenmodellAus(plaene["geschoss-1"]).fassaden.find((f) => f.abschnitte.some((a) => a.wandId === "bad-w0"))!;
+    zeigen();
+    await screen.findByText(/2 von 2 Räumen dargestellt/);
+    waehlen({ art: "fassade", id: fassade.id, abschnitt: fassade.abschnitte[1]!.id });
+    const seite = screen.getByRole("complementary", { name: "Informationen zur 3D-Ansicht" });
+    expect(within(seite).getByRole("heading", { name: "Außenwand (Fassade)" })).toBeInTheDocument();
+    expect(within(seite).getByText("600 cm (durchgehend)")).toBeInTheDocument();
+    const liste = within(seite).getByRole("list", { name: "Abschnitte der Fassade" });
+    expect(liste).toHaveTextContent("0 cm bis 300 cm: Wand von „0.01 Bad“");
+    expect(liste).toHaveTextContent("300 cm bis 600 cm: Wand von „0.02 Küche“ (angeklickt)");
+    fireEvent.click(within(seite).getByRole("button", { name: "In der Wandansicht öffnen (Außenseite, Wand von „0.02 Küche“)" }));
+    expect(onWandansicht).toHaveBeenLastCalledWith({ raumId: "kueche", wandId: "kueche-w0", seite: "aussen" }, expect.anything());
+
+    // Ohne angeklickten Abschnitt: verständliche Raumwahl, nichts geraten.
+    waehlen({ art: "fassade", id: fassade.id });
+    const wahl = within(seite).getAllByRole("button", { name: /^Wand von „/ });
+    expect(wahl).toHaveLength(2);
+    fireEvent.click(wahl[0]!);
+    expect(onWandansicht).toHaveBeenLastCalledWith({ raumId: "bad", wandId: "bad-w0", seite: "aussen" }, expect.anything());
+  });
+
+  it("Rückkehr aus der Wandansicht: Kamera und Auswahl wie vorher, nicht neu eingepasst", async () => {
+    const modell = szenenmodellAus(einfamilienhaus());
+    const wand = modell.raumwaende[0]!;
+    const c = client();
+    render(
+      <QueryClientProvider client={c}>
+        <Ansicht3d
+          floorId="geschoss-1"
+          geschossLabel="Hauptgebäude · Erdgeschoss"
+          onAnsicht={onAnsicht}
+          anfang={{ floorId: "geschoss-1", kamera: { position: [4, 5, 6], ziel: [1, 0, 1] }, auswahl: { art: "raumwand", id: wand.id } }}
+          szeneErzeugen={fabrik}
+        />
+      </QueryClientProvider>,
+    );
+    await geladen();
+    const s = szenen[0]!;
+    expect(s.setzePlan).toHaveBeenCalledWith(expect.anything(), { einpassen: false });
+    expect(s.kamerastandSetzen).toHaveBeenCalledWith({ position: [4, 5, 6], ziel: [1, 0, 1] });
+    expect(s.setzeAuswahl).toHaveBeenLastCalledWith({ art: "raumwand", id: wand.id });
+  });
+
+  it("die Wandansicht erhält beim Öffnen den aktuellen Kamerastand für die Rückkehr", async () => {
+    zeigen();
+    await geladen();
+    const wand = szenenmodellAus(einfamilienhaus()).raumwaende[0]!;
+    waehlen({ art: "raumwand", id: wand.id });
+    fireEvent.click(screen.getByRole("button", { name: "In der Wandansicht öffnen (Innenseite)" }));
+    expect(onWandansicht).toHaveBeenLastCalledWith(expect.objectContaining({ seite: "innen" }), {
+      floorId: "geschoss-1",
+      kamera: { position: [1, 2, 3], ziel: [0, 0, 0] },
+      auswahl: { art: "raumwand", id: wand.id },
+    });
+  });
+
+  it("nicht eindeutige Raumseite: ausdrückliche Wahl statt Raten", async () => {
+    const modell = szenenmodellAus(einfamilienhaus());
+    const gemeinsam = modell.waende.find((w) => w.lage === "gemeinsam" && w.raumIds.length === 2)!;
+    zeigen();
+    await geladen();
+    waehlen({ art: "wandseite", id: gemeinsam.id });
+    const seite = screen.getByRole("complementary", { name: "Informationen zur 3D-Ansicht" });
+    expect(within(seite).getByRole("heading", { name: "Welche Wandseite?" })).toBeInTheDocument();
+    const knoepfe = within(seite).getAllByRole("button", { name: /^Innenseite – Wand von „/ });
+    expect(knoepfe).toHaveLength(2);
+    // Eine gemeinsame Wand hat keine Fassade.
+    expect(within(seite).queryByRole("button", { name: "Außenseite – Fassade" })).toBeNull();
+    fireEvent.click(knoepfe[0]!);
+    expect(szenen[0]!.setzeAuswahl).toHaveBeenLastCalledWith({ art: "raumwand", id: expect.any(String) as string });
   });
 
   it("folgt der persönlichen Maßeinheit sofort - ohne neu einzupassen", async () => {
