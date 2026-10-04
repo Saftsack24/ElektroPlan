@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.contracts.v1.reference_data import ReferenceDataResult, ReferenceDataSeeder
 from app.core.auth.security import hash_password
 from app.core.authorization.permissions import ADMIN_ROLE_KEY
 from app.core.authorization.service import assign_role, ensure_system_roles, sync_permissions
@@ -37,6 +38,22 @@ class SeedResult:
     created_organization: bool
     created_admin: bool
     permissions_created: int
+    #: Mitgelieferte Systemkataloge der Module (ADR 0023), nach Modul-ID sortiert.
+    reference_data: tuple[ReferenceDataResult, ...] = ()
+
+
+def seed_reference_data(
+    session: Session, registry: ModuleRegistry
+) -> tuple[ReferenceDataResult, ...]:
+    """Laesst jedes Modul seinen Systemkatalog idempotent abgleichen.
+
+    Der Core kennt dabei weder Tabellen noch Inhalte (ADR 0001); er ruft nur
+    die registrierten Teilnehmer auf, nach Modul-ID sortiert. Kein Commit.
+    """
+    return tuple(
+        implementation().seed_reference_data(session)
+        for _module_id, implementation in registry.port_implementations(ReferenceDataSeeder)
+    )
 
 
 def seed_initial_data(
@@ -61,6 +78,7 @@ def seed_initial_data(
         raise ValueError(msg)
 
     permissions_created = sync_permissions(session, registry)
+    reference_data = seed_reference_data(session, registry)
 
     slug = slugify(organization_name)
     organization = session.execute(
@@ -118,6 +136,10 @@ def seed_initial_data(
         created_organization=created_organization,
         created_admin=created_admin,
         permissions_created=permissions_created,
+        reference_data=[
+            f"{item.module_id}: +{item.created} ~{item.updated} -{item.deactivated}"
+            for item in reference_data
+        ],
     )
     return SeedResult(
         organization_id=organization.id,
@@ -125,4 +147,5 @@ def seed_initial_data(
         created_organization=created_organization,
         created_admin=created_admin,
         permissions_created=permissions_created,
+        reference_data=reference_data,
     )

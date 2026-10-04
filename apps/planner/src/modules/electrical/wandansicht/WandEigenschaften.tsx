@@ -20,7 +20,7 @@ const LISTENKNOPF_GEWAEHLT = `${knopf("gewaehlt")} w-full text-left`;
  * wird - genau so, wie eingegeben: kein Fang, kein Raster, keine Rundung.
  * Ein unzulässiger Wert ändert nichts und nennt den Grund am Feld.
  */
-function MassFeld({
+export function MassFeld({
   id,
   label,
   wertMm,

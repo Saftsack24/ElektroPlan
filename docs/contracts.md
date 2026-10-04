@@ -321,6 +321,16 @@ class ModuleDescriptor:
     provides: tuple[PortBinding, ...]
 ```
 
+**Synchrone Teilnehmer-Contracts über `provides`** (keine Datenlieferanten, sondern Teil einer
+vom Core koordinierten Operation; `ModuleRegistry.port_implementations` liefert sie nach
+Modul-ID sortiert):
+
+| Contract | Datei | Seit | Zweck |
+|---|---|---|---|
+| `ProjectContentParticipant` | `app/contracts/v1/project_lifecycle.py` | 4d, ADR 0020 | Inhalte eines Projekts melden und bei der Projektlöschung eigene Daten löschen |
+| `FloorCeilingHeightParticipant` | `app/contracts/v1/floor_planning.py` | 4f, ADR 0022 | neue Geschoss-Standardhöhe prüfen (Electrical: Öffnungen und seit Phase 5 Wandgeräte) |
+| `ReferenceDataSeeder` | `app/contracts/v1/reference_data.py` | 5, ADR 0023 | mitgelieferten Systemkatalog im Seed idempotent abgleichen – nie löschend, ohne Commit, ohne Mandantendaten |
+
 ---
 
 ## 10. Event-Envelope

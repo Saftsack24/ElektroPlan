@@ -33,10 +33,19 @@ from sqlalchemy.orm import Session
 from app.contracts.v1.floor_planning import FloorCeilingHeightChange, FloorCeilingHeightConflict
 from app.modules.electrical import geometry
 from app.modules.electrical.geometry import OpeningKind
-from app.modules.electrical.models import ElectricalOpening, ElectricalRoom, ElectricalWall
+from app.modules.electrical.models import (
+    ElectricalDevice,
+    ElectricalDeviceType,
+    ElectricalOpening,
+    ElectricalRoom,
+    ElectricalWall,
+)
 
 #: Der einzige Befund, der von der Raumhoehe abhaengt.
 EXCEEDS = "opening-exceeds-room-height"
+#: Dasselbe fuer Wandgeraete (Phase 5). Deckengeraete folgen der Decke und
+#: koennen durch eine Hoehenaenderung nicht unzulaessig werden.
+DEVICE_EXCEEDS = "device-exceeds-room-height"
 
 #: Kurzname je Art - die Meldung muss mehrere Oeffnungen einer Wand unterscheiden.
 _ART = {"door": "Tuer", "window": "Fenster", "passage": "Durchgang"}
@@ -121,4 +130,71 @@ class ElectricalFloorHeightCheck:
                     code=EXCEEDS, message=message, keys=(str(room.id), str(opening.id))
                 )
             )
+        conflicts.extend(self._device_conflicts(session, change))
         return tuple(conflicts)
+
+    def _device_conflicts(
+        self, session: Session, change: FloorCeilingHeightChange
+    ) -> list[FloorCeilingHeightConflict]:
+        """Wandgeraete in Raeumen mit geerbter Hoehe - dieselbe Regel wie fuer Oeffnungen.
+
+        Oberkante = Mitte + halbes Planungsmass des Typs. Abgelehnt wird jede
+        Absenkung, nach der eine Oberkante ueber der Decke laege.
+        """
+        neu = change.proposed_default_ceiling_height_mm
+        bisher = change.current_default_ceiling_height_mm
+        if neu >= bisher:
+            return []
+        rows = session.execute(
+            select(ElectricalRoom, ElectricalWall, ElectricalDevice, ElectricalDeviceType)
+            .join(
+                ElectricalDevice,
+                (ElectricalDevice.organization_id == ElectricalRoom.organization_id)
+                & (ElectricalDevice.room_id == ElectricalRoom.id),
+            )
+            .join(
+                ElectricalWall,
+                (ElectricalWall.organization_id == ElectricalDevice.organization_id)
+                & (ElectricalWall.id == ElectricalDevice.wall_id),
+            )
+            .join(
+                ElectricalDeviceType, ElectricalDeviceType.key == ElectricalDevice.device_type_key
+            )
+            .where(
+                ElectricalRoom.organization_id == change.organization_id,
+                ElectricalRoom.floor_id == change.floor_id,
+                ElectricalRoom.height_mm.is_(None),
+            )
+            .order_by(
+                ElectricalRoom.name.asc(),
+                ElectricalRoom.id.asc(),
+                ElectricalWall.sort_order.asc(),
+                ElectricalDevice.id.asc(),
+            )
+            .execution_options(populate_existing=True)
+        ).all()
+        conflicts: list[FloorCeilingHeightConflict] = []
+        for room, wall, device, kind in rows:
+            if device.center_height_mm is None:
+                continue
+            top = device.center_height_mm + kind.height_mm // 2
+            if top <= neu:
+                continue
+            ort = f'Raum "{_label(room)}", Wand {wall.sort_order + 1}, {kind.label}: '
+            if top > bisher:
+                message = (
+                    f"{ort}Die Oberkante des Geraets liegt bei {top} mm und schon jetzt ueber der "
+                    f"Standardhoehe von {bisher} mm. Eine Absenkung auf {neu} mm wuerde den "
+                    "Konflikt vergroessern."
+                )
+            else:
+                message = (
+                    f"{ort}Die Oberkante des Geraets liegt bei {top} mm, die neue Standardhoehe "
+                    f"betraegt {neu} mm."
+                )
+            conflicts.append(
+                FloorCeilingHeightConflict(
+                    code=DEVICE_EXCEEDS, message=message, keys=(str(room.id), str(device.id))
+                )
+            )
+        return conflicts

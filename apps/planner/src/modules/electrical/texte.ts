@@ -10,6 +10,32 @@ import type { components } from "@elektroplan/api-client";
 type Schemas = components["schemas"];
 
 export type Oeffnungsart = Schemas["OpeningCreate"]["kind"];
+export type Raumtyp = NonNullable<Schemas["RoomOut"]["room_type"]>;
+
+/**
+ * Raumtypen (T7, Phase 5): stabile technische Schlüssel, deutsche Namen. Nur
+ * zur Einordnung - kein Typ löst etwas aus (keine Ausstattungsvorlage).
+ */
+export const RAUMTYPEN: readonly { wert: Raumtyp; label: string }[] = [
+  { wert: "living_room", label: "Wohnzimmer" },
+  { wert: "bedroom", label: "Schlafzimmer" },
+  { wert: "children_room", label: "Kinderzimmer" },
+  { wert: "kitchen", label: "Küche" },
+  { wert: "bathroom", label: "Bad/WC" },
+  { wert: "hallway", label: "Flur" },
+  { wert: "office", label: "Büro" },
+  { wert: "utility_room", label: "Hauswirtschaft" },
+  { wert: "technical_room", label: "Technikraum" },
+  { wert: "basement", label: "Keller" },
+  { wert: "garage", label: "Garage" },
+  { wert: "other", label: "Sonstiges" },
+];
+
+export const RAUMTYP_LABEL: Record<Raumtyp, string> = Object.fromEntries(RAUMTYPEN.map((t) => [t.wert, t.label])) as Record<Raumtyp, string>;
+
+export function raumtypAusWert(wert: string): Raumtyp | null {
+  return RAUMTYPEN.find((t) => t.wert === wert)?.wert ?? null;
+}
 export type Konturzustand = Schemas["RoomOut"]["contour_status"];
 
 export const OEFFNUNGSARTEN: readonly { wert: Oeffnungsart; label: string }[] = [

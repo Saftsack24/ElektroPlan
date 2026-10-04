@@ -4,7 +4,13 @@ import type { Dispatch, KeyboardEvent } from "react";
 import { Dialog } from "../../../core/ui/Dialog";
 import { useMasse } from "../../../core/ui/masseinheit";
 import { KNOPF_GRUND, eingabefeld, knopf, meldungsflaeche } from "../../../core/ui/stil";
-import type { EntwurfWand, Oeffnungsart, RaumImPlan } from "../editor/entwurf";
+import type { EntwurfGeraet, EntwurfWand, Oeffnungsart, RaumImPlan } from "../editor/entwurf";
+import { geraetAendern, geraetEntfernen } from "../geraete/geraeteentwurf";
+import type { Geraetetypen } from "../geraete/katalog";
+import { typenFuer } from "../geraete/katalog";
+import { Geraetelegende } from "../geraete/symbole";
+import { GeraetEigenschaften, TypAuswahl } from "./GeraetEigenschaften";
+import { flaecheDerSeite, geraeteInAnsicht, geraetLagePruefen } from "./wandgeraete";
 import { RASTERGROESSEN_MM } from "../editor/fang";
 import type { EditorEinordnung, EditorTopologie } from "../editor/platzierung";
 import { oeffnungAendern, oeffnungEntfernen } from "../editor/werkzeuge";
@@ -30,6 +36,7 @@ const WERKZEUGE: readonly { wert: Wandwerkzeug; label: string; taste: string; sc
   { wert: "door", label: "Tür", taste: "T", schreibend: true },
   { wert: "window", label: "Fenster", taste: "N", schreibend: true },
   { wert: "passage", label: "Durchgang", taste: "D", schreibend: true },
+  { wert: "geraet", label: "Gerät", taste: "G", schreibend: true },
 ];
 
 export interface Wandziel {
@@ -39,6 +46,8 @@ export interface Wandziel {
   readonly werkzeug?: Oeffnungsart;
   /** Beim Öffnen ausgewählte Öffnung (Einstieg über eine vorhandene Öffnung). */
   readonly oeffnungId?: string;
+  /** Beim Öffnen ausgewähltes Gerät (Phase 5, etwa „An Wand bearbeiten“ aus 3D). */
+  readonly geraetId?: string;
   /**
    * Betrachtete Seite (Ansichtskontext, Phase 4f): Innenseite des Raums oder
    * Außenseite. Standard: innen. Bearbeitet wird immer dieselbe Raumwand.
@@ -79,6 +88,9 @@ export function Wandansicht({
   onWechseln,
   onQuelleBearbeiten,
   onSchliessen,
+  typen = new Map(),
+  geraeteVon = () => [],
+  geraetebefunde = new Map(),
 }: {
   ziel: Wandziel;
   zustand: EditorZustand;
@@ -103,6 +115,12 @@ export function Wandansicht({
   /** Wechselt (mit Rückfrage) in den Quellraum und zeigt dort die Wand. */
   onQuelleBearbeiten: (ziel: Wandziel, oeffnungId: string | null) => void;
   onSchliessen: () => void;
+  /** Phase 5: Gerätekatalog. */
+  typen?: Geraetetypen;
+  /** Geräte eines Raums im gezeigten Stand - aktiver Raum aus dem Entwurf. */
+  geraeteVon?: (raumId: string) => readonly EntwurfGeraet[];
+  /** Befundcodes je Gerät (lokale Prüfung und letzte Serverantwort). */
+  geraetebefunde?: ReadonlyMap<string, readonly string[]>;
 }) {
   const masse = useMasse();
   const [werkzeug, setWerkzeug] = useState<Wandwerkzeug>(ziel.werkzeug ?? "auswahl");
@@ -123,23 +141,44 @@ export function Wandansicht({
     [ergebnis, wand, topologie, einordnung],
   );
   const teilung = topologie.teilung.get(ziel.wandId);
+  const raumGeraete = geraeteVon(ziel.raumId);
+  const geraete = useMemo(
+    () => (ergebnis.ok ? geraeteInAnsicht(ergebnis.bezug, raumGeraete, typen, geraetebefunde) : []),
+    [ergebnis, raumGeraete, typen, geraetebefunde],
+  );
+  const andereSeite = raumGeraete.filter((g) => g.wall_id === ziel.wandId && g.mounting_surface !== flaecheDerSeite(seite)).length;
+  // Typ für das Werkzeug „Gerät“ - nur Typen, die auf dieser Seite zulässig sind.
+  const waehlbar = typenFuer(typen, flaecheDerSeite(seite));
+  const [geraetetypWahl, setGeraetetypWahl] = useState<string | null>(null);
+  const geraetetyp = waehlbar.find((t) => t.key === geraetetypWahl) ?? waehlbar[0] ?? null;
 
   // Auswahl: im aktiven Raum dieselbe wie im Grundriss; sonst nur hier.
-  const ausGrundriss = zustand.auswahl?.art === "oeffnung" && zustand.auswahl.wandId === ziel.wandId ? zustand.auswahl.oeffnungId : null;
-  const [lokal, setLokal] = useState<string | null>(ziel.oeffnungId ?? ausGrundriss);
+  const ausGrundriss =
+    zustand.auswahl?.art === "oeffnung" && zustand.auswahl.wandId === ziel.wandId
+      ? zustand.auswahl.oeffnungId
+      : zustand.auswahl?.art === "geraet"
+        ? zustand.auswahl.geraetId
+        : null;
+  const [lokal, setLokal] = useState<string | null>(ziel.oeffnungId ?? ziel.geraetId ?? ausGrundriss);
   // Anderes Ziel (Gegenseite, Quelle, neuer Einstieg): Auswahl und Werkzeug neu.
   const [gezeigt, setGezeigt] = useState(ziel);
   if (gezeigt !== ziel) {
     setGezeigt(ziel);
-    setLokal(ziel.oeffnungId ?? ausGrundriss);
+    setLokal(ziel.oeffnungId ?? ziel.geraetId ?? ausGrundriss);
     setWerkzeug(ziel.werkzeug ?? "auswahl");
   }
-  const gewaehlt = modell?.oeffnungen.some((o) => o.id === lokal) === true ? lokal : null;
+  const gewaehlt = modell?.oeffnungen.some((o) => o.id === lokal) === true || geraete.some((g) => g.id === lokal) ? lokal : null;
+  const gewaehltesGeraet = geraete.find((g) => g.id === gewaehlt);
   const waehlen = (id: string | null) => {
     setLokal(id);
     if (aktiverRaum !== ziel.raumId) return;
     // Eine gerade gesetzte Öffnung steht noch nicht im Modell dieses Renderlaufs;
     // sie gehört aber sicher zu dieser Wand. Abgeleitete gehören einem anderen Raum.
+    const istGeraet = id !== null && (geraete.some((g) => g.id === id) || zustand.entwurf?.geraete.some((g) => g.id === id) === true);
+    if (istGeraet && id !== null) {
+      dispatch({ typ: "auswaehlen", auswahl: { art: "geraet", raumId: ziel.raumId, geraetId: id } });
+      return;
+    }
     const o = modell?.oeffnungen.find((x) => x.id === id);
     const eigen = id !== null && (o === undefined || o.eigen);
     dispatch({
@@ -149,6 +188,40 @@ export function Wandansicht({
           ? { art: "oeffnung", raumId: ziel.raumId, wandId: ziel.wandId, oeffnungId: id }
           : { art: "wand", raumId: ziel.raumId, wandId: ziel.wandId },
     });
+  };
+
+  // ------------------------------------------------------------ Geräte (Phase 5)
+
+  /** Exakte Lage eines Geräts (Mitte in der Ansicht) - geprüft wie beim Server. */
+  const geraetLageSetzen = (id: string, u: number, h: number, typKey?: string): string | undefined => {
+    if (!ergebnis.ok || zustand.entwurf === null || !editierbar) return "Nur im bearbeiteten Raum änderbar.";
+    const g = geraete.find((x) => x.id === id);
+    const typ = typen.get(typKey ?? g?.schluessel ?? "");
+    if (g === undefined || typ === undefined) return "Gerät nicht gefunden.";
+    const wand = teilung?.wand;
+    if (wand === undefined) return "Die Wand ist im aktuellen Stand nicht vorhanden.";
+    const p = geraetLagePruefen(ergebnis.bezug, wand, teilung, typ, u, h, geraete, id);
+    if (!p.ok) return p.grund;
+    dispatch({
+      typ: "aendern",
+      entwurf: geraetAendern(zustand.entwurf, id, { center_offset_mm: p.mitte, center_height_mm: p.mittelhoehe, ...(typKey !== undefined ? { device_type_key: typKey } : {}) }),
+    });
+    setStatuszeile("Übernommen - noch nicht gespeichert.");
+    return undefined;
+  };
+
+  const geraetEntfernenAktion = (id: string) => {
+    if (zustand.entwurf === null || zustand.basis === null || !editierbar) return;
+    const gespeichert = new Set(zustand.basis.entwurf.geraete.map((g) => g.id));
+    dispatch({ typ: "aendern", entwurf: geraetEntfernen(zustand.entwurf, id, gespeichert) });
+    waehlen(null);
+    setStatuszeile("Gerät entfernt - noch nicht gespeichert.");
+  };
+
+  const geraetLabelSetzen = (id: string, label: string | null) => {
+    if (zustand.entwurf === null || !editierbar) return;
+    dispatch({ typ: "aendern", entwurf: geraetAendern(zustand.entwurf, id, { label }) });
+    setStatuszeile("Beschriftung übernommen - noch nicht gespeichert.");
   };
 
   // Ohne Schreibrecht nur betrachten; ein anderes Werkzeug ist dann nicht wählbar.
@@ -205,6 +278,11 @@ export function Wandansicht({
 
   // Pfeiltasten: 1 cm, mit Umschalt 10 cm - jeder Druck ein Rückgängig-Schritt.
   const schieben = (du: number, dh: number) => {
+    if (gewaehltesGeraet !== undefined) {
+      const grund = geraetLageSetzen(gewaehltesGeraet.id, gewaehltesGeraet.u + du, gewaehltesGeraet.h + dh);
+      setStatuszeile(grund === undefined ? `Verschoben: Mitte ${masse.anzeigen(gewaehltesGeraet.u + du)} von links, ${masse.anzeigen(gewaehltesGeraet.h + dh)} über Boden` : `Nicht verschoben: ${grund}`);
+      return;
+    }
     const o = modell?.oeffnungen.find((x) => x.id === gewaehlt);
     if (o === undefined || !o.eigen || !editierbar) return;
     if (dh !== 0 && o.art !== "window") {
@@ -258,6 +336,11 @@ export function Wandansicht({
         return;
       case "Delete":
       case "Backspace":
+        if (gewaehltesGeraet !== undefined && editierbar) {
+          event.preventDefault();
+          geraetEntfernenAktion(gewaehltesGeraet.id);
+          return;
+        }
         if (gewaehlt !== null && modell?.oeffnungen.find((x) => x.id === gewaehlt)?.eigen === true) {
           event.preventDefault();
           entfernen(gewaehlt);
@@ -271,7 +354,7 @@ export function Wandansicht({
         return;
     }
     const werkzeuge: Record<string, Wandwerkzeug> = { v: "auswahl", h: "pan" };
-    if (editierbar) Object.assign(werkzeuge, { t: "door", n: "window", d: "passage" });
+    if (editierbar) Object.assign(werkzeuge, { t: "door", n: "window", d: "passage", g: "geraet" });
     const w = werkzeuge[k];
     if (w !== undefined) setWerkzeug(w);
     else if (k === "f") flaeche.current?.ansichtZuruecksetzen();
@@ -297,7 +380,9 @@ export function Wandansicht({
   // Die Außenseite ist nur dort eine Fassade, wo die Wand an keinen anderen Raum grenzt.
   const hatFassade = modell?.abschnitte.some((a) => a.nachbarn.length === 0) === true;
   const seitenname = seite === "innen" ? `Innenseite – ${raumName(ziel.raumId)}` : hatFassade ? "Außenseite – Fassade" : "Außenseite";
-  const seiteWechseln = () => onWechseln({ raumId: ziel.raumId, wandId: ziel.wandId, seite: seite === "innen" ? "aussen" : "innen", ...(ziel.herkunft !== undefined ? { herkunft: ziel.herkunft } : {}), ...(gewaehlt !== null ? { oeffnungId: gewaehlt } : {}) });
+  // Ein Gerät gehört zu seiner Seite; beim Seitenwechsel bleibt nur eine Öffnung gewählt.
+  const gewaehlteOeffnung = gewaehltesGeraet === undefined ? gewaehlt : null;
+  const seiteWechseln = () => onWechseln({ raumId: ziel.raumId, wandId: ziel.wandId, seite: seite === "innen" ? "aussen" : "innen", ...(ziel.herkunft !== undefined ? { herkunft: ziel.herkunft } : {}), ...(gewaehlteOeffnung !== null ? { oeffnungId: gewaehlteOeffnung } : {}) });
 
   return (
     <Dialog offen titel={titel} groesse="gross" onClose={onSchliessen} onEscape={escape}>
@@ -343,6 +428,18 @@ export function Wandansicht({
               </button>
             ))}
           </div>
+          {editierbar && werkzeug === "geraet" && (
+            <div className="min-w-[220px]">
+              <TypAuswahl
+                id="wand-werkzeug-typ"
+                label={seite === "innen" ? "Gerät für die Innenseite" : "Gerät für die Fassade"}
+                typen={typen}
+                flaeche={flaecheDerSeite(seite)}
+                wert={geraetetyp?.key ?? null}
+                onWahl={setGeraetetypWahl}
+              />
+            </div>
+          )}
           {editierbar && (
             <div className="flex flex-wrap items-center gap-1">
               <button type="button" className={WERKZEUG} disabled={zustand.zurueck.length === 0} title="Rückgängig (Strg+Z)" onClick={() => dispatch({ typ: "rueckgaengig" })}>
@@ -407,6 +504,8 @@ export function Wandansicht({
                   raumName={raumName}
                   nachbarHoehe={nachbarHoehe}
                   onStatus={setStatuszeile}
+                  geraete={geraete}
+                  geraetetyp={geraetetyp}
                 />
               </div>
               {/* Feste Höhe: Die Fläche springt nicht, wenn der Text wechselt. */}
@@ -428,6 +527,22 @@ export function Wandansicht({
                   )}
                 </div>
               )}
+              <GeraetEigenschaften
+                bezug={ergebnis.bezug}
+                geraete={geraete}
+                gewaehlt={gewaehlt}
+                typen={typen}
+                editierbar={editierbar}
+                andereSeite={andereSeite}
+                onWaehlen={waehlen}
+                onLage={(id, u, h) => geraetLageSetzen(id, u, h)}
+                onTyp={(id, key) => {
+                  const g = geraete.find((x) => x.id === id);
+                  return g === undefined ? "Gerät nicht gefunden." : geraetLageSetzen(id, g.u, g.h, key);
+                }}
+                onLabel={geraetLabelSetzen}
+                onEntfernen={geraetEntfernenAktion}
+              />
               <WandEigenschaften
                 bezug={ergebnis.bezug}
                 modell={modell}
@@ -455,8 +570,14 @@ export function Wandansicht({
                   <li>Öffnung ziehen verschiebt sie (Fenster auch in der Höhe); die Griffe ändern Breite, Höhe und Brüstung.</li>
                   <li>Einrasten an Wandkanten, Wandmitte, Kanten und Mitten anderer Öffnungen, gleicher Brüstung und Oberkante, sonst am Raster. Alt hält es beim Ziehen aus.</li>
                   <li>Pfeiltasten verschieben die gewählte Öffnung um 1 cm, mit Umschalt um 10 cm. Entf entfernt sie, Escape bricht ab.</li>
+                  <li>Gerät (G): Typ wählen, Vorschau folgt dem Zeiger, ein Klick setzt es auf genau dieser Seite. Ziehen verschiebt es; Pfeiltasten 1 cm, mit Umschalt 10 cm; Entf entfernt es. Eingerastet wird an Wandmitte, Kanten, Achsen anderer Geräte, der Standardhöhe des Typs, Boden und Decke.</li>
+                  <li>Innen und außen sind getrennte Montageflächen: Ein Gerät außen bleibt außen, der Seitenwechsel der Ansicht ändert nichts.</li>
                   <li>Strg+Z / Strg+Y gelten für den gemeinsamen Entwurf mit dem Grundriss. Schließen behält alle Änderungen – gespeichert wird nur mit „Speichern“.</li>
                 </ul>
+              </details>
+              <details className="mt-2 text-[0.85rem]">
+                <summary className="cursor-pointer text-muted">Legende der Gerätesymbole</summary>
+                <Geraetelegende typen={typen} />
               </details>
             </aside>
           </div>

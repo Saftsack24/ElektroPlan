@@ -28,7 +28,7 @@ function wert<T>(e: { wert: T } | { fehler: string }): T {
 }
 
 function rechteck(): Raumentwurf {
-  return { roomId: "r", entfernteOeffnungen: [], walls: wert(rechteckWaende({ x: 0, y: 0 }, { x: 5000, y: 4000 }, 115, IDS)) };
+  return { roomId: "r", entfernteOeffnungen: [], geraete: [], entfernteGeraete: [], walls: wert(rechteckWaende({ x: 0, y: 0 }, { x: 5000, y: 4000 }, 115, IDS)) };
 }
 
 describe("Rechteckraum", () => {

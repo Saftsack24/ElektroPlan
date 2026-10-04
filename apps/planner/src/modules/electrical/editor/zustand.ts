@@ -43,6 +43,8 @@ export type Auswahl =
   | { art: "wand"; raumId: string; wandId: string }
   | { art: "ecke"; raumId: string; punkt: Punkt }
   | { art: "oeffnung"; raumId: string; wandId: string; oeffnungId: string }
+  /** Phase 5: ein Gerät des Raums (Wand innen/außen oder Decke). */
+  | { art: "geraet"; raumId: string; geraetId: string }
   | null;
 
 export interface Fehlereintrag {

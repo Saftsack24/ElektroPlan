@@ -92,7 +92,22 @@ DELETE /openings/{opening_id}              If-Match
 GET    /floors/{floor_id}/plan             Planungsstand eines Geschosses in einer Antwort
 PUT    /rooms/{room_id}/contour            If-Match (Raumversion) - Raumgeometrie atomar ersetzen
 POST   /floors/{floor_id}/rooms            optional mit `walls` - Raum samt Kontur atomar
+
+# Phase 5 (Geräte, ADR 0023)
+GET    /device-types                       Systemkatalog der Gerätetypen (aktiv und deaktiviert)
+PUT    /rooms/{room_id}/contour            zusätzlich `devices` (vollständige Liste) und
+                                           `removed_device_ids` - Geometrie und Geräte gemeinsam
 ```
+
+**Geräte (Phase 5).** Kein eigener Schreibendpunkt: Geräte gehören zum Raumentwurf und
+werden mit `PUT …/contour` unter der Raumversion gespeichert (fehlt `devices`, bleiben sie
+unverändert und werden gegen die neue Geometrie geprüft). Der Planungsstand liefert je Raum
+`devices`, `RoomOut` den optionalen `room_type`. Neue Fehlercodes (`422`, `field = devices`):
+`device-type-unknown`, `device-type-inactive`, `device-surface-not-allowed`,
+`device-surface-changed`, `device-wall-unknown`, `device-outside-wall`, `device-below-floor`,
+`device-exceeds-room-height`, `device-in-opening`, `device-exterior-on-shared-wall`,
+`device-ceiling-contour-open`, `device-outside-room`, `devices-overlap`, `device-missing`,
+`device-foreign`, `device-id-duplicate`, `device-list-missing`; `409 wall-has-devices`.
 
 **Raumversion = Version der Raumgeometrie (seit Phase 4a).** Jede wirksame Änderung an
 Wänden oder Öffnungen eines Raums zählt auch die Raumversion weiter. Wer danach den Raum

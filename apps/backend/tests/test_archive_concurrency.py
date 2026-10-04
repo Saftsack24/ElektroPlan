@@ -52,8 +52,10 @@ from app.core.projects.schemas import (
 from app.core.projects.service import ProjectService
 from app.core.users.models import User
 from app.errors import ProjectArchivedError
-from app.modules.electrical.models import ElectricalOpening, ElectricalRoom
+from app.modules.electrical.models import ElectricalDevice, ElectricalOpening, ElectricalRoom
+from app.modules.electrical.reference_data import ElectricalReferenceData
 from app.modules.electrical.schemas import (
+    ContourDeviceIn,
     ContourOpeningIn,
     ContourWallIn,
     OpeningCreate,
@@ -120,6 +122,8 @@ def welt(factory: sessionmaker[Session]) -> Welt:
             building.id, FloorCreate(name="Erdgeschoss", level=0), actor_user_id=ACTOR
         )
 
+        # Geraetekatalog (Phase 5) - sonst liesse sich kein Geraet speichern.
+        ElectricalReferenceData().seed_reference_data(session)
         electrical = ElectricalRoomService(session, organization.id)
         view, _ = electrical.create_room(floor.id, RoomCreate(name="Wohnzimmer"))
         detail, _ = electrical.create_wall(
@@ -194,6 +198,28 @@ def kontur_speichern(session: Session, welt: Welt) -> None:
     )
 
 
+def geraete_speichern(session: Session, welt: Welt) -> None:
+    """Der Raumentwurf mit einem neuen Wandgeraet (Phase 5) - Geometrie unveraendert."""
+    service = ElectricalRoomService(session, welt.organization_id)
+    version = service.get_room(welt.room_id).room.version
+    service.replace_contour(
+        welt.room_id,
+        RoomContourUpdate(
+            walls=[ContourWallIn(id=welt.wall_id, x1_mm=0, y1_mm=0, x2_mm=5_000, y2_mm=0)],
+            devices=[
+                ContourDeviceIn(
+                    device_type_key="socket_single",
+                    mounting_surface="wall_interior",
+                    wall_id=welt.wall_id,
+                    center_offset_mm=2_500,
+                    center_height_mm=300,
+                )
+            ],
+        ),
+        expected_version=version,
+    )
+
+
 def gebaeude_anlegen(session: Session, welt: Welt) -> None:
     ProjectService(session, welt.organization_id).create_building(
         welt.project_id, BuildingCreate(name="Garage"), actor_user_id=ACTOR
@@ -247,6 +273,7 @@ SCHREIBWEGE: tuple[tuple[str, Fachaenderung], ...] = (
     ("wand-aendern", wand_aendern),
     ("oeffnung-anlegen", oeffnung_anlegen),
     ("kontur-speichern", kontur_speichern),
+    ("geraete-speichern", geraete_speichern),
     ("gebaeude-anlegen", gebaeude_anlegen),
     ("geschoss-anlegen", geschoss_anlegen),
     ("projekt-aendern", projekt_aendern),
@@ -303,6 +330,9 @@ def _bestand(factory: sessionmaker[Session], welt: Welt) -> dict[str, int]:
             ),
             "dateien": zaehlen(
                 select(func.count()).where(FileRecord.project_id == welt.project_id)
+            ),
+            "geraete": zaehlen(
+                select(func.count()).where(ElectricalDevice.room_id == welt.room_id)
             ),
         }
     finally:

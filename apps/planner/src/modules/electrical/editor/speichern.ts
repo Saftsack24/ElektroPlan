@@ -9,6 +9,7 @@
  */
 import { ApiError } from "@elektroplan/api-client";
 
+import { BEFUND_TEXT } from "../geraete/geraetepruefung";
 import type { Fehlereintrag, ServerFehler } from "./zustand";
 
 export const GEOMETRIEFEHLER: Record<string, string> = {
@@ -36,6 +37,15 @@ export const GEOMETRIEFEHLER: Record<string, string> = {
   "opening-foreign": "Eine Öffnung gehört nicht zu diesem Raum.",
   "wall-id-duplicate": "Eine Wand-ID kommt mehrfach vor.",
   "opening-id-duplicate": "Eine Öffnungs-ID kommt mehrfach vor.",
+  // Geräte (Phase 5, ADR 0023)
+  ...BEFUND_TEXT,
+  "wall-has-devices": "An einer Wand, die entfernt werden soll, sind noch Geräte montiert.",
+  "device-missing": "Ein gespeichertes Gerät fehlt im Entwurf.",
+  "device-surface-changed": "Ein Gerät kann seine Montagefläche nicht wechseln.",
+  "device-foreign": "Ein Gerät gehört nicht zu diesem Raum.",
+  "device-id-duplicate": "Eine Geräte-ID kommt mehrfach vor.",
+  "device-type-inactive": "Dieser Gerätetyp wird für neue Geräte nicht mehr angeboten.",
+  "device-list-missing": "Geräte werden nur zusammen mit der vollständigen Liste entfernt.",
 };
 
 export function geometrietext(code: string, rueckfall?: string): string {
@@ -50,7 +60,8 @@ export interface Auswertung {
 function eintraege(error: ApiError): Fehlereintrag[] {
   return (error.problem?.errors ?? []).map((e) => ({
     code: e.code,
-    meldung: e.field === "geometry" ? geometrietext(e.code, e.message) : e.message,
+    // Geometrie- und Gerätebefunde mit deutschem Text; die Stellen markieren `keys`.
+    meldung: e.field === "geometry" || e.field === "devices" ? geometrietext(e.code, e.message) : e.message,
     keys: e.keys ?? [],
   }));
 }

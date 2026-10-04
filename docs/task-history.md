@@ -2793,3 +2793,133 @@ Checkpoint-Commits: vollständiger Backendlauf gegen PostgreSQL (923 bestanden,
 0 übersprungen), zuletzt 830 bestandene Frontendtests, diese manuelle Abnahme. Vor dem Commit
 kein erneuter großer Testlauf; zusätzliche Sicht-, Bildschirmfoto- oder Geräteprüfungen
 fanden nicht statt. Phase 5 nicht begonnen.
+
+---
+
+## Task 0025 – Phase 5: Electrical Devices
+
+**Datum:** 2026-10-03/04 · **Status:** abgeschlossen, vom Auftraggeber manuell abgenommen,
+einschließlich der Nachkorrekturen mit dem Checkpoint-Commit committet (nicht gepusht) ·
+Entscheidung:
+[ADR 0023](decisions/0023-electrical-devices-symbols-room-types.md) (T1, T7) · Migration `0008`
+
+### Umgesetzt
+
+1. **Datenmodell:** `electrical_rooms.room_type` (optional, zwölf Schlüssel);
+   `electrical_device_types` (globaler Systemkatalog, 13 Typen, Planungsmaß, zulässige Flächen,
+   Standardhöhe als Startwert, Symbolschlüssel, `is_active`); `electrical_devices` mit
+   Montagefläche `wall_interior`/`wall_exterior`/`ceiling` und Gerätemitte (Wand: Abstand ab
+   Wandanfang + Höhe über FFB; Decke: x/y ohne Höhe). CHECK „genau eine Lageform je Fläche“,
+   zusammengesetzte FKs, Typ `RESTRICT`.
+2. **Seed:** neuer Teilnehmer-Contract `ReferenceDataSeeder`; der Core-Seed gleicht den Katalog
+   idempotent ab (neu/angeglichen/deaktiviert, nie gelöscht). Entwicklungsdatenbank: erster Lauf
+   13/0/0, zweiter 0/0/0.
+3. **Prüfung** (`devices.py`, Portierung der exakten Topologie in `topology.py`): Wandrand,
+   Decke, eigene und abgeleitete Öffnungen, außen kein geteiltes Wandstück, Decke vollständig in
+   der echten Kontur, keine Überdeckung. Für alle Geometrie-, Öffnungs-, Höhen- und
+   Geräteschreibwege: keine neuen und keine größeren Konflikte (`device_rules.py`; siehe
+   Nachkorrektur unten – der erste Stand verglich nur Gerät und Code), Geschosshöhe über den
+   bestehenden Teilnehmer.
+4. **API:** `GET …/device-types`; `PUT …/contour` mit `devices`/`removed_device_ids`; Plan mit
+   `devices`, `RoomOut.room_type`; Event `devices_changed`; Projektinhalt `electrical.devices`;
+   `409 wall-has-devices`. Rechte: `electrical.plan.write` (kein `device.write`).
+5. **Frontend:** Geräte im gemeinsamen Raumentwurf (Undo/Redo, Speichern, Navigationsschutz
+   unverändert); Symbolbibliothek mit Legende; Wandansicht mit Werkzeug „Gerät“, Vorschau,
+   Einrasten, Hilfslinien (Achsmaße), Ziehen, Pfeiltasten, Eigenschaften; Deckenansicht mit
+   Platzierung, Ziehen, Maßen zur ersten echten Wand; Grundriss-Symbole auf der Montageseite;
+   3D-Körper, Orientierungslinie, drei Schalter, Beschriftungen, „An Wand/Decke bearbeiten“ mit
+   Rückkehr (Kamera, Auswahl, Schalter); Raumtyp im Raumdialog und in der Tabelle.
+
+### Tests
+
+| Bereich | Ergebnis |
+|---|---|
+| Backend gesamt (Wegwerf-Container im Compose-Netz, PostgreSQL 17 + MinIO, `elektroplan_test`) | **969 bestanden, 0 übersprungen** (vorher 923) |
+| davon neu: reine Geräteprüfung + Fixture | 13 (`test_electrical_devices_geometry.py`) |
+| davon neu: API | 23 (`test_electrical_devices_api.py`): Katalog, Seed-Idempotenz und Deaktivierung, innen/außen getrennt, Deckenhöhe, Raumtyp, unzulässige Lagen, L-Raum, Nachbartür und geteiltes Stück, Geometrie-/Raum-/Geschosshöhenänderung, Wand mit Gerät, Fläche fest/fremde ID/fremde Wand/unbekannter Typ, deaktivierter Typ, Event, If-Match 409/428, Leser 403, `completed`/`archived` 409, Raumlöschung + Projektinhalt, Mandantentrennung |
+| davon neu: echte Rennen | 5 (`test_electrical_devices_concurrency.py`): Gerät ↔ Nachbartür an derselben Stelle (beide Reihenfolgen), Wandgerät ↔ abgesenkte Geschosshöhe (beide Reihenfolgen), zwei Entwürfe desselben Raums; dazu Schreibweg `geraete-speichern` in den Archiv- und Abschlussrennen |
+| Ruff, Format, mypy `--strict` (117 Dateien), `uv lock --check`, ein Alembic-Head | grün |
+| import-linter (Container, Windows blockiert `grimp` lokal) | 4/4 eingehalten |
+| Migration leer → `0008`, `downgrade -1`, `upgrade`, `alembic check` (Wegwerf-DB) | grün, kein Drift |
+| Frontend | **867 Tests** (vorher 830), TypeScript, ESLint, Modulgrenzen, API-Drift, Produktionsbuild (3D-Chunk 610 kB) |
+
+**Umgebung:** Die Windows-Anwendungssteuerung blockiert lokal die native `psycopg`-DLL; die
+Backendtests liefen deshalb in einem Wegwerf-Container aus dem Backend-Image mit Umgebung aus
+`uv.lock --frozen` (eigene venv außerhalb des Repos), gegen echtes PostgreSQL und MinIO.
+
+### Browserabnahme (Claude-Browserbereich, synthetische Daten)
+
+Abnahmebetrieb „Abnahme Phase 5 GmbH“ per Seed, Projekt `PR-2026-0001`: EFH mit Wohnzimmer,
+Küche, L-Flur, Bad, Schlafzimmer (2,70 m) und 25 Geräten (16 innen, 2 Fassade, 7 Decke) per API
+angelegt. Das Fenster war **ausgeblendet**: keine Bildschirmfotos, keine optische Prüfung, kein
+echter Mauszeiger; Klicks über Elementreferenzen (echte Zeigerereignisse), Werte über DOM.
+
+| # | Prüfung | Ergebnis |
+|---|---|---|
+| 1 | Grundriss zeigt alle 25 Geräte als Symbole | bestanden |
+| 2 | Gerät im Grundriss wählen → „An Decke bearbeiten“ | bestanden, Gerät in der Deckenansicht gewählt |
+| 3 | Deckenansicht: vier Maße bis zur ersten Wand | bestanden |
+| 4 | exakte Eingabe „Mitte bis Wand 4 (links)“ 100 cm → rechts 400 cm, Status ungespeichert | bestanden |
+| 5 | Rückgängig/Wiederholen | bestanden |
+| 6 | neues Deckengerät per Klick setzen (Einrasten Raummitte) | bestanden |
+| 7 | Speichern (`PUT …/contour` 200) | bestanden |
+| 8 | Doppelklick auf Wandsteckdose → Wandansicht innen, Mitte 460 cm von links (gespeichert 400 mm ab Wandanfang), Außenleuchte nur als Hinweis | bestanden |
+| 9 | Seitenwechsel außen: nur die Außenleuchte (380 cm), Status unverändert gespeichert | bestanden |
+| 10 | außen ins Fenster setzen → „Nicht gesetzt: … Öffnung“ | bestanden |
+| 11 | Umschalt+Pfeil verschiebt 10 cm, ungespeichert | bestanden |
+| 12 | Wandansicht schließen, Wechsel zu 3D → Rückfrage, „Änderungen behalten“ | bestanden |
+| 13 | Speichern; Datenbank: Außenleuchte `wall_exterior` 3900 mm, Innensteckdose unverändert 400 mm | bestanden |
+| 14 | 3D: 26 Geräte (18 Wand, 8 Decke), Schalter mit `aria-pressed`, Standard an/an/aus | bestanden |
+| 15 | Wandgeräte aus, Beschriftungen an → 8 Deckenbeschriftungen projiziert | bestanden |
+| 16 | Neuladen nach Neustart der Dienste: 3D und 2D unverändert (26 Geräte) | bestanden |
+| 17 | 3D-Klickauswahl eines Geräts, „An Wand/Decke bearbeiten“ aus 3D und Rückkehr mit Kamera | **nicht im Browser** (Canvas-Klick bei ausgeblendetem Fenster nicht zuverlässig); automatisiert in `Ansicht3dGeraete.test.tsx` und `szene.test.ts` |
+| 18 | mm/m und Dunkelmodus | **nicht im Browser geprüft**; Einheiten über die bestehenden `core/masse`-Bausteine (getestet), Farben über Tokens hell/dunkel |
+
+**Befunde der Abnahme, behoben:** (a) zwei Geräte an derselben Wandstelle (Spiegelleuchte über
+Steckdose) deckten sich im Grundriss – Symbole rücken jetzt entlang der Wand auseinander;
+(b) in 3D hatten neue Gerätekörper ihre Weltmatrix erst nach dem ersten Bild (Klick davor hätte
+am Ursprung getroffen) – wird beim Aufbau berechnet. Hinweis: Die Seite muss über `localhost`
+statt `127.0.0.1` geöffnet werden (CORS-Konfiguration der Entwicklung, unverändert).
+
+### Offen
+
+Siehe `docs/current-status.md`, Abschnitt 7.
+
+### Nachkorrektur vor der Abnahme (2026-10-04)
+
+Zwei Befunde des Auftraggebers, ohne Migration, ohne API-Änderung (`openapi.json` unverändert):
+
+1. **Symbolzuordnung im Grundriss.** Der erste Stand schob überlagerte Symbole nur weiter,
+   ohne Bezug zur Montagestelle. Neu: `editor/geraetelayout.ts` trennt Montagepunkt und
+   Symbolposition (reine Darstellung, deterministisch nach Geräte-ID). Bis zu vier Symbole an
+   einer Stelle werden entlang der Wand aufgefächert und etwas abgerückt, jedes versetzte zeigt
+   mit einer gestrichelten Zuordnungslinie auf seinen markierten Montagepunkt (Wand: Quadrat auf
+   der Wandoberfläche der Montageseite, Decke: Ring); mehr werden zu einem Gruppensymbol mit
+   Anzahl, das ein Klick in Ringen aufklappt. Auswahl, Hervorhebung (Symbol und Linie) und
+   Eigenschaften treffen das Gerät; gespeicherte Lagen bleiben unberührt.
+2. **Verschlechterung bestehender Konflikte.** Der erste Stand verglich nur Paare aus Gerät und
+   Code – eine weiter abgesenkte Raumhöhe oder eine breitere Tür über einem Bestandskonflikt
+   wäre durchgegangen. Neu: Jeder Befund hat Identität (Gerät, Code, Konfliktpartner) und exaktes
+   Ausmaß (`DeviceFinding`, `Severity`); abgelehnt wird jeder neue, jeder vergrößerte und jeder
+   Befund eines direkt geänderten Geräts. Tabelle und konservative Regeln: ADR 0023 §6.
+
+| Prüfung | Ergebnis |
+|---|---|
+| betroffene Backendtests gegen PostgreSQL (Geometrie, Verschlechterung, API, Rennen) | 52 bestanden, 0 übersprungen |
+| davon neu: `test_electrical_devices_worsening.py` (Raumhöhe weiter senken → 422, teilweise anheben → 200 mit Restbefund, ganz beheben → 200; Wandverkürzung vergrößert Überstand → 422, Verlängerung → 200; Tür breiter bzw. zweite Tür als neuer Partner → 422, schmaler → 200; unabhängige Änderung → 200; direkt geändertes Gerät bleibt ungültig → 422; jede Ablehnung ohne Teiländerung) | 5 bestanden |
+| davon neu: reine Tests (exakter Vergleich auch irrational, Fläche im L-Raum, Überdeckung zweier Geräte mit Ausmaß und neuem Partner, geteilte Wand mit neuem Nachbarn, Deckengerät außerhalb) | 6 bestanden |
+| Gegenprobe: Ausmaßvergleich abgeschaltet | 8 der neuen Tests schlagen fehl (wie erwartet), danach Code wiederhergestellt und geprüft |
+| Frontend: `geraetelayout.test.ts` (10), `GrundrissGeraete.test.tsx` (4, echter Editor: gleiche Stelle mit verschiedenen Höhen, innen/außen, dichte Deckengeräte als Gruppe, Auswahl, keine Schreibanfrage) | bestanden |
+| Frontend gesamt, TypeScript, ESLint, Modulgrenzen, API-Client aktuell, Build | 881 Tests bestanden; übrige grün |
+| Ruff, Format, mypy `--strict`; import-linter (Container) 4/4 | grün |
+| **vollständige Backendsuite** gegen PostgreSQL (Wegwerf-Container) | **980 bestanden, 0 übersprungen** (vorher 969) |
+| Sichtprüfung im Browserbereich (Bildschirmfotos, Abnahmeprojekt, Dunkelmodus) | bei 53 und 83 px/m: versetzte Symbole im Bad und im Wohnzimmer mit erkennbarer Linie zum markierten Montagepunkt; Auswahl färbt Symbol und Linie, Eigenschaften zeigen das richtige Gerät, Status bleibt „Keine ungespeicherten Änderungen“. Erster Sichtbefund (Linien zu kurz) behoben: Fächer rückt 14 px ab, Linie kräftiger |
+| Gruppensymbol im Browser | **nicht geprüft** (kein dichter Bestand im Abnahmeprojekt), nur automatisiert |
+| Hellmodus, schmale Breiten im Browser | **nicht geprüft** |
+
+### Abnahme und Checkpoint
+
+Vom Auftraggeber manuell abgenommen, einschließlich der Nachkorrekturen. Grundlage des
+Checkpoint-Commits: zuletzt 980 bestandene Backendtests gegen PostgreSQL (0 übersprungen),
+881 bestandene Frontendtests, die übrigen grünen Prüfungen und diese manuelle Abnahme. Vor dem
+Commit kein erneuter großer Testlauf. Phase 6 nicht begonnen.

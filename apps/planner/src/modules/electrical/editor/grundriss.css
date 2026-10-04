@@ -55,6 +55,29 @@
   }
   .grundriss__oeffnungsvorschau--fehler .grundriss__oeffnungsvorschau-text { fill: var(--ep-danger); }
 
+  /* Geräte (Phase 5): Symbole in fester Bildgröße; Auswahl mit Rahmen, Fehler mit Strichrahmen. */
+  .grundriss__geraet { color: var(--ep-plan-device); cursor: pointer; }
+  .grundriss__geraet-grund { fill: var(--ep-canvas); stroke: none; }
+  .grundriss__geraet-treffer { fill: transparent; stroke: none; }
+  .grundriss__geraet--ruhend { opacity: 0.7; }
+  .grundriss__geraet--fehler { color: var(--ep-danger); }
+  .grundriss__geraet--fehler .grundriss__geraet-grund { stroke: var(--ep-danger); stroke-width: 1.5; stroke-dasharray: 3 2; }
+  .grundriss__geraet--ausgewaehlt { color: var(--ep-selected); }
+  .grundriss__geraet--ausgewaehlt .grundriss__geraet-grund { stroke: var(--ep-selected); stroke-width: 2; }
+  /* Zuordnung eines versetzten Symbols: Linie zum markierten Montagepunkt (Wand: Quadrat, Decke: Ring). */
+  .grundriss__zuordnung { color: var(--ep-plan-device); pointer-events: none; }
+  .grundriss__zuordnung-linie { stroke: currentColor; stroke-width: 1.25; stroke-dasharray: 3 2; opacity: 0.9; }
+  .grundriss__montagepunkt { fill: currentColor; stroke: var(--ep-canvas); stroke-width: 1; }
+  .grundriss__montagepunkt--decke { fill: var(--ep-canvas); stroke: currentColor; stroke-width: 1.5; }
+  .grundriss__zuordnung--ruhend { opacity: 0.7; }
+  .grundriss__zuordnung--fehler { color: var(--ep-danger); }
+  .grundriss__zuordnung--ausgewaehlt { color: var(--ep-selected); }
+  .grundriss__zuordnung--ausgewaehlt .grundriss__zuordnung-linie { stroke-width: 1.75; opacity: 1; }
+  /* Gruppensymbol dichter Stellen: Anzahl im Kreis, Klick klappt auf. */
+  .grundriss__geraetegruppe { color: var(--ep-plan-device); cursor: pointer; }
+  .grundriss__geraetegruppe-grund { fill: var(--ep-canvas); stroke: currentColor; stroke-width: 1.5; }
+  .grundriss__geraetegruppe-anzahl { fill: currentColor; font-size: 11px; font-weight: 600; pointer-events: none; }
+
   /* Griffe, Beschriftungen, Vorschau */
   .grundriss__ecke { fill: var(--ep-canvas); stroke: var(--ep-selected); stroke-width: 1.5; cursor: move; }
   .grundriss__ecke--ausgewaehlt { fill: var(--ep-selected); }

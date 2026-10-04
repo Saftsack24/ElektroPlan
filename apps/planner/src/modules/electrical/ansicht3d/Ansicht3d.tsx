@@ -12,9 +12,11 @@ import { MESSUNG, messen } from "./messung";
 import type { Auswahl, Szenenmodell } from "./modell";
 import { gleicheAuswahl } from "./modell";
 import { Seitenleiste } from "./Seitenleiste";
-import { Grundrissszene } from "./szene";
-import type { Kamerastand } from "./szene";
+import { Grundrissszene, STANDARD_GERAETESICHTBARKEIT } from "./szene";
+import type { Geraetesichtbarkeit, Kamerastand } from "./szene";
 import type { Rueckmeldung } from "./szene";
+import type { Geraet3d } from "./geraete3d";
+import { katalogAbfrage, typenNachSchluessel } from "../geraete/katalog";
 import { objektZu, szenenmodellAus } from "./szenenmodell";
 import { browserUmgebung } from "./umgebung";
 
@@ -27,7 +29,7 @@ export type Szenensteuerung = Pick<
   Grundrissszene,
   "setzePlan" | "setzeAuswahl" | "einpassen" | "standardansicht" | "draufsicht" | "zoomen" | "entsorgen"
 > &
-  Partial<Pick<Grundrissszene, "kamerastand" | "kamerastandSetzen">>;
+  Partial<Pick<Grundrissszene, "kamerastand" | "kamerastandSetzen" | "setzeGeraetesichtbarkeit">>;
 
 /**
  * Was die 3D-Ansicht beim Wechsel in die Wandansicht abgibt und bei der
@@ -37,6 +39,14 @@ export interface Rueckkehr3d {
   readonly floorId: string;
   readonly kamera: Kamerastand | null;
   readonly auswahl: Auswahl | null;
+  /** Phase 5: Schalter Wandgeräte, Deckengeräte, Beschriftungen. */
+  readonly sichtbarkeit?: Geraetesichtbarkeit;
+}
+
+/** Ziel „An Decke bearbeiten“ aus 3D (Phase 5). */
+export interface Deckenansichtsziel3d {
+  readonly raumId: string;
+  readonly geraetId: string;
 }
 
 /** Ziel einer Wandansicht aus 3D - mit der angeklickten Seite. */
@@ -44,6 +54,8 @@ export interface Wandansichtsziel3d {
   readonly raumId: string;
   readonly wandId: string;
   readonly seite: "innen" | "aussen";
+  /** Phase 5: „An Wand bearbeiten“ wählt das Gerät in der Wandansicht aus. */
+  readonly geraetId?: string;
 }
 
 export type SzeneErzeugen = (behaelter: HTMLElement, rueckmeldung: Rueckmeldung) => Szenensteuerung;
@@ -61,6 +73,7 @@ function zusammenfassung(modell: Szenenmodell): string {
     `${modell.raeume.length} von ${modell.raumanzahlGesamt} Räumen dargestellt`,
     `${modell.waende.length} Wandkörper, davon ${gemeinsam} gemeinsam`,
     `${modell.oeffnungen.length} Öffnungen`,
+    `${modell.geraete.length} Geräte`,
     `${modell.warnungen.length} Hinweise`,
   ];
   return teile.join(" · ");
@@ -79,6 +92,7 @@ export default function Ansicht3d({
   geschossLabel,
   onAnsicht,
   onWandansicht,
+  onDeckenansicht,
   anfang,
   szeneErzeugen = echteSzene,
 }: {
@@ -87,23 +101,28 @@ export default function Ansicht3d({
   onAnsicht: (ziel: Ansichtsziel) => void;
   /** Wandansicht öffnen; die Ansicht gibt dabei Kamera und Auswahl für die Rückkehr ab. */
   onWandansicht?: (ziel: Wandansichtsziel3d, rueckkehr: Rueckkehr3d) => void;
+  /** Phase 5: Deckenansicht mit gewähltem Gerät öffnen; Rückkehr wie bei der Wandansicht. */
+  onDeckenansicht?: (ziel: Deckenansichtsziel3d, rueckkehr: Rueckkehr3d) => void;
   /** Bei der Rückkehr aus der Wandansicht: Kamera und Auswahl wiederherstellen. */
   anfang?: Rueckkehr3d | null;
   szeneErzeugen?: SzeneErzeugen;
 }) {
   const { api } = useAuth();
   const plan = useQuery(planAbfrage(api, floorId));
+  const katalog = useQuery(katalogAbfrage(api));
+  const typen = useMemo(() => typenNachSchluessel(katalog.data), [katalog.data]);
   const masse = useMasse();
   // Die Einheit steckt nur in den Hinweistexten des Modells; die Geometrie
   // bleibt in Millimetern. Ein Einheitenwechsel ersetzt die Szene ohne
   // Einpassen (gleiches Geschoss).
   const modell = useMemo(
-    () => messen(MESSUNG.szenenmodell, () => szenenmodellAus(plan.data, masse.anzeigen)),
-    [plan.data, masse],
+    () => messen(MESSUNG.szenenmodell, () => szenenmodellAus(plan.data, masse.anzeigen, typen)),
+    [plan.data, masse, typen],
   );
 
   const anfangRef = useRef(anfang?.floorId === floorId ? anfang : null);
   const [auswahl, setAuswahl] = useState<Auswahl | null>(anfangRef.current?.auswahl ?? null);
+  const [sichtbarkeit, setSichtbarkeit] = useState<Geraetesichtbarkeit>(anfangRef.current?.sichtbarkeit ?? STANDARD_GERAETESICHTBARKEIT);
   const [stoerung, setStoerung] = useState<Stoerung>(null);
   const [start, setStart] = useState(0);
   const behaelter = useRef<HTMLDivElement>(null);
@@ -169,6 +188,42 @@ export default function Ansicht3d({
     szene.current?.setzeAuswahl(gueltig);
   }, [gueltig, modell, start]);
 
+  // Schalter über der Ansicht: ausgeblendete Geräte sind auch keine Klickziele.
+  useEffect(() => {
+    szene.current?.setzeGeraetesichtbarkeit?.(sichtbarkeit);
+  }, [sichtbarkeit, modell, start]);
+
+  // Wird das gewählte Gerät ausgeblendet, verschwindet auch die Auswahl.
+  const gewaehltesGeraet = objekt?.art === "geraet" ? objekt.geraet : null;
+  const ausgeblendet =
+    gewaehltesGeraet !== null && (gewaehltesGeraet.flaeche === "ceiling" ? !sichtbarkeit.decke : !sichtbarkeit.wand);
+  useEffect(() => {
+    if (ausgeblendet) setAuswahl(null);
+  }, [ausgeblendet]);
+
+  const rueckkehr = (): Rueckkehr3d => ({ floorId, kamera: szene.current?.kamerastand?.() ?? null, auswahl: gueltig, sichtbarkeit });
+
+  const geraetBearbeiten = (g: Geraet3d) => {
+    if (g.flaeche === "ceiling") onDeckenansicht?.({ raumId: g.raumId, geraetId: g.id }, rueckkehr());
+    else if (g.wandId !== null) {
+      onWandansicht?.({ raumId: g.raumId, wandId: g.wandId, seite: g.flaeche === "wall_exterior" ? "aussen" : "innen", geraetId: g.id }, rueckkehr());
+    }
+  };
+
+  const schalter = (feld: keyof Geraetesichtbarkeit, label: string, anzahl?: number) => (
+    <button
+      type="button"
+      className={knopf(sichtbarkeit[feld] ? "gewaehlt" : "einfach")}
+      aria-pressed={sichtbarkeit[feld]}
+      title={`${label} ${sichtbarkeit[feld] ? "ausblenden" : "einblenden"}`}
+      onClick={() => setSichtbarkeit((alt) => ({ ...alt, [feld]: !alt[feld] }))}
+    >
+      <span aria-hidden="true">{sichtbarkeit[feld] ? "☑ " : "☐ "}</span>
+      {label}
+      {anzahl !== undefined ? ` (${anzahl})` : ""}
+    </button>
+  );
+
   const tasten = (ereignis: KeyboardEvent) => {
     if (ereignis.key === "Escape" && auswahl !== null) {
       ereignis.preventDefault();
@@ -210,10 +265,17 @@ export default function Ansicht3d({
           Weiter weg
         </button>
       </div>
+      <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Geräte in der 3D-Ansicht">
+        <span className="text-label text-muted">Anzeigen:</span>
+        {schalter("wand", "Wandgeräte", modell.geraete.filter((g) => g.flaeche !== "ceiling").length)}
+        {schalter("decke", "Deckengeräte", modell.geraete.filter((g) => g.flaeche === "ceiling").length)}
+        {schalter("beschriftung", "Beschriftungen")}
+      </div>
       <p className="m-0 text-label text-muted" id={hilfeId}>
         Drehen: linke Maustaste ziehen · Verschieben: rechte Maustaste, Umschalt + Ziehen oder
         Pfeiltasten · Zoomen: Mausrad · Touch: ein Finger dreht, zwei Finger zoomen und verschieben ·
-        Klicken wählt aus, Esc hebt die Auswahl auf. Nur Ansicht – bearbeitet wird im 2D-Editor.
+        Klicken wählt aus, Esc hebt die Auswahl auf. Nur Ansicht – bearbeitet wird im 2D-Editor
+        bzw. in der Wand- und Deckenansicht.
       </p>
 
       <div className="grid grid-cols-1 gap-3 split:grid-cols-[minmax(0,1fr)_320px]">
@@ -295,10 +357,10 @@ export default function Ansicht3d({
           onAuswahl={auswaehlen}
           {...(onWandansicht !== undefined
             ? {
-                onWandansicht: (ziel: Wandansichtsziel3d) =>
-                  onWandansicht(ziel, { floorId, kamera: szene.current?.kamerastand?.() ?? null, auswahl: gueltig }),
+                onWandansicht: (ziel: Wandansichtsziel3d) => onWandansicht(ziel, rueckkehr()),
               }
             : {})}
+          {...(onWandansicht !== undefined || onDeckenansicht !== undefined ? { onGeraetBearbeiten: geraetBearbeiten } : {})}
         />
       </div>
       <p className="m-0 text-label text-muted" id={zusammenfassungId}>

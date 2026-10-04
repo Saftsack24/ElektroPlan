@@ -14,11 +14,12 @@ import { Ansicht3dLaden } from "./ansicht3d/Ansicht3dLaden";
 import { GrundrissEditor } from "./editor/GrundrissEditor";
 import type { Rueckkehr3d } from "./ansicht3d/Ansicht3d";
 import type { Wandziel } from "./wandansicht/Wandansicht";
+import type { Deckenziel } from "./editor/GrundrissEditor";
 import { planSchluessel } from "./plan";
 import { RaumDetail } from "./RaumDetail";
 import { RaumDialog } from "./RaumDialog";
 import type { Raumwerte } from "./RaumDialog";
-import { KONTURZUSTAND_LABEL, flaecheAnzeigen } from "./texte";
+import { KONTURZUSTAND_LABEL, RAUMTYP_LABEL, flaecheAnzeigen, raumtypAusWert } from "./texte";
 import { AKTION } from "../../core/ui/aktionssymbole";
 import { MitSymbol } from "../../core/ui/Symbol";
 
@@ -100,6 +101,7 @@ export default function RoomsTab() {
   // Aus der 3D-Auswahl angeforderte Wandansicht (Phase 4f) - der 2D-Editor öffnet sie nach dem
   // Laden. Kamera und Auswahl der 3D-Ansicht werden für die Rückkehr gemerkt (reine Ansicht).
   const [startWandansicht, setStartWandansicht] = useState<Wandziel | null>(null);
+  const [startDeckenansicht, setStartDeckenansicht] = useState<Deckenziel | null>(null);
   const [rueckkehr3d, setRueckkehr3d] = useState<Rueckkehr3d | null>(null);
   // Ungespeicherte Änderungen im Editor - für Geschoss- und Ansichtswechsel.
   const editorOffen = useRef(false);
@@ -208,6 +210,7 @@ export default function RoomsTab() {
       name: werte.name.trim(),
       room_number: werte.room_number.trim() === "" ? null : werte.room_number.trim(),
       height_mm: hoehe === "" ? null : Number.parseInt(hoehe, 10),
+      room_type: raumtypAusWert(werte.room_type),
     };
     try {
       const bestehend = raumdialog?.raum ?? null;
@@ -355,6 +358,7 @@ export default function RoomsTab() {
               <tr>
                 <th>Nummer</th>
                 <th>Bezeichnung</th>
+                <th>Raumtyp</th>
                 <th>Höhe</th>
                 <th>Kontur</th>
                 <th>Wände</th>
@@ -367,6 +371,7 @@ export default function RoomsTab() {
                 <tr key={raum.id}>
                   <td>{raum.room_number ?? "—"}</td>
                   <td>{raum.name}</td>
+                  <td>{raum.room_type === null ? "—" : RAUMTYP_LABEL[raum.room_type]}</td>
                   <td>{masse.anzeigen(raum.effective_height_mm)}</td>
                   <td>{KONTURZUSTAND_LABEL[raum.contour_status]}</td>
                   <td>{raum.wall_count}</td>
@@ -424,7 +429,11 @@ export default function RoomsTab() {
             onUngespeichert={ungespeichertMelden}
             onGespeichert={nachEditorSpeichern}
             startWandansicht={startWandansicht}
-            onStartVerbraucht={() => setStartWandansicht(null)}
+            startDeckenansicht={startDeckenansicht}
+            onStartVerbraucht={() => {
+              setStartWandansicht(null);
+              setStartDeckenansicht(null);
+            }}
             onZurueck3d={() => void ansichtWechseln("3d", { rueckkehr: true })}
           />
         </section>
@@ -441,6 +450,11 @@ export default function RoomsTab() {
               // Die 3D-Ansicht hat keinen Entwurf - der Wechsel zum Editor fragt nichts.
               setRueckkehr3d(rueckkehr);
               setStartWandansicht({ ...ziel, herkunft: "3d" });
+              void ansichtWechseln("editor", { rueckkehr: true });
+            }}
+            onDeckenansicht={(ziel, rueckkehr) => {
+              setRueckkehr3d(rueckkehr);
+              setStartDeckenansicht({ ...ziel, herkunft: "3d" });
               void ansichtWechseln("editor", { rueckkehr: true });
             }}
           />
@@ -472,6 +486,7 @@ export default function RoomsTab() {
                     raumdialog.raum.height_mm === null
                       ? ""
                       : String(raumdialog.raum.height_mm),
+                  room_type: raumdialog.raum.room_type ?? "",
                 }
           }
           onSubmit={raumSpeichern}

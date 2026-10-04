@@ -1238,6 +1238,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/modules/electrical/device-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Geraetetypen des Systemkatalogs
+         * @description Der ausgelieferte Geraetekatalog (Phase 5) in Katalogreihenfolge.
+         *
+         *     Global fuer alle Betriebe; deaktivierte Typen stehen mit ``is_active =
+         *     false`` dabei, damit vorhandene Geraete benannt werden koennen.
+         */
+        get: operations["listElectricalDeviceTypes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/modules/electrical/rooms/{room_id}/walls": {
         parameters: {
             query?: never;
@@ -1522,6 +1545,46 @@ export interface components {
             sort_order?: number | null;
         };
         /**
+         * ContourDeviceIn
+         * @description Geraet als Teil des Raumentwurfs (Phase 5, ADR 0023).
+         *
+         *     ``id`` wie bei Oeffnungen: bekannt heisst aendern, fehlend oder neu heisst
+         *     anlegen (clientseitig erzeugte UUID). Montageflaeche und Wand eines
+         *     vorhandenen Geraets aendern sich nicht.
+         *
+         *     Bezugspunkt ist die **Mitte** des Geraets:
+         *
+         *     * Wand (``wall_interior``/``wall_exterior``): ``wall_id`` (eine Wand dieses
+         *       Raums, auch eine im selben Entwurf neu angelegte), ``center_offset_mm``
+         *       (Abstand ab Wandanfang der gerichteten Wand) und ``center_height_mm``
+         *       (ueber Fertigfussboden),
+         *     * Decke (``ceiling``): ``x_mm``/``y_mm`` in Geschosskoordinaten - **ohne**
+         *       Hoehe; sie ist immer die effektive Raumhoehe.
+         */
+        ContourDeviceIn: {
+            /** Id */
+            id?: string | null;
+            /** Device Type Key */
+            device_type_key: string;
+            /**
+             * Mounting Surface
+             * @enum {string}
+             */
+            mounting_surface: "wall_interior" | "wall_exterior" | "ceiling";
+            /** Wall Id */
+            wall_id?: string | null;
+            /** Center Offset Mm */
+            center_offset_mm?: number | null;
+            /** Center Height Mm */
+            center_height_mm?: number | null;
+            /** X Mm */
+            x_mm?: number | null;
+            /** Y Mm */
+            y_mm?: number | null;
+            /** Label */
+            label?: string | null;
+        };
+        /**
          * ContourOpeningIn
          * @description Oeffnung als Teil einer vollstaendigen Raumkontur.
          *
@@ -1680,6 +1743,89 @@ export interface components {
             billing_city?: string | null;
             /** Billing Country Code */
             billing_country_code?: string | null;
+        };
+        /**
+         * DeviceOut
+         * @description Ein gespeichertes Geraet (Phase 5). Bezugspunkt ist die Geraetemitte.
+         */
+        DeviceOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Room Id
+             * Format: uuid
+             */
+            room_id: string;
+            /** Device Type Key */
+            device_type_key: string;
+            /**
+             * Mounting Surface
+             * @enum {string}
+             */
+            mounting_surface: "wall_interior" | "wall_exterior" | "ceiling";
+            /** Wall Id */
+            wall_id: string | null;
+            /** Center Offset Mm */
+            center_offset_mm: number | null;
+            /** Center Height Mm */
+            center_height_mm: number | null;
+            /** X Mm */
+            x_mm: number | null;
+            /** Y Mm */
+            y_mm: number | null;
+            /** Label */
+            label: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * DeviceTypeOut
+         * @description Ein Geraetetyp des Systemkatalogs.
+         *
+         *     ``width_mm``/``height_mm`` sind das **Planungsmass** fuer die
+         *     Platzierungspruefung (an der Wand Breite x Hoehe, an der Decke in x und y)
+         *     - keine Herstellerangabe. ``default_center_height_mm`` ist ein Startwert,
+         *     keine Normvorgabe. ``is_active = false``: nicht mehr fuer neue Geraete.
+         */
+        DeviceTypeOut: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "socket" | "switch" | "light" | "data";
+            /** Symbol Key */
+            symbol_key: string;
+            /** Allows Wall Interior */
+            allows_wall_interior: boolean;
+            /** Allows Wall Exterior */
+            allows_wall_exterior: boolean;
+            /** Allows Ceiling */
+            allows_ceiling: boolean;
+            /** Default Center Height Mm */
+            default_center_height_mm: number | null;
+            /** Width Mm */
+            width_mm: number;
+            /** Height Mm */
+            height_mm: number;
+            /** Sort Order */
+            sort_order: number;
+            /** Is Active */
+            is_active: boolean;
         };
         /**
          * DirectoryEntryOut
@@ -2708,19 +2854,30 @@ export interface components {
         };
         /**
          * RoomContourUpdate
-         * @description Vollstaendiger Zielzustand der Raumgeometrie (``PUT /rooms/{id}/contour``).
+         * @description Vollstaendiger Zielzustand des Raumentwurfs (``PUT /rooms/{id}/contour``).
          *
          *     Ein Vorgang, eine Transaktion: Entweder gilt danach genau diese Kontur,
          *     oder es hat sich nichts geaendert. Waende, die in ``walls`` fehlen, werden
          *     entfernt. Oeffnungen verschwinden dagegen **nie** stillschweigend: Eine
          *     vorhandene Oeffnung muss entweder in ``walls`` stehen oder ausdruecklich
          *     in ``removed_opening_ids``. Sonst lehnt der Server ab.
+         *
+         *     **Geraete (Phase 5):** ``devices`` ist - wenn angegeben - die vollstaendige
+         *     Geraeteliste des Raums; fuer Geraete gilt dieselbe Regel wie fuer
+         *     Oeffnungen (``removed_device_ids``). Fehlt ``devices`` (``null``), bleiben
+         *     die gespeicherten Geraete unveraendert - und werden trotzdem gegen die neue
+         *     Geometrie geprueft. Geometrie und Geraete werden immer **gemeinsam**
+         *     gespeichert.
          */
         RoomContourUpdate: {
             /** Walls */
             walls: components["schemas"]["ContourWallIn"][];
             /** Removed Opening Ids */
             removed_opening_ids?: string[];
+            /** Devices */
+            devices?: components["schemas"]["ContourDeviceIn"][] | null;
+            /** Removed Device Ids */
+            removed_device_ids?: string[];
         };
         /**
          * RoomCreate
@@ -2741,6 +2898,8 @@ export interface components {
             room_number?: string | null;
             /** Height Mm */
             height_mm?: number | null;
+            /** Room Type */
+            room_type?: ("living_room" | "bedroom" | "children_room" | "kitchen" | "bathroom" | "hallway" | "office" | "utility_room" | "technical_room" | "basement" | "garage" | "other") | null;
             /** Walls */
             walls?: components["schemas"]["ContourWallIn"][];
         };
@@ -2771,6 +2930,8 @@ export interface components {
             height_mm: number | null;
             /** Effective Height Mm */
             effective_height_mm: number;
+            /** Room Type */
+            room_type: ("living_room" | "bedroom" | "children_room" | "kitchen" | "bathroom" | "hallway" | "office" | "utility_room" | "technical_room" | "basement" | "garage" | "other") | null;
             /**
              * Contour Status
              * @enum {string}
@@ -2824,6 +2985,8 @@ export interface components {
             height_mm: number | null;
             /** Effective Height Mm */
             effective_height_mm: number;
+            /** Room Type */
+            room_type: ("living_room" | "bedroom" | "children_room" | "kitchen" | "bathroom" | "hallway" | "office" | "utility_room" | "technical_room" | "basement" | "garage" | "other") | null;
             /**
              * Contour Status
              * @enum {string}
@@ -2853,6 +3016,8 @@ export interface components {
             walls: components["schemas"]["WallPlanOut"][];
             /** Contour Problems */
             contour_problems: components["schemas"]["GeometryProblemOut"][];
+            /** Devices */
+            devices: components["schemas"]["DeviceOut"][];
         };
         /**
          * RoomUpdate
@@ -2869,6 +3034,8 @@ export interface components {
             room_number?: string | null;
             /** Height Mm */
             height_mm?: number | null;
+            /** Room Type */
+            room_type?: ("living_room" | "bedroom" | "children_room" | "kitchen" | "bathroom" | "hallway" | "office" | "utility_room" | "technical_room" | "basement" | "garage" | "other") | null;
         };
         /** SwitchOrganizationRequest */
         SwitchOrganizationRequest: {
@@ -6370,6 +6537,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listElectricalDeviceTypes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceTypeOut"][];
                 };
             };
         };

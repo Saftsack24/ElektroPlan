@@ -1,0 +1,231 @@
+{
+  "version": 1,
+  "zweck": "Statische Beispiele zur Paritaet der Geraetepruefung (Phase 5, ADR 0023) zwischen Backend (verbindlich) und Editor (Bedienhilfe). Kein API-Vertrag. Ganze Millimeter; Bezugspunkt ist die Geraetemitte (Wand: Abstand ab Wandanfang und Hoehe ueber FFB; Decke: x/y im Grundriss). Erwartet werden je Geraet die sortierten, eindeutigen Befundcodes. Wird eine Regel geaendert, entsteht eine neue Version dieser Datei.",
+  "typen": {
+    "dose": { "breite": 80, "hoehe": 80, "innen": true, "aussen": true, "decke": false },
+    "nur_innen": { "breite": 80, "hoehe": 80, "innen": true, "aussen": false, "decke": false },
+    "zweifach": { "breite": 150, "hoehe": 80, "innen": true, "aussen": false, "decke": false },
+    "leuchte": { "breite": 100, "hoehe": 100, "innen": false, "aussen": false, "decke": true }
+  },
+  "faelle": [
+    {
+      "name": "Rechteck: Wandgeraete innen gegen Rand, Boden, Decke und Tuer",
+      "raeume": [
+        {
+          "id": "A",
+          "hoehe": 2500,
+          "waende": [
+            { "id": "a1", "w": [0, 0, 5000, 0], "oeffnungen": [{ "id": "t1", "abstand": 1000, "breite": 900, "bruestung": 0, "hoehe": 2000 }] },
+            { "id": "a2", "w": [5000, 0, 5000, 4000], "oeffnungen": [{ "id": "f1", "abstand": 1000, "breite": 1000, "bruestung": 900, "hoehe": 1260 }] },
+            { "id": "a3", "w": [5000, 4000, 0, 4000], "oeffnungen": [] },
+            { "id": "a4", "w": [0, 4000, 0, 0], "oeffnungen": [] }
+          ]
+        }
+      ],
+      "geraete": [
+        { "id": "g01", "raum": "A", "typ": "dose", "flaeche": "wall_interior", "wand": "a1", "mitte": 300, "mittelhoehe": 300 },
+        { "id": "g02", "raum": "A", "typ": "dose", "flaeche": "wall_interior", "wand": "a1", "mitte": 40, "mittelhoehe": 1050 },
+        { "id": "g03", "raum": "A", "typ": "dose", "flaeche": "wall_interior", "wand": "a1", "mitte": 39, "mittelhoehe": 1500 },
+        { "id": "g04", "raum": "A", "typ": "dose", "flaeche": "wall_interior", "wand": "a1", "mitte": 4970, "mittelhoehe": 300 },
+        { "id": "g05", "raum": "A", "typ": "dose", "flaeche": "wall_interior", "wand": "a1", "mitte": 1400, "mittelhoehe": 1050 },
+        { "id": "g06", "raum": "A", "typ": "dose", "flaeche": "wall_interior", "wand": "a1", "mitte": 1940, "mittelhoehe": 1050 },
+        { "id": "g07", "raum": "A", "typ": "dose", "flaeche": "wall_interior", "wand": "a1", "mitte": 1500, "mittelhoehe": 2040 },
+        { "id": "g08", "raum": "A", "typ": "dose", "flaeche": "wall_interior", "wand": "a2", "mitte": 1500, "mittelhoehe": 2200 },
+        { "id": "g09", "raum": "A", "typ": "dose", "flaeche": "wall_interior", "wand": "a2", "mitte": 1200, "mittelhoehe": 2199 },
+        { "id": "g10", "raum": "A", "typ": "dose", "flaeche": "wall_interior", "wand": "a3", "mitte": 2000, "mittelhoehe": 2470 },
+        { "id": "g11", "raum": "A", "typ": "dose", "flaeche": "wall_interior", "wand": "a3", "mitte": 2500, "mittelhoehe": 20 },
+        { "id": "g12", "raum": "A", "typ": "dose", "flaeche": "wall_interior", "wand": "a3", "mitte": 3000, "mittelhoehe": 40 }
+      ],
+      "erwartet": {
+        "g01": [],
+        "g02": [],
+        "g03": ["device-outside-wall"],
+        "g04": ["device-outside-wall"],
+        "g05": ["device-in-opening"],
+        "g06": [],
+        "g07": [],
+        "g08": [],
+        "g09": ["device-in-opening"],
+        "g10": ["device-exceeds-room-height"],
+        "g11": ["device-below-floor"],
+        "g12": []
+      }
+    },
+    {
+      "name": "Innen und aussen an derselben Wand, Ueberdeckung, Flaeche nicht erlaubt",
+      "raeume": [
+        {
+          "id": "A",
+          "hoehe": 2500,
+          "waende": [
+            { "id": "a1", "w": [0, 0, 5000, 0], "oeffnungen": [] },
+            { "id": "a2", "w": [5000, 0, 5000, 4000], "oeffnungen": [] },
+            { "id": "a3", "w": [5000, 4000, 0, 4000], "oeffnungen": [] },
+            { "id": "a4", "w": [0, 4000, 0, 0], "oeffnungen": [] }
+          ]
+        }
+      ],
+      "geraete": [
+        { "id": "h1", "raum": "A", "typ": "dose", "flaeche": "wall_interior", "wand": "a1", "mitte": 2000, "mittelhoehe": 300 },
+        { "id": "h2", "raum": "A", "typ": "dose", "flaeche": "wall_exterior", "wand": "a1", "mitte": 2000, "mittelhoehe": 300 },
+        { "id": "h3", "raum": "A", "typ": "zweifach", "flaeche": "wall_interior", "wand": "a1", "mitte": 2100, "mittelhoehe": 300 },
+        { "id": "h4", "raum": "A", "typ": "dose", "flaeche": "wall_interior", "wand": "a1", "mitte": 2255, "mittelhoehe": 300 },
+        { "id": "h5", "raum": "A", "typ": "nur_innen", "flaeche": "wall_exterior", "wand": "a2", "mitte": 2000, "mittelhoehe": 300 },
+        { "id": "h6", "raum": "A", "typ": "leuchte", "flaeche": "wall_interior", "wand": "a2", "mitte": 3000, "mittelhoehe": 1800 }
+      ],
+      "erwartet": {
+        "h1": ["devices-overlap"],
+        "h2": [],
+        "h3": ["devices-overlap"],
+        "h4": [],
+        "h5": ["device-surface-not-allowed"],
+        "h6": ["device-surface-not-allowed"]
+      }
+    },
+    {
+      "name": "Nachbarraum: abgeleitete Tuer und geteiltes Wandstueck",
+      "raeume": [
+        {
+          "id": "A",
+          "hoehe": 2500,
+          "waende": [
+            { "id": "a1", "w": [0, 0, 5000, 0], "oeffnungen": [] },
+            { "id": "a2", "w": [5000, 0, 5000, 4000], "oeffnungen": [] },
+            { "id": "a3", "w": [5000, 4000, 0, 4000], "oeffnungen": [] },
+            { "id": "a4", "w": [0, 4000, 0, 0], "oeffnungen": [] }
+          ]
+        },
+        {
+          "id": "B",
+          "hoehe": 2500,
+          "waende": [
+            { "id": "b1", "w": [0, -3000, 6000, -3000], "oeffnungen": [] },
+            { "id": "b2", "w": [6000, -3000, 6000, 0], "oeffnungen": [] },
+            { "id": "b3", "w": [6000, 0, 0, 0], "oeffnungen": [{ "id": "tb", "abstand": 4000, "breite": 900, "bruestung": 0, "hoehe": 2000 }] },
+            { "id": "b4", "w": [0, 0, 0, -3000], "oeffnungen": [] }
+          ]
+        }
+      ],
+      "geraete": [
+        { "id": "n1", "raum": "A", "typ": "dose", "flaeche": "wall_interior", "wand": "a1", "mitte": 1500, "mittelhoehe": 300 },
+        { "id": "n2", "raum": "A", "typ": "dose", "flaeche": "wall_interior", "wand": "a1", "mitte": 2040, "mittelhoehe": 300 },
+        { "id": "n3", "raum": "A", "typ": "dose", "flaeche": "wall_interior", "wand": "a1", "mitte": 1060, "mittelhoehe": 300 },
+        { "id": "n4", "raum": "A", "typ": "dose", "flaeche": "wall_interior", "wand": "a1", "mitte": 1500, "mittelhoehe": 2040 },
+        { "id": "n5", "raum": "A", "typ": "dose", "flaeche": "wall_exterior", "wand": "a1", "mitte": 3000, "mittelhoehe": 1800 },
+        { "id": "n6", "raum": "A", "typ": "dose", "flaeche": "wall_exterior", "wand": "a2", "mitte": 2000, "mittelhoehe": 1800 },
+        { "id": "n7", "raum": "B", "typ": "dose", "flaeche": "wall_exterior", "wand": "b3", "mitte": 500, "mittelhoehe": 1800 },
+        { "id": "n8", "raum": "B", "typ": "dose", "flaeche": "wall_exterior", "wand": "b3", "mitte": 960, "mittelhoehe": 1800 },
+        { "id": "n9", "raum": "B", "typ": "dose", "flaeche": "wall_exterior", "wand": "b3", "mitte": 1040, "mittelhoehe": 1800 }
+      ],
+      "erwartet": {
+        "n1": ["device-in-opening"],
+        "n2": [],
+        "n3": [],
+        "n4": [],
+        "n5": ["device-exterior-on-shared-wall"],
+        "n6": [],
+        "n7": [],
+        "n8": [],
+        "n9": ["device-exterior-on-shared-wall"]
+      }
+    },
+    {
+      "name": "Schraege Gerade: Abschnittsgrenze bei 1000*sqrt(2) exakt",
+      "raeume": [
+        {
+          "id": "A",
+          "hoehe": 2500,
+          "waende": [
+            { "id": "s1", "w": [0, 0, 2000, 2000], "oeffnungen": [] },
+            { "id": "s2", "w": [2000, 2000, 0, 2000], "oeffnungen": [] },
+            { "id": "s3", "w": [0, 2000, 0, 0], "oeffnungen": [] }
+          ]
+        },
+        {
+          "id": "B",
+          "hoehe": 2500,
+          "waende": [
+            { "id": "q1", "w": [3000, 3000, 1000, 1000], "oeffnungen": [] },
+            { "id": "q2", "w": [1000, 1000, 3000, 1000], "oeffnungen": [] },
+            { "id": "q3", "w": [3000, 1000, 3000, 3000], "oeffnungen": [] }
+          ]
+        }
+      ],
+      "geraete": [
+        { "id": "r1", "raum": "A", "typ": "dose", "flaeche": "wall_exterior", "wand": "s1", "mitte": 1374, "mittelhoehe": 1800 },
+        { "id": "r2", "raum": "A", "typ": "dose", "flaeche": "wall_exterior", "wand": "s1", "mitte": 1375, "mittelhoehe": 1000 },
+        { "id": "r3", "raum": "A", "typ": "dose", "flaeche": "wall_interior", "wand": "s1", "mitte": 1600, "mittelhoehe": 1800 }
+      ],
+      "erwartet": {
+        "r1": [],
+        "r2": ["device-exterior-on-shared-wall"],
+        "r3": []
+      }
+    },
+    {
+      "name": "Decke: Rechteck, L-Raum, offene Kontur",
+      "raeume": [
+        {
+          "id": "R",
+          "hoehe": 2500,
+          "waende": [
+            { "id": "r1", "w": [0, 0, 4000, 0], "oeffnungen": [] },
+            { "id": "r2", "w": [4000, 0, 4000, 3000], "oeffnungen": [] },
+            { "id": "r3", "w": [4000, 3000, 0, 3000], "oeffnungen": [] },
+            { "id": "r4", "w": [0, 3000, 0, 0], "oeffnungen": [] }
+          ]
+        },
+        {
+          "id": "L",
+          "hoehe": 2700,
+          "waende": [
+            { "id": "l1", "w": [10000, 0, 16000, 0], "oeffnungen": [] },
+            { "id": "l2", "w": [16000, 0, 16000, 3000], "oeffnungen": [] },
+            { "id": "l3", "w": [16000, 3000, 13000, 3000], "oeffnungen": [] },
+            { "id": "l4", "w": [13000, 3000, 13000, 6000], "oeffnungen": [] },
+            { "id": "l5", "w": [13000, 6000, 10000, 6000], "oeffnungen": [] },
+            { "id": "l6", "w": [10000, 6000, 10000, 0], "oeffnungen": [] }
+          ]
+        },
+        {
+          "id": "O",
+          "hoehe": 2500,
+          "waende": [
+            { "id": "o1", "w": [0, 20000, 3000, 20000], "oeffnungen": [] },
+            { "id": "o2", "w": [3000, 20000, 3000, 23000], "oeffnungen": [] }
+          ]
+        }
+      ],
+      "geraete": [
+        { "id": "c1", "raum": "R", "typ": "leuchte", "flaeche": "ceiling", "x": 2000, "y": 1500 },
+        { "id": "c2", "raum": "R", "typ": "leuchte", "flaeche": "ceiling", "x": 50, "y": 1500 },
+        { "id": "c3", "raum": "R", "typ": "leuchte", "flaeche": "ceiling", "x": 49, "y": 2500 },
+        { "id": "c4", "raum": "R", "typ": "leuchte", "flaeche": "ceiling", "x": 2000, "y": 1600 },
+        { "id": "c12", "raum": "R", "typ": "leuchte", "flaeche": "ceiling", "x": 3000, "y": 2000 },
+        { "id": "c13", "raum": "R", "typ": "leuchte", "flaeche": "ceiling", "x": 3050, "y": 2000 },
+        { "id": "c5", "raum": "L", "typ": "leuchte", "flaeche": "ceiling", "x": 14500, "y": 4500 },
+        { "id": "c6", "raum": "L", "typ": "leuchte", "flaeche": "ceiling", "x": 13000, "y": 3000 },
+        { "id": "c7", "raum": "L", "typ": "leuchte", "flaeche": "ceiling", "x": 12950, "y": 4500 },
+        { "id": "c8", "raum": "L", "typ": "leuchte", "flaeche": "ceiling", "x": 14500, "y": 2950 },
+        { "id": "c9", "raum": "L", "typ": "leuchte", "flaeche": "ceiling", "x": 12950, "y": 3250 },
+        { "id": "c10", "raum": "O", "typ": "leuchte", "flaeche": "ceiling", "x": 1500, "y": 21500 },
+        { "id": "c11", "raum": "R", "typ": "dose", "flaeche": "ceiling", "x": 1000, "y": 1000 }
+      ],
+      "erwartet": {
+        "c1": [],
+        "c2": [],
+        "c3": ["device-outside-room"],
+        "c4": [],
+        "c12": ["devices-overlap"],
+        "c13": ["devices-overlap"],
+        "c5": ["device-outside-room"],
+        "c6": ["device-outside-room"],
+        "c7": [],
+        "c8": [],
+        "c9": [],
+        "c10": ["device-ceiling-contour-open"],
+        "c11": ["device-surface-not-allowed"]
+      }
+    }
+  ]
+}

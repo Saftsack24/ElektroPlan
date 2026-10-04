@@ -229,7 +229,8 @@ erhält, ohne das Fachmodul zu kennen.
 | `OfferItemSuggestionProvider` | `contracts/v1/offer.py` | Angebotsassistent | jedes Fachmodul | 10 |
 
 | `ProjectContentParticipant` | `contracts/v1/project_lifecycle.py` | Core (Projektlöschung) | jedes Fachmodul mit Projektdaten; heute `electrical` | 4d |
-| `FloorCeilingHeightParticipant` | `contracts/v1/floor_planning.py` | Core (Geschoss-PATCH) | jedes Fachmodul, dessen Daten von der Geschoss-Standardhöhe abhängen; heute `electrical` | 4f |
+| `FloorCeilingHeightParticipant` | `contracts/v1/floor_planning.py` | Core (Geschoss-PATCH) | jedes Fachmodul, dessen Daten von der Geschoss-Standardhöhe abhängen; heute `electrical` (Öffnungen, seit 5 Wandgeräte) | 4f |
+| `ReferenceDataSeeder` | `contracts/v1/reference_data.py` | Core (Seed) | jedes Modul mit mitgeliefertem Systemkatalog; heute `electrical` (Gerätetypen) | 5 |
 
 Die Ports entstehen **mit dem Modul, das sie definiert** — nicht vorher. Ein Port
 ohne Aufrufer wäre tote Abstraktion.

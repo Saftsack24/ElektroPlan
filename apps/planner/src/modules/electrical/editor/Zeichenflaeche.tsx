@@ -44,6 +44,9 @@ import {
   verbindungsText,
 } from "./platzierung";
 import type { Aktion, Auswahl, EditorZustand } from "./zustand";
+import type { Geraetetyp } from "../geraete/katalog";
+import { SymbolImPlan } from "../geraete/symbole";
+import { geraetelayout, SYMBOLGROESSE, type Symbollage } from "./geraetelayout";
 
 /** Klasse je Öffnungsart (grundriss.css); ausgeschrieben statt zusammengesetzt. */
 const OEFFNUNG_KLASSE: Record<Oeffnungsart, string> = {
@@ -51,6 +54,25 @@ const OEFFNUNG_KLASSE: Record<Oeffnungsart, string> = {
   window: "grundriss__oeffnung--window",
   passage: "grundriss__oeffnung--passage",
 };
+
+/**
+ * Ein Gerät im Grundriss (Phase 5): Ankerpunkt in Weltkoordinaten und - bei
+ * Wandgeräten - die Richtung zur Montageseite (Einheitsvektor im Grundriss),
+ * damit das Symbol neben der Wand auf der richtigen Seite steht. Reine Anzeige.
+ */
+export interface Geraetedarstellung {
+  readonly id: string;
+  readonly raumId: string;
+  readonly aktiv: boolean;
+  readonly typ: Geraetetyp | undefined;
+  readonly name: string;
+  readonly anker: Punkt;
+  /** Versatz zur Montageseite in mm (halbe Wandstärke) und Richtung; Decke: 0. */
+  readonly versatzMm: number;
+  readonly richtung: Punkt;
+  readonly decke: boolean;
+  readonly fehler: boolean;
+}
 
 /** Ein Raum, wie er gezeichnet wird: aktiv aus dem Entwurf, sonst aus dem Serverstand. */
 export interface Raumdarstellung {
@@ -92,6 +114,10 @@ interface Props {
   topologie: EditorTopologie;
   einordnung: EditorEinordnung;
   raumName: (raumId: string) => string;
+  /** Phase 5: Geräte aller Räume des Geschosses. */
+  geraete?: readonly Geraetedarstellung[];
+  /** Doppelklick auf ein Gerät: in seiner Wand- oder Deckenansicht bearbeiten. */
+  onGeraetBearbeiten?: (raumId: string, geraetId: string) => void;
 }
 
 interface OeffnungZiehen {
@@ -158,6 +184,8 @@ export function Zeichenflaeche(props: Props) {
   const [zeiger, setZeiger] = useState<{ punkt: Punkt; ziel: Fangziel } | null>(null);
   const [vorschau, setVorschau] = useState<Oeffnungsvorschau | null>(null);
   const [wandvorschau, setWandvorschau] = useState<Wandvorschau | null>(null);
+  // Aufgeklappte Gerätegruppe im Grundriss (reine Darstellung, Phase 5).
+  const [offeneGruppe, setOffeneGruppe] = useState<string | null>(null);
   const ziehen = useRef<Ziehen>(null);
   // Zeiger, der während einer Ziehbewegung eingefangen ist - damit Escape
   // und Abbruch ihn sicher wieder freigeben.
@@ -302,8 +330,26 @@ export function Zeichenflaeche(props: Props) {
     }
     if (event.button !== 0) return;
     klickVerbraucht.current = false;
+    // Gerätegruppe auf- oder zuklappen - wählt nichts und ändert nichts.
+    const gruppe = (event.target as Element | null)?.closest?.("[data-geraetegruppe]");
+    if (gruppe instanceof SVGElement && gruppe.dataset.geraetegruppe !== undefined) {
+      klickVerbraucht.current = true;
+      const schluessel = gruppe.dataset.geraetegruppe;
+      setOffeneGruppe((offen) => (offen === schluessel ? null : schluessel));
+      return;
+    }
     const daten = datensatz(event.target);
     const raumId = daten?.raum;
+
+    // Ein Gerät (Phase 5) wählen - in jedem Werkzeug außer „Verschieben“.
+    // Verschoben wird es in seiner Wand- oder Deckenansicht, nicht von oben.
+    if (raumId !== undefined && daten?.geraet !== undefined) {
+      klickVerbraucht.current = true;
+      setVorschau(null);
+      setWandvorschau(null);
+      props.onWaehlen({ art: "geraet", raumId, geraetId: daten.geraet });
+      return;
+    }
 
     // Eine vorhandene Öffnung greifen - im Auswahl- und im Öffnungswerkzeug.
     // Die (auch abgeleitete) Darstellung trägt immer die Eigentümerwand: Ein
@@ -485,7 +531,15 @@ export function Zeichenflaeche(props: Props) {
     if (laufend.art !== "pan") dispatch({ typ: "ziehen-abbrechen" });
   };
 
+  const doppelklickGeraet = (event: { target: EventTarget | null }): boolean => {
+    const daten = datensatz(event.target);
+    if (daten?.geraet === undefined || daten.raum === undefined) return false;
+    props.onGeraetBearbeiten?.(daten.raum, daten.geraet);
+    return true;
+  };
+
   const doppelklick = (event: ReactMouseEvent<SVGSVGElement>) => {
+    if (doppelklickGeraet(event)) return;
     const daten = datensatz(event.target);
     if (zustand.werkzeug === "auswahl" && daten?.raum !== undefined && daten.oeffnung !== undefined && daten.wand !== undefined) {
       props.onOeffnungBearbeiten(daten.raum, daten.wand, daten.oeffnung);
@@ -556,6 +610,7 @@ export function Zeichenflaeche(props: Props) {
           />
         </g>
         <Beschriftungen raeume={raeume} viewport={viewport} />
+        <Geraeteebene geraete={props.geraete ?? []} viewport={viewport} auswahl={zustand.auswahl} offeneGruppe={offeneGruppe} />
         {darfSchreiben && aktiveDarstellung !== undefined && (
           <Eckgriffe raum={aktiveDarstellung} viewport={viewport} auswahl={zustand.auswahl} />
         )}
@@ -988,3 +1043,147 @@ function Vorschau({
   return <g aria-hidden="true">{elemente}</g>;
 }
 
+
+/**
+ * Geräte im Grundriss (Phase 5) - im Bildraum: gleich groß in jeder Zoomstufe.
+ * Wandgeräte stehen neben der Wand auf ihrer Montageseite (innen bzw. außen),
+ * Deckengeräte an ihrer Lage. Würden sich Symbole decken, legt
+ * {@link geraetelayout} fest, wo sie lesbar stehen: Ein versetztes Symbol
+ * zeigt mit einer Zuordnungslinie auf seinen markierten Montagepunkt; dichte
+ * Stellen werden zu einem Gruppensymbol (Klick klappt auf). Nur Darstellung -
+ * gespeichert wird nichts davon. Verschoben wird ein Gerät in der Wand- bzw.
+ * Deckenansicht; ein Doppelklick öffnet sie.
+ */
+const Geraeteebene = memo(function Geraeteebene({
+  geraete,
+  viewport,
+  auswahl,
+  offeneGruppe,
+}: {
+  geraete: readonly Geraetedarstellung[];
+  viewport: Viewport;
+  auswahl: Auswahl;
+  offeneGruppe: string | null;
+}) {
+  const layout = useMemo(() => geraetelayout(geraete, viewport), [geraete, viewport]);
+  if (geraete.length === 0) return null;
+  const groesse = SYMBOLGROESSE;
+  const nachId = new Map(geraete.map((g) => [g.id, g] as const));
+  const gewaehlt = auswahl?.art === "geraet" ? auswahl.geraetId : null;
+  // Aufgeklappt: die angeklickte Gruppe und immer die Gruppe des gewählten Geräts.
+  const offen = layout.gruppen.filter((gr) => gr.schluessel === offeneGruppe || gr.mitglieder.some((m) => m.id === gewaehlt));
+  const zu = layout.gruppen.filter((gr) => !offen.includes(gr));
+  const sichtbar: Symbollage[] = [...layout.einzeln, ...offen.flatMap((gr) => gr.mitglieder)];
+  const klassen = (g: Geraetedarstellung, basis: string) => {
+    const k = [basis];
+    if (!g.aktiv) k.push(`${basis}--ruhend`);
+    if (g.fehler) k.push(`${basis}--fehler`);
+    if (gewaehlt === g.id) k.push(`${basis}--ausgewaehlt`);
+    return k.join(" ");
+  };
+  return (
+    <g className="grundriss__geraete" data-testid="grundriss-geraete">
+      {/* Zuordnung: Montagepunkt und Linie zum versetzten Symbol - unter allen Symbolen. */}
+      {sichtbar.map((s) => {
+        const g = nachId.get(s.id);
+        if (g === undefined || !s.versetzt) return null;
+        return (
+          <g
+            key={`z-${s.id}`}
+            className={klassen(g, "grundriss__zuordnung")}
+            data-testid={`grundriss-zuordnung-${s.id}`}
+            data-montage={`${s.montage.x.toFixed(1)},${s.montage.y.toFixed(1)}`}
+            data-symbol={`${s.symbol.x.toFixed(1)},${s.symbol.y.toFixed(1)}`}
+          >
+            <line x1={s.symbol.x} y1={s.symbol.y} x2={s.montage.x} y2={s.montage.y} className="grundriss__zuordnung-linie" />
+            {g.decke ? (
+              <circle cx={s.montage.x} cy={s.montage.y} r={3.5} className="grundriss__montagepunkt grundriss__montagepunkt--decke" />
+            ) : (
+              <rect x={s.montage.x - 3} y={s.montage.y - 3} width={6} height={6} className="grundriss__montagepunkt" />
+            )}
+          </g>
+        );
+      })}
+      {zu.map((gr) => (
+        <g key={`gz-${gr.schluessel}`} className="grundriss__zuordnung grundriss__zuordnung--gruppe" data-testid={`grundriss-gruppenzuordnung-${gr.schluessel}`}>
+          {gr.mitglieder.map((m) => (
+            <g key={m.id} data-montage={`${m.montage.x.toFixed(1)},${m.montage.y.toFixed(1)}`}>
+              <line x1={gr.lage.x} y1={gr.lage.y} x2={m.montage.x} y2={m.montage.y} className="grundriss__zuordnung-linie" />
+              {nachId.get(m.id)?.decke === true ? (
+                <circle cx={m.montage.x} cy={m.montage.y} r={2.5} className="grundriss__montagepunkt grundriss__montagepunkt--decke" />
+              ) : (
+                <rect x={m.montage.x - 2} y={m.montage.y - 2} width={4} height={4} className="grundriss__montagepunkt" />
+              )}
+            </g>
+          ))}
+        </g>
+      ))}
+      {zu.map((gr) => {
+        const titel = `${gr.mitglieder.length} Geräte an dieser Stelle - Klick: einzeln anzeigen und auswählen`;
+        return (
+          <g
+            key={`g-${gr.schluessel}`}
+            className="grundriss__geraetegruppe"
+            data-geraetegruppe={gr.schluessel}
+            data-testid={`grundriss-geraetegruppe-${gr.schluessel}`}
+            role="button"
+            aria-expanded={false}
+            aria-label={titel}
+          >
+            <title>{titel}</title>
+            <circle cx={gr.lage.x} cy={gr.lage.y} r={groesse / 2 + 4} className="grundriss__geraetegruppe-grund" />
+            <text x={gr.lage.x} y={gr.lage.y} className="grundriss__geraetegruppe-anzahl" textAnchor="middle" dominantBaseline="central">
+              {gr.mitglieder.length}
+            </text>
+          </g>
+        );
+      })}
+      {sichtbar.map((s) => {
+        const g = nachId.get(s.id);
+        if (g === undefined) return null;
+        const p = s.symbol;
+        const titel = `${g.name}${g.fehler ? " - Lage prüfen" : ""}${s.versetzt ? " (Symbol versetzt, die Linie zeigt die Montagestelle)" : ""} - Doppelklick: in der ${g.decke ? "Deckenansicht" : "Wandansicht"} bearbeiten`;
+        return (
+          <g
+            key={g.id}
+            className={klassen(g, "grundriss__geraet")}
+            data-raum={g.raumId}
+            data-geraet={g.id}
+            data-testid={`grundriss-geraet-${g.id}`}
+            data-versetzt={s.versetzt ? "ja" : "nein"}
+            aria-label={titel}
+          >
+            <title>{titel}</title>
+            {g.decke ? (
+              <circle cx={p.x} cy={p.y} r={groesse / 2 + 2} className="grundriss__geraet-grund" />
+            ) : (
+              <rect x={p.x - groesse / 2 - 2} y={p.y - groesse / 2 - 2} width={groesse + 4} height={groesse + 4} rx={3} className="grundriss__geraet-grund" />
+            )}
+            <SymbolImPlan typ={g.typ} x={p.x} y={p.y} groesse={groesse} />
+            <rect x={p.x - 12} y={p.y - 12} width={24} height={24} className="grundriss__geraet-treffer" />
+          </g>
+        );
+      })}
+      {offen.map((gr) => {
+        const titel = `Gruppe mit ${gr.mitglieder.length} Geräten zuklappen`;
+        return (
+          <g
+            key={`gk-${gr.schluessel}`}
+            className="grundriss__geraetegruppe grundriss__geraetegruppe--offen"
+            data-geraetegruppe={gr.schluessel}
+            data-testid={`grundriss-geraetegruppe-${gr.schluessel}`}
+            role="button"
+            aria-expanded={true}
+            aria-label={titel}
+          >
+            <title>{titel}</title>
+            <circle cx={gr.lage.x} cy={gr.lage.y} r={7} className="grundriss__geraetegruppe-grund" />
+            <text x={gr.lage.x} y={gr.lage.y} className="grundriss__geraetegruppe-anzahl" textAnchor="middle" dominantBaseline="central">
+              −
+            </text>
+          </g>
+        );
+      })}
+    </g>
+  );
+});

@@ -40,6 +40,19 @@
   .ansicht__vorschau--fehler { fill: var(--ep-danger); fill-opacity: 0.12; stroke: var(--ep-danger); }
   .ansicht__fang { stroke: var(--ep-warning); stroke-width: 1.5; stroke-dasharray: 2 3; pointer-events: none; }
 
+  /* Geräte (Phase 5): Planungsmaß als Fläche, Symbol in fester Bildgröße. */
+  .ansicht__geraet { color: var(--ep-plan-device); cursor: pointer; }
+  .ansicht__geraet-mass { fill: var(--ep-plan-device-face); stroke: var(--ep-plan-device); stroke-width: 1; }
+  .ansicht__geraet-treffer { fill: transparent; stroke: none; }
+  .ansicht__geraet--fehler { color: var(--ep-danger); }
+  .ansicht__geraet--fehler .ansicht__geraet-mass { stroke: var(--ep-danger); stroke-width: 2; stroke-dasharray: 4 2; }
+  .ansicht__geraet--ausgewaehlt { color: var(--ep-selected); }
+  .ansicht__geraet--ausgewaehlt .ansicht__geraet-mass { stroke: var(--ep-selected); stroke-width: 3; }
+  .ansicht__geraet--gezogen { opacity: 0.35; }
+  .ansicht__geraet-vorschau { color: var(--ep-accent); pointer-events: none; }
+  .ansicht__geraet-vorschau--fehler { color: var(--ep-danger); }
+  .ansicht__geraet-decke-ref { fill: none; stroke: var(--ep-text-muted); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; }
+
   .ansicht__mass { stroke: var(--ep-text-muted); stroke-width: 1; pointer-events: none; }
   .ansicht__mass--nachbar { stroke: var(--ep-accent); }
   .ansicht__mass--ueberschneidung { stroke: var(--ep-danger); stroke-width: 2; }

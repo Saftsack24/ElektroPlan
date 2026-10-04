@@ -14,18 +14,22 @@ statisch geprueft.
 ``provides`` bindet seit Phase 4d den Teilnehmer des Loeschprotokolls fuer
 Projekte (``ProjectContentParticipant``, ADR 0020) und seit Phase 4f den
 Pruefer einer neuen Geschoss-Standardhoehe (``FloorCeilingHeightParticipant``,
-ADR 0022). Die Provider-Ports fuer ``materials`` kommen erst mit Phase 7.
+ADR 0022) und seit Phase 5 den idempotenten Seed des Geraetekatalogs
+(``ReferenceDataSeeder``, ADR 0023). Die Provider-Ports fuer ``materials``
+kommen erst mit Phase 7.
 """
 
 from __future__ import annotations
 
 from app.contracts.v1.floor_planning import FloorCeilingHeightParticipant
 from app.contracts.v1.project_lifecycle import ProjectContentParticipant
+from app.contracts.v1.reference_data import ReferenceDataSeeder
 from app.core.module_registry.descriptor import ModuleDescriptor, ModuleKind, bind_port
 from app.modules.electrical.api import router
 from app.modules.electrical.floor_height import ElectricalFloorHeightCheck
 from app.modules.electrical.lifecycle import ElectricalProjectContent
 from app.modules.electrical.permissions import ELECTRICAL_PERMISSIONS
+from app.modules.electrical.reference_data import ElectricalReferenceData
 
 DESCRIPTOR = ModuleDescriptor(
     id="electrical",
@@ -40,5 +44,6 @@ DESCRIPTOR = ModuleDescriptor(
     provides=(
         bind_port(ProjectContentParticipant, ElectricalProjectContent),
         bind_port(FloorCeilingHeightParticipant, ElectricalFloorHeightCheck),
+        bind_port(ReferenceDataSeeder, ElectricalReferenceData),
     ),
 )

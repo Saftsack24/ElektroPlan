@@ -17,9 +17,10 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.validation import reject_explicit_null
+from app.modules.electrical.catalog import MAX_DEVICE_LABEL_LENGTH, MAX_DEVICES_PER_ROOM
 from app.modules.electrical.geometry import (
     DEFAULT_WALL_THICKNESS_MM,
     MAX_COORDINATE_MM,
@@ -36,6 +37,25 @@ from app.modules.electrical.geometry import (
 
 OpeningKindValue = Literal["door", "window", "passage"]
 ContourStatusValue = Literal["draft", "valid"]
+#: Raumtypen (T7, Phase 5) - dieselben Schluessel wie ``catalog.ROOM_TYPES``
+#: (ein Test haelt beide gleich). Nur zur Einordnung.
+RoomTypeValue = Literal[
+    "living_room",
+    "bedroom",
+    "children_room",
+    "kitchen",
+    "bathroom",
+    "hallway",
+    "office",
+    "utility_room",
+    "technical_room",
+    "basement",
+    "garage",
+    "other",
+]
+#: Tatsaechliche Montageflaeche eines Geraets (``catalog.MountingSurface``).
+MountingSurfaceValue = Literal["wall_interior", "wall_exterior", "ceiling"]
+DeviceCategoryValue = Literal["socket", "switch", "light", "data"]
 
 
 def _coordinate(*, required: bool) -> Any:
@@ -97,19 +117,74 @@ class ContourWallIn(_Strict):
     openings: list[ContourOpeningIn] = Field(default_factory=list, max_length=MAX_OPENINGS_PER_WALL)
 
 
+class ContourDeviceIn(_Strict):
+    """Geraet als Teil des Raumentwurfs (Phase 5, ADR 0023).
+
+    ``id`` wie bei Oeffnungen: bekannt heisst aendern, fehlend oder neu heisst
+    anlegen (clientseitig erzeugte UUID). Montageflaeche und Wand eines
+    vorhandenen Geraets aendern sich nicht.
+
+    Bezugspunkt ist die **Mitte** des Geraets:
+
+    * Wand (``wall_interior``/``wall_exterior``): ``wall_id`` (eine Wand dieses
+      Raums, auch eine im selben Entwurf neu angelegte), ``center_offset_mm``
+      (Abstand ab Wandanfang der gerichteten Wand) und ``center_height_mm``
+      (ueber Fertigfussboden),
+    * Decke (``ceiling``): ``x_mm``/``y_mm`` in Geschosskoordinaten - **ohne**
+      Hoehe; sie ist immer die effektive Raumhoehe.
+    """
+
+    id: uuid.UUID | None = None
+    device_type_key: str = Field(min_length=1, max_length=40)
+    mounting_surface: MountingSurfaceValue
+    wall_id: uuid.UUID | None = None
+    center_offset_mm: int | None = Field(default=None, ge=0, le=MAX_COORDINATE_MM)
+    center_height_mm: int | None = Field(default=None, ge=0, le=MAX_ROOM_HEIGHT_MM)
+    x_mm: int | None = _coordinate(required=False)
+    y_mm: int | None = _coordinate(required=False)
+    label: str | None = Field(default=None, min_length=1, max_length=MAX_DEVICE_LABEL_LENGTH)
+
+    @model_validator(mode="after")
+    def _position_matches_surface(self) -> ContourDeviceIn:
+        wall_values = (self.wall_id, self.center_offset_mm, self.center_height_mm)
+        ceiling_values = (self.x_mm, self.y_mm)
+        if self.mounting_surface == "ceiling":
+            if any(value is not None for value in wall_values) or None in ceiling_values:
+                msg = "Ein Deckengeraet braucht x_mm und y_mm und keine Wandangaben."
+                raise ValueError(msg)
+        elif None in wall_values or any(value is not None for value in ceiling_values):
+            msg = (
+                "Ein Wandgeraet braucht wall_id, center_offset_mm und center_height_mm und "
+                "keine Deckenlage."
+            )
+            raise ValueError(msg)
+        return self
+
+
 class RoomContourUpdate(_Strict):
-    """Vollstaendiger Zielzustand der Raumgeometrie (``PUT /rooms/{id}/contour``).
+    """Vollstaendiger Zielzustand des Raumentwurfs (``PUT /rooms/{id}/contour``).
 
     Ein Vorgang, eine Transaktion: Entweder gilt danach genau diese Kontur,
     oder es hat sich nichts geaendert. Waende, die in ``walls`` fehlen, werden
     entfernt. Oeffnungen verschwinden dagegen **nie** stillschweigend: Eine
     vorhandene Oeffnung muss entweder in ``walls`` stehen oder ausdruecklich
     in ``removed_opening_ids``. Sonst lehnt der Server ab.
+
+    **Geraete (Phase 5):** ``devices`` ist - wenn angegeben - die vollstaendige
+    Geraeteliste des Raums; fuer Geraete gilt dieselbe Regel wie fuer
+    Oeffnungen (``removed_device_ids``). Fehlt ``devices`` (``null``), bleiben
+    die gespeicherten Geraete unveraendert - und werden trotzdem gegen die neue
+    Geometrie geprueft. Geometrie und Geraete werden immer **gemeinsam**
+    gespeichert.
     """
 
     walls: list[ContourWallIn] = Field(max_length=MAX_WALLS_PER_ROOM)
     removed_opening_ids: list[uuid.UUID] = Field(
         default_factory=list, max_length=MAX_WALLS_PER_ROOM * MAX_OPENINGS_PER_WALL
+    )
+    devices: list[ContourDeviceIn] | None = Field(default=None, max_length=MAX_DEVICES_PER_ROOM)
+    removed_device_ids: list[uuid.UUID] = Field(
+        default_factory=list, max_length=MAX_DEVICES_PER_ROOM
     )
 
 
@@ -131,6 +206,8 @@ class RoomCreate(_Strict):
     name: str = Field(min_length=1, max_length=120)
     room_number: str | None = Field(default=None, min_length=1, max_length=30)
     height_mm: int | None = Field(default=None, ge=MIN_ROOM_HEIGHT_MM, le=MAX_ROOM_HEIGHT_MM)
+    #: Raumtyp (T7) - optional, nur zur Einordnung.
+    room_type: RoomTypeValue | None = None
     walls: list[ContourWallIn] = Field(default_factory=list, max_length=MAX_WALLS_PER_ROOM)
 
 
@@ -145,6 +222,8 @@ class RoomUpdate(_Strict):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     room_number: str | None = Field(default=None, min_length=1, max_length=30)
     height_mm: int | None = Field(default=None, ge=MIN_ROOM_HEIGHT_MM, le=MAX_ROOM_HEIGHT_MM)
+    #: Raumtyp (T7) - setzbar und ausdruecklich leerbar (``null``).
+    room_type: RoomTypeValue | None = None
 
     #: In der Datenbank ``NOT NULL`` - aenderbar, aber nicht leerbar.
     _not_nullable = field_validator("name")(reject_explicit_null)
@@ -166,6 +245,8 @@ class RoomOut(BaseModel):
     height_mm: int | None
     #: Tatsaechlich geltende Hoehe - eigene Angabe oder Geschossstandard.
     effective_height_mm: int
+    #: Raumtyp (T7); ``null`` = nicht angegeben. Loest nichts aus.
+    room_type: RoomTypeValue | None
     contour_status: ContourStatusValue
     wall_count: int
     area_mm2: int | None
@@ -319,6 +400,50 @@ class OpeningOut(BaseModel):
 # -------------------------------------------------------- Planungsstand (4a)
 
 
+class DeviceOut(BaseModel):
+    """Ein gespeichertes Geraet (Phase 5). Bezugspunkt ist die Geraetemitte."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    room_id: uuid.UUID
+    device_type_key: str
+    mounting_surface: MountingSurfaceValue
+    wall_id: uuid.UUID | None
+    center_offset_mm: int | None
+    center_height_mm: int | None
+    x_mm: int | None
+    y_mm: int | None
+    label: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class DeviceTypeOut(BaseModel):
+    """Ein Geraetetyp des Systemkatalogs.
+
+    ``width_mm``/``height_mm`` sind das **Planungsmass** fuer die
+    Platzierungspruefung (an der Wand Breite x Hoehe, an der Decke in x und y)
+    - keine Herstellerangabe. ``default_center_height_mm`` ist ein Startwert,
+    keine Normvorgabe. ``is_active = false``: nicht mehr fuer neue Geraete.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    key: str
+    label: str
+    category: DeviceCategoryValue
+    symbol_key: str
+    allows_wall_interior: bool
+    allows_wall_exterior: bool
+    allows_ceiling: bool
+    default_center_height_mm: int | None
+    width_mm: int
+    height_mm: int
+    sort_order: int
+    is_active: bool
+
+
 class WallPlanOut(WallOut):
     """Wand im Planungsstand - mit ihren Oeffnungen, vom Wandanfang aus."""
 
@@ -335,6 +460,8 @@ class RoomPlanOut(RoomOut):
 
     walls: list[WallPlanOut]
     contour_problems: list[GeometryProblemOut]
+    #: Geraete des Raums (Phase 5), nach ID sortiert.
+    devices: list[DeviceOut]
 
 
 class FloorPlanOut(BaseModel):

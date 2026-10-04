@@ -32,6 +32,11 @@ def cmd_seed(args: list[str]) -> int:
     print(f"Organisation: {result.organization_id}")
     print(f"Administrator: {result.admin_user_id}")
     print(f"Neue Berechtigungen: {result.permissions_created}")
+    for item in result.reference_data:
+        print(
+            f"Stammdaten {item.module_id}: {item.created} neu, {item.updated} angeglichen, "
+            f"{item.deactivated} deaktiviert"
+        )
     return 0
 
 

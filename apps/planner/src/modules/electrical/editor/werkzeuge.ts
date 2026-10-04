@@ -174,6 +174,13 @@ export function wandlaengeSetzen(
   // Öffnungen werden nie still verschoben oder ungültig (Phase 4f): Passt eine
   // nicht mehr in die neue Länge, wird die Änderung verständlich abgelehnt.
   const neueLaenge = streckenlaenge(start(w), neuesEnde);
+  // Geräte ebenso (Phase 5): Liegt eine Gerätemitte jenseits des neuen Endes, abgelehnt.
+  const geraet = entwurf.geraete.find((g) => g.wall_id === wandId && (g.center_offset_mm ?? 0) > neueLaenge);
+  if (geraet !== undefined) {
+    return {
+      fehler: `An dieser Wand sitzt ein Gerät bei ${mm(geraet.center_offset_mm ?? 0)} ab Wandanfang; die Wand wäre nur ${mm(neueLaenge)} lang. Bitte zuerst das Gerät verschieben oder entfernen.`,
+    };
+  }
   const zuLang = w.openings.find((o) => o.offset_mm + o.width_mm > neueLaenge);
   if (zuLang !== undefined) {
     return {
@@ -202,6 +209,12 @@ export function wandTeilen(
         "Eine Öffnung liegt in der zweiten Wandhälfte. Öffnungen wechseln ihre Wand nicht - bitte die Öffnung zuerst verschieben oder entfernen.",
     };
   }
+  if (entwurf.geraete.some((g) => g.wall_id === wandId && (g.center_offset_mm ?? 0) >= ersteLaenge)) {
+    return {
+      fehler:
+        "Ein Gerät sitzt in der zweiten Wandhälfte. Geräte wechseln ihre Wand nicht - bitte das Gerät zuerst verschieben oder entfernen.",
+    };
+  }
   const erste: EntwurfWand = { ...w, x2_mm: mitte.x, y2_mm: mitte.y };
   const zweite: EntwurfWand = { ...w, id: neueWandId, x1_mm: mitte.x, y1_mm: mitte.y, openings: [] };
   const walls = [...entwurf.walls];
@@ -214,6 +227,9 @@ export function wandEntfernen(entwurf: Raumentwurf, wandId: string): Ergebnis<Ra
   const w = entwurf.walls[wandIndex(entwurf, wandId)] as EntwurfWand;
   if (w.openings.length > 0) {
     return { fehler: "Diese Wand trägt noch Öffnungen. Bitte zuerst die Öffnungen entfernen." };
+  }
+  if (entwurf.geraete.some((g) => g.wall_id === wandId)) {
+    return { fehler: "An dieser Wand sind noch Geräte montiert. Bitte zuerst die Geräte entfernen." };
   }
   return { wert: { ...entwurf, walls: entwurf.walls.filter((x) => x.id !== wandId) } };
 }
@@ -235,6 +251,9 @@ export function eckeEntfernen(entwurf: Raumentwurf, wandId: string): Ergebnis<Ra
   if (naechste.openings.length > 0) {
     return { fehler: "Die folgende Wand trägt Öffnungen. Bitte zuerst die Öffnungen entfernen." };
   }
+  if (entwurf.geraete.some((g) => g.wall_id === naechste.id)) {
+    return { fehler: "An der folgenden Wand sind Geräte montiert. Bitte zuerst die Geräte entfernen." };
+  }
   const verbunden: EntwurfWand = { ...w, x2_mm: naechste.x2_mm, y2_mm: naechste.y2_mm };
   const walls = entwurf.walls
     .map((x, i) => (i === index ? verbunden : x))
@@ -245,11 +264,18 @@ export function eckeEntfernen(entwurf: Raumentwurf, wandId: string): Ergebnis<Ra
 /**
  * Kehrt den Umlaufsinn um: Reihenfolge und Richtung jeder Wand. Öffnungen
  * behalten ihre Lage im Raum; ihr Abstand zählt danach vom anderen Wandende
- * (die Richtung ist fachlich bedeutsam, ADR 0013).
+ * (die Richtung ist fachlich bedeutsam, ADR 0013). Wandgeräte ebenso: Die
+ * Mitte zählt danach vom anderen Ende (`L − Mitte`); innen bleibt innen.
  */
 export function konturUmkehren(entwurf: Raumentwurf): Raumentwurf {
+  const laengen = new Map(entwurf.walls.map((w) => [w.id, streckenlaenge(start(w), ende(w))]));
   return {
     ...entwurf,
+    geraete: entwurf.geraete.map((g) =>
+      g.wall_id === null || g.center_offset_mm === null
+        ? g
+        : { ...g, center_offset_mm: (laengen.get(g.wall_id) ?? 0) - g.center_offset_mm },
+    ),
     walls: [...entwurf.walls].reverse().map((w) => {
       const laenge = streckenlaenge(start(w), ende(w));
       return {

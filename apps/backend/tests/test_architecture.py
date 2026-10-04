@@ -151,9 +151,9 @@ def test_tabellenbestand_ist_vollstaendig_erfasst() -> None:
     17 Core-Tabellen (Phase 1 und 2), zwei fuer Einladungen (Phase 4.2), die
     Storage-Aufraeum-Warteschlange (Phase 4d), Reset-Links und persoenliche
     Einstellungen (Phase 4e) plus die drei des Fachmoduls ``electrical`` aus
-    Phase 3.
+    Phase 3 und seit Phase 5 Geraetekatalog und Geraete.
     """
-    assert len(metadata.sorted_tables) == 25, (
+    assert len(metadata.sorted_tables) == 27, (
         "Anzahl der Tabellen hat sich geaendert - test_architecture.py und "
         "docs/database.md pruefen."
     )

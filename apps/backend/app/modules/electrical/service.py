@@ -46,6 +46,8 @@ from app.errors import (
     VersionConflictError,
 )
 from app.modules.electrical import geometry
+from app.modules.electrical.catalog import WALL_SURFACES
+from app.modules.electrical.device_rules import DeviceBaseline, FloorDeviceCheck, load_device_types
 from app.modules.electrical.geometry import (
     ContourReport,
     GeometryProblem,
@@ -56,11 +58,14 @@ from app.modules.electrical.geometry import (
 )
 from app.modules.electrical.models import (
     ROOM_NUMBER_CONSTRAINT,
+    ElectricalDevice,
+    ElectricalDeviceType,
     ElectricalOpening,
     ElectricalRoom,
     ElectricalWall,
 )
 from app.modules.electrical.schemas import (
+    ContourDeviceIn,
     ContourWallIn,
     OpeningCreate,
     OpeningUpdate,
@@ -89,6 +94,18 @@ class WallRepository(TenantRepository[ElectricalWall]):
 
 class OpeningRepository(TenantRepository[ElectricalOpening]):
     model = ElectricalOpening
+
+
+class DeviceRepository(TenantRepository[ElectricalDevice]):
+    model = ElectricalDevice
+
+
+#: Meldung, wenn eine Aenderung ein vorhandenes Geraet unzulaessig machen wuerde.
+DEVICE_DETAIL = (
+    "Durch diese Aenderung laege ein Geraet unzulaessig (ausserhalb der Wand, in einer "
+    "Oeffnung oder ausserhalb des Raums). Es wurde nichts gespeichert; Geraete werden nie "
+    "automatisch verschoben."
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,10 +143,11 @@ class WallPlan:
 
 @dataclass(frozen=True, slots=True)
 class RoomPlan:
-    """Ein Raum mit Kontur, Waenden und Oeffnungen."""
+    """Ein Raum mit Kontur, Waenden, Oeffnungen und Geraeten."""
 
     view: RoomView
     walls: list[WallPlan]
+    devices: list[ElectricalDevice]
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +169,8 @@ class WriteResult:
 
     context: FloorPlanningContext
     room_id: uuid.UUID
+    #: ``False``: Der Vorgang hat nur Geraete geaendert (Event ``devices_changed``).
+    geometry_changed: bool = True
 
 
 def area_m2(area_mm2: int | None) -> str | None:
@@ -197,6 +217,9 @@ class ElectricalRoomService:
         self.rooms = RoomRepository(session, organization_id)
         self.walls = WallRepository(session, organization_id)
         self.openings = OpeningRepository(session, organization_id)
+        self.devices = DeviceRepository(session, organization_id)
+        #: Geraetepruefung ueber das ganze Geschoss (Phase 5, ADR 0023).
+        self.device_check = FloorDeviceCheck(session, organization_id)
         #: Der einzige Weg zu Geschoss, Projekt und Archivregel des Core.
         self.structure = FloorPlanningAccess(session, organization_id)
 
@@ -228,12 +251,26 @@ class ElectricalRoomService:
         openings = self._openings_by_wall(
             [wall.id for room_walls in walls.values() for wall in room_walls]
         )
+        devices: dict[uuid.UUID, list[ElectricalDevice]] = {}
+        for device in self.device_check.devices_of_rooms([room.id for room in rooms]):
+            devices.setdefault(device.room_id, []).append(device)
         return FloorPlan(
             context=context,
             rooms=[
-                self._room_plan(room, context, walls.get(room.id, []), openings) for room in rooms
+                self._room_plan(
+                    room, context, walls.get(room.id, []), openings, devices.get(room.id, [])
+                )
+                for room in rooms
             ],
         )
+
+    def list_device_types(self) -> list[ElectricalDeviceType]:
+        """Der Systemkatalog - aktive und deaktivierte Typen, in Katalogreihenfolge.
+
+        Deaktivierte Typen bleiben sichtbar, damit vorhandene Geraete benannt
+        werden koennen; fuer neue Geraete sind sie gesperrt.
+        """
+        return list(load_device_types(self.session).values())
 
     def get_room(self, room_id: uuid.UUID) -> RoomView:
         room = self.rooms.get_or_404(room_id)
@@ -263,6 +300,7 @@ class ElectricalRoomService:
 
     def create_room(self, floor_id: uuid.UUID, payload: RoomCreate) -> tuple[RoomView, WriteResult]:
         context = self.structure.writable_context(floor_id)
+        baseline = self._device_baseline(context)
         # Die Identitaet entsteht vor dem Schreiben - ein Datensatz hat seine
         # endgueltige ID, bevor die Datenbank ihn gesehen hat (ADR 0007).
         room = ElectricalRoom(
@@ -277,6 +315,8 @@ class ElectricalRoomService:
             # Raum und Kontur in **einer** Transaktion (Phase 4a): Scheitert
             # die Kontur, entsteht auch kein leerer Raum.
             self._apply_contour(room, context, payload.walls, removed_opening_ids=[])
+            # Ein neuer Raum kann ein Wandstueck eines Nachbarn zu einem geteilten machen.
+            self._require_devices_fit(context, baseline)
         return self._view(room, context), WriteResult(context=context, room_id=room.id)
 
     def update_room(
@@ -292,12 +332,15 @@ class ElectricalRoomService:
         """
         room, context = self._locked_room(room_id)
         check_version(room, expected_version)
+        baseline = self._device_baseline(context)
         changes = payload.model_dump(exclude_unset=True)
         for field, value in changes.items():
             setattr(room, field, value)
         self._flush_room(room.room_number)
         view = self._view(room, context)
         self._require_openings_still_fit(room_id, room_height_mm=view.effective_height_mm)
+        # Wandgeraete muessen unter die neue Decke passen; Deckengeraete folgen ihr.
+        self._require_devices_fit(context, baseline)
         return view, WriteResult(context=context, room_id=room.id)
 
     def delete_room(self, room_id: uuid.UUID, *, expected_version: int) -> WriteResult:
@@ -330,6 +373,7 @@ class ElectricalRoomService:
         muss die Reihenfolge nicht kennen.
         """
         room, context = self._locked_room(room_id)
+        baseline = self._device_baseline(context)
         existing = self._ordered_walls(room.id)
         if len(existing) >= MAX_WALLS_PER_ROOM:
             raise ValidationFailedError(
@@ -349,6 +393,7 @@ class ElectricalRoomService:
         )
         _touch(room)
         flush(self.session)
+        self._require_devices_fit(context, baseline)
         return (
             WallDetail(wall=wall, opening_count=0),
             WriteResult(context=context, room_id=room.id),
@@ -368,6 +413,7 @@ class ElectricalRoomService:
         room, context = self._locked_room(wall.room_id)
         self._reread(wall)
         check_version(wall, expected_version)
+        baseline = self._device_baseline(context)
         for field, value in payload.model_dump(exclude_unset=True).items():
             setattr(wall, field, value)
 
@@ -379,6 +425,7 @@ class ElectricalRoomService:
         openings = self._require_wall_openings_fit(wall)
         _touch(room)
         flush(self.session)
+        self._require_devices_fit(context, baseline)
         return (
             WallDetail(wall=wall, opening_count=len(openings)),
             WriteResult(context=context, room_id=room.id),
@@ -395,6 +442,7 @@ class ElectricalRoomService:
         """
         room, context = self._locked_room(room_id)
         check_version(room, expected_version)
+        baseline = self._device_baseline(context)
         walls = {wall.id: wall for wall in self._ordered_walls(room.id)}
 
         if len(set(wall_ids)) != len(wall_ids):
@@ -416,6 +464,8 @@ class ElectricalRoomService:
         # ein zweiter Client den Wechsel ueber ``If-Match`` bemerkt.
         _touch(room)
         flush(self.session)
+        # Eine andere Reihenfolge kann die Kontur oeffnen - Deckengeraete brauchen sie.
+        self._require_devices_fit(context, baseline)
         return self._details(ordered), WriteResult(context=context, room_id=room.id)
 
     def delete_wall(self, wall_id: uuid.UUID, *, expected_version: int) -> WriteResult:
@@ -441,6 +491,13 @@ class ElectricalRoomService:
                 f"Diese Wand traegt noch {count} Oeffnung(en). Bitte zuerst die Oeffnungen "
                 "entfernen."
             )
+        devices = self._device_count_on_wall(wall.id)
+        if devices:
+            raise ConflictError(
+                f"An dieser Wand sind noch {devices} Geraet(e) montiert. Bitte zuerst die Geraete "
+                "entfernen."
+            )
+        baseline = self._device_baseline(context)
 
         self.session.delete(wall)
         self.session.flush()
@@ -448,6 +505,7 @@ class ElectricalRoomService:
             remaining.sort_order = position
         _touch(room)
         flush(self.session)
+        self._require_devices_fit(context, baseline)
         return WriteResult(context=context, room_id=room.id)
 
     # ------------------------------------------------ Kontur als Ganzes (4a)
@@ -478,12 +536,24 @@ class ElectricalRoomService:
         """
         room, context = self._locked_room(room_id)
         check_version(room, expected_version)
-        self._apply_contour(
-            room, context, payload.walls, removed_opening_ids=payload.removed_opening_ids
+        baseline = self._device_baseline(context)
+        geometry_before = self._geometry_signature(room.id)
+        changed = self._apply_contour(
+            room,
+            context,
+            payload.walls,
+            removed_opening_ids=payload.removed_opening_ids,
+            devices_in=payload.devices,
+            removed_device_ids=payload.removed_device_ids,
         )
         _touch(room)
         flush(self.session)
-        return self._reloaded_plan(room, context), WriteResult(context=context, room_id=room.id)
+        self._require_devices_fit(context, baseline, changed=changed)
+        return self._reloaded_plan(room, context), WriteResult(
+            context=context,
+            room_id=room.id,
+            geometry_changed=self._geometry_signature(room.id) != geometry_before,
+        )
 
     def _apply_contour(
         self,
@@ -492,10 +562,13 @@ class ElectricalRoomService:
         walls_in: list[ContourWallIn],
         *,
         removed_opening_ids: list[uuid.UUID],
-    ) -> None:
+        devices_in: list[ContourDeviceIn] | None = None,
+        removed_device_ids: list[uuid.UUID] | None = None,
+    ) -> frozenset[str]:
         """Prueft den Zielzustand vollstaendig und schreibt ihn erst dann.
 
-        Voraussetzung: Projekt und Raum sind gesperrt.
+        Voraussetzung: Projekt und Raum sind gesperrt. Liefert die IDs der neuen
+        oder geaenderten Geraete - sie muessen danach vollstaendig zulaessig sein.
         """
         current_walls = {wall.id: wall for wall in self._ordered_walls(room.id)}
         current_openings = {
@@ -526,6 +599,17 @@ class ElectricalRoomService:
             current_openings=current_openings,
         )
 
+        # 2a. Geraete (Phase 5): Kennungen und Zielzustand - vor jedem Schreiben.
+        current_devices = {
+            device.id: device for device in self.device_check.devices_of_rooms([room.id])
+        }
+        device_plan = self._device_plan(
+            devices_in,
+            removed_device_ids or [],
+            current_devices=current_devices,
+            target_wall_ids=set(wall_ids),
+        )
+
         # 3. Der Zielzustand als Ganzes - dieselben Regeln wie ueberall.
         _raise_geometry(
             _target_problems(
@@ -538,6 +622,8 @@ class ElectricalRoomService:
         )
 
         # 4. Schreiben: erst entfernen, dann aendern und anlegen.
+        for device_id in device_plan.removed:
+            self.session.delete(current_devices[device_id])
         for opening_id in removed_opening_ids:
             self.session.delete(current_openings[opening_id])
         flush(self.session)
@@ -591,6 +677,178 @@ class ElectricalRoomService:
         self._flush_new(
             constraint="pk_electrical_openings",
             detail="Eine Oeffnungs-ID ist bereits vergeben. Bitte neu laden.",
+        )
+
+        changed: set[str] = set()
+        for device_id, device_in in device_plan.target:
+            device_values: dict[str, object] = {
+                "device_type_key": device_in.device_type_key,
+                "mounting_surface": device_in.mounting_surface,
+                "wall_id": device_in.wall_id,
+                "center_offset_mm": device_in.center_offset_mm,
+                "center_height_mm": device_in.center_height_mm,
+                "x_mm": device_in.x_mm,
+                "y_mm": device_in.y_mm,
+                "label": device_in.label,
+            }
+            existing_device = current_devices.get(device_id)
+            if existing_device is None:
+                new_device = ElectricalDevice(
+                    id=device_id, organization_id=self.organization_id, room_id=room.id
+                )
+                _assign(new_device, device_values)
+                self.devices.add(new_device)
+                changed.add(str(device_id))
+            elif _assign(existing_device, device_values):
+                changed.add(str(device_id))
+        self._flush_new(
+            constraint="pk_electrical_devices",
+            detail="Eine Geraete-ID ist bereits vergeben. Bitte neu laden.",
+        )
+        return frozenset(changed)
+
+    def _device_plan(
+        self,
+        devices_in: list[ContourDeviceIn] | None,
+        removed_device_ids: list[uuid.UUID],
+        *,
+        current_devices: dict[uuid.UUID, ElectricalDevice],
+        target_wall_ids: set[uuid.UUID],
+    ) -> _DevicePlan:
+        """Kennungen und Zielzustand der Geraete - geprueft, bevor geschrieben wird.
+
+        Ohne ``devices`` bleiben die gespeicherten Geraete, wie sie sind; eine
+        Wand, an der noch ein Geraet haengt, laesst sich dann nicht entfernen.
+        """
+        if devices_in is None:
+            if removed_device_ids:
+                _raise_geometry(
+                    [
+                        GeometryProblem(
+                            code="device-list-missing",
+                            message=(
+                                "Geraete werden nur zusammen mit der vollstaendigen Liste entfernt."
+                            ),
+                            keys=tuple(str(item) for item in removed_device_ids),
+                        )
+                    ],
+                    detail="Der Entwurf ist unvollstaendig. Es wurde nichts gespeichert.",
+                )
+            on_removed = sorted(
+                str(device.id)
+                for device in current_devices.values()
+                if device.wall_id is not None and device.wall_id not in target_wall_ids
+            )
+            if on_removed:
+                _raise_devices_on_removed_walls(on_removed, current_devices)
+            return _DevicePlan(target=[], removed=[])
+
+        device_ids = [device.id or uuid.uuid4() for device in devices_in]
+        problems: list[GeometryProblem] = []
+        doubled = _duplicates([*device_ids, *removed_device_ids])
+        if doubled:
+            problems.append(
+                GeometryProblem(
+                    code="device-id-duplicate",
+                    message="Eine Geraete-ID kommt mehrfach vor.",
+                    keys=doubled,
+                )
+            )
+        foreign = [str(item) for item in removed_device_ids if item not in current_devices]
+        new_ids = [item for item in device_ids if item not in current_devices]
+        if new_ids:
+            foreign.extend(
+                str(device.id)
+                for device in self.session.execute(
+                    self.devices.query().where(ElectricalDevice.id.in_(new_ids))
+                ).scalars()
+            )
+        if foreign:
+            problems.append(
+                GeometryProblem(
+                    code="device-foreign",
+                    message="Ein Geraet gehoert nicht zu diesem Raum.",
+                    keys=tuple(foreign),
+                )
+            )
+        listed = {*device_ids, *removed_device_ids}
+        missing = [str(item) for item in current_devices if item not in listed]
+        if missing:
+            problems.append(
+                GeometryProblem(
+                    code="device-missing",
+                    message=(
+                        "Ein gespeichertes Geraet fehlt im Entwurf. Geraete werden nur "
+                        "ausdruecklich entfernt."
+                    ),
+                    keys=tuple(missing),
+                )
+            )
+        types = load_device_types(self.session)
+        for device_id, device_in in zip(device_ids, devices_in, strict=True):
+            key = str(device_id)
+            existing = current_devices.get(device_id)
+            if existing is not None and (
+                existing.mounting_surface != device_in.mounting_surface
+                or existing.wall_id != device_in.wall_id
+            ):
+                problems.append(
+                    GeometryProblem(
+                        code="device-surface-changed",
+                        message=(
+                            "Ein Geraet wechselt seine Montageflaeche nicht. Bitte entfernen "
+                            "und an der neuen Stelle neu setzen."
+                        ),
+                        keys=(key,),
+                    )
+                )
+            if (
+                device_in.mounting_surface in WALL_SURFACES
+                and device_in.wall_id not in target_wall_ids
+            ):
+                problems.append(
+                    GeometryProblem(
+                        code="device-wall-unknown",
+                        message="Das Wandgeraet gehoert zu keiner Wand dieses Raums.",
+                        keys=(key,),
+                    )
+                )
+            kind = types.get(device_in.device_type_key)
+            if kind is None:
+                problems.append(
+                    GeometryProblem(
+                        code="device-type-unknown",
+                        message="Der Geraetetyp ist nicht bekannt.",
+                        keys=(key,),
+                    )
+                )
+            elif not kind.is_active and (
+                existing is None or existing.device_type_key != device_in.device_type_key
+            ):
+                problems.append(
+                    GeometryProblem(
+                        code="device-type-inactive",
+                        message="Dieser Geraetetyp wird fuer neue Geraete nicht mehr angeboten.",
+                        keys=(key,),
+                    )
+                )
+        _raise_geometry(
+            problems,
+            detail=(
+                "Die Geraete des Entwurfs passen nicht zu diesem Raum. Es wurde nichts gespeichert."
+            ),
+        )
+        on_removed = sorted(
+            str(device.id)
+            for device in current_devices.values()
+            if device.id not in removed_device_ids
+            and device.wall_id is not None
+            and device.wall_id not in target_wall_ids
+        )
+        if on_removed:
+            _raise_devices_on_removed_walls(on_removed, current_devices)
+        return _DevicePlan(
+            target=list(zip(device_ids, devices_in, strict=True)), removed=list(removed_device_ids)
         )
 
     def _require_valid_identities(
@@ -710,6 +968,7 @@ class ElectricalRoomService:
         wall = self.walls.get_or_404(wall_id)
         room, context = self._locked_room(wall.room_id)
         self._reread(wall)
+        baseline = self._device_baseline(context)
         existing = self.list_openings(wall.id)
         if len(existing) >= MAX_OPENINGS_PER_WALL:
             raise ValidationFailedError(
@@ -730,6 +989,8 @@ class ElectricalRoomService:
         )
         _touch(room)
         flush(self.session)
+        # Eine neue Oeffnung darf kein Geraet ueberdecken - auch keines im Nachbarraum.
+        self._require_devices_fit(context, baseline)
         return opening, WriteResult(context=context, room_id=room.id)
 
     def update_opening(
@@ -741,6 +1002,8 @@ class ElectricalRoomService:
         room, context = self._locked_room(wall.room_id)
         self._reread(wall, opening)
         check_version(opening, expected_version)
+        # Vor jeder Zuweisung: Die Abfrage saehe sonst schon den geaenderten Stand.
+        baseline = self._device_baseline(context)
         for field, value in payload.model_dump(exclude_unset=True).items():
             setattr(opening, field, value)
         others = [item for item in self.list_openings(wall.id) if item.id != opening.id]
@@ -752,6 +1015,7 @@ class ElectricalRoomService:
         )
         _touch(room)
         flush(self.session)
+        self._require_devices_fit(context, baseline)
         return opening, WriteResult(context=context, room_id=room.id)
 
     def delete_opening(self, opening_id: uuid.UUID, *, expected_version: int) -> WriteResult:
@@ -877,6 +1141,7 @@ class ElectricalRoomService:
         context: FloorPlanningContext,
         walls: list[ElectricalWall],
         openings: dict[uuid.UUID, list[ElectricalOpening]],
+        devices: list[ElectricalDevice],
     ) -> RoomPlan:
         view = RoomView(
             room=room,
@@ -886,13 +1151,67 @@ class ElectricalRoomService:
         return RoomPlan(
             view=view,
             walls=[WallPlan(wall=wall, openings=openings.get(wall.id, [])) for wall in walls],
+            devices=devices,
         )
 
     def _reloaded_plan(self, room: ElectricalRoom, context: FloorPlanningContext) -> RoomPlan:
         """Der gespeicherte Stand eines Raums, frisch aus der Datenbank gelesen."""
         walls = self._ordered_walls(room.id)
         return self._room_plan(
-            room, context, walls, self._openings_by_wall([wall.id for wall in walls])
+            room,
+            context,
+            walls,
+            self._openings_by_wall([wall.id for wall in walls]),
+            self.device_check.devices_of_rooms([room.id]),
+        )
+
+    # ------------------------------------------------------- Geraete (Phase 5)
+
+    def _device_baseline(self, context: FloorPlanningContext) -> DeviceBaseline:
+        """Geraetebefunde des Geschosses vor einer Aenderung (unter der Projektsperre)."""
+        return self.device_check.baseline(context.floor_id, context.default_ceiling_height_mm)
+
+    def _require_devices_fit(
+        self,
+        context: FloorPlanningContext,
+        baseline: DeviceBaseline,
+        *,
+        changed: frozenset[str] = frozenset(),
+    ) -> None:
+        """Keine neuen Befunde; neue oder geaenderte Geraete muessen ganz zulaessig sein."""
+        self.device_check.require_no_new_problems(
+            context.floor_id,
+            context.default_ceiling_height_mm,
+            baseline,
+            changed=changed,
+            detail=DEVICE_DETAIL,
+        )
+
+    def _device_count_on_wall(self, wall_id: uuid.UUID) -> int:
+        stmt = select(func.count()).where(
+            ElectricalDevice.organization_id == self.organization_id,
+            ElectricalDevice.wall_id == wall_id,
+        )
+        return int(self.session.execute(stmt).scalar_one())
+
+    def _geometry_signature(self, room_id: uuid.UUID) -> tuple[object, ...]:
+        """Waende und Oeffnungen eines Raums als Vergleichswert (fuer das Event)."""
+        walls = self._ordered_walls(room_id)
+        openings = self._openings_by_wall([wall.id for wall in walls])
+        return tuple(
+            (
+                wall.id,
+                wall.x1_mm,
+                wall.y1_mm,
+                wall.x2_mm,
+                wall.y2_mm,
+                wall.thickness_mm,
+                tuple(
+                    (o.id, o.kind, o.offset_mm, o.width_mm, o.height_mm, o.sill_height_mm)
+                    for o in openings.get(wall.id, [])
+                ),
+            )
+            for wall in walls
         )
 
     def _reread(self, *entities: ElectricalWall | ElectricalOpening) -> None:
@@ -1052,15 +1371,53 @@ def _touch(room: ElectricalRoom) -> None:
     room.updated_at = utcnow()
 
 
-def _assign(entity: ElectricalWall | ElectricalOpening, values: dict[str, object]) -> None:
-    """Setzt nur Werte, die sich wirklich aendern.
+def _assign(
+    entity: ElectricalWall | ElectricalOpening | ElectricalDevice, values: dict[str, object]
+) -> bool:
+    """Setzt nur Werte, die sich wirklich aendern; ``True``, wenn sich etwas aenderte.
 
     Eine unveraenderte Wand behaelt ihre Version. Sonst liefe ein Formular,
     das sie gerade offen hat, ohne Grund in einen Versionskonflikt.
     """
+    changed = False
     for field, value in values.items():
         if getattr(entity, field, None) != value:
             setattr(entity, field, value)
+            changed = True
+    return changed
+
+
+@dataclass(frozen=True, slots=True)
+class _DevicePlan:
+    """Gepruefter Zielzustand der Geraete eines Raums."""
+
+    target: list[tuple[uuid.UUID, ContourDeviceIn]]
+    removed: list[uuid.UUID]
+
+
+def _raise_devices_on_removed_walls(
+    device_ids: list[str], current: dict[uuid.UUID, ElectricalDevice]
+) -> None:
+    """Eine Wand mit Geraeten verschwindet nicht nebenbei (``409``, wie bei Oeffnungen)."""
+    walls = sorted(
+        {
+            str(device.wall_id)
+            for device in current.values()
+            if str(device.id) in device_ids and device.wall_id is not None
+        }
+    )
+    raise ConflictError(
+        "An einer Wand, die entfernt werden soll, sind noch Geraete montiert. Bitte zuerst die "
+        "Geraete entfernen. Es wurde nichts gespeichert.",
+        errors=[
+            ProblemFieldError(
+                field="devices",
+                code="wall-has-devices",
+                message="An dieser Wand sind noch Geraete montiert.",
+                keys=[*walls, *device_ids],
+            )
+        ],
+    )
 
 
 def _duplicates(ids: list[uuid.UUID]) -> tuple[str, ...]:

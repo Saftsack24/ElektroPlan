@@ -24,15 +24,20 @@
  * `Umgebung` herein. Tests ersetzen sie; alles Übrige ist echtes Three.js
  * ohne WebGL-Kontext.
  */
-import type { BufferGeometry, Material, Object3D } from "three";
+import type { Material, Object3D } from "three";
 import {
+  BoxGeometry,
+  BufferGeometry,
   Color,
+  CylinderGeometry,
   DirectionalLight,
   DoubleSide,
   GridHelper,
   Group,
   HemisphereLight,
+  Line,
   LineBasicMaterial,
+  LineDashedMaterial,
   LineLoop,
   MathUtils,
   Mesh,
@@ -40,6 +45,7 @@ import {
   MeshLambertMaterial,
   PerspectiveCamera,
   Raycaster,
+  RingGeometry,
   Scene,
   Vector2,
   Vector3,
@@ -49,6 +55,8 @@ import { bodenGeometrie, oeffnungsGeometrie, umrissGeometrie, wandGeometrie } fr
 import { MESSUNG, messen } from "./messung";
 import type { Auswahl, Szenenmodell } from "./modell";
 import { auswahlSchluessel } from "./modell";
+import type { Geraet3d } from "./geraete3d";
+import { inMeter, inSzene } from "./transformation";
 import { raumseiteAuswahl } from "./raumwand";
 import { LEERES_MODELL } from "./szenenmodell";
 
@@ -134,7 +142,28 @@ export interface Szenenfarben {
   readonly auswahl: string;
   readonly auswahlKrone: string;
   readonly bodenAuswahl: string;
+  /** Geräte (Phase 5): Wand, Decke, Orientierungslinie zum Boden. */
+  readonly geraetWand: string;
+  readonly geraetDecke: string;
+  readonly geraetFuehrung: string;
 }
+
+/**
+ * Was die Szene von den Geräten zeigt (Phase 5) - die drei Schalter über der
+ * 3D-Ansicht. Ausgeblendete Geräte sind auch nicht anklickbar.
+ */
+export interface Geraetesichtbarkeit {
+  readonly wand: boolean;
+  readonly decke: boolean;
+  readonly beschriftung: boolean;
+}
+
+export const STANDARD_GERAETESICHTBARKEIT: Geraetesichtbarkeit = Object.freeze({ wand: true, decke: true, beschriftung: false });
+
+/** Tiefe eines Wandgeräts und Dicke eines Deckengeräts in der Darstellung (mm). */
+const GERAET_TIEFE_MM = 30;
+/** Kleinste Darstellungsgröße, damit Geräte auch aus der Entfernung erkennbar bleiben (mm). */
+const GERAET_MIN_MM = 120;
 
 /** Helle Standardwerte - Rückfall, falls ein Token (noch) nicht gesetzt ist. */
 export const STANDARD_SZENENFARBEN: Szenenfarben = Object.freeze({
@@ -149,6 +178,9 @@ export const STANDARD_SZENENFARBEN: Szenenfarben = Object.freeze({
   auswahl: "#f0a030",
   auswahlKrone: "#b86d12",
   bodenAuswahl: "#f7c67a",
+  geraetWand: "#5b4bc4",
+  geraetDecke: "#c7a400",
+  geraetFuehrung: "#45505c",
 });
 
 const SICHTFELD_GRAD = 45;
@@ -169,6 +201,11 @@ interface Materialien {
   readonly unsichtbar: MeshBasicMaterial;
   readonly oeffnungAuswahl: MeshBasicMaterial;
   readonly umriss: LineBasicMaterial;
+  readonly geraetWand: MeshLambertMaterial;
+  readonly geraetDecke: MeshLambertMaterial;
+  readonly geraetAuswahl: MeshBasicMaterial;
+  readonly fuehrung: LineDashedMaterial;
+  readonly marker: MeshBasicMaterial;
 }
 
 /** Materialien einmal je Szene; ein Farbwechsel ändert nur ihre Farbe. */
@@ -198,6 +235,11 @@ function materialienErzeugen(farben: Szenenfarben = STANDARD_SZENENFARBEN): Mate
       depthWrite: false,
     }),
     umriss: new LineBasicMaterial({ color: farben.umriss }),
+    geraetWand: new MeshLambertMaterial({ color: farben.geraetWand }),
+    geraetDecke: new MeshLambertMaterial({ color: farben.geraetDecke, emissive: 0x221a00 }),
+    geraetAuswahl: new MeshBasicMaterial({ color: farben.auswahl }),
+    fuehrung: new LineDashedMaterial({ color: farben.geraetFuehrung, dashSize: 0.08, gapSize: 0.06 }),
+    marker: new MeshBasicMaterial({ color: farben.auswahl, transparent: true, opacity: 0.7, side: DoubleSide, depthWrite: false }),
   };
 }
 
@@ -212,6 +254,11 @@ function materialfarbenSetzen(m: Materialien, farben: Szenenfarben) {
   m.glas.color.set(farben.glas);
   m.oeffnungAuswahl.color.set(farben.auswahl);
   m.umriss.color.set(farben.umriss);
+  m.geraetWand.color.set(farben.geraetWand);
+  m.geraetDecke.color.set(farben.geraetDecke);
+  m.geraetAuswahl.color.set(farben.auswahl);
+  m.fuehrung.color.set(farben.geraetFuehrung);
+  m.marker.color.set(farben.auswahl);
 }
 
 function alleMaterialien(m: Materialien): Material[] {
@@ -227,6 +274,11 @@ function alleMaterialien(m: Materialien): Material[] {
     m.unsichtbar,
     m.oeffnungAuswahl,
     m.umriss,
+    m.geraetWand,
+    m.geraetDecke,
+    m.geraetAuswahl,
+    m.fuehrung,
+    m.marker,
   ];
 }
 
@@ -274,6 +326,13 @@ export class Grundrissszene {
   private erstesBild = true;
   private zeigerStart: { x: number; y: number } | null = null;
   private readonly abmeldungen: (() => void)[] = [];
+  /** Phase 5: Gerätekörper je ID, Sichtbarkeit, Orientierungslinie, Beschriftungen. */
+  private readonly geraeteMeshes = new Map<string, { mesh: Mesh; geraet: Geraet3d }>();
+  private sichtbarkeit: Geraetesichtbarkeit = STANDARD_GERAETESICHTBARKEIT;
+  private readonly fuehrungGruppe = new Group();
+  private readonly fuehrungGeometrien: BufferGeometry[] = [];
+  private readonly beschriftungen: HTMLDivElement | null;
+  private beschriftungsElemente: { element: HTMLElement; geraet: Geraet3d }[] = [];
 
   constructor(
     private readonly behaelter: HTMLElement,
@@ -313,7 +372,18 @@ export class Grundrissszene {
     const sonne = new DirectionalLight(0xffffff, 1.6);
     sonne.position.set(6, 12, 8);
     this.lichter = [hemisphaere, sonne];
-    this.szene.add(hemisphaere, sonne, this.planGruppe);
+    this.szene.add(hemisphaere, sonne, this.planGruppe, this.fuehrungGruppe);
+
+    // Beschriftungen der Geräte: eine reine Anzeigeschicht über dem Canvas,
+    // ohne Zeigerereignisse - die Texte stehen ohnehin in der Seitenleiste.
+    const dokument = behaelter.ownerDocument;
+    this.beschriftungen = dokument === null ? null : dokument.createElement("div");
+    if (this.beschriftungen !== null) {
+      this.beschriftungen.className = "ansicht3d__beschriftungen";
+      this.beschriftungen.setAttribute("aria-hidden", "true");
+      this.beschriftungen.hidden = !this.sichtbarkeit.beschriftung;
+      behaelter.appendChild(this.beschriftungen);
+    }
 
     this.anmelden();
     this.standardansicht();
@@ -392,6 +462,7 @@ export class Grundrissszene {
     } else {
       this.renderer.render(this.szene, this.kamera);
     }
+    this.beschriftungenAktualisieren();
     if (bewegt) this.anfordern();
   };
 
@@ -484,7 +555,126 @@ export class Grundrissszene {
         this.auswaehlbarHinzufuegen(flaeche, { art: "oeffnung", id: oeffnung.id }, m.oeffnungAuswahl);
       }
     }
+    this.geraeteAufbauen(modell);
     this.rasterSetzen(modell);
+  }
+
+  // ------------------------------------------------------------ Geräte (Phase 5)
+
+  /**
+   * Kleine, vereinfachte Gerätekörper: Wandgeräte als flache Quader auf ihrer
+   * Wandfläche (Innen- oder Außenseite), Deckengeräte als Scheiben knapp unter
+   * der effektiven Raumhöhe - ohne geschlossene Deckenfläche.
+   */
+  private geraeteAufbauen(modell: Szenenmodell) {
+    const t = modell.transformation;
+    const m = this.materialien;
+    this.geraeteMeshes.clear();
+    for (const g of modell.geraete) {
+      let mesh: Mesh;
+      if (g.flaeche === "ceiling") {
+        const radius = inMeter(Math.max(g.breiteMm, g.hoeheMassMm, GERAET_MIN_MM)) / 2;
+        mesh = new Mesh(new CylinderGeometry(radius, radius, inMeter(GERAET_TIEFE_MM), 24), m.geraetDecke);
+        const p = inSzene(t, g.anker.x, g.anker.y, g.hoeheMm - GERAET_TIEFE_MM / 2 - 2);
+        mesh.position.set(p.x, p.y, p.z);
+      } else {
+        const breite = inMeter(Math.max(g.breiteMm, 60));
+        const hoehe = inMeter(Math.max(g.hoeheMassMm, 60));
+        mesh = new Mesh(new BoxGeometry(breite, hoehe, inMeter(GERAET_TIEFE_MM)), m.geraetWand);
+        const versatz = GERAET_TIEFE_MM / 2;
+        const p = inSzene(t, g.anker.x + g.normale.x * versatz, g.anker.y + g.normale.y * versatz, g.hoeheMm);
+        mesh.position.set(p.x, p.y, p.z);
+        // Lokale x-Achse entlang der Wand: Grundriss (ex, ey) wird Szene (ex, 0, -ey).
+        mesh.rotation.y = Math.atan2(g.entlang.y, g.entlang.x);
+      }
+      mesh.renderOrder = 2;
+      // Gleich rechnen statt erst beim Rendern: Ein Klick vor dem ersten Bild
+      // träfe den Körper sonst am Ursprung.
+      mesh.updateMatrixWorld(true);
+      this.auswaehlbarHinzufuegen(mesh, { art: "geraet", id: g.id }, m.geraetAuswahl);
+      this.geraeteMeshes.set(g.id, { mesh, geraet: g });
+    }
+    this.sichtbarkeitAnwenden();
+    this.beschriftungenAufbauen();
+  }
+
+  /** Schalter über der Ansicht: Wandgeräte, Deckengeräte, Beschriftungen. */
+  setzeGeraetesichtbarkeit(sichtbarkeit: Geraetesichtbarkeit) {
+    if (this.entsorgt) return;
+    this.sichtbarkeit = sichtbarkeit;
+    this.sichtbarkeitAnwenden();
+    this.fuehrungAktualisieren();
+    this.anfordern();
+  }
+
+  private sichtbar(g: Geraet3d): boolean {
+    return g.flaeche === "ceiling" ? this.sichtbarkeit.decke : this.sichtbarkeit.wand;
+  }
+
+  private sichtbarkeitAnwenden() {
+    for (const { mesh, geraet } of this.geraeteMeshes.values()) mesh.visible = this.sichtbar(geraet);
+    if (this.beschriftungen !== null) this.beschriftungen.hidden = !this.sichtbarkeit.beschriftung;
+    for (const b of this.beschriftungsElemente) b.element.hidden = !this.sichtbar(b.geraet);
+  }
+
+  private beschriftungenAufbauen() {
+    const schicht = this.beschriftungen;
+    if (schicht === null) return;
+    schicht.replaceChildren();
+    this.beschriftungsElemente = [...this.geraeteMeshes.values()].map(({ geraet }) => {
+      const element = schicht.ownerDocument.createElement("span");
+      element.className = "ansicht3d__beschriftung";
+      element.textContent = geraet.beschriftung;
+      element.dataset["geraet"] = geraet.id;
+      element.hidden = !this.sichtbar(geraet);
+      schicht.appendChild(element);
+      return { element, geraet };
+    });
+  }
+
+  /** Projiziert die Beschriftungen nach jedem Bild - kein React, keine Schleife. */
+  private beschriftungenAktualisieren() {
+    if (this.beschriftungen === null || !this.sichtbarkeit.beschriftung || this.breite <= 0) return;
+    const t = this.modell.transformation;
+    for (const { element, geraet } of this.beschriftungsElemente) {
+      if (!this.sichtbar(geraet)) continue;
+      const hoehe = geraet.flaeche === "ceiling" ? geraet.hoeheMm - 80 : geraet.hoeheMm + geraet.hoeheMassMm / 2 + 60;
+      const p = inSzene(t, geraet.anker.x, geraet.anker.y, hoehe);
+      const v = new Vector3(p.x, p.y, p.z).project(this.kamera);
+      const hinter = v.z > 1 || v.z < -1;
+      element.style.visibility = hinter ? "hidden" : "visible";
+      element.style.transform = `translate(${((v.x + 1) / 2) * this.breite}px, ${((1 - v.y) / 2) * this.hoehe}px) translate(-50%, -100%)`;
+    }
+  }
+
+  /**
+   * Orientierung für ein gewähltes Deckengerät: dezente gestrichelte Linie bis
+   * zum Boden und ein Bodenmarker - der Raum hat keine sichtbare Decke.
+   */
+  private fuehrungAktualisieren() {
+    this.fuehrungGruppe.clear();
+    for (const g of this.fuehrungGeometrien.splice(0)) g.dispose();
+    const auswahl = this.auswahl;
+    if (auswahl?.art !== "geraet") return;
+    const eintrag = this.geraeteMeshes.get(auswahl.id);
+    if (eintrag === undefined || eintrag.geraet.flaeche !== "ceiling" || !this.sichtbarkeit.decke) return;
+    const g = eintrag.geraet;
+    const t = this.modell.transformation;
+    const oben = inSzene(t, g.anker.x, g.anker.y, g.hoeheMm - GERAET_TIEFE_MM);
+    const unten = inSzene(t, g.anker.x, g.anker.y, 0);
+    const linieGeometrie = new BufferGeometry().setFromPoints([
+      new Vector3(oben.x, oben.y, oben.z),
+      new Vector3(unten.x, unten.y + 0.006, unten.z),
+    ]);
+    const linie = new Line(linieGeometrie, this.materialien.fuehrung);
+    linie.computeLineDistances();
+    const radius = inMeter(Math.max(g.breiteMm, GERAET_MIN_MM)) / 2;
+    const ringGeometrie = new RingGeometry(radius * 0.6, radius * 1.1, 32);
+    const ring = new Mesh(ringGeometrie, this.materialien.marker);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(unten.x, 0.006, unten.z);
+    this.fuehrungGeometrien.push(linieGeometrie, ringGeometrie);
+    this.fuehrungGruppe.add(linie, ring);
   }
 
   private planHinzufuegen(objekt: Mesh | LineLoop) {
@@ -548,8 +738,12 @@ export class Grundrissszene {
   /** Treffer an einer Bildposition (normierte Gerätekoordinaten −1 … 1). */
   auswahlBei(x: number, y: number): Auswahl | null {
     this.raycaster.setFromCamera(new Vector2(x, y), this.kamera);
-    // Nur die auswählbaren Objekte - Raster, Umrisse und Lichter nicht.
-    const treffer = this.raycaster.intersectObjects(this.auswaehlbar, false)[0];
+    // Nur die auswählbaren, **sichtbaren** Objekte - Raster, Umrisse, Lichter und
+    // ausgeblendete Geräte nicht: Ein unsichtbares Gerät ist kein Klickziel.
+    const treffer = this.raycaster.intersectObjects(
+      this.auswaehlbar.filter((mesh) => mesh.visible),
+      false,
+    )[0];
     const auswahl = treffer?.object.userData["auswahl"] as Auswahl | undefined;
     if (auswahl?.art !== "wand" || treffer?.face == null) return auswahl ?? null;
     // Wandkörper: die ganze Wand der angeklickten Raumseite (Phase 4f). Die
@@ -579,6 +773,7 @@ export class Grundrissszene {
     const aktiv = this.auswahl === null ? null : auswahlSchluessel(this.auswahl);
     const objekte = new Set([...this.nachSchluessel.values()].flat());
     for (const o of objekte) o.mesh.material = aktiv !== null && o.schluessel.has(aktiv) ? o.hervorgehoben : o.normal;
+    this.fuehrungAktualisieren();
   }
 
   // ------------------------------------------------------------ Kamera
@@ -696,6 +891,10 @@ export class Grundrissszene {
     this.controls.stopListenToKeyEvents();
     this.controls.dispose();
     this.planLeeren();
+    this.fuehrungGruppe.clear();
+    for (const g of this.fuehrungGeometrien.splice(0)) g.dispose();
+    this.beschriftungen?.remove();
+    this.beschriftungsElemente = [];
     this.rasterEntfernen();
     this.szene.remove(...this.lichter);
     for (const licht of this.lichter) (licht as DirectionalLight | HemisphereLight).dispose();
@@ -716,6 +915,10 @@ export class Grundrissszene {
     return {
       planGeometrien: this.planGeometrien.size,
       auswaehlbar: this.auswaehlbar.length,
+      geraete: this.geraeteMeshes.size,
+      geraeteSichtbar: [...this.geraeteMeshes.values()].filter((e) => e.mesh.visible).length,
+      fuehrung: this.fuehrungGruppe.children.length,
+      beschriftungen: this.beschriftungsElemente.filter((b) => !b.element.hidden && this.sichtbarkeit.beschriftung).length,
       materialien: alleMaterialien(this.materialien).length,
       raster: this.raster === null ? 0 : 1,
       bildAngefordert: this.bildId !== null,

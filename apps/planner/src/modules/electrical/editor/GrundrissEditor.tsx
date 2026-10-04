@@ -9,10 +9,16 @@ import { useUngespeicherteAenderungen } from "../../../core/ui/ungespeichert";
 import { KNOPFZEILE, knopf, meldungsflaeche } from "../../../core/ui/stil";
 import { planAbfrage, planSchluessel } from "../plan";
 import { RaumDialog } from "../RaumDialog";
+import { raumtypAusWert } from "../texte";
 import type { Raumwerte } from "../RaumDialog";
 import { Eigenschaften, flaecheText } from "./Eigenschaften";
-import type { EntwurfWand, Geschossplan, Oeffnungsart, RaumImPlan, Raumentwurf } from "./entwurf";
-import { alsKonturanfrage, basisAus, neueId, segmenteAus, STANDARD_WANDSTAERKE_MM } from "./entwurf";
+import type { EntwurfGeraet, EntwurfWand, Geschossplan, Oeffnungsart, RaumImPlan, Raumentwurf } from "./entwurf";
+import { alsKonturanfrage, basisAus, ende, geraetAus, neueId, segmenteAus, start, STANDARD_WANDSTAERKE_MM } from "./entwurf";
+import type { Geraetedarstellung } from "./Zeichenflaeche";
+import { geraetebefunde } from "../geraete/geraetepruefung";
+import type { PruefGeraet, PruefRaum } from "../geraete/geraetepruefung";
+import { geraetEntfernen, pruefmass } from "../geraete/geraeteentwurf";
+import { geraetName, katalogAbfrage, typenNachSchluessel } from "../geraete/katalog";
 import { STANDARD_RASTER_MM } from "./fang";
 import { konturbericht, oeffnungsBefunde, oeffnungsHoehenBefunde, streckenlaenge } from "./geometrie";
 import type { Punkt } from "./geometrie";
@@ -60,6 +66,13 @@ const STATUS_FARBE: Record<Speicherstatus, string> = {
   validierung: "text-danger",
   fehler: "text-danger",
 };
+
+/** Ziel einer Deckenansicht - mit optional gewähltem Gerät und Herkunft (Phase 5). */
+export interface Deckenziel {
+  readonly raumId: string;
+  readonly geraetId?: string;
+  readonly herkunft?: "2d" | "3d";
+}
 
 const RAUM_MELDUNG =
   "Der aktive Raum hat ungespeicherte Änderungen. Wenn Sie fortfahren, gehen sie verloren.";
@@ -111,6 +124,7 @@ export function GrundrissEditor({
   onUngespeichert,
   onGespeichert,
   startWandansicht = null,
+  startDeckenansicht = null,
   onStartVerbraucht,
   onZurueck3d,
 }: {
@@ -123,6 +137,8 @@ export function GrundrissEditor({
   onGespeichert: (roomId: string | null) => Promise<void>;
   /** Phase 4f: nach dem Laden diese Wand in der Wandansicht öffnen (Einstieg aus 3D). */
   startWandansicht?: Wandziel | null;
+  /** Phase 5: nach dem Laden die Deckenansicht dieses Raums öffnen (Einstieg aus 3D). */
+  startDeckenansicht?: Deckenziel | null;
   onStartVerbraucht?: () => void;
   /** Wandansicht wurde aus 3D geöffnet und geschlossen: zurück zur 3D-Ansicht. */
   onZurueck3d?: () => void;
@@ -143,11 +159,13 @@ export function GrundrissEditor({
   const [wandansicht, setWandansicht] = useState<Wandziel | null>(null);
   // Woher die Wandansicht kam - bleibt über Seiten- und Wandwechsel erhalten.
   const herkunft = useRef<"2d" | "3d">("2d");
-  const [deckenansicht, setDeckenansicht] = useState<string | null>(null);
+  const [deckenansicht, setDeckenansicht] = useState<Deckenziel | null>(null);
   const eingepasst = useRef(false);
   const nachLadenAktivieren = useRef<string | null>(null);
 
   const plan = useQuery(planAbfrage(api, floorId));
+  const katalog = useQuery(katalogAbfrage(api));
+  const typen = useMemo(() => typenNachSchluessel(katalog.data), [katalog.data]);
   const raeume: readonly RaumImPlan[] = useMemo(
     () => (Array.isArray(plan.data?.rooms) ? plan.data.rooms : []),
     [plan.data],
@@ -202,6 +220,93 @@ export function GrundrissEditor({
     });
   }, [raeume, zustand.entwurf, zustand.basis]);
 
+  // ------------------------------------------------- Geräte (Phase 5, ADR 0023)
+
+  /** Geräte eines Raums im gezeigten Stand - aktiver Raum aus dem Entwurf. */
+  const geraeteVon = useCallback(
+    (raumId: string): readonly EntwurfGeraet[] => {
+      if (zustand.entwurf !== null && zustand.entwurf.roomId === raumId) return zustand.entwurf.geraete;
+      const raum = raeume.find((r) => r.id === raumId);
+      return (Array.isArray(raum?.devices) ? raum.devices : []).map(geraetAus);
+    },
+    [raeume, zustand.entwurf],
+  );
+
+  /**
+   * Befunde je Gerät im gezeigten Stand des ganzen Geschosses - dieselben
+   * Regeln wie der Server (abgeleitete Öffnungen und geteilte Wandstücke
+   * der Nachbarräume eingeschlossen), dazu die Codes der letzten Serverantwort.
+   */
+  const geraeteBefunde = useMemo(() => {
+    const raeumePruef: PruefRaum[] = darstellung.map((r) => ({
+      id: r.id,
+      hoeheMm: r.aktiv ? (zustand.basis?.raum.effective_height_mm ?? standardhoehe_mm) : (raeume.find((x) => x.id === r.id)?.effective_height_mm ?? standardhoehe_mm),
+      waende: r.walls.map((w) => ({
+        id: w.id,
+        raumId: r.id,
+        start: start(w),
+        ende: ende(w),
+        oeffnungen: w.openings.map((o) => ({ oeffnungId: o.id, art: o.kind, offsetMm: o.offset_mm, breiteMm: o.width_mm, hoeheMm: o.height_mm, bruestungMm: o.sill_height_mm })),
+      })),
+    }));
+    const geraetePruef: PruefGeraet[] = darstellung.flatMap((r) =>
+      geraeteVon(r.id).map((g) => ({
+        id: g.id,
+        raumId: r.id,
+        typ: g.device_type_key,
+        flaeche: g.mounting_surface,
+        wandId: g.wall_id,
+        mitte: g.center_offset_mm,
+        mittelhoehe: g.center_height_mm,
+        x: g.x_mm,
+        y: g.y_mm,
+      })),
+    );
+    const je = new Map<string, Set<string>>();
+    if (typen.size > 0) {
+      const masse = new Map([...typen].map(([k, t]) => [k, pruefmass(t)] as const));
+      for (const b of geraetebefunde(floorId, raeumePruef, geraetePruef, masse)) {
+        const id = b.keys[0];
+        if (id !== undefined) je.set(id, (je.get(id) ?? new Set()).add(b.code));
+      }
+    }
+    const geraeteIds = new Set(geraetePruef.map((g) => g.id));
+    for (const e of zustand.serverFehler?.eintraege ?? []) {
+      const id = e.keys[0];
+      if (id !== undefined && geraeteIds.has(id)) je.set(id, (je.get(id) ?? new Set()).add(e.code));
+    }
+    return new Map([...je].map(([id, codes]) => [id, [...codes]] as const));
+  }, [darstellung, geraeteVon, typen, floorId, zustand.basis, zustand.serverFehler, raeume, standardhoehe_mm]);
+
+  /** Geräte für den Grundriss: Wandgeräte auf ihrer Montageseite neben der Wand. */
+  const geraeteDarstellung: readonly Geraetedarstellung[] = useMemo(() => {
+    const liste: Geraetedarstellung[] = [];
+    for (const r of darstellung) {
+      const umlauf = umlaufsinn(r.walls);
+      for (const g of geraeteVon(r.id)) {
+        const typ = typen.get(g.device_type_key);
+        const basis = { id: g.id, raumId: r.id, aktiv: r.aktiv, typ, name: geraetName(typ, g.label, g.device_type_key), fehler: (geraeteBefunde.get(g.id) ?? []).length > 0 };
+        if (g.mounting_surface === "ceiling") {
+          if (g.x_mm === null || g.y_mm === null) continue;
+          liste.push({ ...basis, anker: { x: g.x_mm, y: g.y_mm }, versatzMm: 0, richtung: { x: 0, y: 0 }, decke: true });
+          continue;
+        }
+        const w = r.walls.find((x) => x.id === g.wall_id);
+        if (w === undefined || g.center_offset_mm === null) continue;
+        const dx = w.x2_mm - w.x1_mm;
+        const dy = w.y2_mm - w.y1_mm;
+        const l = Math.hypot(dx, dy) || 1;
+        const t = g.center_offset_mm / l;
+        // Innen liegt links der Wandrichtung bei gegen den Uhrzeigersinn, sonst rechts.
+        const links = { x: -dy / l, y: dx / l };
+        const innen = umlauf === "im-uhrzeigersinn" ? { x: -links.x, y: -links.y } : links;
+        const richtung = umlauf === null ? { x: 0, y: 0 } : g.mounting_surface === "wall_interior" ? innen : { x: -innen.x, y: -innen.y };
+        liste.push({ ...basis, anker: { x: w.x1_mm + dx * t, y: w.y1_mm + dy * t }, versatzMm: w.thickness_mm / 2, richtung, decke: false });
+      }
+    }
+    return liste;
+  }, [darstellung, geraeteVon, typen, geraeteBefunde]);
+
   const lokaleKeys = useMemo(() => {
     const entwurf = zustand.entwurf;
     const keys = new Set<string>();
@@ -211,6 +316,8 @@ export function GrundrissEditor({
       if (befund.code.startsWith("contour-")) continue;
       befund.keys.forEach((k) => keys.add(k));
     }
+    // Geräte des aktiven Raums mit Befund (Phase 5).
+    for (const g of entwurf.geraete) if ((geraeteBefunde.get(g.id) ?? []).length > 0) keys.add(g.id);
     for (const w of entwurf.walls) {
       const laenge = streckenlaenge({ x: w.x1_mm, y: w.y1_mm }, { x: w.x2_mm, y: w.y2_mm });
       const spannen = w.openings.map((o) => ({ key: o.id, abstand: o.offset_mm, breite: o.width_mm }));
@@ -224,7 +331,7 @@ export function GrundrissEditor({
       }
     }
     return keys;
-  }, [zustand.entwurf, zustand.basis]);
+  }, [zustand.entwurf, zustand.basis, geraeteBefunde]);
 
   const fehlerKeys = useMemo(() => fehlerhafteKeys(zustand), [zustand]);
 
@@ -323,9 +430,11 @@ export function GrundrissEditor({
    */
   const wandansichtOeffnen = async (ziel: Wandziel) => {
     const auswahl: Auswahl =
-      ziel.oeffnungId !== undefined
-        ? { art: "oeffnung", raumId: ziel.raumId, wandId: ziel.wandId, oeffnungId: ziel.oeffnungId }
-        : { art: "wand", raumId: ziel.raumId, wandId: ziel.wandId };
+      ziel.geraetId !== undefined
+        ? { art: "geraet", raumId: ziel.raumId, geraetId: ziel.geraetId }
+        : ziel.oeffnungId !== undefined
+          ? { art: "oeffnung", raumId: ziel.raumId, wandId: ziel.wandId, oeffnungId: ziel.oeffnungId }
+          : { art: "wand", raumId: ziel.raumId, wandId: ziel.wandId };
     const walls =
       zustand.entwurf?.roomId === ziel.raumId ? zustand.entwurf.walls : (raeume.find((r) => r.id === ziel.raumId)?.walls ?? []);
     if (umlaufsinn(basisWaende(walls)) === null) {
@@ -340,6 +449,30 @@ export function GrundrissEditor({
     setWandansicht(ziel);
   };
 
+  /** Deckenansicht eines Raums öffnen - über den üblichen Raumwechsel (Rückfrage). */
+  const deckenansichtOeffnen = async (ziel: Deckenziel) => {
+    const auswahl: Auswahl = ziel.geraetId !== undefined ? { art: "geraet", raumId: ziel.raumId, geraetId: ziel.geraetId } : { art: "raum", raumId: ziel.raumId };
+    const walls = zustand.entwurf?.roomId === ziel.raumId ? zustand.entwurf.walls : (raeume.find((r) => r.id === ziel.raumId)?.walls ?? []);
+    if (!(await raumAktivieren(ziel.raumId, auswahl))) return;
+    if (umlaufsinn(basisWaende(walls)) === null) {
+      setHinweis("Die Deckenansicht braucht eine geschlossene Raumkontur. Bitte zuerst die Kontur schließen.");
+      return;
+    }
+    setHinweis(null);
+    herkunft.current = ziel.herkunft ?? "2d";
+    setDeckenansicht(ziel);
+  };
+
+  /** Ein Gerät in seiner Wand- bzw. Deckenansicht bearbeiten. */
+  const geraetBearbeiten = (raumId: string, geraetId: string) => {
+    const g = geraeteVon(raumId).find((x) => x.id === geraetId);
+    if (g === undefined) return;
+    if (g.mounting_surface === "ceiling") void deckenansichtOeffnen({ raumId, geraetId });
+    else if (g.wall_id !== null) {
+      void wandansichtOeffnen({ raumId, wandId: g.wall_id, geraetId, seite: g.mounting_surface === "wall_exterior" ? "aussen" : "innen" });
+    }
+  };
+
   const nachSchreiben = async (roomId: string | null) => {
     await onGespeichert(roomId);
   };
@@ -349,11 +482,13 @@ export function GrundrissEditor({
     const { entwurf, basis } = zustand;
     if (!schreibbar || entwurf === null || basis === null || zustand.status === "speichert") return false;
     // Minimale lokale Prüfung: nur ganze Millimeter gehen über die Leitung.
-    const ganzzahlig = entwurf.walls.every(
-      (w) =>
-        [w.x1_mm, w.y1_mm, w.x2_mm, w.y2_mm, w.thickness_mm].every(Number.isSafeInteger) &&
-        w.openings.every((o) => [o.offset_mm, o.width_mm, o.height_mm, o.sill_height_mm].every(Number.isSafeInteger)),
-    );
+    const ganzzahlig =
+      entwurf.walls.every(
+        (w) =>
+          [w.x1_mm, w.y1_mm, w.x2_mm, w.y2_mm, w.thickness_mm].every(Number.isSafeInteger) &&
+          w.openings.every((o) => [o.offset_mm, o.width_mm, o.height_mm, o.sill_height_mm].every(Number.isSafeInteger)),
+      ) &&
+      entwurf.geraete.every((g) => [g.center_offset_mm, g.center_height_mm, g.x_mm, g.y_mm].every((v) => v === null || Number.isSafeInteger(v)));
     if (!ganzzahlig) {
       setHinweis("Der Entwurf enthält Werte, die keine ganzen Millimeter sind. Bitte prüfen.");
       return false;
@@ -429,6 +564,7 @@ export function GrundrissEditor({
           name: werte.name.trim(),
           room_number: werte.room_number.trim() === "" ? null : werte.room_number.trim(),
           height_mm: hoehe === "" ? null : Number.parseInt(hoehe, 10),
+          room_type: raumtypAusWert(werte.room_type),
           walls: neuerRaum.map((w) => ({ ...w, openings: [] })),
         },
       });
@@ -462,6 +598,7 @@ export function GrundrissEditor({
           name: werte.name.trim(),
           room_number: werte.room_number.trim() === "" ? null : werte.room_number.trim(),
           height_mm: hoehe === "" ? null : Number.parseInt(hoehe, 10),
+          room_type: raumtypAusWert(werte.room_type),
         },
       });
       setRaumdaten(false);
@@ -490,13 +627,27 @@ export function GrundrissEditor({
   // Einstieg aus der 3D-Ansicht: sobald der Plan da ist, genau einmal. Steht
   // bewusst hinter der Aktualisierung des Verweises - Effekte laufen in
   // Deklarationsreihenfolge, sonst sähe er noch die leere Raumliste.
-  const startRef = useRef(startWandansicht);
+  const deckenansichtOeffnenRef = useRef(deckenansichtOeffnen);
   useEffect(() => {
+    deckenansichtOeffnenRef.current = deckenansichtOeffnen;
+  });
+  const startRef = useRef(startWandansicht);
+  const startDeckeRef = useRef(startDeckenansicht);
+  useEffect(() => {
+    if (!plan.isSuccess) return;
     const start = startRef.current;
-    if (start === null || !plan.isSuccess || !raeume.some((r) => r.id === start.raumId)) return;
-    startRef.current = null;
-    onStartVerbraucht?.();
-    void wandansichtOeffnenRef.current(start);
+    if (start !== null && raeume.some((r) => r.id === start.raumId)) {
+      startRef.current = null;
+      onStartVerbraucht?.();
+      void wandansichtOeffnenRef.current(start);
+      return;
+    }
+    const decke = startDeckeRef.current;
+    if (decke !== null && raeume.some((r) => r.id === decke.raumId)) {
+      startDeckeRef.current = null;
+      onStartVerbraucht?.();
+      void deckenansichtOeffnenRef.current(decke);
+    }
   }, [plan.isSuccess, raeume, onStartVerbraucht]);
 
   const quelleBearbeiten = async (ziel: Wandziel, oeffnungId: string | null) => {
@@ -505,6 +656,17 @@ export function GrundrissEditor({
         ? { art: "oeffnung", raumId: ziel.raumId, wandId: ziel.wandId, oeffnungId }
         : { art: "wand", raumId: ziel.raumId, wandId: ziel.wandId };
     if (await raumAktivieren(ziel.raumId, auswahl)) setWandansicht({ ...ziel, ...(oeffnungId !== null ? { oeffnungId } : {}) });
+  };
+
+  const deckenansichtSchliessen = () => {
+    setDeckenansicht(null);
+    if (herkunft.current === "3d") {
+      herkunft.current = "2d";
+      onZurueck3d?.();
+    }
+    if (offen) {
+      setHinweis(`Die Änderungen sind im Entwurf von „${zustand.basis?.raum.name ?? ""}“ erhalten – noch nicht gespeichert.`);
+    }
   };
 
   const wandansichtSchliessen = () => {
@@ -539,6 +701,11 @@ export function GrundrissEditor({
   const auswahlEntfernen = () => {
     const { auswahl, entwurf, basis } = zustand;
     if (!schreibbar || entwurf === null || basis === null || auswahl === null) return;
+    if (auswahl.art === "geraet") {
+      aendern(geraetEntfernen(entwurf, auswahl.geraetId, new Set(basis.entwurf.geraete.map((g) => g.id))));
+      dispatch({ typ: "auswaehlen", auswahl: { art: "raum", raumId: auswahl.raumId } });
+      return;
+    }
     if (auswahl.art === "oeffnung") {
       const gespeichert = new Set(basis.entwurf.walls.flatMap((w) => w.openings.map((o) => o.id)));
       aendern(oeffnungEntfernen(entwurf, auswahl.wandId, auswahl.oeffnungId, gespeichert));
@@ -747,6 +914,8 @@ export function GrundrissEditor({
           topologie={topologie}
           einordnung={einordnung}
           raumName={raumName}
+          geraete={geraeteDarstellung}
+          onGeraetBearbeiten={geraetBearbeiten}
         />
         </div>
         {/* Rückmeldungen des Servers stehen in der Seitenleiste: Die
@@ -791,12 +960,17 @@ export function GrundrissEditor({
             }
           }}
           onDeckenansicht={() => {
-            if (zustand.entwurf !== null) setDeckenansicht(zustand.entwurf.roomId);
+            if (zustand.entwurf !== null) void deckenansichtOeffnen({ raumId: zustand.entwurf.roomId });
           }}
           neueId={neueId}
           einordnung={einordnung}
           topologie={topologie}
           raumName={raumName}
+          typen={typen}
+          geraetebefunde={geraeteBefunde}
+          onGeraetBearbeiten={(geraetId) => {
+            if (zustand.entwurf !== null) geraetBearbeiten(zustand.entwurf.roomId, geraetId);
+          }}
         />
         </div>
       </div>
@@ -808,6 +982,7 @@ export function GrundrissEditor({
           <li>Polygonraum (P): Punkte nacheinander klicken; Klick auf den Startpunkt, Doppelklick oder Enter schließt. Rücktaste oder Strg+Z entfernt den letzten Punkt, Escape bricht ab.</li>
           <li>Tür (T), Fenster (N), Durchgang (D): Wand anklicken – ihre Wandansicht öffnet sich mit diesem Werkzeug, gesetzt wird dort. Der Klick im Grundriss legt noch keine Öffnung an. Bei einer gemeinsamen Wand zählt die Raumseite, auf die geklickt wurde. Eine vorhandene Öffnung mit dem Werkzeug anklicken oder doppelklicken: Sie wird in der Wandansicht bearbeitet. Im Auswahlwerkzeug lässt sie sich weiterhin entlang ihrer Wand ziehen.</li>
           <li>Eine Öffnung auf einer gemeinsamen Wand wird nur einmal gespeichert und gilt für beide Räume; im Nachbarraum erscheint sie gestrichelt als abgeleitete Darstellung.</li>
+          <li>Geräte (Steckdosen, Schalter, Leuchten, Netzwerkdosen) werden in der Wandansicht (innen oder außen) bzw. in der Deckenansicht gesetzt und verschoben. Im Grundriss erscheinen sie als Symbol auf ihrer Montageseite; Klick wählt, Doppelklick öffnet die passende Ansicht.</li>
           <li>Eckpunkt ziehen verschiebt beide angrenzenden Wände. Alt beim Ziehen setzt den Fang aus.</li>
           <li>Mausrad zoomt um den Zeiger, mittlere Maustaste oder H verschiebt die Ansicht, F setzt die Ansicht zurück (ganzer Grundriss).</li>
           <li>Strg+Z / Strg+Y (oder Strg+Umschalt+Z): Rückgängig / Wiederholen · Strg+S: Speichern · Entf: Auswahl entfernen.</li>
@@ -841,21 +1016,42 @@ export function GrundrissEditor({
           onWechseln={setWandansicht}
           onQuelleBearbeiten={(ziel, oeffnungId) => void quelleBearbeiten(ziel, oeffnungId)}
           onSchliessen={wandansichtSchliessen}
+          typen={typen}
+          geraeteVon={geraeteVon}
+          geraetebefunde={geraeteBefunde}
         />
       )}
       {deckenansicht !== null && (
         <Deckenansicht
-          raumName={raumName(deckenansicht)}
-          walls={waendeVon(deckenansicht)}
+          raumId={deckenansicht.raumId}
+          raumName={raumName(deckenansicht.raumId)}
+          walls={waendeVon(deckenansicht.raumId)}
           deckenhoeheMm={
-            zustand.basis?.raum.id === deckenansicht
+            zustand.basis?.raum.id === deckenansicht.raumId
               ? zustand.basis.raum.effective_height_mm
-              : (raeume.find((r) => r.id === deckenansicht)?.effective_height_mm ?? standardhoehe_mm)
+              : (raeume.find((r) => r.id === deckenansicht.raumId)?.effective_height_mm ?? standardhoehe_mm)
           }
-          eigeneHoehe={(raeume.find((r) => r.id === deckenansicht)?.height_mm ?? null) !== null}
+          eigeneHoehe={(raeume.find((r) => r.id === deckenansicht.raumId)?.height_mm ?? null) !== null}
           rasterMm={rasterMm}
           onRaster={setRasterMm}
-          onSchliessen={() => setDeckenansicht(null)}
+          onSchliessen={deckenansichtSchliessen}
+          zustand={zustand}
+          dispatch={dispatch}
+          typen={typen}
+          geraete={geraeteVon(deckenansicht.raumId)}
+          geraetebefunde={geraeteBefunde}
+          editierbar={schreibbar && zustand.entwurf?.roomId === deckenansicht.raumId}
+          fangAktiv={fangAktiv}
+          onFang={setFangAktiv}
+          status={{
+            text: aktiverName === undefined ? STATUS_TEXT[status] : `${aktiverName}: ${STATUS_TEXT[status]}`,
+            farbe: STATUS_FARBE[status],
+            speichert: status === "speichert",
+          }}
+          offen={offen}
+          onSpeichern={() => void speichern()}
+          onVerwerfen={() => void verwerfen()}
+          startGeraetId={deckenansicht.geraetId ?? null}
         />
       )}
       {neuerRaum !== null && (
@@ -878,6 +1074,7 @@ export function GrundrissEditor({
             name: zustand.basis.raum.name,
             room_number: zustand.basis.raum.room_number ?? "",
             height_mm: zustand.basis.raum.height_mm === null ? "" : String(zustand.basis.raum.height_mm),
+            room_type: zustand.basis.raum.room_type ?? "",
           }}
           onSubmit={raumdatenSpeichern}
           onClose={() => setRaumdaten(false)}

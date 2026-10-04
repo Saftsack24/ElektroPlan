@@ -5,6 +5,47 @@ Einträge entstehen nach relevanten Änderungen, nicht nach jedem Commit.
 
 ---
 
+## 2026-10-04 — Phase 5: Electrical Devices (abgeschlossen, manuell abgenommen)
+
+Migration **`0008_electrical_devices`**, danach **Seed ausführen** (legt den Gerätekatalog an).
+Entscheidung: [ADR 0023](decisions/0023-electrical-devices-symbols-room-types.md) – T1 und T7
+entschieden.
+
+### Added
+
+- **Gerätekatalog** (global, 13 Typen: Steckdosen einfach/zweifach/dreifach/außen geeignet,
+  Aus-/Wechsel-/Serienschalter, Decken-, Einbau-, Wand- und Außenleuchte, Netzwerkdosen
+  einfach/zweifach) mit Planungsmaß, zulässigen Montageflächen und Standardhöhe als Startwert;
+  `GET /api/v1/modules/electrical/device-types`; idempotenter Seed über den neuen
+  Teilnehmer-Contract `ReferenceDataSeeder`.
+- **Geräte** mit dauerhaft gespeicherter Montagefläche (Wand innen, Fassade außen, Decke) und
+  Gerätemitte; Deckengeräte ohne eigene Höhe (folgen der Raumhöhe). Gespeichert mit dem
+  Raumentwurf: `PUT …/rooms/{id}/contour` nimmt `devices` und `removed_device_ids`; Plan liefert
+  `devices`.
+- **Geräteprüfung** serverseitig und im Editor gespiegelt: Wandrand, Decke, eigene und vom
+  Nachbarraum abgeleitete Öffnungen, außen kein geteiltes Wandstück, Decke vollständig in der
+  echten Kontur (auch L-Raum), keine Überdeckung; gemeinsame Fixture `geraete.v1.json`.
+- **Grundriss:** versetzte Gerätesymbole zeigen mit einer Zuordnungslinie auf ihren markierten
+  Montagepunkt; dichte Stellen werden zu einem aufklappbaren Gruppensymbol (reine Darstellung).
+- **Oberfläche:** eigene Planungssymbole mit Legende; Geräte in Grundriss, Wandansicht
+  (Werkzeug „Gerät“, Einrasten, Hilfslinien, Achsmaße, Pfeiltasten), Deckenansicht (Maße bis zur
+  ersten echten Wand) und 3D (Körper, Orientierungslinie, Schalter Wand-/Deckengeräte und
+  Beschriftungen, „An Wand/Decke bearbeiten“ mit Rückkehr). Undo/Redo und Speichern im
+  gemeinsamen Entwurf.
+- **Raumtyp** (optional, zwölf Werte) im Raumdialog und in der Tabelle; nur Einordnung.
+- Event-`change_kind` **`devices_changed`**.
+
+### Changed
+
+- Jede Geometrie-, Öffnungs- und Höhenänderung prüft die Geräte des Geschosses: keine neuen
+  Konflikte und kein bestehender Konflikt größer (`422`) – verglichen nach Gerät, Code,
+  Konfliktpartner und exaktem Ausmaß, nicht nur nach Fehlercode; Teilverbesserungen zulässig.
+  Nichts wird verschoben oder gelöscht. Eine Wand mit Geräten lässt sich nicht
+  entfernen (`409 wall-has-devices`). Die Prüfung der Geschoss-Standardhöhe umfasst Wandgeräte.
+- Projektinhalt meldet `electrical.devices`; Rechtetexte der Elektroplanung nennen Geräte.
+
+---
+
 ## 2026-10-02 — Phase 4f: Wand- und Deckenansicht (abgeschlossen, committet 2026-10-03)
 
 Keine Migration, keine neue API-Route, kein Seed nötig. Entscheidung:

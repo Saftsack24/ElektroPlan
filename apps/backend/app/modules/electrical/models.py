@@ -25,7 +25,16 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import CheckConstraint, Index, Integer, String, UniqueConstraint, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -36,6 +45,14 @@ from app.db.mixins import (
     Versioned,
     tenant_fk,
     tenant_identity,
+)
+from app.modules.electrical.catalog import (
+    DEVICE_CATEGORIES,
+    MAX_DEVICE_LABEL_LENGTH,
+    MAX_DEVICE_SIZE_MM,
+    MIN_DEVICE_SIZE_MM,
+    MOUNTING_SURFACES,
+    ROOM_TYPES,
 )
 from app.modules.electrical.geometry import (
     DEFAULT_WALL_THICKNESS_MM,
@@ -54,7 +71,12 @@ ROOM_NUMBER_CONSTRAINT = "uq_el_rooms_floor_room_number"
 #: Name der eindeutigen Reihenfolge innerhalb eines Raums.
 WALL_ORDER_CONSTRAINT = "uq_el_walls_room_sort_order"
 
-_KIND_LIST = ", ".join(f"'{kind}'" for kind in OPENING_KINDS)
+
+def _value_list(values: tuple[str, ...]) -> str:
+    return ", ".join(f"'{value}'" for value in values)
+
+
+_KIND_LIST = _value_list(OPENING_KINDS)
 
 
 def _coordinates_in_range(*columns: str) -> str:
@@ -87,6 +109,10 @@ class ElectricalRoom(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, Base)
             f"height_mm IS NULL OR height_mm BETWEEN {MIN_ROOM_HEIGHT_MM} AND {MAX_ROOM_HEIGHT_MM}",
             name="height_plausible",
         ),
+        CheckConstraint(
+            f"room_type IS NULL OR room_type IN ({_value_list(ROOM_TYPES)})",
+            name="room_type_known",
+        ),
         Index("ix_electrical_rooms_organization_id_floor_id", "organization_id", "floor_id"),
         Index(
             ROOM_NUMBER_CONSTRAINT,
@@ -104,6 +130,8 @@ class ElectricalRoom(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, Base)
     room_number: Mapped[str | None] = mapped_column(String(30), nullable=True, default=None)
     #: Lichte Raumhoehe in Millimetern; ``NULL`` = Standardhoehe des Geschosses.
     height_mm: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    #: Raumtyp (T7, Phase 5) - nur zur Einordnung; ``NULL`` = nicht angegeben.
+    room_type: Mapped[str | None] = mapped_column(String(30), nullable=True, default=None)
 
 
 class ElectricalWall(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, Base):
@@ -196,4 +224,126 @@ class ElectricalOpening(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, Ba
     #: Unterkante ueber Fertigfussboden; ``0`` bei Tuer und Durchgang.
     sill_height_mm: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=text("0")
+    )
+
+
+class ElectricalDeviceType(Base):
+    """Geraetetyp des ausgelieferten Systemkatalogs (Phase 5, ADR 0023).
+
+    **Global, ohne ``organization_id``:** Der Katalog ist fuer alle Betriebe
+    gleich und wird nur vom idempotenten Seed gepflegt (``reference_data.py``).
+    Er enthaelt keine Daten eines Mandanten. Betriebseigene Typen sind nicht
+    Teil von Phase 5; kommen sie, braucht es einen eigenen ADR.
+
+    Der stabile technische Schluessel ist der Primaerschluessel. Ein Typ wird
+    nie geloescht, sondern deaktiviert (``is_active``) - Geraete verweisen mit
+    ``RESTRICT`` auf ihn.
+    """
+
+    __tablename__ = "electrical_device_types"
+    __table_args__ = (
+        CheckConstraint(f"category IN ({_value_list(DEVICE_CATEGORIES)})", name="category_known"),
+        CheckConstraint(
+            "allows_wall_interior OR allows_wall_exterior OR allows_ceiling",
+            name="has_surface",
+        ),
+        CheckConstraint(
+            f"width_mm BETWEEN {MIN_DEVICE_SIZE_MM} AND {MAX_DEVICE_SIZE_MM} "
+            f"AND height_mm BETWEEN {MIN_DEVICE_SIZE_MM} AND {MAX_DEVICE_SIZE_MM} "
+            "AND width_mm % 2 = 0 AND height_mm % 2 = 0",
+            name="size_plausible",
+        ),
+        CheckConstraint(
+            "default_center_height_mm IS NULL OR default_center_height_mm BETWEEN 0 AND "
+            f"{MAX_ROOM_HEIGHT_MM}",
+            name="default_height_plausible",
+        ),
+    )
+
+    key: Mapped[str] = mapped_column(String(40), primary_key=True)
+    label: Mapped[str] = mapped_column(String(80), nullable=False)
+    category: Mapped[str] = mapped_column(String(16), nullable=False)
+    symbol_key: Mapped[str] = mapped_column(String(40), nullable=False)
+    allows_wall_interior: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    allows_wall_exterior: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    allows_ceiling: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    #: Startwert der Mitte ueber FFB fuer Wandgeraete - keine Normvorgabe.
+    default_center_height_mm: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Planungsmass (gerade mm): an der Wand Breite x Hoehe, an der Decke x und y.
+    width_mm: Mapped[int] = mapped_column(Integer, nullable=False)
+    height_mm: Mapped[int] = mapped_column(Integer, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+
+
+class ElectricalDevice(UUIDPrimaryKey, TenantScoped, Timestamped, Base):
+    """Geraet in einem Raum (Phase 5, ADR 0023).
+
+    Gehoert immer zu einem Raum und wird mit dessen Entwurf gespeichert
+    (``PUT /rooms/{id}/contour``); die **Raumversion** schuetzt es - ein
+    eigener Versionszaehler waere eine zweite Wahrheit.
+
+    Montageflaeche und Lage, je nach Flaeche genau eine Form (CHECK):
+
+    * ``wall_interior`` / ``wall_exterior``: ``wall_id`` (eine Wand **dieses**
+      Raums), ``center_offset_mm`` (Mitte ab Wandanfang),
+      ``center_height_mm`` (Mitte ueber FFB),
+    * ``ceiling``: ``x_mm``/``y_mm`` (Mitte in Geschosskoordinaten); **keine**
+      gespeicherte Hoehe - sie ist immer die effektive Raumhoehe.
+
+    Verweise: Raum ``CASCADE`` (Raum weg, Geraete weg), Wand ``CASCADE`` nur fuer
+    den Fall, dass die Wand mit ihrem Raum verschwindet - eine einzelne Wand mit
+    Geraeten laesst der Service nicht loeschen (``409``). Geraetetyp
+    ``RESTRICT``.
+    """
+
+    __tablename__ = "electrical_devices"
+    __table_args__ = (
+        tenant_identity(),
+        tenant_fk("room_id", "electrical_rooms", ondelete="CASCADE"),
+        tenant_fk("wall_id", "electrical_walls", ondelete="CASCADE"),
+        CheckConstraint(
+            f"mounting_surface IN ({_value_list(MOUNTING_SURFACES)})", name="surface_known"
+        ),
+        CheckConstraint(
+            "(mounting_surface = 'ceiling' AND wall_id IS NULL AND center_offset_mm IS NULL "
+            "AND center_height_mm IS NULL AND x_mm IS NOT NULL AND y_mm IS NOT NULL) OR "
+            "(mounting_surface <> 'ceiling' AND wall_id IS NOT NULL "
+            "AND center_offset_mm IS NOT NULL AND center_height_mm IS NOT NULL "
+            "AND x_mm IS NULL AND y_mm IS NULL)",
+            name="position_matches_surface",
+        ),
+        CheckConstraint(
+            f"(x_mm IS NULL OR x_mm BETWEEN {MIN_COORDINATE_MM} AND {MAX_COORDINATE_MM}) AND "
+            f"(y_mm IS NULL OR y_mm BETWEEN {MIN_COORDINATE_MM} AND {MAX_COORDINATE_MM})",
+            name="coordinates_in_range",
+        ),
+        CheckConstraint(
+            f"(center_offset_mm IS NULL OR center_offset_mm BETWEEN 0 AND {MAX_COORDINATE_MM}) "
+            "AND (center_height_mm IS NULL OR center_height_mm BETWEEN 0 AND "
+            f"{MAX_ROOM_HEIGHT_MM})",
+            name="wall_position_plausible",
+        ),
+        Index("ix_electrical_devices_organization_id_room_id", "organization_id", "room_id"),
+        Index("ix_electrical_devices_organization_id_wall_id", "organization_id", "wall_id"),
+        Index("ix_electrical_devices_device_type_key", "device_type_key"),
+    )
+
+    room_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    device_type_key: Mapped[str] = mapped_column(
+        String(40),
+        ForeignKey("electrical_device_types.key", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    mounting_surface: Mapped[str] = mapped_column(String(16), nullable=False)
+    wall_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, default=None)
+    center_offset_mm: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    center_height_mm: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    x_mm: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    y_mm: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    #: Kurze Beschriftung (z. B. "Bett links") - keine personenbezogenen Daten.
+    label: Mapped[str | None] = mapped_column(
+        String(MAX_DEVICE_LABEL_LENGTH), nullable=True, default=None
     )

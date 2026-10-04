@@ -2,8 +2,8 @@
 
 Art: Fachmodul · Präfix: `electrical_` · Status: **Raummodell umgesetzt (Phase 3)**,
 **grafischer 2D-Editor umgesetzt (Phase 4a)**, **abgeleitete 3D-Ansicht umgesetzt
-(Phase 4b)**, **Wand- und Deckenansicht umgesetzt (Phase 4f)**, Geräte/Stromkreise/Leitungswege
-geplant (Phasen 5–6)
+(Phase 4b)**, **Wand- und Deckenansicht umgesetzt (Phase 4f)**, **Geräte umgesetzt (Phase 5)**,
+Stromkreise/Leitungswege geplant (Phase 6)
 Abhängig von: **Phasen 3–6 nur `core`** · ab Phase 7 zusätzlich `materials`
 
 > Die Module Registry verweigert den Start bei einer Abhängigkeit auf ein nicht
@@ -69,8 +69,11 @@ Wandzahl und Konturzustand werden berechnet und nicht gespeichert (ADR 0013).
 
 **Validierung:** Höhe zwischen 1500 und 6000 mm; die Konturregeln siehe unten.
 
-Der Raumtyp (`living`, `kitchen`, …) ist **noch nicht** angelegt: Er wird erst mit den
-Ausstattungsvorlagen gebraucht (offener Punkt 1).
+**Raumtyp (seit Phase 5, T7, ADR 0023):** optionales `room_type` mit zwölf festen Schlüsseln
+(`living_room`, `bedroom`, `children_room`, `kitchen`, `bathroom`, `hallway`, `office`,
+`utility_room`, `technical_room`, `basement`, `garage`, `other`), deutsche Namen nur in der
+Oberfläche. Bestehende Räume bleiben ohne Typ; nichts wird klassifiziert. Nur Einordnung – keine
+Ausstattungsvorlagen, keine automatisch gesetzten Geräte (offener Punkt 1).
 
 ### `electrical_walls` — umgesetzt (Phase 3)
 **Gerichtetes** Wandsegment eines Raums: `(x1_mm, y1_mm) → (x2_mm, y2_mm)`, Wandstärke und
@@ -144,15 +147,44 @@ nennen erst den Raum). Nach der Sperre werden sie neu gelesen; wer auf die Sperr
 gewartet hat, prüft also gegen den aktuellen Stand und erhält einen Versionskonflikt
 statt eines irreführenden Geometriefehlers (Befund der Parallelitätstests in Phase 4a).
 
-### `electrical_device_types`
-Katalog der Elementtypen: Steckdose, Doppelsteckdose, Schalter, Wechselschalter, Taster,
-Leuchtenauslass, Netzwerkdose, Abzweigdose, Bewegungsmelder, Unterverteilung.
-Je Typ: Standard-Montagehöhe, Symbolschlüssel, Standard-ServiceTemplate.
-Systemtypen werden als Seed ausgeliefert; die Organisation kann eigene ergänzen.
+### `electrical_device_types` — umgesetzt (Phase 5, ADR 0023)
+**Globaler Systemkatalog** (ohne `organization_id`), PK = stabiler Schlüssel. Startumfang 13
+Typen (`catalog.py`): Steckdose einfach/zweifach/dreifach/außen geeignet, Aus-, Wechsel-,
+Serienschalter, Deckenleuchte (Auslass), Einbauleuchte, Wandleuchte (Auslass), Außenleuchte
+(Wand), Netzwerkdose einfach/zweifach. Je Typ: zulässige Montageflächen, **Planungsmaß** (gerade
+mm, vereinfachtes Rahmen-/Auslassmaß – Grundlage der Prüfung), Standard-Montagehöhe der Mitte
+(Startwert, keine Normvorgabe), Symbolschlüssel, Reihenfolge, `is_active`. Kein Herstellerartikel,
+keine Materialposition, kein ServiceTemplate (folgt mit Phase 7/8). Gepflegt nur vom
+idempotenten Seed (`reference_data.py`, Contract `ReferenceDataSeeder`); entfallene Typen werden
+deaktiviert, nie gelöscht. Betriebseigene Typen: nicht in Phase 5.
 
-### `electrical_devices`
-Konkretes Element im Raum: Position (`x_mm`, `y_mm`), Montagehöhe, Drehung, optionale
-Wandzuordnung, Stromkreis, abweichendes ServiceTemplate, freie `properties` (JSONB).
+### `electrical_devices` — umgesetzt (Phase 5, ADR 0023)
+Gerät eines Raums mit dauerhaft gespeicherter **Montagefläche** und **Gerätemitte**:
+`wall_interior`/`wall_exterior` mit `wall_id` (Wand dieses Raums), `center_offset_mm` (ab
+Wandanfang) und `center_height_mm` (über FFB); `ceiling` mit `x_mm`/`y_mm` und **ohne Höhe** – sie
+ist immer die effektive Raumhöhe. Dazu optional `label` (kurz, ohne Personenbezug). Keine eigene
+Version (Raumversion), keine Drehung, kein Stromkreis (Phase 6). Innen und außen sind getrennte
+Geräte; nichts wird auf die Gegenseite übertragen.
+
+**Geräteprüfung** (`devices.py`, gespiegelt in `geraete/geraetepruefung.ts`, gemeinsame Fixture
+`testdata/geometry/geraete.v1.json`): Typ für die Fläche zulässig; Wand: Planungsmaß ganz in Wand
+und unter der Decke, keine Überdeckung mit eigener oder **abgeleiteter** Öffnung (Nachbarraum,
+`topology.py`), außen kein geteiltes Wandstück; Decke: geschlossene Kontur, vollständig in der
+**echten** Kontur (exakt, auch L-Raum); keine Überdeckung auf derselben Fläche. Kantenberührung
+erlaubt, keine Sicherheitsabstände.
+
+**Keine neuen und keine größeren Konflikte:** Jeder Schreibweg mit Geometrie-, Öffnungs-, Höhen-
+oder Geräteänderung vergleicht die Gerätebefunde des Geschosses vor/nach der Änderung unter der
+Projektsperre (`device_rules.py`) – neue oder direkt geänderte Geräte müssen zulässig sein, andere
+dürfen keinen neuen Befund bekommen und keinen bestehenden vergrößern, sonst `422` mit Ort und
+Typ. Verglichen werden **nicht nur Codes**, sondern Identität (Gerät, Code, Konfliktpartner wie
+Öffnung, Gerät, Nachbarräume) und exaktes Ausmaß (Überstand in mm, Fläche in mm²); Tabelle und
+konservative Regeln in ADR 0023 §6. Teilverbesserungen sind zulässig. Nichts wird verschoben oder
+gelöscht. Die Geschoss-Standardhöhe prüft `floor_height.py` auch für Wandgeräte.
+
+**Löschregeln:** Raum löschen → Geräte mit (`CASCADE`); Wand mit Geräten → `409` (einzeln und im
+Konturspeichern ohne ausdrückliche Entfernung); Gerätetyp → `RESTRICT`, deaktivieren statt
+löschen; Projektlöschung über den Teilnehmer (`electrical.devices`).
 
 ### `electrical_distribution_boards`
 Verteilungen mit Code (`HV`, `UV1`, …), Standort und Hauptabsicherung.
@@ -238,8 +270,8 @@ Meter × Minuten-pro-Meter des Verlegeart-Schlüssels.
 ## 6a. Projektlebenszyklus (Phase 4d, ADR 0020)
 
 * **Löschschutz-Protokoll:** `ElectricalProjectContent` (`lifecycle.py`) ist als
-  `ProjectContentParticipant` gebunden. Er meldet `electrical.rooms`, `electrical.walls`
-  und `electrical.openings` mit Anzahl und löscht bei einer administrativen
+  `ProjectContentParticipant` gebunden. Er meldet `electrical.rooms`, `electrical.walls`,
+  `electrical.openings` und seit Phase 5 `electrical.devices` mit Anzahl und löscht bei einer administrativen
   Projektlöschung die Räume des Projekts (Wände und Öffnungen per Cascade) – in der
   Transaktion des Core, ohne Commit. Die Geschosse des Projekts erfährt das Modul über
   `FloorPlanningAccess.floor_ids_of_project`.
@@ -253,10 +285,10 @@ Meter × Minuten-pro-Meter des Verlegeart-Schlüssels.
 |---|---|---|
 | `electrical.plan.read` | Planung ansehen | **registriert (Phase 3)** |
 | `electrical.plan.write` | Räume, Wände, Öffnungen bearbeiten | **registriert (Phase 3)** |
-| `electrical.device.write` | Elektroelemente bearbeiten | ab Phase 5 |
+| `electrical.device.write` | ~~Elektroelemente bearbeiten~~ | **nicht angelegt (Phase 5):** Geräte gehören zum atomaren Raumentwurf und fallen unter `electrical.plan.write` (ADR 0023) |
 | `electrical.circuit.write` | Stromkreise und Verteilungen bearbeiten | ab Phase 6 |
 | `electrical.route.write` | Leitungswege bearbeiten | ab Phase 6 |
-| `electrical.settings.write` | Gerätetypen und Zonen-Standardwerte pflegen | ab Phase 5 |
+| `electrical.settings.write` | Gerätetypen und Zonen-Standardwerte pflegen | offen – der Gerätekatalog ist in Phase 5 ein Systemkatalog aus dem Seed |
 
 Phase 3 registriert bewusst nur **zwei** Schlüssel: ansehen und bearbeiten. Wer die
 Kontur eines Raums erfassen darf, darf auch die Öffnungen darin erfassen — eine feinere
@@ -281,7 +313,8 @@ Die verbindliche Neuberechnung läuft über den Recompute-Endpunkt des Materialm
 
 `electrical.plan.updated` entsteht in Phase 3 bei jeder wirksamen Änderung am Raummodell.
 `change_kind` unterscheidet `room_created`, `room_updated`, `room_deleted`,
-`walls_changed` und `openings_changed`. Nutzlast: `project_id`, `floor_id`, `room_id`,
+`walls_changed`, `openings_changed` und seit Phase 5 `devices_changed` (Konturspeichern, bei dem
+sich nur Geräte geändert haben). Nutzlast: `project_id`, `floor_id`, `room_id`,
 `change_kind` — nur IDs und ein Schlüssel, keine Namen, keine Raumnummern.
 
 Seit Phase 4a: Das atomare Konturspeichern (`PUT …/contour`) erzeugt **genau ein**
@@ -376,10 +409,25 @@ Es gibt **keine** Cursor-Pagination: Ein Geschoss hat Räume in zweistelliger An
 Raum Wände in einstelliger. Die Sortierung ist trotzdem deterministisch (Raumnummer, dann
 Name, dann ID; Wände nach `sort_order`, dann ID).
 
-### Geplant (Phasen 5–6)
+### Ergänzt in Phase 5 (ADR 0023)
 
 ```
-POST   /rooms/{room_id}/devices
+GET    /device-types                       Systemkatalog (aktiv und deaktiviert)
+PUT    /rooms/{room_id}/contour            zusätzlich devices (vollständig) + removed_device_ids
+```
+
+Geräte haben **keinen eigenen Schreibendpunkt**: Sie werden mit dem Raumentwurf unter der
+Raumversion gespeichert – Geometrie und Geräte gemeinsam. Fehlt `devices`, bleiben sie
+unverändert und werden gegen die neue Geometrie geprüft. Regeln: vorhandenes Gerät fehlt ohne
+Entfernung → `422 device-missing`; fremde ID → `device-foreign`; Fläche/Wand gewechselt →
+`device-surface-changed`; Wand nicht im Zielzustand → `device-wall-unknown`; unbekannter bzw.
+deaktivierter Typ (für neue/geänderte Geräte) → `device-type-unknown`/`device-type-inactive`;
+entfernte Wand mit Geräten → `409 wall-has-devices`; Lagebefunde siehe Abschnitt 4. Der Plan
+liefert je Raum `devices`, `RoomOut` den `room_type`.
+
+### Geplant (Phase 6)
+
+```
 GET    /projects/{project_id}/circuits
 POST   /projects/{project_id}/cable-routes
 PUT    /cable-routes/{route_id}/points   (gesamte Punktliste)
@@ -406,7 +454,7 @@ Gruppe; Maßtexte, Raumnamen, Eckgriffe, Raster und Vorschau im Bildraum. Wände
 ihrer Stärke gezeichnet, Öffnungen als Lücke mit einfacher Markierung (Tür:
 durchgezogen, Fenster: gestrichelt blau, Durchgang: gestrichelt grau). Kein Türanschlag
 und keine Fenstergrafik — fachlich nicht definiert. Keine Electrical-Device-Symbole
-(offene Entscheidung T1, vor Phase 5). Wandlängen in der persönlichen Anzeigeeinheit
+(T1 seit Phase 5 entschieden, siehe „Geräte (Phase 5)“). Wandlängen in der persönlichen Anzeigeeinheit
 (Standard Zentimeter, siehe „Maßeinheit" unten), zu kurze Wände bleiben unbeschriftet.
 
 **Koordinaten:** Welt (ganze mm, y nach oben) · Viewport (px/mm, Ursprung) · Bild (px).
@@ -746,6 +794,57 @@ mit Phase 5.
 Auswählen, Verschieben der Ansicht, Zoom und Maße; keine Werkzeuge, keine Griffe, Felder
 gesperrt, „Nur Ansicht“.
 
+### Geräte (Phase 5) — umgesetzt
+
+Entscheidung: [ADR 0023](../decisions/0023-electrical-devices-symbols-room-types.md). Code:
+`apps/planner/src/modules/electrical/geraete/` (Katalog, Symbole, Prüfung, Entwurfsfunktionen),
+`wandansicht/wandgeraete.ts`, `wandansicht/GeraetEigenschaften.tsx`,
+`deckenansicht/deckengeraete.ts`, `ansicht3d/geraete3d.ts`.
+
+**Ein Entwurf:** Geräte stehen im Raumentwurf (`editor/entwurf.ts`: `geraete`,
+`entfernteGeraete`) – derselbe Reducer, dieselbe Undo-Historie, derselbe Speicherweg wie Wände
+und Öffnungen. Eine Ziehbewegung ist ein Schritt; Schließen einer Ansicht speichert nichts;
+Raumwechsel, Ansichts- und Geschosswechsel fragen wie bisher.
+
+**Symbole (T1):** eigene SVG-Planungssymbole in fester Bildgröße (`geraete/symbole.tsx`),
+Zuordnung nur dort, Rückfall je Kategorie, Legende in Wand- und Deckenansicht; keine
+DIN-Konformität behauptet.
+
+**Grundriss:** Symbole auf der Montageseite neben der Wand (innen/außen aus dem Umlaufsinn) bzw.
+an der Deckenlage. Montagepunkt und Symbolposition sind getrennt (`editor/geraetelayout.ts`):
+Würden sich Symbole decken, werden bis zu vier aufgefächert und zeigen mit einer gestrichelten
+Zuordnungslinie auf ihren markierten Montagepunkt; mehr werden zum Gruppensymbol mit Anzahl
+(Klick klappt auf). Nur Darstellung, deterministisch, nichts gespeichert. Klick
+wählt (Seitenleiste mit „An Wand/Decke bearbeiten“, „Gerät entfernen“), Doppelklick öffnet die
+Ansicht. Verschoben wird nur in Wand- bzw. Deckenansicht.
+
+**Wandansicht:** Werkzeug „Gerät“ (G) mit Typwahl nur der auf dieser Seite zulässigen Typen; die
+betrachtete Seite ist die Montagefläche (innen = `wall_interior`, außen = `wall_exterior`).
+Vorschau unter dem Zeiger, Einrasten (Wandkanten, Wandmitte, Kanten und Achsen anderer Geräte und
+Öffnungen, Standardhöhe des Typs, gleiche Höhe anderer Geräte, Boden, Decke; Raster als Rückfall,
+`Alt` setzt aus; ein Fangziel erzwingt nie eine ungültige Lage). Ziehen (beide Achsen),
+Pfeiltasten 1/10 cm, Entf. Hilfslinien: „Mitte von links/rechts (Achsmaß)“, „Mitte über Boden“,
+„Oberkante bis Decke“, freie Abstände zum nächsten Gerät/zur nächsten Öffnung. Eigenschaften:
+Typ, Mitte von links/rechts, Höhe Mitte über Boden, Beschriftung, Planungsmaß-Hinweis, Befunde.
+Geräte der anderen Seite werden nur gezählt, nicht gezeichnet.
+
+**Deckenansicht:** dasselbe Bedienmodell; Einrasten bündig an achsparallelen Wänden, in der
+Flucht anderer Deckengeräte, Raster; Maße von der Mitte in vier Achsrichtungen bis zur ersten
+tatsächlichen Wand (auch L-Raum); Felder „Mitte bis Wand n (links/rechts/oben/unten)“ verschieben
+entlang der Achse (bei schräger Wand nur Anzeige). Montagehöhe = Deckenhöhe, ausdrücklich so
+benannt.
+
+**3D:** Wandgeräte als flache Quader auf ihrer Wandfläche (Innen- bzw. Außenseite), Deckengeräte
+als Scheiben knapp unter der effektiven Raumhöhe ihres Raums; ausgewähltes Deckengerät mit
+gestrichelter Linie zum Boden und Bodenmarker. Schalter „Wandgeräte“, „Deckengeräte“,
+„Beschriftungen“ direkt über der Ansicht (`aria-pressed`; Standard: Geräte an, Beschriftungen
+aus); ausgeblendete Geräte sind keine Klickziele, eine Auswahl darauf verschwindet. Beschriftungen
+als Anzeigeschicht ohne Zeigerereignisse. Seitenleiste mit „An Wand bearbeiten“/„An Decke
+bearbeiten“; die Rückkehr stellt Kamera, Auswahl und Schalter wieder her. Keine Platzierung in 3D.
+
+**Lesemodus:** ohne Schreibrecht oder bei `completed`/`archived` Geräte sichtbar und auswählbar,
+keine Werkzeuge, Felder gesperrt.
+
 ### Ausdrücklich nicht in Phase 4a
 
 Keine 3D-Ansicht, kein Three.js, keine Elektrogeräte oder Symbolbibliothek, keine
@@ -770,14 +869,14 @@ Geometriefehler lesen. Die Wandtabelle ist die Konturvorschau.
 
 ## 12. Offene Punkte
 
-1. Ausstattungsvorlagen pro Raumtyp ("Küche Standard" setzt n Steckdosen) — sinnvoll, aber
-   erst nach Phase 5 zu entscheiden.
+1. Ausstattungsvorlagen pro Raumtyp ("Küche Standard" setzt n Steckdosen) — der Raumtyp
+   existiert seit Phase 5 (T7, nur Einordnung); Vorlagen sind weiterhin nicht entschieden.
 2. Mehrgeschossige Steigezonen: Leitungswege über Geschossgrenzen brauchen einen
    definierten Übergabepunkt. Entwurf offen, Datenmodell erlaubt es bereits
    (Punkte tragen z, Route ist nicht an ein Geschoss gebunden).
 3. Import bestehender Grundrisse (PDF/DWG) — nicht im MVP.
-4. Symbolbibliothek: eigene SVG-Symbole oder Anlehnung an DIN EN 60617 — offene
-   Entscheidung T1, **vor Phase 5** zu klären (Phase 4a platziert keine Geräte).
+4. ~~Symbolbibliothek (T1)~~ — **entschieden in Phase 5** (ADR 0023): eigene SVG-Symbole,
+   austauschbar, ohne DIN-Anspruch.
 5. ~~Deckungsgleiche Wände benachbarter Räume (T9).~~ **Entschieden** mit
    [ADR 0016](../decisions/0016-derived-3d-view-wall-height-and-coincident-walls.md),
    **präzisiert in Phase 4b.2**: exakt kollineare Teilüberlappungen werden in atomare

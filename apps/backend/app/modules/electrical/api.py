@@ -16,6 +16,7 @@ Der Commit stellt anschliessend die gesammelten Events zu (Unit of Work).
 from __future__ import annotations
 
 import uuid
+from typing import cast
 
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
@@ -32,6 +33,8 @@ from app.modules.electrical.geometry import GeometryProblem, Point, segment_leng
 from app.modules.electrical.models import ElectricalOpening
 from app.modules.electrical.permissions import PLAN_READ, PLAN_WRITE
 from app.modules.electrical.schemas import (
+    DeviceOut,
+    DeviceTypeOut,
     FloorPlanOut,
     GeometryProblemOut,
     OpeningCreate,
@@ -42,6 +45,7 @@ from app.modules.electrical.schemas import (
     RoomCreate,
     RoomOut,
     RoomPlanOut,
+    RoomTypeValue,
     RoomUpdate,
     WallCreate,
     WallOrder,
@@ -95,6 +99,8 @@ def _room_out(view: RoomView) -> RoomOut:
         room_number=view.room.room_number,
         height_mm=view.room.height_mm,
         effective_height_mm=view.effective_height_mm,
+        # Die Datenbank laesst nur die bekannten Schluessel zu (CHECK).
+        room_type=cast(RoomTypeValue | None, view.room.room_type),
         contour_status=view.contour.status.value,
         wall_count=view.contour.wall_count,
         area_mm2=view.contour.area_mm2,
@@ -155,6 +161,7 @@ def _room_plan_out(plan: RoomPlan) -> RoomPlanOut:
             for item in plan.walls
         ],
         contour_problems=[_problem_out(problem) for problem in plan.view.contour.problems],
+        devices=[DeviceOut.model_validate(device) for device in plan.devices],
     )
 
 
@@ -413,9 +420,32 @@ def replace_contour(
         bus=bus,
         current_user=current_user,
         result=result,
-        change_kind=PlanChangeKind.WALLS_CHANGED,
+        change_kind=(
+            PlanChangeKind.WALLS_CHANGED
+            if result.geometry_changed
+            else PlanChangeKind.DEVICES_CHANGED
+        ),
     )
     return _room_plan_out(plan)
+
+
+@router.get(
+    "/device-types",
+    response_model=list[DeviceTypeOut],
+    operation_id="listElectricalDeviceTypes",
+    summary="Geraetetypen des Systemkatalogs",
+)
+def list_device_types(
+    current_user: CurrentUser = Depends(require_permission(PLAN_READ)),
+    session: Session = Depends(get_session),
+) -> list[DeviceTypeOut]:
+    """Der ausgelieferte Geraetekatalog (Phase 5) in Katalogreihenfolge.
+
+    Global fuer alle Betriebe; deaktivierte Typen stehen mit ``is_active =
+    false`` dabei, damit vorhandene Geraete benannt werden koennen.
+    """
+    service = ElectricalRoomService(session, current_user.organization_id)
+    return [DeviceTypeOut.model_validate(row) for row in service.list_device_types()]
 
 
 # ----------------------------------------------------------------------- Wand

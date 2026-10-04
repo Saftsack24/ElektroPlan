@@ -64,7 +64,7 @@ Organisation B verweisen. Voraussetzung: jede referenzierte Tabelle hat zusätzl
 | calculation | `calculation_` | `calculation_labor_rates`, `calculations`, `calculation_items`, `calculation_surcharges` |
 | offers | `offer_` | `offers`, `offer_versions`, `offer_items` |
 | work_orders | `work_order_` | `work_orders`, `work_order_items`, `work_order_materials`, `work_order_time_entries`, `work_order_notes` |
-| electrical | `electrical_` | **umgesetzt (Phase 3):** `electrical_rooms`, `electrical_walls`, `electrical_openings` · *geplant:* `electrical_device_types`, `electrical_devices`, `electrical_distribution_boards`, `electrical_circuits`, `electrical_cable_routes`, `electrical_cable_route_points` |
+| electrical | `electrical_` | **umgesetzt (Phase 3):** `electrical_rooms`, `electrical_walls`, `electrical_openings` · **umgesetzt (Phase 5):** `electrical_device_types` (global, ohne Mandant), `electrical_devices` · *geplant:* `electrical_distribution_boards`, `electrical_circuits`, `electrical_cable_routes`, `electrical_cable_route_points` |
 
 Anmerkung: `materials`, `material_requirements` und `service_templates` liegen bewusst im
 selben Modul (`materials` = Katalog + Material Engine). Begründung in
@@ -581,7 +581,18 @@ gehalten, nicht über Trigger (ADR 0013).
 Die Namen `uq_el_rooms_floor_room_number` und `uq_el_walls_room_sort_order` sind gekürzt,
 weil PostgreSQL Bezeichner bei 63 Zeichen abschneidet.
 
-### 4.2 Geräte, Verteilungen, Stromkreise, Leitungswege — **geplant (Phasen 5/6)**
+### 4.1a Geräte — **umgesetzt (Phase 5, Migration `0008`, ADR 0023)**
+
+| Tabelle | Inhalt | Besonderheiten |
+|---|---|---|
+| `electrical_rooms.room_type` | optionaler Raumtyp (T7) | CHECK über zwölf feste Schlüssel; Bestand `NULL` |
+| `electrical_device_types` | globaler Systemkatalog | **ohne `organization_id`** (keine Mandantendaten); PK `key`; CHECKs: Kategorie, mindestens eine Fläche, gerade Planungsmaße 20–1000 mm, Standardhöhe 0–6000; nur vom idempotenten Seed gepflegt, deaktiviert statt gelöscht |
+| `electrical_devices` | Geräte eines Raums | `organization_id`, `UNIQUE (organization_id, id)`; FK Raum `(organization_id, room_id)` `CASCADE`, Wand `(organization_id, wall_id)` `CASCADE` (einzelne Wand mit Geräten lehnt der Service ab), Typ `RESTRICT`; CHECK „genau eine Lageform je Fläche“ (Wand: `wall_id`, `center_offset_mm`, `center_height_mm`; Decke: `x_mm`, `y_mm`, keine Höhe); keine Versionsspalte (Raumversion schützt) |
+
+Indizes: `(organization_id, room_id)`, `(organization_id, wall_id)`, `device_type_key`.
+Nach dem Upgrade auf `0008` den Seed ausführen, sonst ist der Katalog leer.
+
+### 4.2 Verteilungen, Stromkreise, Leitungswege — **geplant (Phase 6)**
 
 Entwurf; wird mit der jeweiligen Phase verbindlich und kann sich dabei wie das
 Raummodell ändern.
@@ -1074,6 +1085,7 @@ Weitere Indizes erst nach Messung (`EXPLAIN ANALYZE`), nicht auf Verdacht.
 | `0004_electrical_room_model` | Räume, Wände, Öffnungen |
 | `0005_member_administration` | `organization_members.version` und `last_login_at`, `member_invitations`, `member_invitation_roles` (Phase 4.2, keine Datenmigration) |
 | `0007_user_lifecycle_preferences` | `organization_members.lock_reason`, `.session_version`, CHECKs für Status/Sperrgrund/Sitzungsversion, Eindeutigkeit nur für nicht entfernte Mitgliedschaften (partieller Index); `refresh_tokens.session_version`; neue Tabellen `password_reset_tokens` und `user_preferences` (Phase 4e, ADR 0021). Bestand bleibt unverändert (aktiv bleibt aktiv, Sitzungsversion 1, Sitzungen gültig). Neue Rechte legt der Seed an. Downgrade: Einstellungen und Links gehen verloren, entfernte Mitgliedschaften werden `disabled` |
+| `0008_electrical_devices` | `electrical_rooms.room_type` (optional, CHECK), neue Tabellen `electrical_device_types` (global, ohne Mandant) und `electrical_devices` (Phase 5, ADR 0023). Keine Datenmigration, Bestand ohne Raumtyp. Den Katalog legt der idempotente **Seed** an. Downgrade: Geräte und Katalog gehen verloren |
 | `0006_data_lifecycle` | `storage_cleanup_jobs`; `customers.anonymized_at`, `customers.deleted_at` und `projects.deleted_at` entfernt (keine Zeile gelöscht, Ausgeblendetes wieder sichtbar); Berechtigung `customer.record.anonymize` gelöscht (Phase 4d, ADR 0020). Neue Rechte legt der Seed an |
 
 ---

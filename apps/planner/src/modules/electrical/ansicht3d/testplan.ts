@@ -28,7 +28,14 @@ export interface RaumAngabe {
   readonly oeffnungen?: Readonly<Record<number, readonly OeffnungsAngabe[]>>;
   /** Offene Kontur: die letzte Wand weglassen. */
   readonly offen?: boolean;
+  /** Geräte (Phase 5) - Wandgeräte verweisen auf `<raum>-w<index>`. */
+  readonly geraete?: readonly GeraeteAngabe[];
 }
+
+/** Ein Gerät im Testplan: Wand (Index, Seite, Mitte, Höhe) oder Decke (x, y). */
+export type GeraeteAngabe =
+  | { readonly id: string; readonly typ: string; readonly wand: number; readonly seite?: "innen" | "aussen"; readonly mitte: number; readonly hoehe: number; readonly label?: string }
+  | { readonly id: string; readonly typ: string; readonly x: number; readonly y: number; readonly label?: string };
 
 const ZEIT = "2026-09-27T08:00:00Z";
 
@@ -86,11 +93,43 @@ export function raum(
     area_mm2: null,
     area_m2: null,
     perimeter_mm: null,
+    room_type: null,
     version: 1,
     created_at: ZEIT,
     updated_at: ZEIT,
     walls,
     contour_problems: [],
+    devices: (angabe.geraete ?? []).map((g) =>
+      "wand" in g
+        ? {
+            id: g.id,
+            room_id: id,
+            device_type_key: g.typ,
+            mounting_surface: g.seite === "aussen" ? ("wall_exterior" as const) : ("wall_interior" as const),
+            wall_id: `${id}-w${g.wand}`,
+            center_offset_mm: g.mitte,
+            center_height_mm: g.hoehe,
+            x_mm: null,
+            y_mm: null,
+            label: g.label ?? null,
+            created_at: ZEIT,
+            updated_at: ZEIT,
+          }
+        : {
+            id: g.id,
+            room_id: id,
+            device_type_key: g.typ,
+            mounting_surface: "ceiling" as const,
+            wall_id: null,
+            center_offset_mm: null,
+            center_height_mm: null,
+            x_mm: g.x,
+            y_mm: g.y,
+            label: g.label ?? null,
+            created_at: ZEIT,
+            updated_at: ZEIT,
+          },
+    ),
   };
 }
 

@@ -28,6 +28,9 @@
   --ep-plan-wall-face: #e7ebf0;
   --ep-plan-ceiling-face: #eef1f5;
   --ep-plan-opening-face: #ffffff;
+  /* Geräte (Phase 5): Symbole und Planungsmaß, akzentunabhängig */
+  --ep-plan-device: #3a2f86;
+  --ep-plan-device-face: #ece9fb;
 
   /* 3D */
   --ep-plan3d-background: #f4f6f8;
@@ -41,6 +44,9 @@
   --ep-plan3d-selection: #f0a030;
   --ep-plan3d-selection-top: #b86d12;
   --ep-plan3d-selection-floor: #f7c67a;
+  --ep-plan3d-device-wall: #5b4bc4;
+  --ep-plan3d-device-ceiling: #c7a400;
+  --ep-plan3d-device-guide: #45505c;
 }
 
 :root[data-theme="dark"] {
@@ -51,8 +57,29 @@
   --ep-plan-wall-active: #dfe5ec;
   --ep-plan-door: #f0a35a;
   --ep-plan-window: #6cb8ea;
+  --ep-plan-device: #c9c0ff;
+  --ep-plan-device-face: #2e2a4d;
 
   --ep-plan3d-background: #1d232b;
   --ep-plan3d-grid: #4a5663;
   --ep-plan3d-grid-fine: #2f3842;
+  --ep-plan3d-device-wall: #9d90ff;
+  --ep-plan3d-device-ceiling: #f2d24b;
+  --ep-plan3d-device-guide: #c3ccd6;
+}
+
+/*
+ * Beschriftungen der Geräte über der 3D-Szene (Phase 5): reine Anzeige, keine
+ * Zeigerereignisse - die Szene bleibt bedienbar. Position setzt die Szene
+ * nach jedem Bild (ansicht3d/szene.ts).
+ */
+@layer components {
+  .ansicht3d__beschriftungen { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+  .ansicht3d__beschriftungen[hidden] { display: none; }
+  .ansicht3d__beschriftung {
+    position: absolute; left: 0; top: 0; white-space: nowrap; font-size: 11px; line-height: 1.2;
+    padding: 1px 4px; border-radius: 3px; border: 1px solid var(--ep-border);
+    background: var(--ep-surface); color: var(--ep-text); opacity: 0.92;
+  }
+  .ansicht3d__beschriftung[hidden] { display: none; }
 }

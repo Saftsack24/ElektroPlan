@@ -4786,6 +4786,32 @@
         }
       }
     },
+    "/api/v1/modules/electrical/device-types": {
+      "get": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Geraetetypen des Systemkatalogs",
+        "description": "Der ausgelieferte Geraetekatalog (Phase 5) in Katalogreihenfolge.\n\nGlobal fuer alle Betriebe; deaktivierte Typen stehen mit ``is_active =\nfalse`` dabei, damit vorhandene Geraete benannt werden koennen.",
+        "operationId": "listElectricalDeviceTypes",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DeviceTypeOut"
+                  },
+                  "type": "array",
+                  "title": "Response Listelectricaldevicetypes"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/modules/electrical/rooms/{room_id}/walls": {
       "get": {
         "tags": [
@@ -5876,6 +5902,122 @@
         "type": "object",
         "title": "BuildingUpdate"
       },
+      "ContourDeviceIn": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "device_type_key": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Device Type Key"
+          },
+          "mounting_surface": {
+            "type": "string",
+            "enum": [
+              "wall_interior",
+              "wall_exterior",
+              "ceiling"
+            ],
+            "title": "Mounting Surface"
+          },
+          "wall_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wall Id"
+          },
+          "center_offset_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1000000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Center Offset Mm"
+          },
+          "center_height_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 6000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Center Height Mm"
+          },
+          "x_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1000000.0,
+                "minimum": -1000000.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Mm"
+          },
+          "y_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1000000.0,
+                "minimum": -1000000.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y Mm"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device_type_key",
+          "mounting_surface"
+        ],
+        "title": "ContourDeviceIn",
+        "description": "Geraet als Teil des Raumentwurfs (Phase 5, ADR 0023).\n\n``id`` wie bei Oeffnungen: bekannt heisst aendern, fehlend oder neu heisst\nanlegen (clientseitig erzeugte UUID). Montageflaeche und Wand eines\nvorhandenen Geraets aendern sich nicht.\n\nBezugspunkt ist die **Mitte** des Geraets:\n\n* Wand (``wall_interior``/``wall_exterior``): ``wall_id`` (eine Wand dieses\n  Raums, auch eine im selben Entwurf neu angelegte), ``center_offset_mm``\n  (Abstand ab Wandanfang der gerichteten Wand) und ``center_height_mm``\n  (ueber Fertigfussboden),\n* Decke (``ceiling``): ``x_mm``/``y_mm`` in Geschosskoordinaten - **ohne**\n  Hoehe; sie ist immer die effektive Raumhoehe."
+      },
       "ContourOpeningIn": {
         "properties": {
           "id": {
@@ -6361,6 +6503,209 @@
         "type": "object",
         "title": "CustomerUpdate",
         "description": "Teilaenderung. Nicht gesetzte Felder bleiben unveraendert.\n\nDie Kundennummer ist nicht aenderbar: Sie ist der Bezug bestehender\nBelege (docs/security.md, Abschnitt 13, Punkt 4)."
+      },
+      "DeviceOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "room_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Room Id"
+          },
+          "device_type_key": {
+            "type": "string",
+            "title": "Device Type Key"
+          },
+          "mounting_surface": {
+            "type": "string",
+            "enum": [
+              "wall_interior",
+              "wall_exterior",
+              "ceiling"
+            ],
+            "title": "Mounting Surface"
+          },
+          "wall_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wall Id"
+          },
+          "center_offset_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Center Offset Mm"
+          },
+          "center_height_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Center Height Mm"
+          },
+          "x_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Mm"
+          },
+          "y_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y Mm"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "room_id",
+          "device_type_key",
+          "mounting_surface",
+          "wall_id",
+          "center_offset_mm",
+          "center_height_mm",
+          "x_mm",
+          "y_mm",
+          "label",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DeviceOut",
+        "description": "Ein gespeichertes Geraet (Phase 5). Bezugspunkt ist die Geraetemitte."
+      },
+      "DeviceTypeOut": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "socket",
+              "switch",
+              "light",
+              "data"
+            ],
+            "title": "Category"
+          },
+          "symbol_key": {
+            "type": "string",
+            "title": "Symbol Key"
+          },
+          "allows_wall_interior": {
+            "type": "boolean",
+            "title": "Allows Wall Interior"
+          },
+          "allows_wall_exterior": {
+            "type": "boolean",
+            "title": "Allows Wall Exterior"
+          },
+          "allows_ceiling": {
+            "type": "boolean",
+            "title": "Allows Ceiling"
+          },
+          "default_center_height_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Center Height Mm"
+          },
+          "width_mm": {
+            "type": "integer",
+            "title": "Width Mm"
+          },
+          "height_mm": {
+            "type": "integer",
+            "title": "Height Mm"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "category",
+          "symbol_key",
+          "allows_wall_interior",
+          "allows_wall_exterior",
+          "allows_ceiling",
+          "default_center_height_mm",
+          "width_mm",
+          "height_mm",
+          "sort_order",
+          "is_active"
+        ],
+        "title": "DeviceTypeOut",
+        "description": "Ein Geraetetyp des Systemkatalogs.\n\n``width_mm``/``height_mm`` sind das **Planungsmass** fuer die\nPlatzierungspruefung (an der Wand Breite x Hoehe, an der Decke in x und y)\n- keine Herstellerangabe. ``default_center_height_mm`` ist ein Startwert,\nkeine Normvorgabe. ``is_active = false``: nicht mehr fuer neue Geraete."
       },
       "DirectoryEntryOut": {
         "properties": {
@@ -8766,6 +9111,30 @@
             "type": "array",
             "maxItems": 10000,
             "title": "Removed Opening Ids"
+          },
+          "devices": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ContourDeviceIn"
+                },
+                "type": "array",
+                "maxItems": 300
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Devices"
+          },
+          "removed_device_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 300,
+            "title": "Removed Device Ids"
           }
         },
         "additionalProperties": false,
@@ -8774,7 +9143,7 @@
           "walls"
         ],
         "title": "RoomContourUpdate",
-        "description": "Vollstaendiger Zielzustand der Raumgeometrie (``PUT /rooms/{id}/contour``).\n\nEin Vorgang, eine Transaktion: Entweder gilt danach genau diese Kontur,\noder es hat sich nichts geaendert. Waende, die in ``walls`` fehlen, werden\nentfernt. Oeffnungen verschwinden dagegen **nie** stillschweigend: Eine\nvorhandene Oeffnung muss entweder in ``walls`` stehen oder ausdruecklich\nin ``removed_opening_ids``. Sonst lehnt der Server ab."
+        "description": "Vollstaendiger Zielzustand des Raumentwurfs (``PUT /rooms/{id}/contour``).\n\nEin Vorgang, eine Transaktion: Entweder gilt danach genau diese Kontur,\noder es hat sich nichts geaendert. Waende, die in ``walls`` fehlen, werden\nentfernt. Oeffnungen verschwinden dagegen **nie** stillschweigend: Eine\nvorhandene Oeffnung muss entweder in ``walls`` stehen oder ausdruecklich\nin ``removed_opening_ids``. Sonst lehnt der Server ab.\n\n**Geraete (Phase 5):** ``devices`` ist - wenn angegeben - die vollstaendige\nGeraeteliste des Raums; fuer Geraete gilt dieselbe Regel wie fuer\nOeffnungen (``removed_device_ids``). Fehlt ``devices`` (``null``), bleiben\ndie gespeicherten Geraete unveraendert - und werden trotzdem gegen die neue\nGeometrie geprueft. Geometrie und Geraete werden immer **gemeinsam**\ngespeichert."
       },
       "RoomCreate": {
         "properties": {
@@ -8809,6 +9178,31 @@
               }
             ],
             "title": "Height Mm"
+          },
+          "room_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "living_room",
+                  "bedroom",
+                  "children_room",
+                  "kitchen",
+                  "bathroom",
+                  "hallway",
+                  "office",
+                  "utility_room",
+                  "technical_room",
+                  "basement",
+                  "garage",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room Type"
           },
           "walls": {
             "items": {
@@ -8868,6 +9262,31 @@
           "effective_height_mm": {
             "type": "integer",
             "title": "Effective Height Mm"
+          },
+          "room_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "living_room",
+                  "bedroom",
+                  "children_room",
+                  "kitchen",
+                  "bathroom",
+                  "hallway",
+                  "office",
+                  "utility_room",
+                  "technical_room",
+                  "basement",
+                  "garage",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room Type"
           },
           "contour_status": {
             "type": "string",
@@ -8937,6 +9356,7 @@
           "room_number",
           "height_mm",
           "effective_height_mm",
+          "room_type",
           "contour_status",
           "wall_count",
           "area_mm2",
@@ -8990,6 +9410,31 @@
           "effective_height_mm": {
             "type": "integer",
             "title": "Effective Height Mm"
+          },
+          "room_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "living_room",
+                  "bedroom",
+                  "children_room",
+                  "kitchen",
+                  "bathroom",
+                  "hallway",
+                  "office",
+                  "utility_room",
+                  "technical_room",
+                  "basement",
+                  "garage",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room Type"
           },
           "contour_status": {
             "type": "string",
@@ -9063,6 +9508,13 @@
             },
             "type": "array",
             "title": "Contour Problems"
+          },
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/DeviceOut"
+            },
+            "type": "array",
+            "title": "Devices"
           }
         },
         "type": "object",
@@ -9073,6 +9525,7 @@
           "room_number",
           "height_mm",
           "effective_height_mm",
+          "room_type",
           "contour_status",
           "wall_count",
           "area_mm2",
@@ -9082,7 +9535,8 @@
           "created_at",
           "updated_at",
           "walls",
-          "contour_problems"
+          "contour_problems",
+          "devices"
         ],
         "title": "RoomPlanOut",
         "description": "Raum im Planungsstand: gespeicherte Werte, berechnete Kontur, Waende.\n\n``contour_problems`` ist derselbe Befund wie im Pruefbericht\n``GET /rooms/{id}/contour`` - hier gleich mitgeliefert, damit der Editor\ndie betroffenen Waende markieren kann, ohne je Raum nachzufragen."
@@ -9127,6 +9581,31 @@
               }
             ],
             "title": "Height Mm"
+          },
+          "room_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "living_room",
+                  "bedroom",
+                  "children_room",
+                  "kitchen",
+                  "bathroom",
+                  "hallway",
+                  "office",
+                  "utility_room",
+                  "technical_room",
+                  "basement",
+                  "garage",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room Type"
           }
         },
         "additionalProperties": false,

@@ -30,6 +30,7 @@ Format: Context · Problem · Considered Options · Decision · Consequences
 | [0020](0020-data-lifecycle-deletion-and-reopen.md) | Datenlebenszyklus: Löschregeln, Wiedereröffnung, Löschschutz-Protokoll, Storage-Aufräumen; erweitert durch 0022 (`completed` schreibgeschützt) | accepted | 2026-09-30, erweitert 2026-10-02 |
 | [0021](0021-user-lifecycle-account-locks-password-reset-preferences.md) | Benutzerlebenszyklus: exklusive Konten, Sperren mit Sitzungsversion, Passwortzurücksetzung, Entfernen als Tombstone, serverseitige Einstellungen, Maßeinheit m | accepted | 2026-10-01 |
 | [0022](0022-wall-and-ceiling-view.md) | Wand- und Deckenansicht: Blickrichtung, Maßbezug, Einrasten, gemeinsamer Entwurf; `completed` schreibgeschützt; Teilnehmer-Prüfung der Geschoss-Standardhöhe | accepted | 2026-10-02 |
+| [0023](0023-electrical-devices-symbols-room-types.md) | Elektrogeräte: Montagefläche und Gerätemitte, Gerätekatalog per Seed (`ReferenceDataSeeder`), exakte Geräteprüfung inkl. Nachbarräume, gemeinsamer Raumentwurf; T1 eigene Symbole, T7 Raumtyp | accepted | 2026-10-04 |
 
 ## Wann ein ADR nötig ist
 

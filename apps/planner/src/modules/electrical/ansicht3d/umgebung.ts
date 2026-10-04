@@ -23,6 +23,9 @@ const TOKEN: Record<keyof Szenenfarben, string> = {
   auswahl: "--ep-plan3d-selection",
   auswahlKrone: "--ep-plan3d-selection-top",
   bodenAuswahl: "--ep-plan3d-selection-floor",
+  geraetWand: "--ep-plan3d-device-wall",
+  geraetDecke: "--ep-plan3d-device-ceiling",
+  geraetFuehrung: "--ep-plan3d-device-guide",
 };
 
 /**

@@ -25,6 +25,8 @@ from app.core.projects.models import Building, Floor, Project
 from app.core.users.models import User
 from app.db.base import Base, metadata
 from app.modules.electrical.models import (
+    ElectricalDevice,
+    ElectricalDeviceType,
     ElectricalOpening,
     ElectricalRoom,
     ElectricalWall,
@@ -36,6 +38,8 @@ __all__ = [
     "Building",
     "Customer",
     "DomainEventRecord",
+    "ElectricalDevice",
+    "ElectricalDeviceType",
     "ElectricalOpening",
     "ElectricalRoom",
     "ElectricalWall",

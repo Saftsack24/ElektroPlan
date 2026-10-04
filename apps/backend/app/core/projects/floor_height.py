@@ -33,9 +33,9 @@ HeightParticipant = tuple[str, FloorCeilingHeightParticipant]
 FIELD = "default_ceiling_height_mm"
 
 _DETAIL = (
-    "Mit dieser Standardhoehe waeren vorhandene Oeffnungen hoeher als ihr Raum. "
-    "Es wurde nichts geaendert. Bitte zuerst die genannten Oeffnungen anpassen "
-    "oder dem Raum eine eigene Hoehe geben."
+    "Mit dieser Standardhoehe laegen vorhandene Planungsobjekte (Oeffnungen oder "
+    "Wandgeraete) ueber der Decke ihres Raums. Es wurde nichts geaendert. Bitte zuerst "
+    "die genannten Objekte anpassen oder dem Raum eine eigene Hoehe geben."
 )
 
 

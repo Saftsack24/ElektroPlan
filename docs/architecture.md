@@ -172,7 +172,10 @@ Siehe [ADR 0003](decisions/0003-module-contracts-and-provider-ports.md).
 `ProjectContentParticipant` (Projektlöschung, ADR 0020) und seit Phase 4f
 `FloorCeilingHeightParticipant` (Prüfung einer neuen Geschoss-Standardhöhe, nur lesend,
 ADR 0022). Beide laufen in der Transaktion des Core unter der Projektsperre und werden über
-`ModuleDescriptor.provides` gebunden.
+`ModuleDescriptor.provides` gebunden. Seit Phase 5 kommt `ReferenceDataSeeder` hinzu (ADR 0023):
+Der Core-Seed lässt jedes Modul seinen mitgelieferten Systemkatalog – etwa die Gerätetypen der
+Elektroplanung – idempotent abgleichen, ohne eine Modultabelle zu kennen; nie löschend, ohne
+Commit.
 
 ## 6. Schichten innerhalb eines Moduls
 

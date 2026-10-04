@@ -521,3 +521,66 @@ describe("Theme (Phase 4c.2)", () => {
     expect(test.offeneBilder).toBe(0);
   });
 });
+
+describe("Geräte (Phase 5)", () => {
+  const mitGeraeten = () =>
+    szenenmodellAus(
+      plan([
+        rechteck("r1", "Wohnen", [0, 0], [5000, 4000], {
+          hoehe: 2500,
+          geraete: [
+            { id: "decke", typ: "light_ceiling", x: 2500, y: 2000, label: "Mitte" },
+            { id: "wand", typ: "socket_single", wand: 0, mitte: 1000, hoehe: 1000 },
+          ],
+        }),
+      ]),
+    );
+
+  it("zeigt Wand- und Deckengeräte als auswählbare Körper; Deckengeräte auf Raumhöhe", () => {
+    const { szene } = erzeugen();
+    szene.setzePlan(mitGeraeten(), { einpassen: true });
+    expect(szene.statistik()).toMatchObject({ geraete: 2, geraeteSichtbar: 2 });
+    szene.draufsicht();
+    // Knapp unter der Raumhöhe (2,50 m) getroffen, knapp darüber nicht.
+    expect(szene.auswahlBei(...ndc(szene, new Vector3(0, 2.52, 0.02)))).toEqual({ art: "geraet", id: "decke" });
+    expect(szene.auswahlBei(...ndc(szene, new Vector3(0, 2.48, 0)))).toEqual({ art: "geraet", id: "decke" });
+    expect(szene.auswahlBei(...ndc(szene, new Vector3(-1.5, 1.04, 1.9275)))).toEqual({ art: "geraet", id: "wand" });
+  });
+
+  it("ausgeblendete Geräte sind unsichtbar und keine Klickziele", () => {
+    const { szene } = erzeugen();
+    szene.setzePlan(mitGeraeten(), { einpassen: true });
+    szene.draufsicht();
+    szene.setzeGeraetesichtbarkeit({ wand: false, decke: false, beschriftung: false });
+    expect(szene.statistik()).toMatchObject({ geraete: 2, geraeteSichtbar: 0 });
+    // Darunter liegt der Boden - kein unsichtbares Gerät fängt den Klick ab.
+    expect(szene.auswahlBei(...ndc(szene, new Vector3(0, 2.48, 0)))).toEqual({ art: "raum", id: "r1" });
+    szene.setzeGeraetesichtbarkeit({ wand: true, decke: true, beschriftung: false });
+    expect(szene.auswahlBei(...ndc(szene, new Vector3(0, 2.48, 0)))).toEqual({ art: "geraet", id: "decke" });
+  });
+
+  it("ein gewähltes Deckengerät erhält Orientierungslinie und Bodenmarker; ein Wandgerät nicht", () => {
+    const { szene } = erzeugen();
+    szene.setzePlan(mitGeraeten(), { einpassen: true });
+    szene.setzeAuswahl({ art: "geraet", id: "decke" });
+    expect(szene.statistik().fuehrung).toBe(2);
+    szene.setzeGeraetesichtbarkeit({ wand: true, decke: false, beschriftung: false });
+    expect(szene.statistik().fuehrung).toBe(0);
+    szene.setzeGeraetesichtbarkeit({ wand: true, decke: true, beschriftung: false });
+    szene.setzeAuswahl({ art: "geraet", id: "wand" });
+    expect(szene.statistik().fuehrung).toBe(0);
+  });
+
+  it("Beschriftungen: eigene Schicht ohne Zeigerereignisse, nur wenn eingeschaltet; entsorgt mit der Szene", () => {
+    const { szene } = erzeugen();
+    szene.setzePlan(mitGeraeten(), { einpassen: true });
+    const schicht = behaelter.querySelector(".ansicht3d__beschriftungen") as HTMLElement;
+    expect(schicht.hidden).toBe(true);
+    expect([...schicht.children].map((e) => e.textContent)).toEqual(["Mitte", "socket_single"]);
+    szene.setzeGeraetesichtbarkeit({ wand: false, decke: true, beschriftung: true });
+    expect(schicht.hidden).toBe(false);
+    expect(szene.statistik().beschriftungen).toBe(1);
+    szene.entsorgen();
+    expect(behaelter.querySelector(".ansicht3d__beschriftungen")).toBeNull();
+  });
+});

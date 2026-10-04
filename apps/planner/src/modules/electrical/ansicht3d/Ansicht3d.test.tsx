@@ -351,7 +351,13 @@ describe("Auswahl und Bedienung", () => {
     // Seite und Rückkehrzustand (Geschoss, Kamera, Auswahl) gehen mit.
     expect(onWandansicht).toHaveBeenCalledWith(
       { raumId: wand.raumId, wandId: wand.id, seite: "innen" },
-      { floorId: "geschoss-1", kamera: { position: [1, 2, 3], ziel: [0, 0, 0] }, auswahl: { art: "raumwand", id: wand.id } },
+      {
+        floorId: "geschoss-1",
+        kamera: { position: [1, 2, 3], ziel: [0, 0, 0] },
+        auswahl: { art: "raumwand", id: wand.id },
+        // Phase 5: auch die Geräteschalter kehren zurück.
+        sichtbarkeit: { wand: true, decke: true, beschriftung: false },
+      },
     );
     expect(szenen[0]!.setzeAuswahl).toHaveBeenLastCalledWith({ art: "raumwand", id: wand.id });
   });
@@ -414,6 +420,7 @@ describe("Auswahl und Bedienung", () => {
       floorId: "geschoss-1",
       kamera: { position: [1, 2, 3], ziel: [0, 0, 0] },
       auswahl: { art: "raumwand", id: wand.id },
+      sichtbarkeit: { wand: true, decke: true, beschriftung: false },
     });
   });
 

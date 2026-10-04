@@ -1,7 +1,8 @@
 import { useState } from "react";
 
 import { Dialog } from "../../core/ui/Dialog";
-import { Feld } from "../../core/ui/Feld";
+import { Auswahl, Feld } from "../../core/ui/Feld";
+import { RAUMTYPEN } from "./texte";
 import { EINGABEHINWEIS, eingabeUmrechnen, mmAlsEingabeOptional } from "../../core/masse";
 import { useEinheitenwechsel, useMasse } from "../../core/ui/masseinheit";
 import { FORMULARRASTER, KNOPFZEILE, knopf, meldungsflaeche } from "../../core/ui/stil";
@@ -17,9 +18,11 @@ export type Raumwerte = {
    * liefert hier immer Millimeter (`core/masse.ts`).
    */
   height_mm: string;
+  /** Raumtyp-Schlüssel (T7) oder leer = nicht angegeben. Nur zur Einordnung. */
+  room_type: string;
 };
 
-export const LEERER_RAUM: Raumwerte = { name: "", room_number: "", height_mm: "" };
+export const LEERER_RAUM: Raumwerte = { name: "", room_number: "", height_mm: "", room_type: "" };
 
 export type Raumfeldfehler = Partial<Record<keyof Raumwerte, string>>;
 
@@ -148,6 +151,20 @@ export function RaumDialog({
           hinweis={`Leer lassen: Standardhöhe des Geschosses (${masse.anzeigen(standardhoehe_mm)}).`}
           onChange={(height_mm) => setWerte({ ...werte, height_mm })}
         />
+        <Auswahl
+          id="raum-typ"
+          label="Raumtyp (optional, nur zur Einordnung)"
+          value={werte.room_type}
+          disabled={laeuft}
+          onChange={(room_type) => setWerte({ ...werte, room_type })}
+        >
+          <option value="">nicht angegeben</option>
+          {RAUMTYPEN.map((t) => (
+            <option key={t.wert} value={t.wert}>
+              {t.label}
+            </option>
+          ))}
+        </Auswahl>
 
         {fehler !== null && (
           <p className={meldungsflaeche()} role="alert">

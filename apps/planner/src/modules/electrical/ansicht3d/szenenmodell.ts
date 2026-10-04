@@ -16,6 +16,9 @@
  *   steht im Modell und wird erst beim Geometrieaufbau angewandt.
  */
 import type { Fassade3d, Raumwand3d } from "./raumwand";
+import type { Geraet3d } from "./geraete3d";
+import { geraeteAus } from "./geraete3d";
+import type { Geraetetyp } from "../geraete/katalog";
 import { fassadenAus, raumwaendeAus } from "./raumwand";
 import type {
   Auswahl,
@@ -47,6 +50,7 @@ export const LEERES_MODELL: Szenenmodell = {
   raumwaende: [],
   fassaden: [],
   oeffnungen: [],
+  geraete: [],
   ausgelassen: [],
   warnungen: [],
 };
@@ -104,6 +108,7 @@ function grenzenVon(raeume: readonly Raum3d[], randMm: number): GrenzenMm | null
 export function szenenmodellAus(
   plan: Geschossplan | null | undefined,
   laengentext: Laengentext = MM_TEXT,
+  typen: ReadonlyMap<string, Geraetetyp> = new Map(),
 ): Szenenmodell {
   if (plan === null || plan === undefined) return LEERES_MODELL;
   const rooms: readonly RaumImPlan[] = Array.isArray(plan.rooms) ? plan.rooms : [];
@@ -174,6 +179,7 @@ export function szenenmodellAus(
     raumwaende: raumwaendeAus(raeume, logisch, waende),
     fassaden: fassadenAus(waende),
     oeffnungen,
+    geraete: geraeteAus(rooms, new Set(raeume.map((r) => r.id)), typen),
     ausgelassen,
     warnungen,
   };
@@ -187,7 +193,8 @@ export type Objekt =
   | { readonly art: "raumwand"; readonly raumwand: Raumwand3d }
   | { readonly art: "wandseite"; readonly wand: Wand3d }
   | { readonly art: "fassade"; readonly fassade: Fassade3d; readonly abschnitt: string | null }
-  | { readonly art: "oeffnung"; readonly oeffnung: Oeffnung3d; readonly wand: Wand3d };
+  | { readonly art: "oeffnung"; readonly oeffnung: Oeffnung3d; readonly wand: Wand3d }
+  | { readonly art: "geraet"; readonly geraet: Geraet3d };
 
 /** Das fachliche Objekt hinter einer Auswahl - oder `null`, wenn es fehlt. */
 export function objektZu(modell: Szenenmodell, auswahl: Auswahl | null): Objekt | null {
@@ -205,6 +212,10 @@ export function objektZu(modell: Szenenmodell, auswahl: Auswahl | null): Objekt 
     if (fassade === undefined) return null;
     const abschnitt = fassade.abschnitte.some((a) => a.id === auswahl.abschnitt) ? (auswahl.abschnitt ?? null) : null;
     return { art: "fassade", fassade, abschnitt };
+  }
+  if (auswahl.art === "geraet") {
+    const geraet = modell.geraete.find((g) => g.id === auswahl.id);
+    return geraet === undefined ? null : { art: "geraet", geraet };
   }
   if (auswahl.art === "raumwand") {
     const raumwand = modell.raumwaende.find((w) => w.id === auswahl.id);

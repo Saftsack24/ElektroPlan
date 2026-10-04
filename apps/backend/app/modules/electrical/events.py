@@ -45,6 +45,8 @@ class PlanChangeKind(StrEnum):
     ROOM_DELETED = "room_deleted"
     WALLS_CHANGED = "walls_changed"
     OPENINGS_CHANGED = "openings_changed"
+    #: Phase 5: nur Geraete eines Raums geaendert (Raumentwurf ohne Geometrieaenderung).
+    DEVICES_CHANGED = "devices_changed"
 
 
 def plan_updated(

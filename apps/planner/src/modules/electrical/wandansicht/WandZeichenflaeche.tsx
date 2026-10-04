@@ -21,8 +21,19 @@ import type { AnsichtsOeffnung, Wandmodell } from "./wandmodell";
 import { lagePruefen } from "./wandpruefung";
 import type { Bewegung, Bewegungskontext, Griff } from "./wandziehen";
 import { bewegen, platzieren } from "./wandziehen";
+import { geraetAendern, geraetEinfuegen, neuesWandgeraet } from "../geraete/geraeteentwurf";
+import type { Geraetetyp } from "../geraete/katalog";
+import { SymbolImPlan } from "../geraete/symbole";
+import type { AnsichtsGeraet } from "./wandgeraete";
+import { flaecheDerSeite, geraetLage, geraetLagePruefen, geraeteName, geraetemasslinien } from "./wandgeraete";
 
-export type Wandwerkzeug = "auswahl" | "pan" | Oeffnungsart;
+/** Werkzeuge der Wandansicht: Öffnungsarten und seit Phase 5 „Gerät“. */
+export type Wandwerkzeug = "auswahl" | "pan" | Oeffnungsart | "geraet";
+
+/** Ist das Werkzeug eines der Öffnungswerkzeuge? */
+function istOeffnungswerkzeug(w: Wandwerkzeug): w is Oeffnungsart {
+  return w === "door" || w === "window" || w === "passage";
+}
 
 const OEFFNUNG_KLASSE: Record<Oeffnungsart, string> = {
   door: "ansicht__oeffnung--door",
@@ -39,7 +50,7 @@ export interface ZeichenflaecheGriff {
 }
 
 interface Laufend {
-  readonly art: "bewegung" | "platzieren" | "pan";
+  readonly art: "bewegung" | "platzieren" | "pan" | "geraet-bewegen" | "geraet-platzieren";
   readonly pointerId: number;
   readonly element: Element;
   readonly startBild: Bildpunkt;
@@ -51,6 +62,23 @@ interface Laufend {
   letzte?: Ansichtsrechteck | null;
   vorherH?: string | null;
   vorherV?: string | null;
+  /** Gerät: Mitte zu Beginn der Bewegung. */
+  readonly geraetId?: string;
+  readonly startMitte?: { u: number; h: number };
+  geraetGueltig?: boolean;
+}
+
+/** Vorschau eines Geräts beim Setzen oder Ziehen - reine Anzeige. */
+interface GeraetVorschau {
+  readonly rechteck: Ansichtsrechteck;
+  readonly u: number;
+  readonly h: number;
+  readonly ok: boolean;
+  readonly grund: string | null;
+  readonly zielH: Fangziel | null;
+  readonly zielV: Fangziel | null;
+  readonly geraetId: string | null;
+  readonly typ: Geraetetyp;
 }
 
 /** Vorschau beim Platzieren oder Bewegen - reine Anzeige. */
@@ -83,6 +111,10 @@ interface Props {
   /** Statuszeile unter der Fläche. */
   onStatus: (text: string) => void;
   griff?: Ref<ZeichenflaecheGriff>;
+  /** Phase 5: Geräte dieser Wand und Seite in Ansichtskoordinaten. */
+  geraete?: readonly AnsichtsGeraet[];
+  /** Typ, den das Werkzeug „Gerät“ setzt. */
+  geraetetyp?: Geraetetyp | null;
 }
 
 const RUECKFALL: Groesse = { breite: 900, hoehe: 480 };
@@ -119,7 +151,9 @@ export function WandZeichenflaeche(props: Props) {
   const groesseRef = useRef(groesse);
   const [viewport, setViewport] = useState<Viewport>(() => einpassenWand(bezug, RUECKFALL));
   const [vorschau, setVorschau] = useState<Vorschau | null>(null);
+  const [geraetVorschau, setGeraetVorschau] = useState<GeraetVorschau | null>(null);
   const laufend = useRef<Laufend | null>(null);
+  const geraete = props.geraete ?? [];
   const L = bezug.laengeMm;
   const H = bezug.hoeheMm;
 
@@ -174,7 +208,8 @@ export function WandZeichenflaeche(props: Props) {
     if (l === null) return false;
     freigeben();
     setVorschau(null);
-    if (l.art === "bewegung") dispatch({ typ: "ziehen-abbrechen" });
+    setGeraetVorschau(null);
+    if (l.art === "bewegung" || l.art === "geraet-bewegen") dispatch({ typ: "ziehen-abbrechen" });
     props.onStatus("Bewegung abgebrochen - nichts geändert.");
     return true;
   };
@@ -189,7 +224,8 @@ export function WandZeichenflaeche(props: Props) {
   // Beim Aushängen (Dialog geschlossen) darf keine Bewegung hängen bleiben.
   useEffect(
     () => () => {
-      if (laufend.current?.art === "bewegung") dispatch({ typ: "ziehen-abbrechen" });
+      const art = laufend.current?.art;
+      if (art === "bewegung" || art === "geraet-bewegen") dispatch({ typ: "ziehen-abbrechen" });
       laufend.current = null;
     },
     [dispatch],
@@ -234,6 +270,69 @@ export function WandZeichenflaeche(props: Props) {
     props.onStatus(v.ok ? `${lage}${fang.length > 0 ? ` · eingerastet: ${fang.join(", ")}` : ""}` : `Nicht möglich: ${v.grund ?? ""}`);
   };
 
+  // ------------------------------------------------------------ Geräte (Phase 5)
+
+  /** Öffnungen der Ansicht als benannte Nachbarn - für Einrasten und Maße. */
+  const oeffnungsnachbarn = nachbarn(modell, null);
+
+  const geraetVorschauFuer = (typ: Geraetetyp, rohU: number, rohH: number, altKey: boolean, ohne: string | null, l?: Laufend | null): GeraetVorschau => {
+    const andere = geraete.filter((g) => g.id !== ohne);
+    const lage = geraetLage(rohU, rohH, {
+      laengeMm: L,
+      hoeheMm: H,
+      typ,
+      oeffnungen: oeffnungsnachbarn,
+      geraete: andere,
+      fang: {
+        aktiv: props.fangAktiv,
+        ausgesetzt: altKey,
+        massstab: viewport.massstab,
+        rasterMm: props.rasterMm,
+        vorherWaagerecht: l?.vorherH ?? null,
+        vorherSenkrecht: l?.vorherV ?? null,
+      },
+    });
+    const wand = props.teilung?.wand;
+    const pruefen = (u: number, h: number) =>
+      wand === undefined ? ({ ok: false, grund: "Die Wand ist im aktuellen Stand nicht vorhanden." } as const) : geraetLagePruefen(bezug, wand, props.teilung, typ, u, h, andere, ohne ?? undefined);
+    let u = lage.u;
+    let h = lage.h;
+    let p = pruefen(u, h);
+    let zielH = lage.zielWaagerecht;
+    let zielV = lage.zielSenkrecht;
+    // Ein Fangziel darf keine ungültige Lage erzwingen: dann ohne Fang versuchen.
+    if (!p.ok && (zielH !== null || zielV !== null)) {
+      const frei = { u: Math.round(rohU), h: Math.round(rohH) };
+      const p2 = pruefen(frei.u, frei.h);
+      if (p2.ok) {
+        u = frei.u;
+        h = frei.h;
+        p = p2;
+        zielH = null;
+        zielV = null;
+      }
+    }
+    const hb = Math.floor(typ.width_mm / 2);
+    const hh = Math.floor(typ.height_mm / 2);
+    return {
+      rechteck: { links: u - hb, rechts: u + hb, unten: h - hh, oben: h + hh },
+      u,
+      h,
+      ok: p.ok,
+      grund: p.ok ? null : p.grund,
+      zielH,
+      zielV,
+      geraetId: ohne,
+      typ,
+    };
+  };
+
+  const geraetStatus = (v: GeraetVorschau, aktion: string) => {
+    const lage = `${v.typ.label} ${aktion}: Mitte ${masse.anzeigen(v.u)} von links · ${masse.anzeigen(v.h)} über Boden`;
+    const fang = [...new Set([v.zielH, v.zielV].filter((z): z is Fangziel => z !== null && z.art !== "raster").map((z) => z.text))];
+    props.onStatus(v.ok ? `${lage}${fang.length > 0 ? ` · eingerastet: ${fang.join(", ")}` : ""}` : `Nicht möglich: ${v.grund ?? ""}`);
+  };
+
   // ------------------------------------------------------------ Zeiger
 
   const druecken = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -254,11 +353,34 @@ export function WandZeichenflaeche(props: Props) {
       return;
     }
     if (event.button !== 0) return;
+    const geraetZiel = (event.target as Element).closest?.("[data-geraet]");
+    const geraetId = geraetZiel?.getAttribute("data-geraet") ?? null;
+    if (geraetId !== null) {
+      props.onWaehlen(geraetId);
+      const g = geraete.find((x) => x.id === geraetId);
+      if (g === undefined || g.typ === undefined || !editierbar || props.entwurf === null) return;
+      dispatch({ typ: "ziehen-beginnen" });
+      einfangen("geraet-bewegen", { geraetId, startMitte: { u: g.u, h: g.h }, ab: props.entwurf, geraetGueltig: false });
+      return;
+    }
+    if (werkzeug === "geraet" && editierbar) {
+      const typ = props.geraetetyp ?? null;
+      if (typ === null) {
+        props.onStatus("Bitte zuerst einen Gerätetyp wählen.");
+        return;
+      }
+      const welt = bildZuWelt(viewport, bild);
+      const v = geraetVorschauFuer(typ, welt.x, welt.y, event.altKey, null);
+      setGeraetVorschau(v);
+      geraetStatus(v, "setzen");
+      einfangen("geraet-platzieren");
+      return;
+    }
     const ziel = (event.target as Element).closest?.("[data-oeffnung]");
     const id = ziel?.getAttribute("data-oeffnung") ?? null;
     const griff = (ziel?.getAttribute("data-griff") ?? null) as Griff | null;
 
-    if (werkzeug !== "auswahl" && werkzeug !== "pan" && editierbar && id === null) {
+    if (istOeffnungswerkzeug(werkzeug) && editierbar && id === null) {
       const v = neueVorschau(werkzeug, bildZuWelt(viewport, bild), event.altKey);
       setVorschau(v);
       statusFuer(v, werkzeug, "setzen");
@@ -283,6 +405,32 @@ export function WandZeichenflaeche(props: Props) {
     const l = laufend.current;
     if (l?.art === "pan") {
       setViewport(verschieben(l.startViewport, bild.x - l.startBild.x, bild.y - l.startBild.y));
+      return;
+    }
+    if (l?.art === "geraet-bewegen" && l.startMitte !== undefined && l.ab !== undefined && l.geraetId !== undefined) {
+      const g = geraete.find((x) => x.id === l.geraetId);
+      if (g?.typ === undefined) return;
+      const start = bildZuWelt(l.startViewport, l.startBild);
+      const v = geraetVorschauFuer(g.typ, l.startMitte.u + welt.x - start.x, l.startMitte.h + welt.y - start.y, event.altKey, g.id, l);
+      l.vorherH = v.zielH?.id ?? null;
+      l.vorherV = v.zielV?.id ?? null;
+      setGeraetVorschau(v);
+      geraetStatus(v, "verschieben");
+      if (!v.ok) return; // Die letzte gültige Lage bleibt im Entwurf.
+      l.geraetGueltig = true;
+      dispatch({ typ: "ziehen-vorschau", entwurf: geraetAendern(l.ab, g.id, { center_offset_mm: mitteAus(v.u), center_height_mm: v.h }) });
+      return;
+    }
+    if (l?.art === "geraet-platzieren" || (werkzeug === "geraet" && editierbar && l === null)) {
+      const typ = props.geraetetyp ?? null;
+      if (typ === null) return;
+      const v = geraetVorschauFuer(typ, welt.x, welt.y, event.altKey, null, l);
+      if (l !== null) {
+        l.vorherH = v.zielH?.id ?? null;
+        l.vorherV = v.zielV?.id ?? null;
+      }
+      setGeraetVorschau(v);
+      geraetStatus(v, "setzen");
       return;
     }
     if (l?.art === "bewegung" && l.start !== undefined && l.bewegung !== undefined && l.ab !== undefined && l.oeffnungId !== undefined) {
@@ -315,7 +463,7 @@ export function WandZeichenflaeche(props: Props) {
       dispatch({ typ: "ziehen-vorschau", entwurf: oeffnungAendern(l.ab, bezug.wandId, o.id, p.werte) });
       return;
     }
-    if (werkzeug !== "auswahl" && werkzeug !== "pan" && editierbar) {
+    if (istOeffnungswerkzeug(werkzeug) && editierbar) {
       const v = neueVorschau(werkzeug, welt, event.altKey);
       setVorschau(v);
       statusFuer(v, werkzeug, "setzen");
@@ -334,13 +482,34 @@ export function WandZeichenflaeche(props: Props) {
     const l = laufend.current;
     if (l === null) return;
     freigeben();
+    if (l.art === "geraet-bewegen") {
+      setGeraetVorschau(null);
+      dispatch({ typ: "ziehen-beenden" });
+      if (l.geraetGueltig !== true) props.onStatus("Keine gültige neue Lage - nichts geändert.");
+      return;
+    }
+    if (l.art === "geraet-platzieren") {
+      const v = geraetVorschau;
+      setGeraetVorschau(null);
+      if (v === null || props.entwurf === null) return;
+      if (!v.ok) {
+        props.onStatus(`Nicht gesetzt: ${v.grund ?? ""}`);
+        return;
+      }
+      const id = neueId();
+      const neu = neuesWandgeraet(id, v.typ, bezug.wandId, flaecheDerSeite(bezug.seite), mitteAus(v.u), v.h);
+      dispatch({ typ: "aendern", entwurf: geraetEinfuegen(props.entwurf, neu) });
+      props.onWaehlen(id);
+      props.onStatus(`${v.typ.label} gesetzt - noch nicht gespeichert.`);
+      return;
+    }
     if (l.art === "bewegung") {
       setVorschau(null);
       dispatch({ typ: "ziehen-beenden" });
       if (l.letzte === null || l.letzte === undefined) props.onStatus("Keine gültige neue Lage - nichts geändert.");
       return;
     }
-    if (l.art === "platzieren" && vorschau !== null && werkzeug !== "auswahl" && werkzeug !== "pan" && props.entwurf !== null) {
+    if (l.art === "platzieren" && vorschau !== null && istOeffnungswerkzeug(werkzeug) && props.entwurf !== null) {
       const art = werkzeug;
       const v = vorschau;
       setVorschau(null);
@@ -365,6 +534,11 @@ export function WandZeichenflaeche(props: Props) {
   };
 
   // ------------------------------------------------------------ Zeichnen
+
+  /** Mitte in der Ansicht → gespeicherte Mitte ab Wandanfang (selbe Formel, ADR 0023). */
+  function mitteAus(u: number): number {
+    return (bezug.anfangLinks ? u : L - u) + 0;
+  }
 
   const b = (u: number, h: number) => weltZuBild(viewport, { x: u, y: h });
   const lu = b(0, 0);
@@ -458,6 +632,77 @@ export function WandZeichenflaeche(props: Props) {
     );
   }
 
+  // Geräte dieser Fläche (Phase 5): Planungsmaß maßstäblich, Symbol in fester Bildgröße.
+  geraete.forEach((g, i) => {
+    const p1 = b(g.links, g.oben);
+    const p2 = b(g.rechts, g.unten);
+    const mitte = b(g.u, g.h);
+    const breite = Math.max(p2.x - p1.x, 1);
+    const hoehe = Math.max(p2.y - p1.y, 1);
+    const k = ["ansicht__geraet"];
+    if (g.befunde.length > 0) k.push("ansicht__geraet--fehler");
+    if (g.id === gewaehlt) k.push("ansicht__geraet--ausgewaehlt");
+    if (geraetVorschau?.geraetId === g.id) k.push("ansicht__geraet--gezogen");
+    const name = geraeteName(g, i + 1);
+    const titel = `${name}${g.label !== null ? ` „${g.label}“` : ""}${editierbar ? " - ziehen zum Verschieben" : ""}${g.befunde.length > 0 ? " - Lage prüfen" : ""}`;
+    const symbol = Math.min(30, Math.max(16, Math.min(breite, hoehe) * 1.1));
+    const treffer = Math.max(22, breite, hoehe);
+    elemente.push(
+      <g key={`geraet-${g.id}`} className={k.join(" ")} data-geraet={g.id} data-testid={`ansicht-geraet-${g.id}`} aria-label={titel}>
+        <title>{titel}</title>
+        <rect x={p1.x} y={p1.y} width={breite} height={hoehe} className="ansicht__geraet-mass" />
+        <SymbolImPlan typ={g.typ} x={mitte.x} y={mitte.y} groesse={symbol} />
+        <rect x={mitte.x - treffer / 2} y={mitte.y - treffer / 2} width={treffer} height={treffer} className="ansicht__geraet-treffer" />
+        {g.label !== null && (
+          <text x={mitte.x} y={mitte.y + symbol / 2 + 12} textAnchor="middle" className="ansicht__text ansicht__text--klein">
+            {g.label}
+          </text>
+        )}
+        {g.befunde.length > 0 && (
+          <text x={mitte.x + symbol / 2 + 2} y={mitte.y - symbol / 2} className="ansicht__text ansicht__text--warnung">
+            ⚠
+          </text>
+        )}
+      </g>,
+    );
+  });
+
+  // Vorschau eines Geräts (Setzen oder Ziehen) samt Fangzielen.
+  if (geraetVorschau !== null) {
+    const v = geraetVorschau;
+    const p1 = b(v.rechteck.links, v.rechteck.oben);
+    const p2 = b(v.rechteck.rechts, v.rechteck.unten);
+    const m = b(v.u, v.h);
+    elemente.push(
+      <g key="geraet-vorschau" data-testid="geraet-vorschau" data-gueltig={v.ok ? "ja" : "nein"} className={v.ok ? "ansicht__geraet-vorschau" : "ansicht__geraet-vorschau ansicht__geraet-vorschau--fehler"}>
+        <rect x={p1.x} y={p1.y} width={Math.max(p2.x - p1.x, 1)} height={Math.max(p2.y - p1.y, 1)} className="ansicht__vorschau" />
+        <SymbolImPlan typ={v.typ} x={m.x} y={m.y} groesse={22} />
+        {!v.ok && (
+          <text x={m.x} y={m.y - 16} textAnchor="middle" className="ansicht__text ansicht__masstext--ueberschneidung">
+            nicht möglich
+          </text>
+        )}
+      </g>,
+    );
+    for (const z of [v.zielH, v.zielV]) {
+      if (z === null || z.art === "raster") continue;
+      const senkrecht = z === v.zielH;
+      const a = senkrecht ? b(z.wert, 0) : b(0, z.wert);
+      elemente.push(
+        <g key={`gfang-${z.id}`} data-testid="fangziel">
+          {senkrecht ? (
+            <line x1={a.x} y1={ro.y - 30} x2={a.x} y2={lu.y + 8} className="ansicht__fang" />
+          ) : (
+            <line x1={lu.x - 8} y1={a.y} x2={ro.x + 8} y2={a.y} className="ansicht__fang" />
+          )}
+          <text x={senkrecht ? a.x + 4 : ro.x - 4} y={senkrecht ? ro.y - 32 : a.y - 4} textAnchor={senkrecht ? "start" : "end"} className="ansicht__text ansicht__text--warnung">
+            {z.text}
+          </text>
+        </g>,
+      );
+    }
+  }
+
   // Griffe der gewählten, bearbeitbaren Öffnung.
   const auswahl = modell.oeffnungen.find((o) => o.id === gewaehlt);
   if (auswahl !== undefined && auswahl.eigen && editierbar && vorschau === null) {
@@ -510,6 +755,19 @@ export function WandZeichenflaeche(props: Props) {
   if (aktiv !== null) {
     const andere = nachbarn(modell, aktiv.id).map((n) => ({ ...n }));
     elemente.push(<Masse key="masse" linien={masslinien(aktiv, L, H, andere, masse.anzeigen)} b={b} aktiv={aktiv} lu={lu} />);
+  } else {
+    // Gewähltes oder bewegtes Gerät: Achsmaße zur Mitte und freie Abstände.
+    const gewaehltesGeraet = geraete.find((g) => g.id === gewaehlt);
+    const g = geraetVorschau ?? (gewaehltesGeraet !== undefined ? { rechteck: gewaehltesGeraet, u: gewaehltesGeraet.u, h: gewaehltesGeraet.h, geraetId: gewaehltesGeraet.id } : null);
+    if (g !== null) {
+      const ohne = g.geraetId;
+      const andere = [
+        ...oeffnungsnachbarn,
+        ...geraete.filter((x) => x.id !== ohne).map((x, i) => ({ id: x.id, name: geraeteName(x, i + 1), links: x.links, rechts: x.rechts, unten: x.unten, oben: x.oben })),
+      ];
+      const r = { ...g.rechteck, u: g.u, h: g.h };
+      elemente.push(<Masse key="geraet-masse" linien={geraetemasslinien(r, L, H, andere, masse.anzeigen)} b={b} aktiv={r} lu={lu} />);
+    }
   }
 
   const cursor = werkzeug === "pan" ? "grab" : werkzeug === "auswahl" ? "default" : "crosshair";
@@ -533,7 +791,10 @@ export function WandZeichenflaeche(props: Props) {
           if (laufend.current !== null) systemAbbruch();
         }}
         onPointerLeave={() => {
-          if (laufend.current === null) setVorschau(null);
+          if (laufend.current === null) {
+            setVorschau(null);
+            setGeraetVorschau(null);
+          }
         }}
         onContextMenu={(event) => event.preventDefault()}
       >

@@ -1,6 +1,6 @@
 # Roadmap
 
-Stand: 2026-10-03 (nach Task 0024 — Phase 4f: Wand- und Deckenansicht, abgeschlossen und committet)
+Stand: 2026-10-04 (nach Task 0025 — Phase 5: Electrical Devices, abgeschlossen und committet)
 Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 
 ---
@@ -29,7 +29,7 @@ Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 | 4d | Datenlebenszyklus: Löschregeln, Wiedereröffnung, Bearbeiter, Icons | **DONE** (mit diesem Checkpoint committet) | 4c.2 |
 | 4e | Benutzerlebenszyklus, Kontosperren, Passwortzurücksetzung, serverseitige Einstellungen, Maßeinheit m | **DONE** (mit diesem Checkpoint committet) | 4d |
 | 4f | Wand- und Deckenansicht; `completed` schreibgeschützt; Prüfung der Geschoss-Standardhöhe | DONE | 4e |
-| 5 | Electrical Devices | NOT STARTED | 4a |
+| 5 | Electrical Devices | **DONE** (vom Auftraggeber manuell abgenommen, committet) | 4a |
 | 6 | Circuits & Cable Routes | NOT STARTED | 5 |
 | 7 | Materials | NOT STARTED | 6 |
 | 8 | Service Templates & Material Engine | NOT STARTED | 7 |
@@ -414,13 +414,26 @@ Standardweg, Innen-/Außenseite, Rückkehr zur Ausgangsansicht, Benutzerliste) u
 
 ---
 
-## Phase 5 — Electrical Devices · NOT STARTED
+## Phase 5 — Electrical Devices · DONE
 
-Gerätetypen-Katalog mit Seed, Platzieren, Bearbeiten, Löschen, Raum- und Wandzuordnung,
-Montagehöhen, Symbole in 2D und 3D.
+Gerätetypen-Katalog mit idempotentem Seed, Geräte mit Montagefläche (Wand innen, Fassade außen,
+Decke) und Gerätemitte, Platzieren/Verschieben/Bearbeiten/Löschen in Wand- und Deckenansicht,
+Darstellung in Grundriss und 3D, Raumtyp (T7), eigene Symbole (T1). Entscheidung:
+[ADR 0023](decisions/0023-electrical-devices-symbols-room-types.md). Migration `0008`, danach Seed.
+Ergebnis: [`docs/task-history.md`](task-history.md), Task 0025.
 
 **Exit:** Ein vollständiges Einfamilienhaus lässt sich mit Steckdosen, Schaltern, Leuchten
-und Netzwerkdosen ausstatten.
+und Netzwerkdosen ausstatten – einschließlich Innenwand-, Außenwand- und Deckenmontage; die
+Planung bleibt nach Speichern und Neuladen in allen Ansichten konsistent.
+
+**Stand:** Synthetisches EFH (5 Räume inkl. L-Flur, 2,50/2,70 m) mit 25 Geräten (16 innen, 2
+Fassade, 7 Decke) per API angelegt, im Browser bearbeitet (Deckengerät gesetzt, Wandgerät außen
+verschoben, Ablehnung in einer Öffnung), gespeichert, neu geladen und in Grundriss, Wand-, Decken-
+und 3D-Ansicht geprüft (funktional über DOM, Fenster ausgeblendet – keine optische Prüfung).
+`969` Backendtests gegen PostgreSQL (0 übersprungen), `867` Frontendtests, alle Schranken grün.
+Nachkorrekturen vor der Abnahme: Zuordnungslinien im Grundriss, Vergleich bestehender Konflikte
+nach Ausmaß und Konfliktpartner; danach `980` Backendtests (0 übersprungen) und `881`
+Frontendtests bestanden. **Vom Auftraggeber manuell abgenommen und committet.**
 
 ---
 

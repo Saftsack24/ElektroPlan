@@ -25,6 +25,11 @@ import type { Ergebnis } from "./werkzeuge";
 import type { EditorEinordnung, EditorTopologie } from "./platzierung";
 import { verbindungsText } from "./platzierung";
 import type { Auswahl, EditorZustand } from "./zustand";
+import { befundText } from "../geraete/geraetepruefung";
+import { geraetEntfernen } from "../geraete/geraeteentwurf";
+import type { Geraetetypen } from "../geraete/katalog";
+import { FLAECHE_LABEL, geraetName } from "../geraete/katalog";
+import { Geraetesymbol } from "../geraete/symbole";
 
 /** Seitenleiste: scrollt selbst, damit die Zeichenfläche daneben stehen bleibt. */
 const SEITENLEISTE = "flex max-h-[62vh] flex-col gap-2 overflow-y-auto text-small [&_:is(h3,h4)]:my-1";
@@ -134,6 +139,9 @@ export function Eigenschaften({
   einordnung,
   topologie,
   raumName,
+  typen = new Map(),
+  geraetebefunde = new Map(),
+  onGeraetBearbeiten,
 }: {
   zustand: EditorZustand;
   raeume: readonly RaumImPlan[];
@@ -149,6 +157,10 @@ export function Eigenschaften({
   einordnung: EditorEinordnung;
   topologie: EditorTopologie;
   raumName: (raumId: string) => string;
+  /** Phase 5: Gerätekatalog, Befunde je Gerät und der Weg in die Wand-/Deckenansicht. */
+  typen?: Geraetetypen;
+  geraetebefunde?: ReadonlyMap<string, readonly string[]>;
+  onGeraetBearbeiten?: (geraetId: string) => void;
 }) {
   const [hinweis, setHinweis] = useState<string | null>(null);
   const masse = useMasse();
@@ -217,6 +229,83 @@ export function Eigenschaften({
         <p className={meldungsflaeche("schlicht")} role="status">
           {hinweis}
         </p>
+      )}
+
+      {auswahl?.art === "geraet" && (() => {
+        const g = entwurf.geraete.find((x) => x.id === auswahl.geraetId);
+        if (g === undefined) return null;
+        const typ = typen.get(g.device_type_key);
+        const wandNr = g.wall_id === null ? 0 : entwurf.walls.findIndex((w) => w.id === g.wall_id) + 1;
+        const befunde = geraetebefunde.get(g.id) ?? [];
+        return (
+          <section className="border-t border-line pt-2" aria-label="Gerät">
+            <h4 className="flex items-center gap-2">
+              <Geraetesymbol typ={typ} />
+              {geraetName(typ, g.label, g.device_type_key)}
+            </h4>
+            <p className="m-0">
+              {FLAECHE_LABEL[g.mounting_surface]}
+              {g.mounting_surface === "ceiling"
+                ? ` · auf Deckenhöhe ${masse.anzeigen(basis.raum.effective_height_mm)} (folgt der Raumhöhe)`
+                : ` · Wand ${wandNr} · Mitte ${masse.anzeigen(g.center_height_mm ?? 0)} über Boden`}
+            </p>
+            {befunde.length > 0 && (
+              <div className={meldungsflaeche("schlicht")} role="status">
+                <p className="m-0 font-semibold">Hinweis: Lage prüfen</p>
+                <ul className="my-1 pl-[18px]">
+                  {befunde.map((code) => (
+                    <li key={code}>{befundText(code)}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className={KNOPFZEILE}>
+              <button
+                type="button"
+                className={knopf("primaer")}
+                disabled={bericht.status !== "valid"}
+                title={bericht.status !== "valid" ? "Erst mit geschlossener Raumkontur" : undefined}
+                onClick={() => onGeraetBearbeiten?.(g.id)}
+              >
+                {g.mounting_surface === "ceiling" ? (darfSchreiben ? "An Decke bearbeiten" : "An Decke ansehen") : darfSchreiben ? "An Wand bearbeiten" : "An Wand ansehen"}
+              </button>
+              {darfSchreiben && (
+                <button
+                  type="button"
+                  className={knopf()}
+                  onClick={() => {
+                    onAendern(geraetEntfernen(entwurf, g.id, new Set(basis.entwurf.geraete.map((x) => x.id))));
+                    onWaehlen({ art: "raum", raumId: entwurf.roomId });
+                  }}
+                >
+                  Gerät entfernen
+                </button>
+              )}
+            </div>
+          </section>
+        );
+      })()}
+
+      {auswahl?.art === "raum" && entwurf.geraete.length > 0 && (
+        <section className="border-t border-line pt-2" aria-label="Geräte des Raums">
+          <h4>Geräte ({entwurf.geraete.length})</h4>
+          <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
+            {entwurf.geraete.map((g) => {
+              const typ = typen.get(g.device_type_key);
+              return (
+                <li key={g.id}>
+                  <button type="button" className={LISTENKNOPF} onClick={() => onWaehlen({ art: "geraet", raumId: entwurf.roomId, geraetId: g.id })}>
+                    <span className="inline-flex items-center gap-1.5">
+                      <Geraetesymbol typ={typ} groesse={16} />
+                      {geraetName(typ, g.label, g.device_type_key)} · {FLAECHE_LABEL[g.mounting_surface]}
+                      {(geraetebefunde.get(g.id) ?? []).length > 0 ? " ⚠" : ""}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
       )}
 
       {auswahl?.art === "ecke" && (

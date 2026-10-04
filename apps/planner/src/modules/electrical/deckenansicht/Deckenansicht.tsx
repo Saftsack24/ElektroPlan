@@ -1,29 +1,77 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
+import type { Dispatch, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 
 import { Dialog } from "../../../core/ui/Dialog";
 import { useMasse } from "../../../core/ui/masseinheit";
-import { KNOPF_GRUND, eingabefeld, meldungsflaeche } from "../../../core/ui/stil";
+import { KNOPF_GRUND, eingabefeld, knopf, meldungsflaeche } from "../../../core/ui/stil";
 import "../darstellung.css";
 import "../wandansicht/wandansicht.css";
-import type { EntwurfWand } from "../editor/entwurf";
+import type { EntwurfGeraet, EntwurfWand } from "../editor/entwurf";
+import { neueId } from "../editor/entwurf";
 import { RASTERGROESSEN_MM } from "../editor/fang";
 import type { Bildpunkt, Groesse, Viewport } from "../editor/viewport";
 import { bildZuWelt, einpassen, grenzenVon, groesseAendern, sichtbareGrenzen, verschieben, weltZuBild, zoomen } from "../editor/viewport";
+import type { Aktion, EditorZustand } from "../editor/zustand";
+import { befundText } from "../geraete/geraetepruefung";
+import { geraetAendern, geraetEinfuegen, geraetEntfernen, neuesDeckengeraet } from "../geraete/geraeteentwurf";
+import type { Geraetetyp, Geraetetypen } from "../geraete/katalog";
+import { typenFuer } from "../geraete/katalog";
+import { Geraetelegende, Geraetesymbol, SymbolImPlan } from "../geraete/symbole";
 import { ANSICHT_ZURUECKSETZEN } from "../texte";
 import { flaecheText } from "../editor/Eigenschaften";
+import { BeschriftungsFeld, TypAuswahl } from "../wandansicht/GeraetEigenschaften";
+import { MassFeld } from "../wandansicht/WandEigenschaften";
+import type { Fangziel } from "../wandansicht/wandfang";
+import type { AnsichtsDeckengeraet, Richtung, Wandtreffer } from "./deckengeraete";
+import { deckengeraeteAus, deckenlage, deckenlagePruefen, wandabstaende } from "./deckengeraete";
 import { deckenmodell, imRaum, naechsteWand } from "./deckenmodell";
 
-const WERKZEUG = `${KNOPF_GRUND} border-control bg-surface px-2.5 py-[5px] text-fg`;
+const WERKZEUG = `${KNOPF_GRUND} border-control bg-surface px-2.5 py-[5px] text-fg disabled:cursor-not-allowed disabled:opacity-45`;
+const WERKZEUG_AKTIV = `${KNOPF_GRUND} border-accent bg-accent px-2.5 py-[5px] text-on-accent`;
+const LISTENKNOPF = `${knopf()} w-full text-left`;
+const LISTENKNOPF_GEWAEHLT = `${knopf("gewaehlt")} w-full text-left`;
 const RUECKFALL: Groesse = { breite: 900, hoehe: 520 };
 
+type Deckenwerkzeug = "auswahl" | "pan" | "geraet";
+
+const RICHTUNG_LABEL: Record<Richtung, string> = { links: "links", rechts: "rechts", oben: "oben", unten: "unten" };
+
+interface Laufend {
+  readonly art: "pan" | "bewegen" | "platzieren";
+  readonly pointerId: number;
+  readonly element: Element;
+  readonly startBild: Bildpunkt;
+  readonly startViewport: Viewport;
+  readonly geraetId?: string;
+  readonly start?: { x: number; y: number };
+  gueltig?: boolean;
+  vorherX?: string | null;
+  vorherY?: string | null;
+}
+
+interface Vorschau {
+  readonly typ: Geraetetyp;
+  readonly x: number;
+  readonly y: number;
+  readonly ok: boolean;
+  readonly grund: string | null;
+  readonly zielX: Fangziel | null;
+  readonly zielY: Fangziel | null;
+  readonly geraetId: string | null;
+}
+
 /**
- * Deckenansicht eines Raums (Phase 4f, ADR 0022) - Bediengrundlage für die
- * Geräteplatzierung in Phase 5. Zeigt die reale Raumkontur in der
- * Ausrichtung des Grundrisses (nicht gespiegelt), Wandnummern und -längen,
- * Fläche und Deckenhöhe, Raster, Zoom und Verschieben. Speichert nichts.
+ * Deckenansicht eines Raums (Phase 4f, ADR 0022; Geräte seit Phase 5, ADR 0023).
+ *
+ * Reale Raumkontur in Grundrissausrichtung (Deckenspiegel, nicht gespiegelt).
+ * Deckengeräte werden hier gesetzt, verschoben, bearbeitet und entfernt - im
+ * **gemeinsamen Entwurf** des Grundrisseditors (derselbe Reducer, dieselbe
+ * Undo-Historie, derselbe Speicherweg). Geprüft wird gegen die echte Kontur,
+ * nicht gegen ein umschließendes Rechteck. Deckengeräte haben keine eigene
+ * Höhe: Sie sitzen auf der Deckenhöhe des Raums und folgen jeder Änderung.
  */
 export function Deckenansicht({
+  raumId,
   raumName,
   walls,
   deckenhoeheMm,
@@ -31,7 +79,21 @@ export function Deckenansicht({
   rasterMm,
   onRaster,
   onSchliessen,
+  zustand,
+  dispatch,
+  typen = new Map(),
+  geraete = [],
+  geraetebefunde = new Map(),
+  editierbar = false,
+  fangAktiv = true,
+  onFang,
+  status,
+  offen = false,
+  onSpeichern,
+  onVerwerfen,
+  startGeraetId,
 }: {
+  raumId?: string;
   raumName: string;
   walls: readonly EntwurfWand[];
   deckenhoeheMm: number;
@@ -40,6 +102,23 @@ export function Deckenansicht({
   rasterMm: number;
   onRaster: (mm: number) => void;
   onSchliessen: () => void;
+  /** Phase 5: gemeinsamer Entwurf des Grundrisseditors. */
+  zustand?: EditorZustand;
+  dispatch?: Dispatch<Aktion>;
+  typen?: Geraetetypen;
+  /** Geräte dieses Raums im gezeigten Stand (aktiver Raum aus dem Entwurf). */
+  geraete?: readonly EntwurfGeraet[];
+  geraetebefunde?: ReadonlyMap<string, readonly string[]>;
+  /** Darf hier bearbeitet werden (Schreibrecht und aktiver Raum)? */
+  editierbar?: boolean;
+  fangAktiv?: boolean;
+  onFang?: (aktiv: boolean) => void;
+  status?: { text: string; farbe: string; speichert: boolean };
+  offen?: boolean;
+  onSpeichern?: () => void;
+  onVerwerfen?: () => void;
+  /** Beim Öffnen ausgewähltes Gerät (etwa „An Decke bearbeiten“ aus 3D). */
+  startGeraetId?: string | null;
 }) {
   const masse = useMasse();
   const huelle = useRef<HTMLDivElement>(null);
@@ -49,9 +128,19 @@ export function Deckenansicht({
   const grenzen = useMemo(() => grenzenVon(walls.flatMap((w) => [{ x: w.x1_mm, y: w.y1_mm }, { x: w.x2_mm, y: w.y2_mm }])), [walls]);
   const [viewport, setViewport] = useState<Viewport>(() => einpassen(grenzen, RUECKFALL, 56));
   const [zeiger, setZeiger] = useState<string>("Zeiger über die Decke bewegen.");
-  const ziehen = useRef<{ start: Bildpunkt; v: Viewport; pointerId: number; element: Element } | null>(null);
+  const [werkzeug, setWerkzeug] = useState<Deckenwerkzeug>("auswahl");
+  const [gewaehlt, setGewaehlt] = useState<string | null>(startGeraetId ?? null);
+  const [vorschau, setVorschau] = useState<Vorschau | null>(null);
+  const [typWahl, setTypWahl] = useState<string | null>(null);
+  const laufend = useRef<Laufend | null>(null);
   // Beschriftung 14 px ins Rauminnere - in Millimetern des aktuellen Maßstabs.
   const modell = useMemo(() => deckenmodell(walls, 16 / viewport.massstab), [walls, viewport.massstab]);
+  const deckengeraete = useMemo(() => deckengeraeteAus(geraete, typen, geraetebefunde), [geraete, typen, geraetebefunde]);
+  const waehlbar = typenFuer(typen, "ceiling");
+  const geraetetyp = waehlbar.find((t) => t.key === typWahl) ?? waehlbar[0] ?? null;
+  const entwurf = zustand?.entwurf ?? null;
+  const darfAendern = editierbar && dispatch !== undefined && entwurf !== null;
+  const gewaehltesGeraet = deckengeraete.find((g) => g.id === gewaehlt);
 
   const zuruecksetzen = () => setViewport(einpassen(grenzen, groesseRef.current, 56));
 
@@ -88,36 +177,157 @@ export function Deckenansicht({
     return () => svg.removeEventListener("wheel", rad);
   }, []);
 
+  // Ohne Bearbeitungsrecht nur betrachten.
+  useEffect(() => {
+    if (!darfAendern && werkzeug === "geraet") setWerkzeug("auswahl");
+  }, [darfAendern, werkzeug]);
+
+  // Beim Schließen darf keine Bewegung hängen bleiben.
+  useEffect(
+    () => () => {
+      if (laufend.current?.art === "bewegen") dispatch?.({ typ: "ziehen-abbrechen" });
+      laufend.current = null;
+    },
+    [dispatch],
+  );
+
   const zoom = (f: number) => setViewport((v) => zoomen(v, f, { x: groesseRef.current.breite / 2, y: groesseRef.current.hoehe / 2 }));
   const bild = (event: ReactPointerEvent) => {
     const r = flaeche.current?.getBoundingClientRect();
     return { x: event.clientX - (r?.left ?? 0), y: event.clientY - (r?.top ?? 0) };
   };
 
-  const druecken = (event: ReactPointerEvent<SVGSVGElement>) => {
-    if (event.button !== 0 && event.button !== 1) return;
-    // Einfangen ist eine Hilfe gegen verlorene Zeiger, keine Voraussetzung: Kennt der
-    // Browser den Zeiger nicht (mehr), wirft er - die Bewegung läuft trotzdem.
+  const waehlen = (id: string | null) => {
+    setGewaehlt(id);
+    if (dispatch !== undefined && raumId !== undefined && entwurf?.roomId === raumId) {
+      dispatch({ typ: "auswaehlen", auswahl: id === null ? { art: "raum", raumId } : { art: "geraet", raumId, geraetId: id } });
+    }
+  };
+
+  const vorschauFuer = (typ: Geraetetyp, rohX: number, rohY: number, altKey: boolean, ohne: string | null, l?: Laufend | null): Vorschau => {
+    const andere = deckengeraete.filter((g) => g.id !== ohne);
+    const lage = deckenlage(rohX, rohY, typ, modell.waende, andere, {
+      aktiv: fangAktiv,
+      ausgesetzt: altKey,
+      massstab: viewport.massstab,
+      rasterMm,
+      vorherX: l?.vorherX ?? null,
+      vorherY: l?.vorherY ?? null,
+    });
+    let { x, y } = lage;
+    let zielX = lage.zielX;
+    let zielY = lage.zielY;
+    let p = deckenlagePruefen(typ, x, y, modell.waende, andere, ohne ?? undefined);
+    if (!p.ok && (zielX !== null || zielY !== null)) {
+      const fx = Math.round(rohX);
+      const fy = Math.round(rohY);
+      const p2 = deckenlagePruefen(typ, fx, fy, modell.waende, andere, ohne ?? undefined);
+      if (p2.ok) {
+        x = fx;
+        y = fy;
+        p = p2;
+        zielX = null;
+        zielY = null;
+      }
+    }
+    return { typ, x, y, ok: p.ok, grund: p.ok ? null : p.grund, zielX, zielY, geraetId: ohne };
+  };
+
+  const statusText = (v: Vorschau, aktion: string) => {
+    const fang = [...new Set([v.zielX, v.zielY].filter((z): z is Fangziel => z !== null && z.art !== "raster").map((z) => z.text))];
+    setZeiger(v.ok ? `${v.typ.label} ${aktion}${fang.length > 0 ? ` · eingerastet: ${fang.join(", ")}` : ""}` : `Nicht möglich: ${v.grund ?? ""}`);
+  };
+
+  const einfangen = (event: ReactPointerEvent<SVGSVGElement>, art: Laufend["art"], extra: Partial<Laufend> = {}) => {
+    // Einfangen ist eine Hilfe gegen verlorene Zeiger, keine Voraussetzung.
     try {
       event.currentTarget.setPointerCapture?.(event.pointerId);
     } catch {
       // ohne Einfangen weiter
     }
-    ziehen.current = { start: bild(event), v: viewport, pointerId: event.pointerId, element: event.currentTarget };
+    laufend.current = { art, pointerId: event.pointerId, element: event.currentTarget, startBild: bild(event), startViewport: viewport, ...extra };
   };
   const freigeben = () => {
-    const z = ziehen.current;
-    ziehen.current = null;
-    if (z !== null && z.element.hasPointerCapture?.(z.pointerId)) z.element.releasePointerCapture?.(z.pointerId);
+    const l = laufend.current;
+    laufend.current = null;
+    if (l !== null && l.element.hasPointerCapture?.(l.pointerId)) l.element.releasePointerCapture?.(l.pointerId);
   };
-  const bewegen = (event: ReactPointerEvent<SVGSVGElement>) => {
-    const p = bild(event);
-    const z = ziehen.current;
-    if (z !== null) {
-      setViewport(verschieben(z.v, p.x - z.start.x, p.y - z.start.y));
+
+  /** Bricht eine laufende Bewegung ab - Entwurf zurück, keine Historie. */
+  const abbrechen = (): boolean => {
+    const l = laufend.current;
+    if (l === null) return false;
+    freigeben();
+    setVorschau(null);
+    if (l.art === "bewegen") dispatch?.({ typ: "ziehen-abbrechen" });
+    setZeiger("Bewegung abgebrochen - nichts geändert.");
+    return true;
+  };
+
+  const druecken = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (event.button !== 0 && event.button !== 1) return;
+    if (event.button === 1 || werkzeug === "pan") {
+      einfangen(event, "pan");
       return;
     }
+    const geraetId = (event.target as Element).closest?.("[data-geraet]")?.getAttribute("data-geraet") ?? null;
+    if (geraetId !== null) {
+      waehlen(geraetId);
+      const g = deckengeraete.find((x) => x.id === geraetId);
+      if (g === undefined || !darfAendern || entwurf === null) return;
+      dispatch?.({ typ: "ziehen-beginnen" });
+      einfangen(event, "bewegen", { geraetId, start: { x: g.x, y: g.y }, gueltig: false });
+      return;
+    }
+    if (werkzeug === "geraet" && darfAendern) {
+      if (geraetetyp === null) {
+        setZeiger("Bitte zuerst einen Gerätetyp wählen.");
+        return;
+      }
+      const welt = bildZuWelt(viewport, bild(event));
+      const v = vorschauFuer(geraetetyp, welt.x, welt.y, event.altKey, null);
+      setVorschau(v);
+      statusText(v, "setzen");
+      einfangen(event, "platzieren");
+      return;
+    }
+    // Auswahlwerkzeug auf freier Fläche: Auswahl aufheben und die Ansicht verschieben.
+    waehlen(null);
+    einfangen(event, "pan");
+  };
+
+  const bewegen = (event: ReactPointerEvent<SVGSVGElement>) => {
+    const p = bild(event);
     const welt = bildZuWelt(viewport, p);
+    const l = laufend.current;
+    if (l?.art === "pan") {
+      setViewport(verschieben(l.startViewport, p.x - l.startBild.x, p.y - l.startBild.y));
+      return;
+    }
+    if (l?.art === "bewegen" && l.start !== undefined && l.geraetId !== undefined && entwurf !== null) {
+      const g = deckengeraete.find((x) => x.id === l.geraetId);
+      if (g?.typ === undefined) return;
+      const start = bildZuWelt(l.startViewport, l.startBild);
+      const v = vorschauFuer(g.typ, l.start.x + welt.x - start.x, l.start.y + welt.y - start.y, event.altKey, g.id, l);
+      l.vorherX = v.zielX?.id ?? null;
+      l.vorherY = v.zielY?.id ?? null;
+      setVorschau(v);
+      statusText(v, `verschieben: Mitte ${masse.punkt(v.x, v.y)}`);
+      if (!v.ok) return; // Die letzte gültige Lage bleibt.
+      l.gueltig = true;
+      dispatch?.({ typ: "ziehen-vorschau", entwurf: geraetAendern(zustand?.ziehenAb ?? entwurf, g.id, { x_mm: v.x, y_mm: v.y }) });
+      return;
+    }
+    if ((l?.art === "platzieren" || (l === null && werkzeug === "geraet" && darfAendern)) && geraetetyp !== null) {
+      const v = vorschauFuer(geraetetyp, welt.x, welt.y, event.altKey, null, l);
+      if (l !== null) {
+        l.vorherX = v.zielX?.id ?? null;
+        l.vorherY = v.zielY?.id ?? null;
+      }
+      setVorschau(v);
+      statusText(v, "setzen");
+      return;
+    }
     if (!modell.geschlossen || !imRaum(modell.waende, welt)) {
       setZeiger("Zeiger außerhalb des Raums");
       return;
@@ -126,11 +336,125 @@ export function Deckenansicht({
     setZeiger(w === null ? "—" : `Nächste Wand: Wand ${w.nummer}, senkrechter Abstand ${masse.anzeigen(w.abstandMm)}`);
   };
 
+  const loslassen = () => {
+    const l = laufend.current;
+    if (l === null) return;
+    freigeben();
+    if (l.art === "bewegen") {
+      setVorschau(null);
+      dispatch?.({ typ: "ziehen-beenden" });
+      if (l.gueltig !== true) setZeiger("Keine gültige neue Lage - nichts geändert.");
+      return;
+    }
+    if (l.art === "platzieren") {
+      const v = vorschau;
+      setVorschau(null);
+      if (v === null || entwurf === null) return;
+      if (!v.ok) {
+        setZeiger(`Nicht gesetzt: ${v.grund ?? ""}`);
+        return;
+      }
+      const id = neueId();
+      dispatch?.({ typ: "aendern", entwurf: geraetEinfuegen(entwurf, neuesDeckengeraet(id, v.typ, v.x, v.y)) });
+      waehlen(id);
+      setZeiger(`${v.typ.label} gesetzt - noch nicht gespeichert.`);
+    }
+  };
+
+  /** Exakte Lage aus den Eigenschaften - geprüft wie beim Server. */
+  const lageSetzen = (id: string, x: number, y: number, typKey?: string): string | undefined => {
+    if (!darfAendern || entwurf === null) return "Nur im bearbeiteten Raum änderbar.";
+    const g = deckengeraete.find((d) => d.id === id);
+    const typ = typen.get(typKey ?? g?.schluessel ?? "");
+    if (g === undefined || typ === undefined) return "Gerät nicht gefunden.";
+    const p = deckenlagePruefen(typ, x, y, modell.waende, deckengeraete, id);
+    if (!p.ok) return p.grund;
+    dispatch?.({ typ: "aendern", entwurf: geraetAendern(entwurf, id, { x_mm: x, y_mm: y, ...(typKey !== undefined ? { device_type_key: typKey } : {}) }) });
+    setZeiger("Übernommen - noch nicht gespeichert.");
+    return undefined;
+  };
+
+  const entfernen = (id: string) => {
+    if (!darfAendern || entwurf === null || zustand?.basis === null || zustand === undefined) return;
+    dispatch?.({ typ: "aendern", entwurf: geraetEntfernen(entwurf, id, new Set(zustand.basis?.entwurf.geraete.map((g) => g.id) ?? [])) });
+    waehlen(null);
+    setZeiger("Gerät entfernt - noch nicht gespeichert.");
+  };
+
   const taste = (event: KeyboardEvent<HTMLDivElement>) => {
-    if ((event.target as Element).closest?.("select, input") != null) return;
-    if (event.key === "+") zoom(1.25);
-    else if (event.key === "-") zoom(0.8);
-    else if (event.key.toLowerCase() === "f") zuruecksetzen();
+    const ziel = event.target as Element;
+    const strg = event.ctrlKey || event.metaKey;
+    const k = event.key.toLowerCase();
+    if (strg && k === "s" && onSpeichern !== undefined) {
+      event.preventDefault();
+      onSpeichern();
+      return;
+    }
+    if (ziel.closest?.("select, input, textarea") != null) return;
+    if (strg && k === "z" && !event.shiftKey) {
+      event.preventDefault();
+      dispatch?.({ typ: "rueckgaengig" });
+      return;
+    }
+    if (strg && (k === "y" || (k === "z" && event.shiftKey))) {
+      event.preventDefault();
+      dispatch?.({ typ: "wiederholen" });
+      return;
+    }
+    if (strg || event.altKey) return;
+    const schritt = event.shiftKey ? 100 : 10;
+    const schieben = (dx: number, dy: number) => {
+      if (gewaehltesGeraet === undefined) return;
+      event.preventDefault();
+      const grund = lageSetzen(gewaehltesGeraet.id, gewaehltesGeraet.x + dx, gewaehltesGeraet.y + dy);
+      setZeiger(grund === undefined ? "Verschoben - noch nicht gespeichert." : `Nicht verschoben: ${grund}`);
+    };
+    switch (event.key) {
+      case "+":
+        zoom(1.25);
+        return;
+      case "-":
+        zoom(0.8);
+        return;
+      case "ArrowLeft":
+        schieben(-schritt, 0);
+        return;
+      case "ArrowRight":
+        schieben(schritt, 0);
+        return;
+      case "ArrowUp":
+        schieben(0, schritt);
+        return;
+      case "ArrowDown":
+        schieben(0, -schritt);
+        return;
+      case "Delete":
+      case "Backspace":
+        if (gewaehltesGeraet !== undefined && darfAendern) {
+          event.preventDefault();
+          entfernen(gewaehltesGeraet.id);
+        }
+        return;
+    }
+    if (k === "f") zuruecksetzen();
+    else if (k === "v") setWerkzeug("auswahl");
+    else if (k === "h") setWerkzeug("pan");
+    else if (k === "g" && darfAendern) setWerkzeug("geraet");
+  };
+
+  /** Escape: erst die Bewegung, dann das Werkzeug, dann die Auswahl - zuletzt schließen. */
+  const escape = (): boolean => {
+    if (abbrechen()) return true;
+    if (werkzeug !== "auswahl") {
+      setWerkzeug("auswahl");
+      setVorschau(null);
+      return true;
+    }
+    if (gewaehlt !== null) {
+      waehlen(null);
+      return true;
+    }
+    return false;
   };
 
   // Raster über die sichtbare Fläche - wie im Grundriss vergröbert, damit es lesbar bleibt.
@@ -142,14 +466,90 @@ export function Deckenansicht({
   for (let y = Math.ceil(g.minY / schritt) * schritt; y <= g.maxY; y += schritt) raster.push(`M0 ${weltZuBild(viewport, { x: 0, y }).y.toFixed(1)}H${groesse.breite}`);
   const punkte = modell.waende.map((w) => weltZuBild(viewport, w.start)).map((p) => `${p.x},${p.y}`).join(" ");
 
+  // Maße der gewählten bzw. bewegten Mitte zu den tatsächlichen Wänden.
+  const massMitte = vorschau ?? (gewaehltesGeraet !== undefined ? { x: gewaehltesGeraet.x, y: gewaehltesGeraet.y } : null);
+  const treffer = massMitte !== null && modell.geschlossen ? wandabstaende(modell.waende, massMitte) : null;
+
+  const geraeteElemente: ReactNode[] = deckengeraete.map((d, i) => {
+    const r = deckenRechteckBild(viewport, d.x, d.y, d.typ);
+    const m = weltZuBild(viewport, { x: d.x, y: d.y });
+    const k = ["ansicht__geraet"];
+    if (d.befunde.length > 0) k.push("ansicht__geraet--fehler");
+    if (d.id === gewaehlt) k.push("ansicht__geraet--ausgewaehlt");
+    if (vorschau?.geraetId === d.id) k.push("ansicht__geraet--gezogen");
+    const name = `${d.typ?.label ?? d.schluessel} ${i + 1}`;
+    const titel = `${name}${d.label !== null ? ` „${d.label}“` : ""}${darfAendern ? " - ziehen zum Verschieben" : ""}${d.befunde.length > 0 ? " - Lage prüfen" : ""}`;
+    const symbol = Math.min(30, Math.max(16, Math.min(r.breite, r.hoehe) * 1.1));
+    const hit = Math.max(22, r.breite, r.hoehe);
+    return (
+      <g key={d.id} className={k.join(" ")} data-geraet={d.id} data-testid={`decke-geraet-${d.id}`} aria-label={titel}>
+        <title>{titel}</title>
+        <rect x={r.x} y={r.y} width={r.breite} height={r.hoehe} className="ansicht__geraet-mass" />
+        <SymbolImPlan typ={d.typ} x={m.x} y={m.y} groesse={symbol} />
+        <rect x={m.x - hit / 2} y={m.y - hit / 2} width={hit} height={hit} className="ansicht__geraet-treffer" />
+        {d.label !== null && (
+          <text x={m.x} y={m.y + symbol / 2 + 12} textAnchor="middle" className="ansicht__text ansicht__text--klein">
+            {d.label}
+          </text>
+        )}
+        {d.befunde.length > 0 && (
+          <text x={m.x + symbol / 2 + 2} y={m.y - symbol / 2} className="ansicht__text ansicht__text--warnung">
+            ⚠
+          </text>
+        )}
+      </g>
+    );
+  });
+
   return (
-    <Dialog offen titel={`Deckenansicht · ${raumName}`} groesse="gross" onClose={onSchliessen}>
+    <Dialog offen titel={`Deckenansicht · ${raumName}`} groesse="gross" onClose={onSchliessen} onEscape={escape}>
       <div className="flex flex-col gap-2 split:h-full split:min-h-0" onKeyDown={taste}>
-        <div className="flex flex-wrap items-center gap-3" role="toolbar" aria-label="Werkzeuge der Deckenansicht">
+        <div className="flex min-h-10 flex-wrap items-center justify-between gap-2" role="status" aria-live="polite">
           <span>
             <strong>Deckenansicht „{raumName}“</strong> · Deckenhöhe {masse.anzeigen(deckenhoeheMm)}
             {eigeneHoehe ? "" : " (Standard des Geschosses)"}
+            {status !== undefined && <span className={`ml-3 font-semibold ${status.farbe}`}>{darfAendern ? status.text : "Nur Ansicht"}</span>}
           </span>
+          {darfAendern && onSpeichern !== undefined && (
+            <span className="flex flex-wrap gap-2">
+              <button type="button" className={knopf("primaer")} disabled={!offen || status?.speichert === true} onClick={onSpeichern} title="Speichert den gemeinsamen Entwurf (Strg+S)">
+                Speichern
+              </button>
+              <button type="button" className={knopf()} disabled={!offen || status?.speichert === true} onClick={onVerwerfen}>
+                Änderungen verwerfen
+              </button>
+            </span>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-3" role="toolbar" aria-label="Werkzeuge der Deckenansicht">
+          <span className="flex flex-wrap items-center gap-1">
+            <button type="button" className={werkzeug === "auswahl" ? WERKZEUG_AKTIV : WERKZEUG} aria-pressed={werkzeug === "auswahl"} title="Auswählen (V)" onClick={() => setWerkzeug("auswahl")}>
+              Auswählen
+            </button>
+            <button type="button" className={werkzeug === "pan" ? WERKZEUG_AKTIV : WERKZEUG} aria-pressed={werkzeug === "pan"} title="Ansicht verschieben (H)" onClick={() => setWerkzeug("pan")}>
+              Ansicht verschieben
+            </button>
+            {darfAendern && (
+              <button type="button" className={werkzeug === "geraet" ? WERKZEUG_AKTIV : WERKZEUG} aria-pressed={werkzeug === "geraet"} title="Deckengerät setzen (G)" onClick={() => setWerkzeug("geraet")}>
+                Gerät
+              </button>
+            )}
+          </span>
+          {darfAendern && werkzeug === "geraet" && (
+            <div className="min-w-[220px]">
+              <TypAuswahl id="decke-werkzeug-typ" label="Deckengerät" typen={typen} flaeche="ceiling" wert={geraetetyp?.key ?? null} onWahl={setTypWahl} />
+            </div>
+          )}
+          {darfAendern && (
+            <span className="flex flex-wrap items-center gap-1">
+              <button type="button" className={WERKZEUG} disabled={(zustand?.zurueck.length ?? 0) === 0} title="Rückgängig (Strg+Z)" onClick={() => dispatch?.({ typ: "rueckgaengig" })}>
+                Rückgängig
+              </button>
+              <button type="button" className={WERKZEUG} disabled={(zustand?.vor.length ?? 0) === 0} title="Wiederholen (Strg+Y)" onClick={() => dispatch?.({ typ: "wiederholen" })}>
+                Wiederholen
+              </button>
+            </span>
+          )}
           <span className="flex flex-wrap items-center gap-1">
             <button type="button" className={WERKZEUG} aria-label="Vergrößern" title="Vergrößern (+)" onClick={() => zoom(1.25)}>
               +
@@ -161,6 +561,12 @@ export function Deckenansicht({
               {ANSICHT_ZURUECKSETZEN}
             </button>
           </span>
+          {onFang !== undefined && (
+            <label className="flex items-center gap-1.5 text-small" title="Alt beim Ziehen setzt das Einrasten vorübergehend aus">
+              <input type="checkbox" checked={fangAktiv} onChange={(event) => onFang(event.target.checked)} />
+              Einrasten
+            </label>
+          )}
           <label className="flex items-center gap-1.5 text-small">
             Raster
             <select className={eingabefeld({ kompakt: true })} value={rasterMm} onChange={(event) => onRaster(Number(event.target.value))}>
@@ -177,7 +583,7 @@ export function Deckenansicht({
             Die Raumkontur ist nicht geschlossen - eine Deckenansicht braucht eine geschlossene Kontur.
           </p>
         ) : (
-          <div className="grid grid-cols-1 gap-3 split:min-h-0 split:flex-auto split:grid-cols-[minmax(0,1fr)_300px]">
+          <div className="grid grid-cols-1 gap-3 split:min-h-0 split:flex-auto split:grid-cols-[minmax(0,1fr)_320px]">
             <div className="flex min-w-0 flex-col gap-1 split:min-h-0">
               <div ref={huelle} className="relative h-[55dvh] min-h-[300px] touch-none overflow-hidden rounded-ep border border-line bg-canvas split:h-auto split:min-h-0 split:flex-auto">
                 <svg
@@ -188,11 +594,17 @@ export function Deckenansicht({
                   tabIndex={0}
                   width={groesse.breite}
                   height={groesse.hoehe}
-                  style={{ cursor: "grab" }}
+                  style={{ cursor: werkzeug === "geraet" ? "crosshair" : "grab" }}
                   onPointerDown={druecken}
                   onPointerMove={bewegen}
-                  onPointerUp={freigeben}
-                  onPointerCancel={freigeben}
+                  onPointerUp={loslassen}
+                  onPointerCancel={() => abbrechen()}
+                  onLostPointerCapture={() => {
+                    if (laufend.current !== null && laufend.current.art !== "pan") abbrechen();
+                  }}
+                  onPointerLeave={() => {
+                    if (laufend.current === null) setVorschau(null);
+                  }}
                 >
                   <path d={raster.join("")} className="ansicht__raster" aria-hidden="true" />
                   <polygon points={punkte} className="ansicht__decke-flaeche" data-testid="deckenkontur" />
@@ -204,6 +616,27 @@ export function Deckenansicht({
                       </text>
                     );
                   })}
+                  {geraeteElemente}
+                  {vorschau !== null && (
+                    <g data-testid="decke-vorschau" data-gueltig={vorschau.ok ? "ja" : "nein"} className={vorschau.ok ? "ansicht__geraet-vorschau" : "ansicht__geraet-vorschau ansicht__geraet-vorschau--fehler"}>
+                      {(() => {
+                        const r = deckenRechteckBild(viewport, vorschau.x, vorschau.y, vorschau.typ);
+                        const m = weltZuBild(viewport, { x: vorschau.x, y: vorschau.y });
+                        return (
+                          <>
+                            <rect x={r.x} y={r.y} width={r.breite} height={r.hoehe} className="ansicht__vorschau" />
+                            <SymbolImPlan typ={vorschau.typ} x={m.x} y={m.y} groesse={22} />
+                            {!vorschau.ok && (
+                              <text x={m.x} y={m.y - 16} textAnchor="middle" className="ansicht__text ansicht__masstext--ueberschneidung">
+                                nicht möglich
+                              </text>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </g>
+                  )}
+                  {massMitte !== null && treffer !== null && <Wandmasse mitte={massMitte} treffer={treffer} viewport={viewport} mm={masse.anzeigen} />}
                   <text x={groesse.breite - 10} y={20} textAnchor="end" className="ansicht__text ansicht__text--klein">
                     ↑ oben wie im Grundriss
                   </text>
@@ -213,32 +646,229 @@ export function Deckenansicht({
                 {zeiger}
               </p>
             </div>
-            <aside className="min-w-0 text-small split:min-h-0 split:overflow-y-auto" aria-label="Raumangaben">
-              <p className="m-0">
-                Fläche {flaecheText(modell.flaecheMm2)} · Umfang {masse.anzeigenOptional(modell.umfangMm)}
-              </p>
-              {modell.rechteck !== null ? (
+            <aside className="flex min-w-0 flex-col gap-2 text-small split:min-h-0 split:overflow-y-auto" aria-label="Raumangaben und Deckengeräte">
+              <div>
                 <p className="m-0">
-                  Raummaß {masse.anzeigen(modell.rechteck.breiteMm)} × {masse.anzeigen(modell.rechteck.tiefeMm)}
+                  Fläche {flaecheText(modell.flaecheMm2)} · Umfang {masse.anzeigenOptional(modell.umfangMm)}
                 </p>
-              ) : (
-                <p className="m-0 text-muted">Kein Rechteck - Maße stehen an den einzelnen Wänden.</p>
-              )}
-              <ul className="my-1 pl-[18px]" aria-label="Wände">
-                {modell.waende.map((w) => (
-                  <li key={w.id}>
-                    Wand {w.nummer}: {masse.anzeigen(w.laengeMm)}
-                  </li>
-                ))}
-              </ul>
-              <p className="text-muted">
+                {modell.rechteck !== null ? (
+                  <p className="m-0">
+                    Raummaß {masse.anzeigen(modell.rechteck.breiteMm)} × {masse.anzeigen(modell.rechteck.tiefeMm)}
+                  </p>
+                ) : (
+                  <p className="m-0 text-muted">Kein Rechteck - Maße stehen an den einzelnen Wänden.</p>
+                )}
+                <ul className="my-1 pl-[18px]" aria-label="Wände">
+                  {modell.waende.map((w) => (
+                    <li key={w.id}>
+                      Wand {w.nummer}: {masse.anzeigen(w.laengeMm)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <Deckengeraeteliste
+                geraete={deckengeraete}
+                gewaehlt={gewaehlt}
+                typen={typen}
+                darfAendern={darfAendern}
+                deckenhoeheMm={deckenhoeheMm}
+                treffer={treffer}
+                onWaehlen={waehlen}
+                onLage={lageSetzen}
+                onLabel={(id, label) => {
+                  if (entwurf !== null && darfAendern) dispatch?.({ typ: "aendern", entwurf: geraetAendern(entwurf, id, { label }) });
+                }}
+                onEntfernen={entfernen}
+              />
+              <p className="m-0 text-muted">
                 Ausrichtung wie im Grundriss (Deckenspiegel): die Decke so, wie sie sich in einem Spiegel auf dem Fußboden zeigt –
-                nicht seitenverkehrt. Was hier links oben liegt, liegt auch im Grundriss links oben. Ziehen verschiebt die Ansicht, das Mausrad zoomt. Geräte folgen in Phase 5.
+                nicht seitenverkehrt. Was hier links oben liegt, liegt auch im Grundriss links oben. Ziehen auf freier Fläche
+                verschiebt die Ansicht, das Mausrad zoomt.
               </p>
+              <details className="text-[0.85rem]">
+                <summary className="cursor-pointer text-muted">Bedienung</summary>
+                <ul className="pl-[18px] text-muted">
+                  <li>Gerät (G): Typ wählen, Vorschau folgt dem Zeiger, ein Klick setzt es. Ziehen verschiebt es; Pfeiltasten 1 cm, mit Umschalt 10 cm; Entf entfernt es.</li>
+                  <li>Eingerastet wird bündig an achsparallelen Wänden, in der Flucht anderer Deckengeräte, sonst am Raster. Alt hält es beim Ziehen aus.</li>
+                  <li>Die Maße gehen von der Gerätemitte bis zur ersten tatsächlichen Wand in jeder Richtung – auch in L-förmigen Räumen.</li>
+                  <li>Strg+Z / Strg+Y gelten für den gemeinsamen Entwurf mit dem Grundriss. Schließen behält alle Änderungen – gespeichert wird nur mit „Speichern“.</li>
+                </ul>
+              </details>
+              <details className="text-[0.85rem]">
+                <summary className="cursor-pointer text-muted">Legende der Gerätesymbole</summary>
+                <Geraetelegende typen={typen} />
+              </details>
             </aside>
           </div>
         )}
       </div>
     </Dialog>
+  );
+}
+
+/** Planungsmaß eines Deckengeräts im Bildraum (y nach unten). */
+function deckenRechteckBild(viewport: Viewport, x: number, y: number, typ: Geraetetyp | undefined) {
+  const hb = Math.floor((typ?.width_mm ?? 100) / 2);
+  const hh = Math.floor((typ?.height_mm ?? 100) / 2);
+  const a = weltZuBild(viewport, { x: x - hb, y: y + hh });
+  const b = weltZuBild(viewport, { x: x + hb, y: y - hh });
+  return { x: a.x, y: a.y, breite: Math.max(b.x - a.x, 1), hoehe: Math.max(b.y - a.y, 1) };
+}
+
+/** Maßlinien von der Gerätemitte zur ersten Wand in jeder Richtung. */
+function Wandmasse({
+  mitte,
+  treffer,
+  viewport,
+  mm,
+}: {
+  mitte: { x: number; y: number };
+  treffer: Record<Richtung, Wandtreffer | null>;
+  viewport: Viewport;
+  mm: (wert: number) => string;
+}) {
+  const m = weltZuBild(viewport, mitte);
+  return (
+    <g data-testid="decke-masse">
+      {(Object.values(treffer)).map((t) => {
+        if (t === null) return null;
+        const z = weltZuBild(viewport, t.punkt);
+        const waagerecht = t.richtung === "links" || t.richtung === "rechts";
+        const text = `${mm(Math.round(t.abstand))} bis W${t.wandNummer}`;
+        return (
+          <g key={t.richtung} data-testid={`decke-mass-${t.richtung}`} aria-label={`Mitte bis Wand ${t.wandNummer} (${RICHTUNG_LABEL[t.richtung]}): ${mm(Math.round(t.abstand))}`}>
+            <line x1={m.x} y1={m.y} x2={z.x} y2={z.y} className="ansicht__mass ansicht__mass--nachbar" />
+            <line x1={z.x - (waagerecht ? 0 : 5)} y1={z.y - (waagerecht ? 5 : 0)} x2={z.x + (waagerecht ? 0 : 5)} y2={z.y + (waagerecht ? 5 : 0)} className="ansicht__mass" />
+            <text
+              x={(m.x + z.x) / 2 + (waagerecht ? 0 : 6)}
+              y={(m.y + z.y) / 2 + (waagerecht ? -6 : 4)}
+              textAnchor={waagerecht ? "middle" : "start"}
+              className="ansicht__masstext"
+            >
+              {text}
+            </text>
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+/** Liste der Deckengeräte und Eigenschaften des gewählten. */
+function Deckengeraeteliste({
+  geraete,
+  gewaehlt,
+  typen,
+  darfAendern,
+  deckenhoeheMm,
+  treffer,
+  onWaehlen,
+  onLage,
+  onLabel,
+  onEntfernen,
+}: {
+  geraete: readonly AnsichtsDeckengeraet[];
+  gewaehlt: string | null;
+  typen: Geraetetypen;
+  darfAendern: boolean;
+  deckenhoeheMm: number;
+  treffer: Record<Richtung, Wandtreffer | null> | null;
+  onWaehlen: (id: string) => void;
+  onLage: (id: string, x: number, y: number, typKey?: string) => string | undefined;
+  onLabel: (id: string, label: string | null) => void;
+  onEntfernen: (id: string) => void;
+}) {
+  const masse = useMasse();
+  const g = geraete.find((x) => x.id === gewaehlt);
+  const [typfehler, setTypfehler] = useState<string | null>(null);
+  /** Ein Abstand zur Wand in einer Richtung - verschiebt das Gerät entlang dieser Achse. */
+  const abstandFeld = (richtung: Richtung) => {
+    const t = treffer?.[richtung] ?? null;
+    if (g === undefined || t === null) return null;
+    const label = `Mitte bis Wand ${t.wandNummer} (${RICHTUNG_LABEL[richtung]})`;
+    return (
+      <MassFeld
+        key={richtung}
+        id={`decke-abstand-${richtung}`}
+        label={label}
+        wertMm={Math.round(t.abstand)}
+        gesperrt={!darfAendern || !Number.isInteger(t.abstand)}
+        hinweis={Number.isInteger(t.abstand) ? "Achsmaß" : "schräge Wand – nur Anzeige"}
+        onUebernehmen={(mm) => {
+          const d = mm - t.abstand;
+          if (richtung === "links") return onLage(g.id, g.x + d, g.y);
+          if (richtung === "rechts") return onLage(g.id, g.x - d, g.y);
+          if (richtung === "unten") return onLage(g.id, g.x, g.y + d);
+          return onLage(g.id, g.x, g.y - d);
+        }}
+      />
+    );
+  };
+  return (
+    <section aria-label="Deckengeräte" className="flex flex-col gap-1.5 border-t border-line pt-2">
+      <h4 className="m-0">Deckengeräte ({geraete.length})</h4>
+      <p className="m-0 text-muted">
+        Montagehöhe = Deckenhöhe des Raums ({masse.anzeigen(deckenhoeheMm)}). Es wird keine eigene Höhe gespeichert; ändert sich
+        die Decke, folgen die Geräte.
+      </p>
+      {geraete.length === 0 ? (
+        <p className="m-0 text-muted">Noch kein Deckengerät.{darfAendern ? " Werkzeug „Gerät“ (G) wählen und in den Raum klicken." : ""}</p>
+      ) : (
+        <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
+          {geraete.map((x, i) => (
+            <li key={x.id}>
+              <button type="button" className={x.id === gewaehlt ? LISTENKNOPF_GEWAEHLT : LISTENKNOPF} aria-current={x.id === gewaehlt ? "true" : undefined} onClick={() => onWaehlen(x.id)}>
+                <span className="inline-flex items-center gap-1.5">
+                  <Geraetesymbol typ={x.typ} groesse={16} />
+                  {x.typ?.label ?? x.schluessel} {i + 1}
+                  {x.label !== null ? ` „${x.label}“` : ""}
+                  {x.befunde.length > 0 ? " ⚠" : ""}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {g !== undefined && (
+        <div className="flex flex-col gap-1.5 border-t border-line pt-2" aria-label="Gewähltes Deckengerät">
+          <TypAuswahl
+            id="decke-geraet-typ"
+            label="Gerätetyp"
+            typen={typen}
+            flaeche="ceiling"
+            wert={g.schluessel}
+            gesperrt={!darfAendern}
+            onWahl={(key) => setTypfehler(onLage(g.id, g.x, g.y, key) ?? null)}
+          />
+          {typfehler !== null && (
+            <p className="m-0 text-danger" role="alert">
+              Typ nicht geändert: {typfehler}
+            </p>
+          )}
+          <div className="grid grid-cols-2 gap-1.5">{(["links", "rechts", "oben", "unten"] as const).map(abstandFeld)}</div>
+          <BeschriftungsFeld id="decke-geraet-label" wert={g.label} gesperrt={!darfAendern} onUebernehmen={(text) => onLabel(g.id, text)} />
+          <p className="m-0 text-muted">
+            Planungsmaß {masse.anzeigen(g.typ?.width_mm ?? 0)} × {masse.anzeigen(g.typ?.height_mm ?? 0)} – vereinfachtes Auslassmaß zur
+            Prüfung, keine Herstellerangabe.
+          </p>
+          {g.befunde.length > 0 && (
+            <div className={meldungsflaeche("schlicht")} role="status">
+              <p className="m-0 font-semibold">Hinweis: Lage prüfen</p>
+              <ul className="my-1 pl-[18px]">
+                {g.befunde.map((code) => (
+                  <li key={code}>{befundText(code)}</li>
+                ))}
+              </ul>
+              <p className="m-0 text-muted">Nichts wird automatisch verschoben oder gelöscht.</p>
+            </div>
+          )}
+          {darfAendern && (
+            <button type="button" className={knopf()} onClick={() => onEntfernen(g.id)}>
+              Gerät entfernen
+            </button>
+          )}
+        </div>
+      )}
+    </section>
   );
 }

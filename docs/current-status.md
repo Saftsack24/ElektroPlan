@@ -1,7 +1,7 @@
 # Aktueller Projektstand
 
-**Letzte Aktualisierung:** 2026-10-03
-**Aktualisiert nach:** Task 0024 — Phase 4f (Wand- und Deckenansicht) – abgeschlossen, vom Auftraggeber manuell abgenommen, mit diesem Checkpoint committet
+**Letzte Aktualisierung:** 2026-10-04
+**Aktualisiert nach:** Task 0025 — Phase 5 (Electrical Devices) einschließlich Nachkorrekturen – abgeschlossen, vom Auftraggeber manuell abgenommen, mit diesem Checkpoint committet
 
 > Dieses Dokument soll einer neuen Session in wenigen Minuten vermitteln, wo das Projekt
 > steht.
@@ -47,7 +47,9 @@ Checkpoint committet
 **Phase 4f — Wand- und Deckenansicht: ABGESCHLOSSEN**
 (Abschlusslauf gegen PostgreSQL grün, vom Auftraggeber manuell abgenommen, siehe Abschnitt 2) —
 mit diesem Checkpoint committet
-**Phase 5 — Electrical Devices: NICHT BEGONNEN**
+**Phase 5 — Electrical Devices: ABGESCHLOSSEN** (einschließlich Nachkorrekturen; vom
+Auftraggeber manuell abgenommen, siehe Abschnitt 2) — mit diesem Checkpoint committet
+**Phase 6: NICHT BEGONNEN**
 
 > Phase 4a und 4a.1 sind als `887f254`, Phase 4.2 als `66cbff3` committet. Die
 > Entscheidungen **T8** (Wandhöhe und Wandtyp) und **T9** (deckungsgleiche Wände) sind
@@ -57,6 +59,39 @@ mit diesem Checkpoint committet
 ---
 
 ## 2. Zuletzt abgeschlossene Aufgabe
+
+**Task 0025 — Phase 5: Electrical Devices**
+([ADR 0023](decisions/0023-electrical-devices-symbols-room-types.md), Migration `0008`, danach
+Seed) — **ABGESCHLOSSEN**, vom Auftraggeber manuell abgenommen, einschließlich der
+Nachkorrekturen mit diesem Checkpoint committet (nicht gepusht). Grundlage: zuletzt 980
+bestandene Backendtests gegen PostgreSQL (0 übersprungen), 881 bestandene Frontendtests, die
+übrigen grünen Prüfungen und die manuelle Abnahme. Details: [`task-history.md`](task-history.md),
+Task 0025.
+
+1. **T1 und T7 entschieden:** eigene SVG-Planungssymbole mit Legende, ohne DIN-Anspruch, zentral
+   austauschbar, keine Uploads; optionaler Raumtyp mit zwölf festen Schlüsseln, nur Einordnung.
+2. **Gerätekatalog** (global, 13 Typen) per idempotentem Seed über den neuen Teilnehmer-Contract
+   `ReferenceDataSeeder`; deaktiviert statt gelöscht.
+3. **Geräte** mit dauerhaft gespeicherter Montagefläche (Wand innen, Fassade außen, Decke) und
+   Gerätemitte in ganzen mm; Innen und Außen sind getrennte Geräte. Deckengeräte speichern keine
+   Höhe. Planungsmaß kommt aus dem Katalog, nie aus dem Symbol.
+4. **Ein Entwurf:** Geräte gehören zum Raumentwurf und werden mit `PUT …/contour` unter der
+   Raumversion gespeichert (Undo/Redo, Navigationsschutz, Konflikte wie bisher).
+5. **Prüfung serverseitig** (exakte Topologie aus dem Frontend nach Python portiert, gemeinsame
+   Fixture) und im Editor gespiegelt; jede Geometrie-, Öffnungs- und Höhenänderung darf keine
+   neuen Gerätekonflikte erzeugen und keinen bestehenden vergrößern – verglichen nach Gerät,
+   Code, Konfliktpartner und exaktem Ausmaß (Nachkorrektur 2026-10-04: vorher nur nach Code).
+   Nichts wird automatisch verschoben. Wand mit Geräten: `409 wall-has-devices`.
+7. **Grundriss-Zuordnung** (Nachkorrektur 2026-10-04): Montagepunkt und Symbolposition sind
+   getrennt; versetzte Symbole zeigen mit einer Zuordnungslinie auf ihren markierten
+   Montagepunkt, dichte Stellen werden zu einem aufklappbaren Gruppensymbol. Reine Darstellung.
+6. **Oberfläche:** Wandansicht (Werkzeug „Gerät“, Vorschau, Einrasten, Hilfslinien, exakte
+   Maße, Pfeiltasten), Deckenansicht (echte Kontur, Maße zur Wand), Grundriss-Symbole, 3D mit
+   Gerätekörpern, Orientierungslinie, drei Schaltern und „An Wand/Decke bearbeiten“ mit Rückkehr.
+
+---
+
+**Vorherige Aufgabe:**
 
 **Task 0024 — Phase 4f: Wand- und Deckenansicht**
 ([ADR 0022](decisions/0022-wall-and-ceiling-view.md), keine Migration) — **ABGESCHLOSSEN**,
@@ -961,14 +996,30 @@ was offen ist, ist eine Schuld.
 | `lint-imports` lokal durch Windows-Anwendungssteuerung blockiert (4d) | die native `grimp`-DLL darf nicht laden; import-linter lief deshalb in einem Wegwerf-Container | Ausnahme für `.venv` oder Lauf in CI |
 | Ein Datei-Upload kann nach vollständiger Übertragung noch mit `409` scheitern | Bewusster Tausch: Die Sperre wird nicht über die Übertragung gehalten. Das Objekt wird verworfen | keine Absicht, das zu ändern |
 
+### Offene Punkte aus Phase 5
+
+| Punkt | Bewertung |
+|---|---|
+| Raumgrenze für Deckengeräte ist die Wandachse, nicht die Wandinnenseite | Wanddicke ist nicht modelliert; konsistent mit 4a–4f |
+| Leistung mit vielen Geräten (Grenze 300 je Raum) nicht gemessen | Prüfung ist geschossweit und exakt; vor großen Projekten messen |
+| Gerät ↔ Wandansicht: Geräte auf einer gemeinsamen Wand sieht nur der eigene Raum | Folge von T10 (keine physische Wandidentität) |
+| Browserabnahme: Grundriss-Zuordnung per Bildschirmfoto im Browserbereich geprüft (nur Dunkelmodus, 53/83 px/m); Gruppensymbol nur automatisiert (kein dichter Bestand im Abnahmeprojekt); kein echter Maus-Drag, kein Touch, kein Browserzoom; 3D-Klickauswahl und Rückkehr nur automatisiert; mm/m und Hellmodus nicht im Browser | manuelle Abnahme durch den Auftraggeber |
+| Gegenprobe „Test schlägt ohne Sperre fehl“ für die neuen Rennen nicht durchgeführt (für den Ausmaßvergleich durchgeführt: ohne ihn schlagen 8 Tests fehl) | Rennen laufen gegen echtes PostgreSQL mit Barrieren |
+| Zwei irrationale Ausmaße mit verschiedenen Schrittlängen gelten als Verschlechterung | betrifft nur Konflikte mit abgeleiteten Öffnungen/geteilten Stücken, wenn sich die Richtung der eigenen Wand ändert; konservativ dokumentiert (ADR 0023 §6) |
+| Ein Gerät mit Bestandskonflikt lässt sich nicht einzeln umbenennen (gilt als direkt geändert) | gewollt streng: direkt geänderte Geräte müssen ganz zulässig sein |
+| Synthetischer Abnahmebetrieb „Abnahme Phase 5 GmbH“ (Benutzer `abnahme5@example.com`, zusätzlich ein nicht nutzbarer `abnahme5@example.test`) liegt in der Entwicklungsdatenbank | bei Bedarf entfernen; Zugangsdaten nur im Scratchpad |
+
 ### Offene fachliche Entscheidungen
 
 | # | Frage | Spätestens vor |
 |---|---|---|
 | T6 | **Projektarten** (Neubau, Sanierung, Service): Braucht es sie, und was unterscheidet sie? Bis dahin deckt die abwählbare Startstruktur den Serviceauftrag ab | vor Phase 8 |
-| T1 | Symbolbibliothek: eigene SVGs oder DIN EN 60617 (Phase 4a platziert keine Geräte) | Phase 5 |
-| T7 | **Raumtyp** (`living`, `kitchen`, …): Wird er für Ausstattungsvorlagen gebraucht, und mit welcher Werteliste? In Phase 3 bewusst nicht angelegt | vor Phase 5 |
 | T10 | **Physische Wandidentität** (Neubewertung aus ADR 0016): Brauchen Leitungsrouting und Materialermittlung eine persistente Wand, auf die sich beide Raumseiten beziehen (Querungen, keine Doppelzählung, einseitig erfasste Öffnungen, teilweise überlappende Wände)? | vor Phase 6 |
+
+**Entschieden in Phase 5** ([ADR 0023](decisions/0023-electrical-devices-symbols-room-types.md)):
+~~T1 Symbolbibliothek~~ — eigene SVG-Planungssymbole mit Legende, kein DIN-Anspruch, zentral
+austauschbar, keine Uploads. ~~T7 Raumtyp~~ — optional, zwölf feste Schlüssel mit deutschen
+Bezeichnungen, keine automatische Zuordnung, keine Vorlagen.
 
 **Entschieden in Phase 4b** ([ADR 0016](decisions/0016-derived-3d-view-wall-height-and-coincident-walls.md)):
 ~~T8 Wandhöhe und Wandtyp~~ — effektive Raumhöhe gilt für alle Wände, kein Wandtyp,
@@ -1029,6 +1080,15 @@ HSTS, Virenscan, MFA für administrative Konten.
 ---
 
 ## 9. Nächste geplante Aufgabe
+
+**Nach Phase 5 (Stand 2026-10-04):** Phase 5 ist abgeschlossen, vom Auftraggeber manuell
+abgenommen und mit diesem Checkpoint committet (nicht gepusht). Nach dem Aktualisieren anderer
+Umgebungen: Migration `0008`, dann **zwingend** Seed (Gerätekatalog). Phase 6 ist **nicht
+begonnen** und erst nach ausdrücklicher Freigabe; davor zu klären: T10 (physische
+Wandidentität) und T4 (Steigezonen).
+
+*Vorheriger Stand (2026-10-04):* umgesetzt und technisch geprüft, nicht committet, wartete auf
+die manuelle Abnahme.
 
 **Nach Phase 4f (Stand 2026-10-03):** Phase 4f ist abgeschlossen, vom Auftraggeber manuell
 abgenommen und mit diesem Checkpoint committet (nicht gepusht). Keine Migration, kein Seed.

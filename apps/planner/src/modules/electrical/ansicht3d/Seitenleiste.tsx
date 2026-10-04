@@ -11,6 +11,9 @@ import { OEFFNUNGSART_LABEL, flaecheAnzeigen } from "../texte";
 import type { Auswahl, Szenenmodell, Warnung } from "./modell";
 import { auswahlSchluessel, raumBezeichnung } from "./modell";
 import type { Objekt } from "./szenenmodell";
+import type { Geraet3d } from "./geraete3d";
+import { FLAECHE_LABEL } from "../geraete/katalog";
+import { Geraetesymbol } from "../geraete/symbole";
 import { warnungenZu } from "./szenenmodell";
 
 /** Hinweise und ausgelassene Elemente. */
@@ -71,11 +74,14 @@ function Auswahlinfo({
   objekt,
   onAuswahl,
   onWandansicht,
+  onGeraetBearbeiten,
 }: {
   modell: Szenenmodell;
   objekt: Objekt;
   onAuswahl: (auswahl: Auswahl | null) => void;
   onWandansicht?: (ziel: { raumId: string; wandId: string; seite: "innen" | "aussen" }) => void;
+  /** Phase 5: Gerät in der Wand- bzw. Deckenansicht des 2D-Editors bearbeiten. */
+  onGeraetBearbeiten?: (geraet: Geraet3d) => void;
 }) {
   // Längen in der persönlichen Anzeigeeinheit - dieselbe wie im 2D-Editor.
   const { anzeigen: mm } = useMasse();
@@ -217,6 +223,38 @@ function Auswahlinfo({
     );
   }
 
+  if (objekt.art === "geraet") {
+    const { geraet: g } = objekt;
+    const decke = g.flaeche === "ceiling";
+    return (
+      <>
+        <h3 className="mt-0 mb-1.5 flex items-center gap-2 text-[1rem]">
+          <Geraetesymbol typ={g.typ} />
+          {g.name}
+        </h3>
+        <Werte
+          zeilen={[
+            ["Typ", g.typ?.label ?? g.typKey],
+            ["Montagefläche", FLAECHE_LABEL[g.flaeche]],
+            ["Raum", name(g.raumId)],
+            ...(decke
+              ? ([["Montagehöhe", `${mm(g.hoeheMm)} = Deckenhöhe des Raums (folgt ihr)`]] as const)
+              : ([
+                  ["Wand", g.wandNummer === null ? "—" : `Wand ${g.wandNummer}`],
+                  ["Mitte über Boden", mm(g.hoeheMm)],
+                ] as const)),
+            ["Planungsmaß", `${mm(g.breiteMm)} × ${mm(g.hoeheMassMm)}`],
+          ]}
+        />
+        {onGeraetBearbeiten !== undefined && (
+          <button type="button" className={`${knopf("primaer")} mb-2`} onClick={() => onGeraetBearbeiten(g)}>
+            {decke ? "An Decke bearbeiten" : "An Wand bearbeiten"}
+          </button>
+        )}
+      </>
+    );
+  }
+
   const { wand } = objekt;
   const staerken = [...new Set(wand.quellen.map((q) => q.staerkeMm))];
   const raeume = wand.raumIds.map(name);
@@ -285,6 +323,7 @@ export function Seitenleiste({
   objekt,
   onAuswahl,
   onWandansicht,
+  onGeraetBearbeiten,
 }: {
   modell: Szenenmodell;
   auswahl: Auswahl | null;
@@ -292,6 +331,7 @@ export function Seitenleiste({
   onAuswahl: (auswahl: Auswahl | null) => void;
   /** Phase 4f: die gewählte Raumwand in der Wandansicht des 2D-Editors öffnen. */
   onWandansicht?: (ziel: { raumId: string; wandId: string; seite: "innen" | "aussen" }) => void;
+  onGeraetBearbeiten?: (geraet: Geraet3d) => void;
 }) {
   const eigene = auswahl !== null && objekt !== null ? warnungenZu(modell, auswahl) : [];
   return (
@@ -300,12 +340,18 @@ export function Seitenleiste({
         <h2 className="mt-0 mb-1.5 text-[0.95rem]">Auswahl</h2>
         {objekt === null ? (
           <p className="text-muted">
-            Nichts ausgewählt. Einen Raum (Boden), eine Wand oder eine Öffnung in der Ansicht
-            anklicken.
+            Nichts ausgewählt. Einen Raum (Boden), eine Wand, eine Öffnung oder ein Gerät in der
+            Ansicht anklicken.
           </p>
         ) : (
           <>
-            <Auswahlinfo modell={modell} objekt={objekt} onAuswahl={onAuswahl} {...(onWandansicht !== undefined ? { onWandansicht } : {})} />
+            <Auswahlinfo
+              modell={modell}
+              objekt={objekt}
+              onAuswahl={onAuswahl}
+              {...(onWandansicht !== undefined ? { onWandansicht } : {})}
+              {...(onGeraetBearbeiten !== undefined ? { onGeraetBearbeiten } : {})}
+            />
             {eigene.length > 0 && <Hinweisliste warnungen={eigene} />}
             <button type="button" className={knopf()} onClick={() => onAuswahl(null)}>
               Auswahl aufheben (Esc)

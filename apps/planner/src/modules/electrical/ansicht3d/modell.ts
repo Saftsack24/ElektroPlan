@@ -8,6 +8,7 @@
  * zurückgeschrieben (ADR 0016).
  */
 import type { Fassade3d, Raumwand3d } from "./raumwand";
+import type { Geraet3d } from "./geraete3d";
 import type { components } from "@elektroplan/api-client";
 
 import type { Oeffnungsklasse } from "../topologie/oeffnungen";
@@ -34,7 +35,7 @@ export interface PunktMm {
  * `wandseite`: ein Wandabschnitt, dessen angeklickte Raumseite nicht eindeutig
  * war - die Seitenleiste bietet die Raumwahl an.
  */
-export type Objektart = "raum" | "wand" | "raumwand" | "wandseite" | "fassade" | "oeffnung";
+export type Objektart = "raum" | "wand" | "raumwand" | "wandseite" | "fassade" | "oeffnung" | "geraet";
 
 /**
  * Kleine, fachliche Auswahlreferenz - das Einzige, was aus der Szene in den
@@ -205,6 +206,8 @@ export interface Szenenmodell {
   /** Durchgehende, geradlinige Außenwände über mehrere Räume - reine Ansichtsgruppe (Phase 4f). */
   readonly fassaden: readonly Fassade3d[];
   readonly oeffnungen: readonly Oeffnung3d[];
+  /** Geräte der dargestellten Räume (Phase 5) - Wand und Decke. */
+  readonly geraete: readonly Geraet3d[];
   readonly ausgelassen: readonly AusgelassenerRaum[];
   readonly warnungen: readonly Warnung[];
 }

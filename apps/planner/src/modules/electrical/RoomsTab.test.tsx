@@ -327,7 +327,7 @@ describe("Raum anlegen", () => {
         "/api/v1/modules/electrical/floors/{floor_id}/rooms",
         {
           path: { floor_id: "geschoss-eg" },
-          body: { name: "Küche", room_number: "1.03", height_mm: null },
+          body: { name: "Küche", room_number: "1.03", height_mm: null, room_type: null },
         },
       ),
     );
@@ -404,7 +404,7 @@ describe("Raum anlegen", () => {
       expect(api.patch).toHaveBeenCalledWith("/api/v1/modules/electrical/rooms/{room_id}", {
         path: { room_id: "raum-1" },
         ifMatch: 1,
-        body: { name: "Salon", room_number: "1.01", height_mm: null },
+        body: { name: "Salon", room_number: "1.01", height_mm: null, room_type: null },
       }),
     );
   });

@@ -73,6 +73,21 @@ Dokumentation und Oberfläche auf Deutsch, Code und API auf Englisch.
 
 ## Elektroplanung
 
+Ergänzt in Phase 5 (Electrical Devices, ADR 0023):
+
+| Deutsch | Englisch (Code/API) | Anmerkung |
+|---|---|---|
+| Gerät | `device` (`electrical_devices`) | geplantes Elektrogerät eines Raums; kein Herstellerartikel, keine Materialposition |
+| Gerätetyp | `device type` (`electrical_device_types`) | Eintrag des globalen Systemkatalogs, per Seed gepflegt |
+| Montagefläche | `mounting_surface`: `wall_interior` / `wall_exterior` / `ceiling` | Wand innen, Fassade außen, Decke – dauerhaft gespeichert |
+| Gerätemitte | `center_offset_mm`, `center_height_mm` bzw. `x_mm`/`y_mm` | Bezugspunkt jeder Gerätelage |
+| Planungsmaß | `width_mm` × `height_mm` des Typs | vereinfachtes Rahmen-/Auslassmaß zur Prüfung, keine Herstellerangabe |
+| Standardhöhe | `default_center_height_mm` | Startwert der Mitte über FFB, keine Normvorgabe |
+| Planungssymbol | `symbol_key` | eigenes SVG-Symbol (T1), ohne DIN-Anspruch |
+| Raumtyp | `room_type` | optional, nur Einordnung (T7): Wohnzimmer … Sonstiges |
+| Systemkatalog / Stammdaten-Seed | `ReferenceDataSeeder` | idempotenter Abgleich mitgelieferter Kataloge, deaktiviert statt zu löschen |
+| Wandgerät / Deckengerät | wall device / ceiling device | Deckengeräte haben keine eigene Höhe – sie folgen der Raumhöhe |
+
 Ergänzt in Phase 4f (Wand- und Deckenansicht, ADR 0022):
 
 | Deutsch | Englisch (Code/API) | Anmerkung |

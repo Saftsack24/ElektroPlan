@@ -27,6 +27,7 @@ export const RAUM: RaumImPlan = {
   room_number: "0.01",
   height_mm: null,
   effective_height_mm: 2500,
+  room_type: null,
   contour_status: "valid",
   wall_count: 4,
   area_mm2: 20_000_000,
@@ -36,6 +37,7 @@ export const RAUM: RaumImPlan = {
   created_at: "2026-09-26T08:00:00Z",
   updated_at: "2026-09-26T08:00:00Z",
   contour_problems: [],
+  devices: [],
   walls: [
     wand("w1", 0, 0, 5000, 0),
     wand("w2", 5000, 0, 5000, 4000),

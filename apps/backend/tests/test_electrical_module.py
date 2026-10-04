@@ -197,11 +197,13 @@ def test_descriptor_ist_ein_fachmodul() -> None:
     assert DESCRIPTOR.table_prefix == "electrical_"
     assert DESCRIPTOR.namespaces == ("electrical",)
     # Seit Phase 4d der Teilnehmer des Loeschprotokolls (ADR 0020), seit
-    # Phase 4f der Pruefer einer neuen Geschoss-Standardhoehe (ADR 0022).
-    # Provider-Ports fuer materials entstehen erst mit Phase 7.
+    # Phase 4f der Pruefer einer neuen Geschoss-Standardhoehe (ADR 0022), seit
+    # Phase 5 der Seed des Geraetekatalogs (ADR 0023). Provider-Ports fuer
+    # materials entstehen erst mit Phase 7.
     assert [binding.port.__name__ for binding in DESCRIPTOR.provides] == [
         "ProjectContentParticipant",
         "FloorCeilingHeightParticipant",
+        "ReferenceDataSeeder",
     ]
     assert DESCRIPTOR.subscriptions == (), "Phase 3 konsumiert keine Events"
 
@@ -224,6 +226,9 @@ def test_oeffentlicher_einstiegspunkt_exportiert_nur_den_descriptor() -> None:
     # andere waere ein zusaetzlicher oeffentlicher Name.
     assert oeffentlich - {"DESCRIPTOR", "annotations"} <= {
         "api",
+        "catalog",
+        "device_rules",
+        "devices",
         "events",
         "floor_height",
         "geometry",
@@ -231,8 +236,10 @@ def test_oeffentlicher_einstiegspunkt_exportiert_nur_den_descriptor() -> None:
         "models",
         "module",
         "permissions",
+        "reference_data",
         "schemas",
         "service",
+        "topology",
     }
 
 
@@ -256,7 +263,13 @@ def test_kein_leeres_platzhaltermodul() -> None:
 
 def test_tabellen_tragen_das_modulpraefix(registry: ModuleRegistry) -> None:
     eigene = {table.name for table in metadata.sorted_tables if table.name not in set(CORE_TABLES)}
-    assert eigene == {"electrical_rooms", "electrical_walls", "electrical_openings"}
+    assert eigene == {
+        "electrical_rooms",
+        "electrical_walls",
+        "electrical_openings",
+        "electrical_device_types",
+        "electrical_devices",
+    }
     for name in eigene:
         assert name.startswith(DESCRIPTOR.table_prefix)
 
