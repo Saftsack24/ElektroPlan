@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import CheckConstraint, Index, Integer, String, UniqueConstraint, text
+from sqlalchemy import Boolean, CheckConstraint, Index, Integer, String, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -138,5 +138,12 @@ class Floor(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, Base):
     level: Mapped[int] = mapped_column(Integer, nullable=False)
     #: Hoehenlage des Fertigfussbodens in Millimetern (ADR 0007).
     elevation_mm: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    #: Ausdruecklich bestaetigte Hoehenlage (Phase 6a, ADR 0025). ``elevation_mm``
+    #: ist ``NOT NULL DEFAULT 0`` - ob der Wert gepflegt ist, steht erst hier.
+    #: Eine Bestaetigung gilt genau fuer den gespeicherten Wert; sie wird nie
+    #: abgeleitet (weder aus ``level`` noch aus der Standardhoehe).
+    elevation_confirmed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     #: Lichte Standardhoehe in Millimetern.
     default_ceiling_height_mm: Mapped[int] = mapped_column(Integer, nullable=False, default=2500)

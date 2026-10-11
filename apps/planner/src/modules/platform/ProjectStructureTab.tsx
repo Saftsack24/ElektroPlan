@@ -5,7 +5,9 @@ import { useState } from "react";
 
 import { useAuth, usePermission } from "../../core/auth/AuthProvider";
 import { eingabenAusMm, eingabenLesen, eingabenUmrechnen } from "../../core/masse";
-import { Feld } from "../../core/ui/Feld";
+import { Feld, Schalter } from "../../core/ui/Feld";
+import { Marke } from "../../core/ui/Marke";
+import type { Masse } from "../../core/ui/masseinheit";
 import { useEinheitenwechsel, useMasse } from "../../core/ui/masseinheit";
 import { FELDREIHE, KARTENKOPF, STAPEL, TABELLE, karte, knopf, meldungsflaeche } from "../../core/ui/stil";
 import { AKTION } from "../../core/ui/aktionssymbole";
@@ -22,6 +24,11 @@ import { MitSymbol } from "../../core/ui/Symbol";
  * Alle Höhenangaben sind ganzzahlige Millimeter (ADR 0007). Angezeigt und
  * eingegeben wird in der persönlichen Anzeigeeinheit; umgerechnet wird nur
  * an der Oberflächengrenze (`core/masse.ts`), gesendet werden Millimeter.
+ *
+ * **Bestätigte Höhenlage (Phase 6a, ADR 0025):** Neben jeder Höhenlage steht,
+ * ob sie ausdrücklich bestätigt ist. Nichts wird automatisch bestätigt - auch
+ * nicht das Erdgeschoss mit 0. Wer den Wert ändert, muss ihn im selben
+ * Speichervorgang erneut bestätigen; sonst gilt er als nicht bestätigt.
  */
 export function ProjectStructureTab({
   projectId,
@@ -103,13 +110,22 @@ export function ProjectStructureTab({
                     <td>{zeile === 0 ? haus.name : ""}</td>
                     <td>{geschoss.level}</td>
                     <td>{geschoss.name}</td>
-                    <td>{masse.anzeigen(geschoss.elevation_mm)}</td>
+                    <td>
+                      <Hoehenlage geschoss={geschoss} masse={masse} />
+                    </td>
                     <td>{masse.anzeigen(geschoss.default_ceiling_height_mm)}</td>
                   </tr>
                 ));
               })}
             </tbody>
           </table>
+        )}
+        {geschosse.some((abfrage) => (abfrage.data ?? []).some((g) => !g.elevation_confirmed)) && (
+          <p className="text-label text-muted" data-testid="hoehenlage-hinweis">
+            Nicht bestätigte Höhenlagen gelten nicht als verlässlich: Leitungslängen zwischen
+            Geschossen werden daraus nicht berechnet. Bestätigen lässt sich eine Höhenlage unter
+            „Gebäudestruktur verwalten“.
+          </p>
         )}
       </section>
 
@@ -211,6 +227,22 @@ function Verwaltung({
   );
 }
 
+/** Höhenlage mit ihrem Bestätigungsstand - nie ohne ihn. */
+function Hoehenlage({ geschoss, masse }: { geschoss: FloorOut; masse: Masse }) {
+  return (
+    <span className="inline-flex flex-wrap items-baseline gap-x-2">
+      <span>{masse.anzeigen(geschoss.elevation_mm)}</span>
+      <span data-testid={`hoehenlage-status-${geschoss.id}`}>
+        {geschoss.elevation_confirmed ? (
+          <Marke art="erfolg">Höhenlage bestätigt</Marke>
+        ) : (
+          <Marke art="warnung">nicht bestätigt</Marke>
+        )}
+      </span>
+    </span>
+  );
+}
+
 /** Formularwerte; die beiden Höhen stehen in Millimetern (Startwerte). */
 const LEERES_GESCHOSS = {
   name: "",
@@ -224,6 +256,7 @@ type Geschossanlage = {
   name: string;
   level: number;
   elevation_mm: number;
+  elevation_confirmed: boolean;
   default_ceiling_height_mm: number;
 };
 
@@ -242,6 +275,8 @@ function GebaeudeKarte({
   const [formular, setFormular] = useState(leer);
   useEinheitenwechsel((von, nach) => setFormular((alt) => eingabenUmrechnen(alt, HOEHENFELDER, von, nach)));
   const [fehler, setFehler] = useState<string | null>(null);
+  const [bestaetigt, setBestaetigt] = useState(false);
+  const [bearbeitet, setBearbeitet] = useState<string | null>(null);
 
   const melden = (error: unknown, standard: string) =>
     setFehler(error instanceof ApiError ? error.userMessage : standard);
@@ -260,6 +295,7 @@ function GebaeudeKarte({
       }),
     onSuccess: async () => {
       setFormular(leer());
+      setBestaetigt(false);
       setFehler(null);
       await queryClient.invalidateQueries({ queryKey: ["floors", gebaeude.id] });
       await queryClient.invalidateQueries({ queryKey: ["project", gebaeude.project_id], exact: true });
@@ -309,18 +345,39 @@ function GebaeudeKarte({
               <tr key={geschoss.id}>
                 <td>{geschoss.level}</td>
                 <td>{geschoss.name}</td>
-                <td>{masse.anzeigen(geschoss.elevation_mm)}</td>
+                <td>
+                  {bearbeitet === geschoss.id ? (
+                    <HoehenlageBearbeiten
+                      geschoss={geschoss}
+                      onFertig={() => setBearbeitet(null)}
+                    />
+                  ) : (
+                    <Hoehenlage geschoss={geschoss} masse={masse} />
+                  )}
+                </td>
                 <td>{masse.anzeigen(geschoss.default_ceiling_height_mm)}</td>
                 <td>
-                  <button
-                    className={knopf()}
-                    type="button"
-                    onClick={() =>
-                      loeschenGeschoss.mutate({ id: geschoss.id, version: geschoss.version })
-                    }
-                  >
-                    <MitSymbol icon={AKTION.loeschen}>Entfernen</MitSymbol>
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    {bearbeitet !== geschoss.id && (
+                      <button
+                        className={knopf()}
+                        type="button"
+                        aria-label={`Höhenlage von ${geschoss.name} bearbeiten`}
+                        onClick={() => setBearbeitet(geschoss.id)}
+                      >
+                        <MitSymbol icon={AKTION.bearbeiten}>Höhenlage</MitSymbol>
+                      </button>
+                    )}
+                    <button
+                      className={knopf()}
+                      type="button"
+                      onClick={() =>
+                        loeschenGeschoss.mutate({ id: geschoss.id, version: geschoss.version })
+                      }
+                    >
+                      <MitSymbol icon={AKTION.loeschen}>Entfernen</MitSymbol>
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -346,6 +403,7 @@ function GebaeudeKarte({
             name: formular.name.trim(),
             level: Number.parseInt(formular.level, 10),
             elevation_mm: hoehen.mm.elevation_mm ?? 0,
+            elevation_confirmed: bestaetigt,
             default_ceiling_height_mm: hoehen.mm.default_ceiling_height_mm ?? 0,
           });
         }}
@@ -373,6 +431,13 @@ function GebaeudeKarte({
           disabled={anlegen.isPending}
           onChange={(elevation_mm) => setFormular({ ...formular, elevation_mm })}
         />
+        <Schalter
+          id={`elevation-confirmed-${gebaeude.id}`}
+          label="Höhenlage bestätigt"
+          checked={bestaetigt}
+          disabled={anlegen.isPending}
+          onChange={setBestaetigt}
+        />
         <Feld
           id={`height-${gebaeude.id}`}
           label={masse.label("Standardhöhe")}
@@ -392,5 +457,99 @@ function GebaeudeKarte({
         </button>
       </form>
     </section>
+  );
+}
+
+/**
+ * Höhenlage eines Geschosses ändern oder ihre Bestätigung setzen bzw. zurücknehmen.
+ *
+ * Ändert sich der Wert, wird das Häkchen zurückgesetzt: Eine neue Höhenlage ist
+ * nur bestätigt, wenn sie ausdrücklich neu bestätigt wird. Gesendet wird nur, was
+ * sich geändert hat - mit ``If-Match`` der Geschossversion.
+ */
+function HoehenlageBearbeiten({ geschoss, onFertig }: { geschoss: FloorOut; onFertig: () => void }) {
+  const { api } = useAuth();
+  const masse = useMasse();
+  const queryClient = useQueryClient();
+  const [text, setText] = useState(() => masse.alsEingabe(geschoss.elevation_mm));
+  useEinheitenwechsel((von, nach) =>
+    setText((alt) => eingabenUmrechnen({ wert: alt }, ["wert"] as const, von, nach).wert),
+  );
+  const [bestaetigt, setBestaetigt] = useState(geschoss.elevation_confirmed);
+  const [fehler, setFehler] = useState<string | null>(null);
+  const gelesen = masse.lesen(text);
+  const wertGeaendert = gelesen.ok && gelesen.mm !== geschoss.elevation_mm;
+
+  const speichern = useMutation({
+    mutationFn: (body: { elevation_mm?: number; elevation_confirmed: boolean }) =>
+      api.patch("/api/v1/floors/{floor_id}", {
+        path: { floor_id: geschoss.id },
+        ifMatch: geschoss.version,
+        body,
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["floors", geschoss.building_id] });
+      onFertig();
+    },
+    onError: (error: unknown) =>
+      setFehler(error instanceof ApiError ? error.userMessage : "Speichern fehlgeschlagen."),
+  });
+
+  return (
+    <form
+      className="flex flex-col gap-2"
+      aria-label={`Höhenlage von ${geschoss.name}`}
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (speichern.isPending) return;
+        if (!gelesen.ok) {
+          setFehler(`Höhenlage: ${gelesen.fehler}`);
+          return;
+        }
+        if (!wertGeaendert && bestaetigt === geschoss.elevation_confirmed) {
+          onFertig();
+          return;
+        }
+        speichern.mutate(
+          wertGeaendert
+            ? { elevation_mm: gelesen.mm, elevation_confirmed: bestaetigt }
+            : { elevation_confirmed: bestaetigt },
+        );
+      }}
+    >
+      <Feld
+        id={`elevation-edit-${geschoss.id}`}
+        label={masse.label("Höhenlage (FFB)")}
+        inputMode="decimal"
+        value={text}
+        disabled={speichern.isPending}
+        onChange={(neu) => {
+          setText(neu);
+          const wert = masse.lesen(neu);
+          // Ein neuer Wert ist erst bestätigt, wenn er ausdrücklich bestätigt wird.
+          if (wert.ok && wert.mm !== geschoss.elevation_mm) setBestaetigt(false);
+        }}
+      />
+      <Schalter
+        id={`elevation-edit-confirmed-${geschoss.id}`}
+        label={wertGeaendert ? "Neue Höhenlage bestätigen" : "Höhenlage bestätigt"}
+        checked={bestaetigt}
+        disabled={speichern.isPending}
+        onChange={setBestaetigt}
+      />
+      {fehler !== null && (
+        <p className={meldungsflaeche()} role="alert">
+          {fehler}
+        </p>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <button className={knopf("primaer")} type="submit" disabled={speichern.isPending}>
+          Übernehmen
+        </button>
+        <button className={knopf()} type="button" disabled={speichern.isPending} onClick={onFertig}>
+          Abbrechen
+        </button>
+      </div>
+    </form>
   );
 }

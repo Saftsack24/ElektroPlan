@@ -20,6 +20,13 @@
  * | Gegenseite trägt eine überlappende, andere Öffnung | `konflikt` / `widerspruch` |
  * | Gegenseite trägt dasselbe Rechteck mit anderer Art | `konflikt` / `art` |
  * | passt nicht in die eigene Wand | `ungueltig` |
+ * | ganz auf einem als `separate` gekoppelten Stück | `getrennt` |
+ *
+ * **Getrennte Wände (Phase 6a, ADR 0024):** Auf einem `separate` gekoppelten
+ * Stück gehört eine Öffnung nur ihrer eigenen Bauwand. Sie verbindet keine
+ * Räume, erscheint nicht auf der Gegenseite und blockiert dort nichts. Trägt
+ * im selben Bereich nur eine der beiden Wände eine Öffnung, ist sie
+ * `einseitig` - ein Hinweis, kein Fehler.
  *
  * Eine auf beiden Raumseiten **exakt gleich** erfasste Öffnung (nach
  * Richtungsumrechnung gleiche Art, Lage, Breite, Höhe und Brüstung) ist eine
@@ -31,7 +38,7 @@ import type { Lage, Linienmass } from "./lage";
 import { ganzeLage, gleicheLage, minus, plus, vergleichen } from "./lage";
 import type { Abschnittsquelle, TopoOeffnung, TopoWand, Wandabschnitt, Wandteilung, Wandtopologie } from "./wandtopologie";
 
-export type Oeffnungsklasse = "gemeinsam" | "aussen" | "konflikt" | "ungueltig";
+export type Oeffnungsklasse = "gemeinsam" | "aussen" | "getrennt" | "konflikt" | "ungueltig";
 
 export type Konfliktgrund = "mehrdeutig" | "grenze" | "teilweise" | "widerspruch" | "art";
 
@@ -54,6 +61,8 @@ export interface Oeffnungseinordnung<W extends TopoWand> extends Bereichseinordn
   readonly dubletten: readonly string[];
   /** Überlappende, aber nicht gleiche Öffnungen der Gegenseite. */
   readonly widersprueche: readonly string[];
+  /** Auf einem `separate` gekoppelten Stück trägt nur diese Seite hier eine Öffnung. */
+  readonly einseitig: boolean;
 }
 
 // -------------------------------------------------------- lokale Lage
@@ -154,6 +163,12 @@ export function bereichEinordnen<W extends TopoWand>(
   if (nachbar === null) {
     return { klasse: "aussen", grund: null, abschnitte: beruehrt, raumIds: [eigener], nachbarRaumId: null };
   }
+  const getrennt = beruehrt.filter((a) => a.zuordnung === "separate").length;
+  if (getrennt === beruehrt.length) {
+    // Zwei Bauwände: Die Öffnung gehört nur der eigenen Wand (ADR 0024).
+    return { klasse: "getrennt", grund: null, abschnitte: beruehrt, raumIds: [eigener], nachbarRaumId: null };
+  }
+  if (getrennt > 0) return konflikt("teilweise");
   return { klasse: "gemeinsam", grund: null, abschnitte: beruehrt, raumIds: [eigener, nachbar], nachbarRaumId: nachbar };
 }
 
@@ -184,6 +199,7 @@ export function oeffnungenEinordnen<W extends TopoWand>(
   // gemeinsamen Abschnitts. Gleiche Wand prüft der Server (openings-overlap).
   const dubletten = new Map<string, Set<string>>();
   const widersprueche = new Map<string, { ids: Set<string>; grund: Konfliktgrund }>();
+  const zweiseitig = new Set<string>();
   const merken = <T>(map: Map<string, T>, id: string, neu: () => T) => {
     const vorhanden = map.get(id);
     if (vorhanden !== undefined) return vorhanden;
@@ -193,6 +209,7 @@ export function oeffnungenEinordnen<W extends TopoWand>(
   };
   for (const abschnitt of topologie.abschnitte) {
     if (abschnitt.lage !== "gemeinsam") continue;
+    const getrennt = abschnitt.zuordnung === "separate";
     const teile: Teil<W>[] = [];
     for (const quelle of abschnitt.quellen) {
       for (const oeffnung of quelle.wand.oeffnungen) {
@@ -207,6 +224,11 @@ export function oeffnungenEinordnen<W extends TopoWand>(
         const a = teile[i] as Teil<W>;
         const b = teile[j] as Teil<W>;
         if (a.wand.id === b.wand.id || !bereicheUeberlappen(a.bereich, b.bereich, abschnitt.mass)) continue;
+        if (getrennt) {
+          // Zwei Bauwände: Öffnungen beider Seiten sind voneinander unabhängig.
+          zweiseitig.add(a.oeffnung.oeffnungId).add(b.oeffnung.oeffnungId);
+          continue;
+        }
         const gleich =
           gleicherBereich(a.bereich, b.bereich, abschnitt.mass) &&
           a.oeffnung.hoeheMm === b.oeffnung.hoeheMm &&
@@ -234,6 +256,7 @@ export function oeffnungenEinordnen<W extends TopoWand>(
       ...(w !== undefined && !eigenerKonflikt ? { klasse: "konflikt" as const, grund: w.grund, nachbarRaumId: null } : {}),
       dubletten: [...(dubletten.get(id) ?? [])].sort(),
       widersprueche: [...(w?.ids ?? [])].sort(),
+      einseitig: e.klasse === "getrennt" && !zweiseitig.has(id),
     });
   }
   return ergebnis;
@@ -257,13 +280,16 @@ export interface FremderBereich {
 
 /**
  * Öffnungen, die andere Wände auf den gemeinsamen Abschnitten dieser Wand
- * tragen - übertragen in deren Wandrichtung. Dient der Kollisionsprüfung
+ * tragen - übertragen in deren Wandrichtung. Abschnitte im Zustand `separate`
+ * übertragen nichts. Dient der Kollisionsprüfung
  * beim Platzieren und Verschieben: Eine neue Tür darf nicht in eine auf der
  * Gegenseite erfasste Öffnung gesetzt werden.
  */
 export function fremdeBereiche<W extends TopoWand>(teilung: Wandteilung<W>): FremderBereich[] {
   const ergebnis = new Map<string, FremderBereich>();
   for (const abschnitt of teilung.abschnitte) {
+    // Getrennte Bauwände übertragen nichts (ADR 0024).
+    if (abschnitt.zuordnung === "separate") continue;
     const eigene = abschnitt.quellen.find((q) => q.wand.id === teilung.wand.id);
     if (eigene === undefined) continue;
     for (const quelle of abschnitt.quellen) {

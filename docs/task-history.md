@@ -1136,7 +1136,7 @@ Geändert: `modules/platform/{CustomersPage,ProjectsPage,ProjectStructureTab,Pro
 
 - Gezielt während der Arbeit: die sechs neuen Frontend-Testdateien einzeln, dann der
   betroffene Backend-Testlauf.
-- Ein vollständiger Abnahmelauf am Ende: `.	asks.ps1 check`, Exit 0 —
+- Ein vollständiger Abnahmelauf am Ende: `.\tasks.ps1 check`, Exit 0 —
   **341 Backend-Tests, 0 übersprungen** (4:22), **110 Frontend-Tests** (13 Dateien),
   dazu Ruff, mypy `--strict`, Modulgrenzen, ein Alembic-Head, OpenAPI-Drift,
   Frontend-Typecheck, ESLint und Build.
@@ -2923,3 +2923,327 @@ Vom Auftraggeber manuell abgenommen, einschließlich der Nachkorrekturen. Grundl
 Checkpoint-Commits: zuletzt 980 bestandene Backendtests gegen PostgreSQL (0 übersprungen),
 881 bestandene Frontendtests, die übrigen grünen Prüfungen und diese manuelle Abnahme. Vor dem
 Commit kein erneuter großer Testlauf. Phase 6 nicht begonnen.
+
+---
+
+## Task 0026 – Entwurf Phase 6a: physische Wandzuordnung (T10) und Steigwege (T4)
+
+**Datum:** 2026-10-04 · **Status:** Entwurf zur Prüfung, **nicht freigegeben**, nicht committet ·
+Phase 6 NOT STARTED
+
+Nur Analyse und Dokumentation auf Basis von `fb4cc85`: kein Produktivcode, keine API, keine
+Migration, keine Datenbankänderung, keine Dependencies.
+
+* `docs/phase-6a-design.md`: Befund am Code, Empfehlung **Wandkopplung** (gespeichertes
+  Raumwandpaar, Geometrie bleibt abgeleitet, eine Geometriequelle) und **Steigwege** je Gebäude mit
+  Übergabepunkten je Geschoss; Beispiele, Lebenszyklusregeln, Sperrreihenfolgen, Migrationsentwurf
+  (eine DDL-Migration, Backfill als idempotenter Befehl mit Prüfsumme), Risiken, Entscheidungen
+  D1–D8, Schritte 6a.1–6a.5, 27 Abnahmekriterien.
+* ADR-Entwürfe 0024 und 0025, Status *proposed*.
+* Am Code bestätigt: Öffnungen und Geräte wechseln nie ihre Wand; Konturumkehr rechnet Abstände
+  um; Geschoss-/Gebäudelöschung scheitert am FK (`409`); `FloorPlanningAccess` liefert `level`,
+  `elevation_mm`, `default_ceiling_height_mm`; `elevation_mm` ist `NOT NULL DEFAULT 0`.
+* Keine Tests ausgeführt (reine Dokumentation); keine Implementierungs- oder Migrationsprüfung.
+
+### Überarbeitung (2. Fassung, 2026-10-04)
+
+Auf Hinweise des Auftraggebers, weiterhin nur Dokumentation: fachliche Wirkung der Zustände
+unentschieden/`shared`/`separate` für Nachbaröffnungen, Geräteprüfung, Innen-/Außenmontage, 3D,
+Durchführungen und Mengen; `separate` ist Zwischenfläche, keine Fassade; ausdrückliche
+Höhenlagen-Bestätigung im Core (`floors.elevation_confirmed`, Bestand unbestätigt); Trennung von
+Länge, Verlässlichkeit und Plausibilitätshinweis (Widerspruch zur Standard-Deckenhöhe behoben);
+deterministischer Steigwegverlauf (senkrecht am unteren Halt, Versatz auf oberem FFB, x vor y,
+`direct` waagerecht); Reichweite des Paarmodells und korrigierter Alternativenvergleich (C′ ohne
+zweite Geometriequelle). ADR 0024/0025 nachgezogen, weiterhin *proposed*. Keine Tests.
+
+---
+
+## Task 0027 – Phase 6a.0–6a.3: bestätigte Höhenlage, Wandkopplungen, Oberfläche, Backfill
+
+**Datum:** 2026-10-06 bis 2026-10-10 · **Status:** umgesetzt, **wartet auf Abnahme**, nicht
+committet · 6a.4–6a.5 NOT STARTED
+
+Freigabe: Empfehlungen D1–D12 der 2. Fassung als begrenzte MVP-Richtung; ausschließlich
+6a.0–6a.3. Einzelheiten und Präzisierungen: `docs/phase-6a-design.md` §10.
+
+* **Backend:** `floors.elevation_confirmed` samt Schema/API/`FloorPlanningContext`;
+  `electrical_wall_links` mit Service `wall_links.py`, reinen Regeln `link_rules.py`,
+  Zustandsauflösung in `topology.py`, kopplungsbewusster Geräteprüfung, API, Events,
+  Löschteilnehmer-Zählung, Konturspeichern mit `removed_wall_link_ids`; Backfill `backfill.py` und
+  CLI; Steigweg-Tabellen nur als Schema; Migrationen `0009_elevation_confirmed`,
+  `0010_wall_links_and_risers`.
+* **Befund:** Die geplante Revision-ID `0009_floor_elevation_confirmation` (33 Zeichen) passte
+  nicht in `alembic_version` (32) – auf der Wegwerf-Testdatenbank entdeckt, vor jeder dauerhaften
+  Anwendung gekürzt. Zwei zusammengesetzte FKs hätten nach der Namenskonvention denselben Namen
+  getragen – ausdrücklich benannt.
+* **Frontend:** Topologie mit Kopplungen (`zuordnung`), Öffnungsklasse `getrennt` und
+  `einseitig`, Editor-Bereich „Wandzuordnung“, Rückfrage beim Entfernen gekoppelter Wände und
+  beim Löschen gekoppelter Räume, 2D-Markierung, Wandansicht, 3D-Halbkörper und Trennfuge,
+  Projektstruktur mit Höhenlage-Bestätigung.
+* **Tests:** neue Backendtests (`test_electrical_wall_links.py`, `test_wall_link_parity.py`,
+  `test_wall_link_backfill.py`, `test_wall_link_concurrency.py`, `test_migration_wall_links.py`,
+  `test_floor_elevation_confirmation.py`, Mandanten- und Archiv-/Abschlussparallelität ergänzt),
+  neue Frontendtests (`wandkopplung.test.ts`, `wandpartner.test.ts`, `Wandzuordnung.test.tsx`,
+  `Wandzuordnung.editor.test.tsx`, `kopplung3d.test.ts`, `Hoehenlage.test.tsx`), gemeinsame
+  Fixture `wandkopplung.v1.json`. `tasks.ps1 check` gegen PostgreSQL grün: 1070 Backend
+  (0 übersprungen), 922 Frontend, Build. Migrationen auf Wegwerf-Datenbanken mit
+  Upgrade/Downgrade/Upgrade und Drift-Abgleich geprüft.
+* **Entwicklungsdatenbank:** `pg_dump` vor der Migration, dann `alembic upgrade head`; Backfill
+  nur als Probelauf (15 eindeutige Fälle, nichts geschrieben). Synthetisches Projekt
+  PR-2026-0005 für die Browserprüfung angelegt.
+* **Browser:** funktional im echten Stack geprüft (Höhenlage bestätigen, Vorschläge an der
+  Flurwand, gemeinsame Bauwand bestätigen, getrennt festlegen, Speichern danach ohne
+  Versionskonflikt, Entfernen einer gekoppelten Wand mit Rückfrage, 3D-Hinweise und
+  Seitenleiste). Das Browserfenster war überwiegend ausgeblendet: Bedienung per DOM-Ereignissen,
+  **keine echte Maus- und keine Sichtprüfung** der Darstellung (3D-Halbkörper, Fuge, Themes,
+  schmale Breiten).
+
+---
+
+## Task 0028 – Sicherheitsauftrag: sechs Befunde einer unabhängigen Prüfung
+
+**Datum:** 2026-10-10 · **Status:** umgesetzt und automatisiert geprüft, **nicht committet**,
+**keine** manuelle Abnahme (die Gesamtprüfung durch den Auftraggeber folgt nach Phase 6) ·
+getrennt von Phase 6a (Task 0027), deren Änderungen unverändert im Arbeitsbaum liegen.
+
+**Ziel:** Befunde 1–6 am aktuellen Stand prüfen, bestätigte Probleme beheben, Reproduktion nur
+behaupten, wo sie tatsächlich lief. Keine Steigwege, kein Phase 6b.
+
+**Befunde und Ergebnis** (Einordnung in `security.md` §19):
+
+1. **Browser-Datentrennung – bestätigt und behoben.** Neuer Core-Baustein
+   `apps/planner/src/core/sitzung/sitzungsraum.ts`; `AuthProvider` hält je Sitzungskontext
+   (Benutzer + Betrieb + Mitgliedschaft aus dem Access Token) einen eigenen `QueryClient` mit
+   Abbruchsignal, beendet ihn bei jedem Wechsel und baut den Teilbaum neu auf; Epochen gegen
+   verspätete Erneuerungen; `/me` muss zum Token passen. API-Client: Option `signal`
+   (Sitzungsabbruch, verspätete Antworten → `AbortError`). `App.tsx` ohne eigenen
+   `QueryClient`. Module unverändert. Reproduktion: dieselben sechs Tests gegen den alten
+   `AuthProvider` mit gemeinsamem Cache – alle scheitern (Betrieb 2 zeigte Kunden aus
+   Betrieb 1; nach dem Abmelden 4 Abfragen von A im Cache). Gegenprobe zurückgenommen.
+2. **Upload vor Multipart – bestätigt und behoben.** `app/core/files/upload_form.py`: Körper
+   erst nach Anmeldung, `file.object.write`, Schreib- und Upload-Grenze; `Content-Length` und
+   gezählte Bytes gegen Anfragegrenze (Dateilimit + Multipart-Zuschlag); enger Multipart-Parser;
+   Aufräumen der temporären Dateien. Reproduktion: Mit dem committeten Endpunkt las die
+   Anwendung unangemeldet 2 097 319 Bytes vor dem `401` (rohes ASGI, gezählte `receive`-Bytes);
+   neu: 0 Bytes. Gegenprobe zurückgenommen.
+3. **Entwicklungsbetrieb/Secrets – bestätigt und behoben.** Compose: Ports an `127.0.0.1`;
+   JWT-Secret, Key-ID, S3-Schlüssel (auch MinIO) und Seed-Werte aus `.env` – vorher erreichte
+   keiner davon den Container. Produktion lehnt alle bekannten Entwicklungswerte ab;
+   Startwarnung beim Entwicklungsersatz. Nachweis: statischer Test, `docker compose config` mit
+   synthetischer `.env`, einmalig `docker compose run --rm --no-deps backend` mit Hashvergleich
+   (kein Klartext). Befund am Rande: Shell-Variablen haben Vorrang vor `.env` (dokumentiert).
+   Laufende Container übernehmen die Portbindung erst nach `docker compose up -d` – **nicht**
+   ausgeführt.
+4. **Refresh-Rotation gegen Widerruf – bestätigt und behoben.** Mit echten
+   PostgreSQL-Transaktionen und Synchronisation über `pg_stat_activity` (Warten auf Sperre)
+   reproduziert: Logout, Wiederverwendungserkennung und Mitgliedschaftswiderruf während einer
+   offenen Rotation ließen den Nachfolger gültig. „Logout zuerst“ war schon sicher. Lösung:
+   `refresh_token_families` (Migration `0011`) mit dauerhaftem Widerruf; Rotation und Widerruf
+   sperren die Familie. Dabei gefunden und behoben: Deadlock Rotation ↔ E-Mail-Änderung
+   (Sperrreihenfolge Konto `KEY SHARE` → Familie → Token), ebenfalls reproduziert.
+   Gegenproben: Familiensperre allein bzw. Statusprüfung allein genügen je für sich; ohne beide
+   scheitern 3 Tests – vollständig zurückgenommen. Access Tokens laufen nach einem Logout bis
+   zu ihrem Ablauf weiter (ausdrücklich dokumentiert).
+5. **Anfragegrenzen – bestätigt und behoben.** Limiter neu: atomares Prüfen + Reservieren
+   (alles oder nichts), Rückgabe, `Retry-After`, begrenzter Speicher mit Verdrängung,
+   Logs nur mit Schlüsselart, E-Mail nur als Hash im Speicher. Neue Grenzen: Erneuerung je
+   Konto (120/h) und ungültige Erneuerungen je IP (30/15 min), Uploads je Betrieb (100/h),
+   Schreibzugriffe je Betrieb (600/min) und je Mitgliedschaft (300/min). Login, Einladung,
+   Reset auf atomare Reservierung umgestellt. Reproduktion des alten Limiters (Wegwerfskript
+   mit dem Limiter aus `HEAD`): 20 parallele Versuche, alle 20 geprüft bei Grenze 10; neu
+   genau 10. PDF-Grenze nicht umsetzbar (keine PDF-Erzeugung). Mehrinstanzbetrieb: offen,
+   kein Redis o. Ä. ergänzt.
+6. **Datenschutz und Wiederherstellung – kein Codefix.** `docs/release-checklist-real-data.md`
+   mit Status, Nachweis und Rolle je Punkt; keine Personen benannt, Entscheidungen O-1 bis O-5
+   offen; Ergebnis „nicht freigegeben“.
+
+**Betroffene wichtige Dateien:** `apps/backend/app/core/auth/{models,service,rate_limit,
+dependencies,api}.py`, `app/core/files/{api,upload_form}.py`, `app/core/{invitations,
+password_reset}/service.py`, `app/config.py`, `app/errors.py`, `app/main.py`,
+`app/core/module.py`, `app/model_registry.py` (nur Ergänzung), Migration
+`0011_refresh_token_families.py`; `apps/planner/src/core/sitzung/sitzungsraum.ts`,
+`core/auth/AuthProvider.tsx`, `app/App.tsx`, `packages/api-client/src/index.ts`;
+`docker-compose.yml`, `.env.example`, `README.md`.
+
+**Tests:** neu `test_refresh_revocation_concurrency.py`, `test_migration_refresh_families.py`,
+`test_upload_guard.py`, `test_rate_limits.py`, `test_config_secrets.py`; angepasst
+`test_security.py` (Limiter-API), `test_invitations.py` (Produktions-URL), `test_architecture.py`
+(Tabellenzahl), `conftest.py` (Limiter je Test leeren). **Überlappung mit Phase 6a:** `test_migration_wall_links.py` prüfte den
+Head als Literal `0010`; jetzt gegen den tatsächlichen Head (sonst unverändert). Erster
+Gesamtlauf scheiterte genau daran, zweiter grün. Frontend neu
+`core/auth/Sitzungstrennung.test.tsx`, `core/sitzung/sitzungsraum.test.ts`.
+`tasks.ps1 check` gegen PostgreSQL und MinIO: Backend 1121 bestanden (0 übersprungen, vorher 1070), Frontend 935 bestanden (vorher 922), Build,
+Drift, Grenzen, ein Head (`0011`).
+
+**Offene Punkte:** Entwicklungsdatenbank ist **nicht** auf `0011` migriert (der laufende
+Backend-Container lädt den neuen Code und braucht die Tabelle); laufende Container noch mit
+alter Portbindung; keine Browserprüfung im echten Stack (setzt beides voraus); keine allgemeine
+Größengrenze für JSON-Körper (Reverse Proxy); gemeinsamer Zähler für Mehrinstanzbetrieb;
+Produktionskonfiguration; Checkliste echter Daten.
+
+**Nächster sinnvoller Schritt:** Prüfung durch den Auftraggeber; danach – nach Freigabe –
+Entwicklungsdatenbank sichern und migrieren, Container neu erstellen, im Browser prüfen.
+
+### Nachtrag: Aktivierung in der Entwicklungsumgebung (2026-10-10, freigegeben)
+
+| Schritt | Ergebnis |
+|---|---|
+| Ausgangsstand | DB `0010`, alle Dienste healthy, Ports auf `0.0.0.0`, keine `.env` |
+| Sicherung | `pg_dump -Fc` nach `C:\Users\arneb\elektroplan-backups\elektroplan-dev-vor-0011-20261010-184020.dump` (außerhalb des Repos, 149 KB); `pg_restore --list` lesbar (31 Tabelleninhalte); Probewiederherstellung in eine Wegwerf-DB: Zeilenzahlen identisch, Wegwerf-DB danach entfernt |
+| Migration | `alembic upgrade head` → `0011`; 42 Token-Familien aus 42 vorhandenen `family_id` (26 offen); Zeilenzahlen von Benutzern, Kunden, Projekten, Räumen, Kopplungen, Tokens unverändert |
+| Dienste | `docker compose up -d` (kein Neubau nötig: Abhängigkeiten unverändert, Code eingebunden); Volumes unverändert, alle Dienste healthy |
+| Ports | nur `127.0.0.1` (Docker-Bindung und Windows-Listener); über die LAN-Adresse nicht erreichbar |
+| Secrets | S3-Schlüssel Backend = MinIO (Hashvergleich); **kein `.env` vorhanden → JWT-Entwicklungsersatz aktiv**, Startwarnung `jwt_secret_development_default` im Log. Kein Kennwort geändert |
+| API (echter Stack) | Anmeldung, Erneuerung, paralleler Refresh im Toleranzfenster (`401 refresh-conflict`, Sitzung bleibt), Abmeldung; Refresh danach `401`; **Access Token nach Abmeldung bis Ablauf weiter gültig** (dokumentierte Regel, beobachtet). Upload über TCP: 200 MB angekündigt, 64 KiB gesendet → unangemeldet `401`, angemeldet `413` nach 0,01 s; gestreamt ohne Länge → `413`; gültiger Upload `201` und Download. Schreibgrenze je Mitglied → `429` mit `Retry-After` (per CORS lesbar), Lesen bleibt frei |
+| Browser | Sitzung aus dem Cookie wiederhergestellt; Administrator → Abmelden → synthetischer Planer in derselben Seite: keine Daten der Admin-Ansicht sichtbar; eine absichtlich um 6 s verzögerte Admin-Anfrage endete mit `AbortError` statt Daten. Kunden, Projekt, Dateien, 2D-Editor und 3D-Umschaltung als Planer; Stammdaten speichern und zurücksetzen. Keine Konsolen- oder Serverfehler |
+| Nicht im Browser geprüft | Betriebswechsel (kein Bedienelement in der Oberfläche; Nachweis nur automatisiert), Sitzungsende während einer laufenden Anfrage und Cookie aus anderem Tab (automatisiert), Upload über die Oberfläche (Dateiauswahl nicht bedienbar; per API geprüft), Login-/Refresh-Grenzen (würden die gemeinsame IP für 15 min sperren; automatisiert) |
+| Synthetische Daten | Konto `sicherheitspruefung-planer@example.com` (Planer), Datei `sicherheitspruefung.pdf` in PR-2026-0005; dürfen entfernt werden |
+
+Keine Implementierung geändert, daher kein erneuter Gesamtlauf; die Parallelitätsfälle sind
+durch die automatisierten Tests belegt.
+
+---
+
+## Task 0029 – Restbefunde aus dem Sicherheitsreview: Refresh-Limiter, Sicherheitsupdates
+
+**Datum:** 2026-10-10 · **Status:** umgesetzt und automatisiert geprüft, **nicht committet**,
+keine manuelle Abnahme. Phase-6a- und Sicherheitsänderungen erhalten.
+
+1. **Refresh-Limiter – bestätigt und behoben.** Ausdrücklich gezählt (Fehlerklasse
+   `_InvalidRefreshTokenError`): unbekannter Token, widerrufene Familie, widerrufener Token,
+   Wiederverwendung nach dem Toleranzfenster, abgelaufener Token. Alles andere gibt **genau die
+   eigene** Reservierung zurück: Erfolg, paralleler Refresh im Fenster, Kontogrenze,
+   Kontozustand, interne Fehler. Limiter: eindeutige Kennung je Eintrag, `release` exakt und
+   idempotent. Familienwiderruf, Sperrreihenfolge und Kontogrenze unverändert. Tests
+   `tests/test_refresh_invalid_limiter.py` (zwei Benutzer, dieselbe IP; PostgreSQL und
+   HTTP), 3× grün. Gegenprobe mit altem Verhalten (Rückgabe nur bei Erfolg): 5 von 8 scheitern,
+   zurückgenommen.
+2. **Beim Prüfen gefunden – `localhost` hängt.** Seit der Bindung an `127.0.0.1` löst
+   `localhost` unter Windows zuerst `::1` auf; libpq wartete bis zum Timeout (gemessen bis
+   200 s), ein Paralleltest hing 130 s. Werkzeug-Standardwerte und dokumentierte Test-URL auf
+   `127.0.0.1` (`app/config.py`, `.env.example`, `CLAUDE.md`, `README.md`, `tasks.ps1`);
+   Regressionstest. Die zuvor grünen Läufe waren davon nicht betroffen (bestehende
+   Pool-Verbindungen bzw. Lauf vor der Neubindung).
+3. **Sicherheitsupdates:**
+
+| Advisory | Paket | vorher → nachher | Installierte Version betroffen? | Angriffsweg in ElektroPlan erreichbar? |
+|---|---|---|---|---|
+| GHSA-2cv4-cqwr-gwf7 | uv (Werkzeug) | 0.12.17 → **0.12.18** (venv, `pyproject.toml`, `uv.lock`, `tasks.ps1`, `Makefile`, `backend.Dockerfile`) | ja (0.12.7–0.12.17, nur Windows) | ja für die lokale Windows-Umgebung: Ein bösartiges Wheel könnte beim Installieren außerhalb der Umgebung schreiben. Installiert wird nur aus dem gesperrten `uv.lock`, das senkt das Risiko, schließt es aber nicht aus. Der Linux-Container ist nicht betroffen |
+| GHSA-42vr-xj54-vc7v | PyJWT | 2.14.0 → **2.15.1** (Untergrenze `>=2.15.0`) | ja (≤ 2.14.0) | **nur mit gültigem Signaturschlüssel**: `decode_access_token` prüft die Signatur vor dem Parsen der Nutzlast; mit falschem Schlüssel `401`. Mit gültigem Schlüssel löste ein verschachtelter Token einen unbehandelten `RecursionError` (HTTP 500) aus – nachgestellt. Ohne `.env` ist der Schlüssel der öffentlich bekannte Entwicklungswert, dort also erreichbar (über Loopback). Kein Authentifizierungs-Bypass. Jetzt `401`, Regressionstest |
+| GHSA-82fw-gwwq-j7x9 | Vitest / `@vitest/mocker` | 3.2.7 → **4.1.11** (3.x erhält keinen Fix) | ja | nein im Normalbetrieb: betroffen sind `mockerPlugin`/`interceptorPlugin`, die ElektroPlan nicht nutzt; Vitest läuft nur lokal als Testrunner. Trotzdem aktualisiert. Vite bleibt 6.4.3 (von Vitest 4 unterstützt) |
+| GHSA-85c8-ppgw-ccpr | tinypool | 1.1.1 → **entfernt** (Vitest 4 nutzt es nicht mehr) | ja (< 2.1.2) | nein: setzt eine Prototype-Pollution im Testprozess voraus; nur Testwerkzeug. Über die zuständige direkte Abhängigkeit (Vitest) gelöst, kein Override |
+| GHSA-68fv-2mgg-jv7q | source-map-js (über Vite/PostCSS und Tailwind) | 1.2.1 → **1.2.2** (innerhalb der bestehenden Bereiche `^1.2.1`, kein Override) | ja | gering: nur Build und Vite-Entwicklungsserver verarbeiten Source Maps aus dem eigenen Quellcode; ein Angreifer müsste präparierte Source Maps einspielen |
+| GHSA-5639-2j2p-m4mx (neu, Scan) | Mako (über Alembic) | 1.4.1 → **1.4.3** | ja (≤ 1.4.1, Windows) | nein: nur Alembic nutzt Mako für die feste Vorlage `script.py.mako`; keine Benutzereingabe erreicht `TemplateLookup` |
+
+   PyJWT-Probe nachgestellt: falscher Schlüssel → `401`; gültiger Schlüssel → vorher
+   `RecursionError` (500), jetzt `401`; Regressionstest in `test_security.py`. Vitest 4:
+   `vi.spyOn` auf bestehendem Mock behält die Historie (laut Migrationsleitfaden); ein 3D-Test
+   (Phase-6a-Datei `Ansicht3d.test.tsx`) zählt jetzt ab dem Wechsel, Erwartung unverändert.
+
+**Tests:** `tasks.ps1 check` gegen PostgreSQL und MinIO grün – Backend 1131 bestanden (0 übersprungen, vorher 1121), Frontend 935 (Vitest 4.1.11), Typecheck, Lint, Modulgrenzen, Lockfile, ein Head `0011`, API-Drift, Build
+
+**Offen:** Container-Images enthalten die alten Paketversionen bis zum Neubau; kein `.env`
+(JWT-Entwicklungsersatz); Mehrprozess-Limiting, JSON-Größenlimit, Produktion, Echtdaten-
+Checkliste unverändert offen.
+
+---
+
+## Task 0030 – Geprüften Sicherheitsstand im Docker-Entwicklungsstack aktivieren
+
+**Datum:** 2026-10-10 · **Status:** durchgeführt und funktional geprüft, **nicht committet**,
+keine manuelle Abnahme, keine Produktionsfreigabe. Keine Implementierung geändert, daher kein
+erneuter Gesamtlauf (Grundlage: unabhängig bestätigte 1131 Backend-, 935 Frontendtests).
+
+* Vorher: Commit `fb4cc85`, 116 uncommittete Einträge (vorher/nachher identisch), DB `0011`,
+  Dienste healthy, Images 9 Tage alt mit uv 0.12.17, PyJWT 2.14.0, Mako 1.4.1, Vitest 3.2.7,
+  source-map-js 1.2.1, tinypool 1.1.1.
+* Neubau `backend`/`planner` aus den gesperrten Lockfiles, Neuerstellung nur dieser Container.
+
+#### Aktiver Stand im laufenden Entwicklungsstack (2026-10-10, nach Neubau)
+
+Freigegebener Neubau von Backend- und Planner-Image (`docker compose build backend planner`,
+dann `docker compose up -d --no-deps backend planner`). Postgres und MinIO nicht neu erstellt;
+Volumes, Daten, Migrationen und Secrets unverändert; Arbeitsbaum vorher/nachher identisch
+(116 Einträge). Keine zusätzlichen Paketupdates.
+
+| Ort | Paket | vorher | **jetzt aktiv** |
+|---|---|---|---|
+| Backend-Container, System-Python `/usr/local` (Werkzeug) | uv | 0.12.17 | **0.12.18** |
+| Backend-Container, Laufzeit `/opt/venv` | PyJWT | 2.14.0 | **2.15.1** |
+| Backend-Container, Laufzeit `/opt/venv` | Mako | 1.4.1 | **1.4.3** |
+| Planner-Container, `/workspace/node_modules` | Vitest / `@vitest/mocker` | 3.2.7 | **4.1.11** |
+| Planner-Container, `/workspace/node_modules` | source-map-js | 1.2.1 | **1.2.2** (Vite/PostCSS und Tailwind) |
+| Planner-Container, `/workspace/node_modules` | tinypool | 1.1.1 | **nicht installiert** |
+| Lokal (Windows), `apps/backend/.venv` | uv / PyJWT / Mako | – | 0.12.18 / 2.15.1 / 1.4.3 (kein globales uv im PATH) |
+| Lokal, `node_modules` | Vitest / source-map-js / tinypool | – | 4.1.11 / 1.2.2 / nicht installiert |
+
+**Geprüft im laufenden Stack:** alle Dienste healthy; Datenbank `0011` (`alembic current` im
+Container); Ports nur `127.0.0.1` (Docker-Bindung, Windows-Listener, über LAN nicht
+erreichbar); PyJWT-Korrektur wirksam (gültig signierter, tief verschachtelter Token → `401`
+statt `RecursionError`); API: Anmeldung, Erneuerung, paralleler Refresh im Toleranzfenster,
+Abmeldung mit widerrufener Familie (Access Token bis Ablauf weiter gültig – dokumentierte
+Regel), frühe Upload-Abweisung (`401`/`413` nach 0,02/0,04 s), gültiger Upload und Download,
+`429` mit `Retry-After`. Browser: Anmeldung, Benutzerwechsel Administrator → Planer ohne
+Admin-Daten, verzögerte Admin-Anfrage endet mit `AbortError`, Kunden, Projekt, Dateien,
+2D-Editor, 3D-Ansicht geladen (Canvas, WebGL2 verfügbar), Rückkehr zur Admin-Sitzung. Keine
+Serverfehler, keine Kennwörter im Log.
+
+**JWT-Entwicklungsersatz weiterhin aktiv** (kein `.env`, Startwarnung
+`jwt_secret_development_default`). Die Schlüsselumstellung erfolgt getrennt.
+
+**Nicht prüfbar:** Das Browserfenster war ausgeblendet (Viewport 0×0) – Bedienung per
+DOM-Ereignissen, **keine** sichtbare Darstellung (insbesondere 3D-Bild), keine echte Maus.
+Betriebswechsel ohne Bedienelement in der Oberfläche (nur automatisiert). Das neu geöffnete
+Browserfenster hatte kein Refresh-Cookie mehr (Antwort „Keine gueltige Sitzung vorhanden.“,
+kein serverseitiger Widerruf) – Anmeldung deshalb neu.
+
+**Teststabilität (Hinweis aus dem Nachreview):** Ein 3D-Test lief im unabhängigen Lauf einmal
+in den Lade-Timeout. `Ansicht3d.test.tsx` wartet mit `findByText(/7 von 7 Räumen
+dargestellt/)` und damit mit dem Standard-Timeout von Testing Library (1 s) auf die lazy
+geladene Ansicht; unter Last (parallele Worker, Windows) kann das knapp werden. In den eigenen
+Läufen nicht aufgetreten (935/935). Bewusst **nicht** geändert – kein pauschal erhöhter Timeout,
+kein abgeschwächter Test. Tritt es erneut auf: Ursache im Ladeweg deterministisch machen
+(etwa den Lazy-Import im Test vorab auflösen), nicht die Wartezeit verlängern.
+
+Keine manuelle Abnahme durch den Auftraggeber, keine Produktionsfreigabe.
+
+---
+
+## Task 0031 – Lokalen JWT-Schlüssel umstellen
+
+* Zufallswert (`secrets.token_urlsafe(64)`, 86 Zeichen) in einer **neu angelegten** lokalen
+  `.env` (von Git ignoriert, vorher nicht vorhanden; enthält nur `ELEKTROPLAN_JWT_SECRET`). Kein
+  Wert ausgegeben, geloggt oder dokumentiert; außerhalb der `.env` nirgends gefunden (Log,
+  Repository, Scratchpad geprüft). Andere Zugangsdaten unverändert; keine Shell- oder
+  Windows-Variable überdeckt die `.env`.
+* Nur der Backend-Container neu erstellt; Volumes, Daten, DB-Head `0011` unverändert.
+* Aktiv: Fingerabdruck `.env` = Backend-Konfiguration, `uses_development_jwt_secret = False`,
+  keine Startwarnung `jwt_secret_development_default` mehr.
+* **Alte Access Tokens:** mit dem alten Schlüssel ausgestellt → `401` („Ungueltiges Token.“).
+* **Bestehende Refresh-Sitzungen:** werden **weiter erneuert** (`200`) und erhalten Access Tokens
+  mit dem neuen Schlüssel. Grund: Refresh Tokens sind Zufallswerte mit SHA-256-Hash in der
+  Datenbank, unabhängig vom JWT-Schlüssel. Ein Schlüsselwechsel beendet also **keine** Sitzung;
+  Clients erneuern beim nächsten `401` still. Sollen alle Sitzungen enden, braucht es zusätzlich
+  einen Familienwiderruf – eigene Entscheidung, nicht durchgeführt.
+* Anmeldung, Refresh und Logout mit neuem Schlüssel geprüft; Refresh nach Logout `401`; der
+  Access Token bleibt nach Logout bis zum Ablauf gültig (dokumentierte Regel).
+* Keine Implementierung geändert, kein großer Testlauf. Keine manuelle Gesamtabnahme.
+
+---
+
+## Task 0032 – Mandantentest wiederhergestellt, Checkpoint Phase 6a.0–6a.3 und Sicherheit
+
+**Datum:** 2026-10-11 · **Status:** committet (nicht gepusht); manuelle Gesamtprüfung nach Phase 6
+offen; keine Produktions- oder Echtdatenfreigabe.
+
+* **Befund bei der Commit-Prüfung:** `test_plan_zeigt_nur_eigene_raeume`
+  (`tests/test_tenant_isolation.py`) prüfte seit Phase 6a die Räume nur noch auf „enthalten“ –
+  ein fremder Raum ohne Wände wäre nicht aufgefallen (Wände und Kopplungen waren exakt geprüft).
+* **Wiederhergestellt:** `neighbour_room_id` im Testszenario; Raum-IDs exakt gegen beide eigenen
+  Räume, zusätzlich die Anzahl (keine verdeckten Doppelungen); im fremden Betrieb ein Raum ohne
+  Wände, der nicht zurückkommen darf; Wand- und Kopplungsprüfungen unverändert exakt.
+* **Tests:** `test_tenant_isolation.py` und `test_tenancy.py` gegen PostgreSQL: 36/36 grün. Kein
+  Großlauf (nur Test geändert); Grundlage 1131 Backend- und 935 Frontendtests.
+* **Commit-Prüfung:** Migrationen `0001`–`0008` unverändert, `0009` → `0010` → `0011` verkettet,
+  ein Head; keine Gegenproben- oder Diagnosereste; Architekturprüfungen nur um exakte
+  Tabellenzahlen ergänzt; `git diff --check` sauber; `.env` und `.claude/` nicht aufgenommen.

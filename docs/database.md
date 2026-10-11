@@ -58,13 +58,13 @@ Organisation B verweisen. Voraussetzung: jede referenzierte Tabelle hat zusätzl
 
 | Modul | Präfix | Tabellen |
 |---|---|---|
-| Core | — | `organizations`, `users`, `organization_members`, `member_invitations`, `member_invitation_roles`, `roles`, `permissions`, `role_permissions`, `member_roles`, `refresh_tokens`, `password_reset_tokens`, `user_preferences`, `organization_modules`, `customers`, `projects`, `buildings`, `floors`, `files`, `storage_cleanup_jobs`, `audit_entries`, `number_sequences`, `domain_events` |
+| Core | — | `organizations`, `users`, `organization_members`, `member_invitations`, `member_invitation_roles`, `roles`, `permissions`, `role_permissions`, `member_roles`, `refresh_tokens`, `refresh_token_families`, `password_reset_tokens`, `user_preferences`, `organization_modules`, `customers`, `projects`, `buildings`, `floors`, `files`, `storage_cleanup_jobs`, `audit_entries`, `number_sequences`, `domain_events` |
 | materials | `material_` | `material_categories`, `materials`, `material_prices`, `material_rules`, `service_templates`, `service_template_items`, `material_requirement_runs`, `material_requirements`, `labor_requirements` |
 | inventory | `inventory_` | `inventory_locations`, `inventory_stocks`, `inventory_transactions`, `inventory_reservations` |
 | calculation | `calculation_` | `calculation_labor_rates`, `calculations`, `calculation_items`, `calculation_surcharges` |
 | offers | `offer_` | `offers`, `offer_versions`, `offer_items` |
 | work_orders | `work_order_` | `work_orders`, `work_order_items`, `work_order_materials`, `work_order_time_entries`, `work_order_notes` |
-| electrical | `electrical_` | **umgesetzt (Phase 3):** `electrical_rooms`, `electrical_walls`, `electrical_openings` · **umgesetzt (Phase 5):** `electrical_device_types` (global, ohne Mandant), `electrical_devices` · *geplant:* `electrical_distribution_boards`, `electrical_circuits`, `electrical_cable_routes`, `electrical_cable_route_points` |
+| electrical | `electrical_` | **umgesetzt (Phase 3):** `electrical_rooms`, `electrical_walls`, `electrical_openings` · **umgesetzt (Phase 5):** `electrical_device_types` (global, ohne Mandant), `electrical_devices` · **umgesetzt (Phase 6a):** `electrical_wall_links` · **nur Schema (Phase 6a, Nutzung ab 6a.4):** `electrical_risers`, `electrical_riser_stops` · *geplant:* `electrical_distribution_boards`, `electrical_circuits`, `electrical_cable_routes`, `electrical_cable_route_points` |
 
 Anmerkung: `materials`, `material_requirements` und `service_templates` liegen bewusst im
 selben Modul (`materials` = Katalog + Material Engine). Begründung in
@@ -273,6 +273,15 @@ erDiagram
   Versionszählung geschrieben.
 - `refresh_tokens.session_version` (seit `0007`): Sitzungsversion der Mitgliedschaft bei der
   Ausstellung; weicht sie ab, ist der Token wertlos (ADR 0021).
+- `refresh_token_families` (seit `0011`, Sicherheitsauftrag 2026-10-10): eine Zeile je
+  Sitzung (Anmeldung oder Betriebswechsel) mit `user_id`, `organization_id` (beide `CASCADE`),
+  `revoked_at`, `revoked_reason`; `UNIQUE (organization_id, id)`. `refresh_tokens
+  (organization_id, family_id)` verweist zusammengesetzt darauf (`CASCADE`). Rotation und
+  Widerruf sperren die Familienzeile zuerst; ein Widerruf ist dauerhaft (`docs/security.md`,
+  Abschnitt 3). **Sperrreihenfolge der Erneuerung:** `users` (`FOR KEY SHARE`) →
+  `refresh_token_families` (`FOR UPDATE`) → `refresh_tokens` (`FOR UPDATE`). Die
+  Kontosperre vorab verhindert einen Deadlock mit einer gleichzeitigen E-Mail-Änderung
+  (die `users` exklusiv sperrt und dann die Familien widerruft).
 - `password_reset_tokens` (seit `0007`): `token_hash` UNIQUE (nur SHA-256), `member_id`
   UNIQUE (höchstens ein offener Link), zusammengesetzter FK auf `organization_members`
   (`CASCADE`), `created_by_user_id` → `users` (`SET NULL`). Verwendete oder ersetzte Links
@@ -591,6 +600,18 @@ weil PostgreSQL Bezeichner bei 63 Zeichen abschneidet.
 
 Indizes: `(organization_id, room_id)`, `(organization_id, wall_id)`, `device_type_key`.
 Nach dem Upgrade auf `0008` den Seed ausführen, sonst ist der Katalog leer.
+
+### 4.1b Wandkopplungen und Steigweg-Schema — **Phase 6a (Migration `0010`, ADR 0024/0025)**
+
+| Tabelle | Inhalt | Besonderheiten |
+|---|---|---|
+| `electrical_wall_links` | Wandkopplung zweier Raumwände (**in Gebrauch**) | `organization_id`, `UNIQUE (organization_id, id)`; `relation` CHECK (`shared`, `separate`), `origin` CHECK (`user`, `backfill`); CHECK `wall_a_id < wall_b_id`; `uq_el_wall_links_pair` `(organization_id, wall_a_id, wall_b_id)`; zwei zusammengesetzte FKs auf `electrical_walls` `CASCADE`, **ausdrücklich benannt** (`fk_electrical_wall_links_wall_a_electrical_walls`, `…_wall_b_…` – die Namenskonvention gäbe beiden denselben Namen); `created_by_user_id` → `users` `SET NULL`; versioniert. Keine Geometrie. Selbes Geschoss, verschiedene Räume, exakte Überlappung prüft der Service unter der Projektsperre |
+| `electrical_risers` | Steigweg je Gebäude (**nur Schema**, 6a.4) | `UNIQUE (organization_id, building_id, name)`; `offset_mode` CHECK (`orthogonal`, `direct`); FK `(organization_id, building_id)` → `buildings` `RESTRICT`; versioniert |
+| `electrical_riser_stops` | Übergabepunkt je Geschoss (**nur Schema**, 6a.4) | `UNIQUE (organization_id, riser_id, floor_id)`; Koordinaten-CHECK ±1 km; FK Steigweg `CASCADE`, FK `(organization_id, floor_id)` → `floors` `RESTRICT`; keine eigene Version |
+
+Indizes: Kopplungen `(organization_id, wall_a_id)`, `(organization_id, wall_b_id)`; Halte
+`(organization_id, floor_id)`. Core: `floors.elevation_confirmed boolean NOT NULL DEFAULT false`
+(Migration `0009`).
 
 ### 4.2 Verteilungen, Stromkreise, Leitungswege — **geplant (Phase 6)**
 
@@ -1086,6 +1107,9 @@ Weitere Indizes erst nach Messung (`EXPLAIN ANALYZE`), nicht auf Verdacht.
 | `0005_member_administration` | `organization_members.version` und `last_login_at`, `member_invitations`, `member_invitation_roles` (Phase 4.2, keine Datenmigration) |
 | `0007_user_lifecycle_preferences` | `organization_members.lock_reason`, `.session_version`, CHECKs für Status/Sperrgrund/Sitzungsversion, Eindeutigkeit nur für nicht entfernte Mitgliedschaften (partieller Index); `refresh_tokens.session_version`; neue Tabellen `password_reset_tokens` und `user_preferences` (Phase 4e, ADR 0021). Bestand bleibt unverändert (aktiv bleibt aktiv, Sitzungsversion 1, Sitzungen gültig). Neue Rechte legt der Seed an. Downgrade: Einstellungen und Links gehen verloren, entfernte Mitgliedschaften werden `disabled` |
 | `0008_electrical_devices` | `electrical_rooms.room_type` (optional, CHECK), neue Tabellen `electrical_device_types` (global, ohne Mandant) und `electrical_devices` (Phase 5, ADR 0023). Keine Datenmigration, Bestand ohne Raumtyp. Den Katalog legt der idempotente **Seed** an. Downgrade: Geräte und Katalog gehen verloren |
+| `0009_elevation_confirmed` | `floors.elevation_confirmed` (Phase 6a.0, ADR 0025). Bestand **unbestätigt**, auch das EG mit 0; keine Ableitung. Downgrade: Bestätigungen gehen verloren, Höhenlagen bleiben |
+| `0011_refresh_token_families` | `refresh_token_families` und zusammengesetzter FK von `refresh_tokens` (Sicherheitsauftrag 2026-10-10, Befund 4). Datenübernahme: je vorhandener `family_id` eine Familie; offen, solange ein Token der Familie nicht widerrufen ist, sonst widerrufen (`family_revoked`, jüngster Widerrufszeitpunkt). Tokens bleiben unverändert, bestehende Sitzungen gültig. Downgrade: Familienzustand geht verloren, Tokens bleiben |
+| `0010_wall_links_and_risers` | `electrical_wall_links` (in Gebrauch, ADR 0024) sowie `electrical_risers` und `electrical_riser_stops` (nur Schema-Vorbereitung, ADR 0025). Keine Datenmigration – der Bestand bleibt unentschieden; Übernahme eindeutiger Fälle nur über den getrennten Befehl `wall-links-backfill` (Standard: Probelauf). Downgrade: alle Kopplungen (auch `separate`-Entscheidungen) gehen verloren; Wände, Öffnungen, Geräte bleiben |
 | `0006_data_lifecycle` | `storage_cleanup_jobs`; `customers.anonymized_at`, `customers.deleted_at` und `projects.deleted_at` entfernt (keine Zeile gelöscht, Ausgeblendetes wieder sichtbar); Berechtigung `customer.record.anonymize` gelöscht (Phase 4d, ADR 0020). Neue Rechte legt der Seed an |
 
 ---

@@ -166,6 +166,8 @@ export default function ProjectsPage() {
               name: werte.geschossname.trim(),
               level: START_EBENE,
               elevation_mm: 0,
+              // Die Startstruktur bestätigt nichts (ADR 0025) - auch nicht die 0.
+              elevation_confirmed: false,
               default_ceiling_height_mm: START_HOEHE_MM,
             },
           }),

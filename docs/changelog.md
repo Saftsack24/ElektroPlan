@@ -5,6 +5,136 @@ Einträge entstehen nach relevanten Änderungen, nicht nach jedem Commit.
 
 ---
 
+## 2026-10-10 — Review-Restbefunde: Refresh-Limiter, Sicherheitsupdates
+
+### Betrieb (Task 0031)
+
+- Lokal eigener JWT-Schlüssel in `.env` statt Entwicklungsersatz. Alte Access Tokens werden
+  abgelehnt; bestehende Refresh-Sitzungen erneuern weiter (vom Schlüssel unabhängig).
+
+### Betrieb (Task 0030)
+
+- Backend- und Planner-Image neu gebaut; im laufenden Entwicklungsstack aktiv: uv 0.12.18,
+  PyJWT 2.15.1, Mako 1.4.3, Vitest 4.1.11, source-map-js 1.2.2, tinypool entfernt. Volumes,
+  Daten, Migrationen und Secrets unverändert; JWT-Entwicklungsersatz weiterhin aktiv.
+
+### Security
+
+- Die Grenze für ungültige Erneuerungen je IP zählt nur noch echte ungültige Tokens und die
+  Wiederverwendung ersetzter Tokens; parallele Refresh-Konflikte, die persönliche Kontogrenze,
+  Kontozustände und interne Fehler geben genau die eigene Reservierung zurück.
+- Limiter-Reservierungen tragen eindeutige Kennungen; Rückgabe exakt und idempotent.
+- uv 0.12.17 → 0.12.18, PyJWT 2.14.0 → 2.15.1, Vitest 3.2.7 → 4.1.11 (tinypool entfällt),
+  source-map-js 1.2.1 → 1.2.2, Mako 1.4.1 → 1.4.3. Einordnung in `security.md` §15.
+
+### Fixed
+
+- Werkzeuge auf dem Rechner verbinden über `127.0.0.1` statt `localhost` (sonst bis zum
+  Timeout wartende Verbindungen seit der IPv4-Loopback-Bindung).
+
+### Tests
+
+- `tasks.ps1 check` gegen PostgreSQL und MinIO grün – Backend 1131 bestanden (0 übersprungen, vorher 1121), Frontend 935 (Vitest 4.1.11), Typecheck, Lint, Modulgrenzen, Lockfile, ein Head `0011`, API-Drift, Build
+
+---
+
+## 2026-10-10 — Sicherheitsauftrag: Browser-Datentrennung, Upload-Schranke, Secrets, Sitzungswiderruf, Anfragegrenzen
+
+Getrennt von Phase 6a, nicht committet, keine manuelle Abnahme. Migration
+**`0011_refresh_token_families`** (danach kein Seed nötig). Befundstatus: `security.md` §19.
+
+### Security
+
+- **Planner trennt geschützte Daten je Sitzungskontext** (Benutzer + Betrieb): eigener
+  `QueryClient` und eigenes Abbruchsignal je Kontext (`core/sitzung/sitzungsraum.ts`). Abmelden,
+  Benutzer- oder Betriebswechsel und Sitzungsverlust brechen laufende Anfragen ab, löschen
+  Abfragen und Mutationen und bauen die Oberfläche neu auf; verspätete Antworten werden
+  verworfen. Vorher überlebte ein gemeinsamer Cache jeden Wechsel.
+- **Upload:** `POST /files` liest den Körper erst nach Anmeldung, Berechtigung und Grenzen;
+  zu große Anfragen enden mit `413` vor bzw. während des Lesens (gezählte Bytes statt
+  `Content-Length`). Vorher wurde der ganze Körper – auch unangemeldet – vorab gepuffert.
+- **Sitzungswiderruf dauerhaft:** Token-Familien mit gespeichertem Zustand; Rotation und
+  Widerruf sperren die Familie. Ein Logout, eine Wiederverwendungserkennung oder ein
+  Mitgliedschaftswiderruf kann nicht mehr durch eine gleichzeitige Rotation umgangen werden.
+  Sperrreihenfolge Konto → Familie → Token behebt zusätzlich einen Deadlock mit einer
+  gleichzeitigen E-Mail-Änderung.
+- **Anfragegrenzen:** neu für Sitzungserneuerung (Konto, ungültige Tokens je IP), Uploads (je
+  Betrieb) und allgemeine Schreibzugriffe (je Betrieb und Mitgliedschaft). Prüfen und
+  Reservieren atomar – auch für Login, Einladungs- und Reset-Endpunkte. Einheitlich `429` mit
+  `Retry-After`, begrenzter Speicher, keine personenbezogenen Schlüssel in Logs.
+- **Entwicklungsbetrieb:** alle Compose-Ports an `127.0.0.1`; `ELEKTROPLAN_JWT_SECRET`,
+  `…_JWT_KEY_ID`, `…_S3_SECRET_KEY` (auch für MinIO) und die Seed-Werte erreichen den
+  Backend-Container aus `.env` (vorher nicht). Produktion verweigert den Start mit jedem
+  bekannten Entwicklungswert; ohne JWT-Secret warnt die Entwicklung beim Start.
+
+### Added
+
+- `docs/release-checklist-real-data.md`: Freigabe-Checkliste für echte Daten (Auskunft,
+  Aufbewahrung, Löschung nach Restore, konsistente Sicherung, Restore-Nachweis,
+  organisatorische Voraussetzungen) mit Status, Nachweis und Rolle – **nicht freigegeben**.
+- Fehlerart `payload-too-large` (`413`); Header `Retry-After` an jedem `429` (per CORS lesbar).
+- Einstellungen `ELEKTROPLAN_REFRESH_*`, `…_UPLOAD_PER_ORGANIZATION_PER_WINDOW`,
+  `…_UPLOAD_WINDOW_SECONDS`, `…_UPLOAD_REQUEST_OVERHEAD_BYTES`, `…_WRITE_*`.
+
+### Changed
+
+- `/auth/refresh`-Grenze: dokumentierter Startwert 60 → **120** je Konto und Stunde (jeder
+  Seitenaufruf erneuert einmal).
+- OpenAPI: Upload-Formular steht direkt am Endpunkt statt als Komponente `Body_uploadFile`;
+  Felder unverändert. `App.tsx` erzeugt keinen `QueryClient` mehr.
+- `.env.example` und README: getrennt nach „von Compose durchgereicht“ und „nur ohne Docker“;
+  JWT-Secret standardmäßig leer (gekennzeichneter Entwicklungsersatz).
+
+### Betrieb
+
+- Entwicklungsumgebung am 2026-10-10 aktiviert: Sicherung vor der Migration, `0011` angewendet,
+  Compose-Dienste neu erstellt (Ports nur `127.0.0.1`). Ohne `.env` gilt der gekennzeichnete
+  JWT-Entwicklungsersatz.
+
+### Tests
+
+- Backend `1121 bestanden (0 übersprungen, vorher 1070)`, Frontend `935 bestanden (vorher 922)` (siehe task-history, Sicherheitsauftrag).
+
+---
+
+## 2026-10-06 — Phase 6a.0–6a.3: bestätigte Höhenlage und Wandkopplungen (wartet auf Abnahme)
+
+Migrationen **`0009_elevation_confirmed`** und **`0010_wall_links_and_risers`**; kein Seed nötig
+(keine neuen Rechte). Entscheidungen: [ADR 0024](decisions/0024-wall-links-physical-wall-assignment.md)
+(accepted, umgesetzt), [ADR 0025](decisions/0025-risers-between-floors.md) (Höhenlage umgesetzt,
+Steigwege beschlossen, **nicht** implementiert). Nicht committet.
+
+### Added
+
+- **Bestätigte Höhenlage** `floors.elevation_confirmed` (Bestand und Neuanlage unbestätigt, auch
+  das EG mit 0); `FloorCreate`/`FloorUpdate`/`FloorOut` und additiv `FloorPlanningContext`. Eine
+  tatsächliche Wertänderung ohne erneute Bestätigung entzieht sie. Projektstruktur zeigt
+  „Höhenlage bestätigt“/„nicht bestätigt“ und erlaubt Bestätigen, Zurücknehmen und Ändern.
+- **Wandkopplungen** (`electrical_wall_links`): `GET/POST /floors/{id}/wall-links`,
+  `PATCH/DELETE /wall-links/{id}` (If-Match); Planungsstand mit `wall_links` (Status `active`,
+  `ambiguous`, `broken`) und `wall_link_candidates` (Vorschläge); `removed_wall_link_ids` am
+  Konturspeichern; Event-`change_kind` **`wall_links_changed`**.
+- **Zustände** `undecided`/`shared`/`separate` je Abschnitt in Server, Editorspiegel,
+  Wandansicht und 3D; gemeinsame Fixture `testdata/geometry/wandkopplung.v1.json`.
+- **Oberfläche:** Bereich „Wandzuordnung“ an der gewählten Wand (Vorschlag, bestätigen, als
+  getrennt festlegen, ändern, lösen), Markierung im Grundriss, Hinweis auf einseitige Öffnungen,
+  3D-Halbkörper mit Trennfuge bei getrennten Wänden, Rückfragen beim Entfernen gekoppelter
+  Wände und beim Löschen gekoppelter Räume.
+- **Befehl** `python -m app.cli wall-links-backfill [--project PR-…] [--apply]` (Standard
+  Probelauf): übernimmt nur eindeutige Bestandsfälle als gemeinsame Bauwand.
+- Tabellen `electrical_risers`, `electrical_riser_stops` **nur als Schema-Vorbereitung**.
+
+### Changed
+
+- Geräteprüfung kennt Kopplungen: Auf getrennten Wänden blockiert die Öffnung des Nachbarn nicht
+  mehr; Außenmontage bleibt auf jedem Stück mit Nachbarraum verboten. Unentschiedene Stücke
+  verhalten sich unverändert wie Phase 5.
+- Jede Kopplungsänderung zählt die Raumversion beider Räume weiter (veraltete Entwürfe → `409`).
+- Einzellöschen einer gekoppelten Wand: `409 wall-has-links`.
+- Texte: „Außenseite – kein modellierter Nachbarraum“ statt „Außenwand“.
+
+---
+
 ## 2026-10-04 — Phase 5: Electrical Devices (abgeschlossen, manuell abgenommen)
 
 Migration **`0008_electrical_devices`**, danach **Seed ausführen** (legt den Gerätekatalog an).

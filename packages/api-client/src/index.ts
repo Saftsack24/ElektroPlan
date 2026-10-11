@@ -144,6 +144,39 @@ export interface ApiClientOptions {
    * muss Single-Flight sicherstellen.
    */
   onUnauthorized?: () => Promise<boolean>;
+  /**
+   * Bricht **jede** Anfrage dieses Clients ab, sobald es ausgelöst wird -
+   * zusätzlich zu einem Signal je Anfrage. Der Planner bindet so jeden Client
+   * an einen Sitzungskontext (Benutzer und Betrieb): Endet der Kontext, laufen
+   * seine Anfragen nicht weiter, und eine dennoch eintreffende Antwort wird
+   * verworfen statt zurückgegeben.
+   */
+  signal?: AbortSignal;
+}
+
+function abbruchFehler(): DOMException {
+  return new DOMException("Die Anfrage gehört zu einer beendeten Sitzung.", "AbortError");
+}
+
+/** Verbindet Sitzungs- und Anfragesignal; `loesen` entfernt die Verknüpfung. */
+function verbinden(
+  sitzung: AbortSignal | undefined,
+  anfrage: AbortSignal | undefined,
+): { signal: AbortSignal | undefined; loesen: () => void } {
+  if (!sitzung || !anfrage) return { signal: sitzung ?? anfrage, loesen: () => undefined };
+  if (sitzung.aborted) return { signal: sitzung, loesen: () => undefined };
+  if (anfrage.aborted) return { signal: anfrage, loesen: () => undefined };
+  const controller = new AbortController();
+  const abbrechen = () => controller.abort();
+  sitzung.addEventListener("abort", abbrechen, { once: true });
+  anfrage.addEventListener("abort", abbrechen, { once: true });
+  return {
+    signal: controller.signal,
+    loesen: () => {
+      sitzung.removeEventListener("abort", abbrechen);
+      anfrage.removeEventListener("abort", abbrechen);
+    },
+  };
 }
 
 type QueryValue = string | number | boolean | null | undefined;
@@ -234,6 +267,8 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
     raw: RawOptions | undefined,
     allowRetry: boolean,
   ): Promise<unknown> {
+    const sitzung = options.signal;
+    if (sitzung?.aborted) throw abbruchFehler();
     const headers: Record<string, string> = { Accept: "application/json" };
     const token = options.getAccessToken();
     if (token) {
@@ -258,15 +293,24 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
     } else if (raw?.body !== undefined) {
       init.body = JSON.stringify(raw.body);
     }
-    if (raw?.signal) {
-      init.signal = raw.signal;
+    const verbunden = verbinden(sitzung, raw?.signal);
+    if (verbunden.signal) {
+      init.signal = verbunden.signal;
     }
 
     const url = buildUrl(options.baseUrl, buildPath(template, raw?.path), raw?.query);
-    const response = await fetch(url, init);
+    let response: Response;
+    try {
+      response = await fetch(url, init);
+    } finally {
+      verbunden.loesen();
+    }
+    // Eine Antwort, die erst nach dem Ende der Sitzung eintrifft, gilt nicht.
+    if (sitzung?.aborted) throw abbruchFehler();
 
     if (response.status === 401 && allowRetry && options.onUnauthorized) {
       const renewed = await options.onUnauthorized();
+      if (sitzung?.aborted) throw abbruchFehler();
       if (renewed) {
         // Genau eine Wiederholung - danach nie wieder.
         return send(method, template, raw, false);
@@ -280,13 +324,16 @@ export function createApiClient(options: ApiClientOptions): ApiClient {
       } catch {
         problem = null;
       }
+      if (sitzung?.aborted) throw abbruchFehler();
       throw new ApiError(response.status, problem, response.headers.get("X-Request-Id"));
     }
 
     if (response.status === 204 || response.headers.get("Content-Length") === "0") {
       return undefined;
     }
-    return response.json();
+    const daten: unknown = await response.json();
+    if (sitzung?.aborted) throw abbruchFehler();
+    return daten;
   }
 
   const call =

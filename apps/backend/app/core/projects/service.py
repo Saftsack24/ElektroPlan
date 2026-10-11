@@ -470,6 +470,17 @@ class ProjectService:
                 proposed_mm=new_height,
                 participants=height_participants,
             )
+        # Bestaetigte Hoehenlage (ADR 0025): Die Bestaetigung gilt genau fuer den
+        # gespeicherten Wert. Eine tatsaechliche Wertaenderung ohne erneute
+        # Bestaetigung im selben Request entzieht sie; ein unveraenderter Wert
+        # laesst sie stehen.
+        new_elevation = changes.get("elevation_mm")
+        if (
+            new_elevation is not None
+            and new_elevation != floor.elevation_mm
+            and "elevation_confirmed" not in changes
+        ):
+            changes["elevation_confirmed"] = False
         for field, value in changes.items():
             setattr(floor, field, value)
         self._flush_floor(floor.level)

@@ -269,7 +269,14 @@ def test_entwicklungslink_ist_in_produktion_verboten(monkeypatch: pytest.MonkeyP
             s3_secret_key="geheim",
             invitation_delivery="development_link",
         )
-    produktion = Settings(environment="production", jwt_secret="x" * 40, s3_secret_key="geheim")
+    produktion = Settings(
+        environment="production",
+        jwt_secret="x" * 40,
+        s3_secret_key="geheim",
+        # Seit dem Sicherheitsauftrag 2026-10-10 lehnt Produktion das
+        # Entwicklungskennwort der Standard-URL ab.
+        database_url="postgresql+psycopg://app:synthetisch-prod@db:5432/elektroplan",
+    )
     assert produktion.invitation_delivery == "none"
     assert produktion.password_reset_delivery == "none"
 

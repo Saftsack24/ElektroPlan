@@ -47,7 +47,12 @@ from app.errors import (
 )
 from app.modules.electrical import geometry
 from app.modules.electrical.catalog import WALL_SURFACES
-from app.modules.electrical.device_rules import DeviceBaseline, FloorDeviceCheck, load_device_types
+from app.modules.electrical.device_rules import (
+    DeviceBaseline,
+    FloorDeviceCheck,
+    links_of_walls,
+    load_device_types,
+)
 from app.modules.electrical.geometry import (
     ContourReport,
     GeometryProblem,
@@ -56,6 +61,7 @@ from app.modules.electrical.geometry import (
     Point,
     Segment,
 )
+from app.modules.electrical.link_rules import LinkCandidate
 from app.modules.electrical.models import (
     ROOM_NUMBER_CONSTRAINT,
     ElectricalDevice,
@@ -63,6 +69,7 @@ from app.modules.electrical.models import (
     ElectricalOpening,
     ElectricalRoom,
     ElectricalWall,
+    ElectricalWallLink,
 )
 from app.modules.electrical.schemas import (
     ContourDeviceIn,
@@ -75,6 +82,7 @@ from app.modules.electrical.schemas import (
     WallCreate,
     WallUpdate,
 )
+from app.modules.electrical.wall_links import WallLinkView, analyse_links, links_touching
 
 #: Nachkommastellen der Flaeche in Quadratmetern (ADR 0005: Mengen als String).
 AREA_SCALE = 3
@@ -156,6 +164,9 @@ class FloorPlan:
 
     context: FloorPlanningContext
     rooms: list[RoomPlan]
+    #: Wandkopplungen mit Status und ungekoppelte Kandidaten (Phase 6a).
+    wall_links: list[WallLinkView]
+    wall_link_candidates: list[LinkCandidate]
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,6 +265,13 @@ class ElectricalRoomService:
         devices: dict[uuid.UUID, list[ElectricalDevice]] = {}
         for device in self.device_check.devices_of_rooms([room.id for room in rooms]):
             devices.setdefault(device.room_id, []).append(device)
+        all_walls = [wall for room_walls in walls.values() for wall in room_walls]
+        link_views, candidates = analyse_links(
+            rooms,
+            all_walls,
+            openings,
+            links_of_walls(self.session, self.organization_id, [wall.id for wall in all_walls]),
+        )
         return FloorPlan(
             context=context,
             rooms=[
@@ -262,6 +280,8 @@ class ElectricalRoomService:
                 )
                 for room in rooms
             ],
+            wall_links=link_views,
+            wall_link_candidates=candidates,
         )
 
     def list_device_types(self) -> list[ElectricalDeviceType]:
@@ -357,6 +377,12 @@ class ElectricalRoomService:
         """
         room, context = self._locked_room(room_id)
         check_version(room, expected_version)
+        # Kopplungen verschwinden mit den Waenden (CASCADE). Die Partnerraeume
+        # zaehlen ihre Version weiter: Ein dort offener Entwurf soll die
+        # Zuordnung nicht als bestehend voraussetzen.
+        walls = self._ordered_walls(room.id)
+        links = links_touching(self.session, self.organization_id, [wall.id for wall in walls])
+        self._touch_partner_rooms(links, exclude=room.id)
         self.session.delete(room)
         flush(self.session)
         return WriteResult(context=context, room_id=room_id)
@@ -497,6 +523,9 @@ class ElectricalRoomService:
                 f"An dieser Wand sind noch {devices} Geraet(e) montiert. Bitte zuerst die Geraete "
                 "entfernen."
             )
+        links = links_touching(self.session, self.organization_id, [wall.id])
+        if links:
+            raise _wall_has_links([wall.id], links)
         baseline = self._device_baseline(context)
 
         self.session.delete(wall)
@@ -545,6 +574,7 @@ class ElectricalRoomService:
             removed_opening_ids=payload.removed_opening_ids,
             devices_in=payload.devices,
             removed_device_ids=payload.removed_device_ids,
+            removed_wall_link_ids=payload.removed_wall_link_ids,
         )
         _touch(room)
         flush(self.session)
@@ -564,6 +594,7 @@ class ElectricalRoomService:
         removed_opening_ids: list[uuid.UUID],
         devices_in: list[ContourDeviceIn] | None = None,
         removed_device_ids: list[uuid.UUID] | None = None,
+        removed_wall_link_ids: list[uuid.UUID] | None = None,
     ) -> frozenset[str]:
         """Prueft den Zielzustand vollstaendig und schreibt ihn erst dann.
 
@@ -610,6 +641,11 @@ class ElectricalRoomService:
             target_wall_ids=set(wall_ids),
         )
 
+        # 2b. Wandkopplungen entfallender Waende (Phase 6a): nur ausdruecklich.
+        removed_links = self._removed_links(
+            current_walls, set(wall_ids), removed_wall_link_ids or []
+        )
+
         # 3. Der Zielzustand als Ganzes - dieselben Regeln wie ueberall.
         _raise_geometry(
             _target_problems(
@@ -622,6 +658,9 @@ class ElectricalRoomService:
         )
 
         # 4. Schreiben: erst entfernen, dann aendern und anlegen.
+        self._touch_partner_rooms(removed_links, exclude=room.id)
+        for link in removed_links:
+            self.session.delete(link)
         for device_id in device_plan.removed:
             self.session.delete(current_devices[device_id])
         for opening_id in removed_opening_ids:
@@ -850,6 +889,86 @@ class ElectricalRoomService:
         return _DevicePlan(
             target=list(zip(device_ids, devices_in, strict=True)), removed=list(removed_device_ids)
         )
+
+    def _removed_links(
+        self,
+        current_walls: dict[uuid.UUID, ElectricalWall],
+        kept_wall_ids: set[uuid.UUID],
+        removed_wall_link_ids: list[uuid.UUID],
+    ) -> list[ElectricalWallLink]:
+        """Kopplungen entfallender Waende - geprueft, bevor geschrieben wird.
+
+        * Jede genannte ID muss eine Kopplung einer **entfallenden Wand dieses
+          Raums** sein (sonst ``422 wall-link-not-affected``) - fremde,
+          unbeteiligte oder unbekannte Kopplungen werden nie geloest.
+        * Jede Kopplung einer entfallenden Wand muss genannt sein (sonst
+          ``409 wall-has-links``) - nichts verschwindet nebenbei.
+        """
+        removed_walls = [wall_id for wall_id in current_walls if wall_id not in kept_wall_ids]
+        affected = {
+            link.id: link
+            for link in links_touching(self.session, self.organization_id, removed_walls)
+        }
+        problems: list[GeometryProblem] = []
+        doubled = _duplicates(removed_wall_link_ids)
+        if doubled:
+            problems.append(
+                GeometryProblem(
+                    code="wall-link-id-duplicate",
+                    message="Eine Wandzuordnung ist mehrfach genannt.",
+                    keys=doubled,
+                )
+            )
+        unrelated = tuple(str(item) for item in removed_wall_link_ids if item not in affected)
+        if unrelated:
+            problems.append(
+                GeometryProblem(
+                    code="wall-link-not-affected",
+                    message=(
+                        "Eine genannte Wandzuordnung betrifft keine Wand, die hier entfernt wird."
+                    ),
+                    keys=unrelated,
+                )
+            )
+        _raise_geometry(
+            problems,
+            detail="Die Angaben zu den Wandzuordnungen passen nicht. Es wurde nichts gespeichert.",
+        )
+        listed = set(removed_wall_link_ids)
+        missing = [link for link in affected.values() if link.id not in listed]
+        if missing:
+            walls = sorted(
+                {
+                    wall_id
+                    for link in missing
+                    for wall_id in (link.wall_a_id, link.wall_b_id)
+                    if wall_id in current_walls
+                },
+                key=str,
+            )
+            raise _wall_has_links(walls, missing)
+        return list(affected.values())
+
+    def _touch_partner_rooms(
+        self, links: Sequence[ElectricalWallLink], *, exclude: uuid.UUID
+    ) -> None:
+        """Zaehlt die Version der Partnerraeume geloester Kopplungen weiter."""
+        wall_ids = {wall_id for link in links for wall_id in (link.wall_a_id, link.wall_b_id)}
+        if not wall_ids:
+            return
+        room_ids = {
+            wall.room_id
+            for wall in self.session.execute(
+                self.walls.query().where(ElectricalWall.id.in_(wall_ids))
+            ).scalars()
+        }
+        room_ids.discard(exclude)
+        if not room_ids:
+            return
+        for partner in self.session.execute(
+            self.rooms.query().where(ElectricalRoom.id.in_(room_ids))
+        ).scalars():
+            _touch(partner)
 
     def _require_valid_identities(
         self,
@@ -1415,6 +1534,24 @@ def _raise_devices_on_removed_walls(
                 code="wall-has-devices",
                 message="An dieser Wand sind noch Geraete montiert.",
                 keys=[*walls, *device_ids],
+            )
+        ],
+    )
+
+
+def _wall_has_links(
+    wall_ids: Sequence[uuid.UUID], links: Sequence[ElectricalWallLink]
+) -> ConflictError:
+    """Eine gekoppelte Wand verschwindet nicht nebenbei (``409``, ADR 0024)."""
+    return ConflictError(
+        "Eine Wand, die entfernt werden soll, ist einer Wand eines Nachbarraums zugeordnet. "
+        "Die Zuordnung muss ausdruecklich mit geloest werden. Es wurde nichts gespeichert.",
+        errors=[
+            ProblemFieldError(
+                field="geometry",
+                code="wall-has-links",
+                message="Diese Wand ist einer Wand eines Nachbarraums zugeordnet.",
+                keys=[*(str(item) for item in wall_ids), *(str(link.id) for link in links)],
             )
         ],
     )

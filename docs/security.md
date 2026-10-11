@@ -64,6 +64,19 @@ Die beiden kritischsten Anforderungen des Systems sind:
 - **Refresh Token:** zufälliger, hoch-entroper Wert, nur als Hash gespeichert
   (`refresh_tokens`), Rotation bei jeder Nutzung, Wiederverwendung eines alten Tokens
   invalidiert die gesamte Familie (Diebstahlserkennung).
+- **Token-Familie mit dauerhaftem Zustand (seit Sicherheitsauftrag 2026-10-10, Migration
+  `0011`):** Jede Anmeldung und jeder Betriebswechsel legt eine Zeile in
+  `refresh_token_families` an; alle Rotationen dieser Sitzung gehören dazu. **Rotation und
+  Widerruf sperren zuerst diese Zeile** (`FOR UPDATE`, Sperrreihenfolge Konto (`KEY SHARE`)
+  → Familie → Token). Ein Widerruf (Logout, Wiederverwendung, Sperre, Sitzungsversion,
+  Kontoänderung) setzt `revoked_at` an der Familie und widerruft danach – in einer neuen
+  Abfrage – alle Tokenzeilen. Eine gleichzeitige Rotation wartet auf die Familiensperre und
+  scheitert dann am Familienzustand. **Nach einem abgeschlossenen Widerruf erneuert kein
+  Token dieser Familie mehr eine Sitzung**, auch kein Nachfolger, den eine Rotation kurz
+  davor angelegt hat. Vorher widerrief ein Logout nur die zum Abfragezeitpunkt sichtbaren
+  Zeilen; ein gleichzeitig entstehender Nachfolger blieb gültig (mit echten
+  PostgreSQL-Transaktionen reproduziert, `tests/test_refresh_revocation_concurrency.py`).
+  Die Sitzungsversion (Phase 4e) bleibt als zweite, unabhängige Schicht bestehen.
 - **Widerrufsgründe.** Der ersetzte Datensatz einer Rotation wird atomar
   mit `replaced_by_id` an den Nachfolger gebunden und mit einem
   expliziten `revoked_reason` versehen. Genau ein Grund bedeutet
@@ -96,7 +109,16 @@ Die beiden kritischsten Anforderungen des Systems sind:
   mobilen Tokenflow mit sicherem Gerätespeicher (Keystore/Keychain über Capacitor). Er
   wird erst mit Phase 13 gebaut und teilt sich **nicht** das Response-Schema des
   Webflows — andernfalls bekäme der Webclient den Refresh Token wieder lesbar zurück.
-- **Logout:** widerruft die Token-Familie serverseitig, nicht nur clientseitig.
+- **Logout:** widerruft die Token-Familie **dieser** Sitzung serverseitig und dauerhaft,
+  nicht nur clientseitig. Andere Geräte und Betriebe desselben Kontos bleiben angemeldet
+  (ein Logout überall wäre eine eigene, ausdrückliche Funktion).
+- **Bereits ausgestellte Access Tokens (ausdrücklich):** Ein Logout und ein
+  Familienwiderruf widerrufen **nur Refresh Tokens**. Ein schon ausgestellter Access Token
+  dieser Sitzung bleibt bis zu seinem Ablauf gültig (höchstens
+  `ELEKTROPLAN_ACCESS_TOKEN_MINUTES`, Standard 15 Minuten) – es gibt keine Sperrliste für
+  Access Tokens. Der Planner verwirft seinen Token beim Abmelden sofort. **Sofort**
+  unwirksam werden Access Tokens nur über die Sitzungsversion bzw. den Mitgliedsstatus:
+  Sperren, Entsperren, Entfernen, neue E-Mail und neues Passwort.
 - **Gesperrte oder entfernte Mitgliedschaft (seit Phase 4.2, ergänzt 4e):** Jede Anfrage
   prüft Status **und Sitzungsversion** der Mitgliedschaft aus dem Access Token; ein
   gesperrter Zugang erhält sofort `401`. Die
@@ -237,7 +259,11 @@ Vorbereitet, aber im MVP nicht aktiviert: PostgreSQL Row Level Security
 | SVG/HTML | nicht als anzeigbarer Inhalt zugelassen (XSS-Vektor) |
 | Integrität | SHA-256 bei Upload gespeichert |
 | Virenscan | im MVP nicht enthalten, vor kommerziellem Einsatz nachrüsten |
-| Streaming | Der Upload wird stückweise gelesen (64 KiB); das Größenlimit greift **während** des Lesens. Gepuffert wird in einer `SpooledTemporaryFile`, die oberhalb 1 MiB auf die Festplatte auslagert — keine unbegrenzte Datei im Arbeitsspeicher. |
+| Frühe Schranke (seit Sicherheitsauftrag 2026-10-10) | `POST /files` liest den Anfragekörper **selbst** und erst **nach** Anmeldung, `file.object.write`, Schreib- und Upload-Grenze (`app/core/files/upload_form.py`). Vorher ließ FastAPI wegen `File`/`Form`-Parametern den ganzen Körper puffern, bevor irgendeine Prüfung lief – auch für Unangemeldete. Jetzt: `Content-Length` über der Anfragegrenze → `413` ohne ein Byte zu lesen; die **tatsächlich empfangenen** Bytes werden gezählt (fehlende oder falsche `Content-Length` hilft nicht) → `413`, sobald die Grenze überschritten ist. Multipart nur mit einem Dateiteil `upload`, höchstens drei Formularfeldern (`project_id`, `entity_type`, `entity_id`) zu je 1 KiB; alles andere `422`. Abbruch durch den Client → `422`, keine `500`. |
+| Anfragegrenze vs. Dateilimit | Dateilimit `ELEKTROPLAN_UPLOAD_MAX_BYTES` (Standard 50 MiB) gilt für den Inhalt des Dateiteils und wird weiter im Service geprüft (zweite Schicht, `422`). Die Anfrage darf zusätzlich `ELEKTROPLAN_UPLOAD_REQUEST_OVERHEAD_BYTES` (Standard 64 KiB) für den Multipart-Rahmen enthalten. |
+| Aufräumen | Scheitert das Lesen, schließt der Multipart-Parser alle angelegten temporären Dateien; nach der Anfrage schließt die Dependency die Datei immer. In den Object Storage gelangt nichts vor der vollständigen Prüfung. Nachgewiesen mit einem auf die Platte auslagernden Puffer (`tests/test_upload_guard.py`). |
+| Streaming | Der Dateiteil wird stückweise gelesen (64 KiB); das Größenlimit greift **während** des Lesens. Gepuffert wird in einer `SpooledTemporaryFile`, die oberhalb 1 MiB auf die Festplatte auslagert — keine unbegrenzte Datei im Arbeitsspeicher. |
+| Andere Anfragekörper | Für JSON-Endpunkte gibt es in der Anwendung **keine** allgemeine Größengrenze; sie gehört an den Reverse Proxy (Betriebsblocker G-3, [`release-checklist-real-data.md`](release-checklist-real-data.md)). |
 | Projektzuordnung | Ein Upload mit `project_id` wird gegen den mandantengefilterten Projektdienst geprüft; ein fremdes Projekt liefert `404`. Der Speicherschlüssel lautet dann `org/<org-id>/project/<project-id>/<file-id><ext>`. |
 | Download im Browser | `GET /files/{id}/download-url` liefert die signierte Adresse als JSON, der Browser navigiert anschließend dorthin. Ein Link direkt auf den API-Endpunkt käme ohne `Authorization`-Header nicht durch; ein Token in der URL ist ausgeschlossen. |
 | Dateiname im Header | `Content-Disposition` wird injektionssicher gebaut: Steuerzeichen, Zeilenumbrüche, Anführungszeichen und Backslashes werden ersetzt, der Originalname folgt prozentkodiert als `filename*` (RFC 6266). |
@@ -254,6 +280,20 @@ Vorbereitet, aber im MVP nicht aktiviert: PostgreSQL Row Level Security
 - Rotationsfähigkeit: JWT-Signaturschlüssel mit Key-ID, damit ein Wechsel ohne Totalausfall
   möglich ist.
 - Datenbank- und Storage-Zugangsdaten nie im Frontend, nie in Logs.
+
+### Entwicklungsbetrieb (Docker Compose) – seit Sicherheitsauftrag 2026-10-10
+
+| Punkt | Umsetzung |
+|---|---|
+| Ports | Alle veröffentlichten Ports (`5173`, `8000`, `5432`, `9000`, `9001`) ausdrücklich an `127.0.0.1` gebunden; interne Kommunikation über das Compose-Netz unverändert. Wirksam nach `docker compose up -d`. |
+| Übergabekette | Docker Compose liest `.env` im Projektverzeichnis und setzt nur die mit `${...}` referenzierten Variablen ein: `ELEKTROPLAN_JWT_SECRET`, `ELEKTROPLAN_JWT_KEY_ID`, `ELEKTROPLAN_S3_SECRET_KEY` (auch für MinIO selbst), `ELEKTROPLAN_SEED_ORG_NAME`, `…_SEED_ADMIN_EMAIL`, `…_SEED_ADMIN_PASSWORD`. **Vorher** erreichte keiner dieser in `.env.example` dokumentierten Werte den Backend-Container; das Backend lief immer mit dem Entwicklungsersatz für das JWT-Secret. Eine gleichnamige Variable der aufrufenden Shell hat Vorrang vor `.env`. |
+| Nachweis | `tests/test_config_secrets.py`: statisch (Ports, Referenzen) und mit `docker compose config` und synthetischer `.env`. Zusätzlich einmalig von Hand: ein synthetischer Wert kam per `docker compose run --rm --no-deps backend` im Container an (Hashvergleich, kein Klartext ausgegeben). |
+| Entwicklungsersatz | Ohne `ELEKTROPLAN_JWT_SECRET` nutzt das Backend in Entwicklung/Test einen öffentlich bekannten Ersatzwert und protokolliert beim Start `jwt_secret_development_default`. Lokal seit 2026-10-10 durch einen eigenen Schlüssel in `.env` ersetzt. |
+| Schlüsselwechsel | Macht alle zuvor ausgestellten **Access Tokens** ungültig (`401`). **Refresh-Sitzungen bleiben gültig** – Refresh Tokens sind vom JWT-Schlüssel unabhängig (Zufallswert, Hash in der DB); sie erhalten beim nächsten Erneuern Access Tokens mit dem neuen Schlüssel. Sollen alle Sitzungen enden, zusätzlich Familien widerrufen. Nachgewiesen am 2026-10-10. |
+| Produktion | `ELEKTROPLAN_ENVIRONMENT=production` verweigert den Start mit jedem bekannten Entwicklungswert: JWT-Ersatzwert oder Platzhalter, < 32 Zeichen, S3-Schlüssel `elektroplan-dev-secret` oder leer, Datenbankkennwort `elektroplan`, Seed-Passwörter aus Compose und Vorlage. |
+| Datenbankkennwort | bleibt in Compose fest – es wird nur beim ersten Anlegen des Volumes gesetzt. |
+| Werkzeuge auf dem Rechner | `127.0.0.1` statt `localhost` (Standardwerte in `app/config.py`, `.env.example`, Test-URL in CLAUDE.md, README, `tasks.ps1`). `localhost` löst unter Windows zuerst `::1` auf; seit der IPv4-Loopback-Bindung wartete libpq dort bis zum Verbindungs-Timeout (gemessen bis 200 s). Browser-Adressen (`localhost:5173`, signierte MinIO-URLs) bleiben, weil Browser sofort auf IPv4 ausweichen. |
+| Offen | Eine eigene Produktionskonfiguration (Secrets, TLS, Backups) ist ein dokumentierter Freigabepunkt (G-1 in [`release-checklist-real-data.md`](release-checklist-real-data.md)). |
 
 ---
 
@@ -305,19 +345,50 @@ nicht generisch über ORM-Hooks, und sind nicht änderbar.
 
 ## 11. Rate Limiting und Missbrauchsschutz
 
-| Endpunktgruppe | Grenze (Startwert) |
-|---|---|
-| `POST /auth/login` | 10 Versuche / 15 min / IP **und** / Konto |
-| `POST /auth/refresh` | 60 / Stunde / Konto |
-| `POST /invitation-acceptance/*` | 20 ungültige Tokens / 15 min / IP; die Annahme mit bestehendem Konto zusätzlich über die Login-Grenze (Konto **und** IP) |
-| `POST /password-reset/*` (seit 4e) | 20 ungültige Tokens / 15 min / IP |
-| `POST /members/{id}/password-reset` (seit 4e) | 5 Links / 15 min / Mitgliedschaft |
-| Datei-Upload | 100 / Stunde / Organisation |
-| Schreibende API allgemein | 600 / min / Organisation |
-| PDF-Erzeugung | 30 / min / Organisation |
+Abgleich Dokumentation ↔ Umsetzung mit dem Sicherheitsauftrag 2026-10-10. Alle Werte
+sind über `ELEKTROPLAN_*` einstellbar (`app/config.py`).
 
-Umsetzung zunächst in der Anwendung (in-memory je Prozess) — ausreichend für den
-Einzelbetrieb; bei Mehrinstanzbetrieb auf einen gemeinsamen Zähler umstellen.
+| Endpunktgruppe | Grenze | Schlüssel | Was zählt | Stand |
+|---|---|---|---|---|
+| `POST /auth/login` | 10 / 15 min | Konto (E-Mail nur als SHA-256-Präfix im Speicher) **und** IP | jeder abgelehnte Versuch; Erfolg und Betriebsauswahl (`409`) geben ihre Reservierung zurück | umgesetzt, **jetzt atomar** |
+| `POST /auth/refresh` | **120** / Stunde | Konto (`user_id`) | jede Erneuerung mit bekanntem Token | **neu umgesetzt** (vorher nur dokumentiert); Startwert 60 → 120, weil jeder Seitenaufruf und jeder Tab einmal erneuert |
+| `POST /auth/refresh`, ungültig | 30 / 15 min | IP | **nur** unbekannter Token, Token einer widerrufenen Familie, widerrufener Token, Wiederverwendung eines ersetzten Tokens nach dem Toleranzfenster, abgelaufener Token. **Zurückgegeben** wird genau die eigene Reservierung bei Erfolg, parallelem Refresh im Toleranzfenster, persönlicher Kontogrenze (`429`), Kontozustand (deaktiviert, Mitgliedschaft gesperrt, Sitzungsversion) und internen Fehlern – sonst blockierten sich Benutzer hinter derselben IP gegenseitig (Review 2026-10-10) | **neu**, Rückgabe nachgeschärft |
+| `POST /invitation-acceptance/*` | 20 ungültige Tokens / 15 min | IP | ungültige Tokens; mit bestehendem Konto zusätzlich die Login-Grenze | umgesetzt, **jetzt atomar** |
+| `POST /password-reset/*` (seit 4e) | 20 ungültige Tokens / 15 min | IP | ungültige Links | umgesetzt, **jetzt atomar** |
+| `POST /members/{id}/password-reset` (seit 4e) | 5 Links / 15 min | Mitgliedschaft | jeder ausgestellte Link | umgesetzt, **jetzt atomar** |
+| Datei-Upload | 100 / Stunde | Betrieb | jeder angenommene Upload-Versuch nach Anmeldung, **vor** dem Lesen des Körpers | **neu umgesetzt** |
+| Schreibende API allgemein | 600 / min je Betrieb **und** 300 / min je Mitgliedschaft | Betrieb, Mitgliedschaft | jedes angemeldete `POST`/`PUT`/`PATCH`/`DELETE`, nach geprüftem Token | **neu umgesetzt** |
+| PDF-Erzeugung | 30 / min / Betrieb | – | – | **nicht umgesetzt** – es gibt noch keine PDF-Erzeugung |
+
+**Umsetzung** (`app/core/auth/rate_limit.py`):
+
+- **Rückgabe exakt:** Jede Reservierung trägt je Schlüssel eine eindeutige Kennung;
+  `release` entfernt genau diese Einträge, nie fremde Versuche (auch nicht bei gleichem
+  Zeitstempel), und ist beim zweiten Aufruf wirkungslos. Kein Zurücksetzen ganzer Zähler.
+- **Atomar:** Prüfen und Reservieren geschehen unter einer Sperre in einem Schritt, für
+  alle Schlüssel einer Anfrage gemeinsam (alles oder nichts). Vorher prüfte der
+  Login-Limiter zuerst und zählte erst nach der Passwortprüfung – parallele Anfragen
+  kamen alle durch die Prüfung (nachgestellt: 20 parallele Versuche, alle 20 geprüft bei
+  Grenze 10). Jetzt: genau 10 (`tests/test_rate_limits.py`).
+- **Einheitliche Antwort:** `429`, `type …/rate-limited`, Problem Details, Header
+  `Retry-After` in Sekunden bis zum Freiwerden; per CORS lesbar (`expose_headers`).
+- **Ausnahmen:** `/auth/logout` (wirkt nur mit eigenem Cookie), lesende Anfragen (`GET`),
+  unangemeldete Schreibversuche (scheitern mit `401`, bevor sie Kontingent verbrauchen). Ein
+  Editor-Speichern ist ein einzelnes `PUT`; die Grenzen liegen weit über normaler Nutzung.
+- **Speicher begrenzt:** Abgelaufene Einträge werden laufend entfernt; über 20 000
+  Schlüssel je Limiter werden die am längsten unbenutzten verdrängt (Log
+  `rate_limit_keys_evicted` mit Anzahl, ohne Schlüssel).
+- **Logs:** nur Limiter und **Art** der Schlüssel (`ip`, `user`, `member` …), nie Werte,
+  Tokens oder Passwörter.
+- **Proxy-Header:** Die Anwendung liest `X-Forwarded-For` nie selbst. Maßgeblich ist die
+  ASGI-Client-Adresse; Uvicorn ersetzt sie nur für Verbindungen aus `--forwarded-allow-ips`
+  (Standard `127.0.0.1`). Hinter einem Reverse Proxy muss dieser Wert genau den Proxy
+  nennen, sonst teilen sich alle Clients die IP des Proxys (G-3).
+- **Einzelprozess – ehrliche Grenze:** Die Zähler leben **je Prozess**. Mit mehreren
+  Uvicorn-Workern oder Instanzen vervielfacht sich jede Grenze mit deren Anzahl. Für den
+  vorgesehenen Einzelbetrieb (ein Prozess) genügt das. Ein gemeinsamer Zähler (z. B. in
+  PostgreSQL oder einem eigenen Dienst) ist **nicht** gebaut und wird nur nach Freigabe
+  ergänzt (G-2).
 
 ---
 
@@ -378,6 +449,39 @@ Token-Schutz ausgegeben.
 
 Alle übrigen Endpunkte verwenden `Authorization: Bearer` und sind schon deshalb
 nicht CSRF-anfällig: Ein Angreifer kann den Header nicht setzen lassen.
+
+### Trennung der Browserdaten nach Sitzung (seit Sicherheitsauftrag 2026-10-10)
+
+Vorher überlebte ein gemeinsamer `QueryClient` jeden Sitzungswechsel, und Abfrageschlüssel
+enthielten weder Benutzer noch Betrieb. Nach einem Betriebswechsel zeigte die Oberfläche
+weiter Kundendaten des alten Betriebs (bis zu 30 s `staleTime`), nach dem Abmelden lagen die
+Daten noch im Speicher (im Test nachgestellt).
+
+Jetzt (`apps/planner/src/core/sitzung/sitzungsraum.ts`, `core/auth/AuthProvider.tsx`):
+
+- Der **Sitzungskontext** ist Benutzer + Betrieb + Mitgliedschaft aus dem Access Token
+  (nur gelesen, nicht geprüft – das tut der Server). Jeder Kontext erhält einen eigenen
+  **Sitzungsraum** mit eigenem `QueryClient` und eigenem Abbruchsignal.
+- Bei **Abmelden, Benutzerwechsel, Betriebswechsel und Verlust der Sitzung** – auch wenn das
+  Cookie inzwischen einem anderen Benutzer gehört (Anmeldung in einem anderen Tab) – endet
+  der alte Raum sofort: laufende Anfragen werden abgebrochen, Abfragen, Mutationen und
+  optimistische Stände gelöscht. Der Teilbaum unter dem `AuthProvider` wird mit dem neuen
+  Raum neu aufgebaut; bis der neue Kontext geladen ist, zeigt die Oberfläche nur „Sitzung
+  wird geprüft“.
+- **Verspätete Antworten:** Der API-Client verwirft jede Antwort, die nach dem Ende ihres
+  Raums eintrifft (`AbortError`); ein Token wird nur gesendet, solange er zum Raum gehört;
+  eine Erneuerung aus einer älteren Epoche (vor Anmelden/Abmelden/Wechsel) wird ignoriert.
+- `/me` muss zum Kontext des Tokens passen, sonst wird die Sitzung verworfen.
+- **Keine pauschale Löschung von Browserdaten:** `localStorage` bleibt unberührt;
+  persönliche Einstellungen liegen weiter je Mitgliedschaft
+  (`elektroplan.einstellungen.<member_id>`).
+- Module brauchen dafür nichts zu tun: Sie nutzen `useAuth().api` und `useQueryClient()`.
+  Sie dürfen keinen eigenen `QueryClient` und keine modulweiten Caches für geschützte
+  Daten anlegen (`docs/modules.md`).
+- Nachweis: `src/core/auth/Sitzungstrennung.test.tsx` (A → Abmelden → B; Betrieb 1 → 2;
+  langsame Anfrage; Sitzungsende während einer Anfrage; Cookie aus anderem Tab; Mutation
+  mit optimistischem Stand; Kunden-, Projekt-, Benutzer- und Electrical-Daten). Gegenprobe
+  mit dem alten gemeinsamen Cache: alle sechs Tests scheitern.
 
 ### Cookie-Attribute des Refresh-Cookies
 
@@ -539,6 +643,11 @@ aus ADR 0020. Archivierung ist ausschließlich der Projektstatus `archived`.
 
 ---
 
+**Freigabe-Checkliste:** Was vor echten Daten vorliegen und nachgewiesen sein muss – mit
+Status, Nachweis und zuständiger Rolle – steht in
+[`release-checklist-real-data.md`](release-checklist-real-data.md). Stand 2026-10-10:
+**nicht freigegeben**.
+
 ## 14. Backup und Wiederherstellung
 
 - PostgreSQL: tägliches Vollbackup + WAL-Archivierung.
@@ -546,6 +655,9 @@ aus ADR 0020. Archivierung ist ausschließlich der Projektstatus `archived`.
 - **Ein Restore-Test ist Voraussetzung, bevor echte Kundendaten erfasst werden.**
   Ein ungetestetes Backup ist kein Backup.
 - Wiederherstellungsziele: RPO ≤ 24 h, RTO ≤ 8 h für den internen Betrieb.
+- **Stand 2026-10-10:** weder Sicherungsjob noch Restore-Test vorhanden; nur ad hoc
+  `pg_dump` in der Entwicklung. Abschnitte D und E der
+  [Freigabe-Checkliste](release-checklist-real-data.md).
 
 ---
 
@@ -555,6 +667,35 @@ aus ADR 0020. Archivierung ist ausschließlich der Projektstatus `archived`.
 - Regelmäßige Aktualisierung, mindestens monatlich; Sicherheitsupdates sofort.
 - `pip-audit` / `npm audit` in CI.
 - Neue Abhängigkeiten nur mit Begründung — jede ist dauerhafte Angriffsfläche.
+
+### Sicherheitsupdates 2026-10-10
+
+Gezielt, keine breite Modernisierung; jede Änderung gegen die tatsächlich aufgelöste Version
+und den Abhängigkeitspfad geprüft. Betroffenheit der Version und Erreichbarkeit in ElektroPlan
+sind getrennt eingeordnet.
+
+| Advisory | Paket | vorher → nachher | Installierte Version betroffen? | Angriffsweg in ElektroPlan erreichbar? |
+|---|---|---|---|---|
+| GHSA-2cv4-cqwr-gwf7 | uv (Werkzeug) | 0.12.17 → **0.12.18** (venv, `pyproject.toml`, `uv.lock`, `tasks.ps1`, `Makefile`, `backend.Dockerfile`) | ja (0.12.7–0.12.17, nur Windows) | ja für die lokale Windows-Umgebung: Ein bösartiges Wheel könnte beim Installieren außerhalb der Umgebung schreiben. Installiert wird nur aus dem gesperrten `uv.lock`, das senkt das Risiko, schließt es aber nicht aus. Der Linux-Container ist nicht betroffen |
+| GHSA-42vr-xj54-vc7v | PyJWT | 2.14.0 → **2.15.1** (Untergrenze `>=2.15.0`) | ja (≤ 2.14.0) | **nur mit gültigem Signaturschlüssel**: `decode_access_token` prüft die Signatur vor dem Parsen der Nutzlast; mit falschem Schlüssel `401`. Mit gültigem Schlüssel löste ein verschachtelter Token einen unbehandelten `RecursionError` (HTTP 500) aus – nachgestellt. Ohne `.env` ist der Schlüssel der öffentlich bekannte Entwicklungswert, dort also erreichbar (über Loopback). Kein Authentifizierungs-Bypass. Jetzt `401`, Regressionstest |
+| GHSA-82fw-gwwq-j7x9 | Vitest / `@vitest/mocker` | 3.2.7 → **4.1.11** (3.x erhält keinen Fix) | ja | nein im Normalbetrieb: betroffen sind `mockerPlugin`/`interceptorPlugin`, die ElektroPlan nicht nutzt; Vitest läuft nur lokal als Testrunner. Trotzdem aktualisiert. Vite bleibt 6.4.3 (von Vitest 4 unterstützt) |
+| GHSA-85c8-ppgw-ccpr | tinypool | 1.1.1 → **entfernt** (Vitest 4 nutzt es nicht mehr) | ja (< 2.1.2) | nein: setzt eine Prototype-Pollution im Testprozess voraus; nur Testwerkzeug. Über die zuständige direkte Abhängigkeit (Vitest) gelöst, kein Override |
+| GHSA-68fv-2mgg-jv7q | source-map-js (über Vite/PostCSS und Tailwind) | 1.2.1 → **1.2.2** (innerhalb der bestehenden Bereiche `^1.2.1`, kein Override) | ja | gering: nur Build und Vite-Entwicklungsserver verarbeiten Source Maps aus dem eigenen Quellcode; ein Angreifer müsste präparierte Source Maps einspielen |
+| GHSA-5639-2j2p-m4mx (neu, Scan) | Mako (über Alembic) | 1.4.1 → **1.4.3** | ja (≤ 1.4.1, Windows) | nein: nur Alembic nutzt Mako für die feste Vorlage `script.py.mako`; keine Benutzereingabe erreicht `TemplateLookup` |
+
+**Folgen für die Werkzeuge:** Vitest 4 liefert `vi.spyOn` auf einem bestehenden Mock denselben
+Mock samt Aufrufhistorie; ein 3D-Test zählt deshalb jetzt erst ab dem Theme-Wechsel
+(`mockClear`), die Erwartung „genau drei“ ist unverändert.
+
+**Scans danach:** `npm audit` 0 Funde; OSV-Abfrage aller 71 gesperrten Python-Pakete 0 Treffer.
+Ein sauberer Scan beweist **keine** Sicherheit, er zeigt nur, dass bekannte Advisories zu
+diesen Versionen fehlen. `pip-audit` steht nicht im Lockfile und wurde nicht ergänzt.
+
+**Laufende Container (Stand 2026-10-10, nach freigegebenem Neubau):** aktiv sind uv 0.12.18
+(Backend, System-Python), PyJWT 2.15.1 und Mako 1.4.3 (Backend, `/opt/venv`), Vitest 4.1.11 und
+source-map-js 1.2.2 (Planner, `node_modules`); tinypool ist nicht installiert. Nachweis je
+Installationsort in `current-status.md` §2. Seit Task 0031 gilt lokal ein eigener JWT-Schlüssel
+aus `.env` (Entwicklungsersatz nicht mehr aktiv).
 
 ---
 
@@ -699,3 +840,22 @@ erreicht sie (`/me/preferences`, ohne ID im Pfad). Beim Entfernen werden sie gel
 erfüllt sind. Phase 4e erfüllt die DSGVO **nicht** automatisch; sie liefert Bausteine
 (Berichtigung von Name und E-Mail, Entfernen mit Bereinigung), keine vollständige Umsetzung
 von Auskunft, Verarbeitungsverzeichnis, TOM oder Backup-Löschkonzept.
+
+---
+
+## 19. Sicherheitsprüfung 2026-10-10 – Befundstatus
+
+Unabhängige Prüfung, umgesetzt im Sicherheitsauftrag vom 2026-10-10 (getrennt von Phase 6a).
+
+| # | Befund | Einordnung | Nachweis |
+|---|---|---|---|
+| 1 | Gemeinsamer `QueryClient` überlebt Sitzungswechsel | **bestätigt und behoben** | Abschnitt 12; Gegenprobe: 6 von 6 Tests scheitern mit altem Cache |
+| 2 | Dateilimit greift erst nach Multipart-Pufferung | **bestätigt und behoben** | Abschnitt 7; alter Endpunkt las unangemeldet 2 MiB vor dem `401` |
+| 3 | Compose: Ports auf allen Schnittstellen, JWT-Secret erreicht den Container nicht | **bestätigt und behoben** (Entwicklung); Produktionskonfiguration **bewusst offener Betriebsblocker** | Abschnitt 8 |
+| 4 | Rotation entgeht dem Familienwiderruf | **bestätigt und behoben** (Logout, Wiederverwendung, Mitgliedschaftswiderruf); die Reihenfolge „Logout zuerst“ war schon vorher sicher (**Verdacht dort widerlegt**) | Abschnitt 3; zusätzlich Deadlock E-Mail-Änderung ↔ Rotation gefunden und behoben |
+| 5 | Fehlende Grenzen, nicht atomarer Login-Limiter | **bestätigt und behoben** für Erneuerung, Upload, Schreibzugriffe, Atomarität; PDF-Grenze **nicht umsetzbar** (keine PDF-Erzeugung); Mehrinstanzbetrieb **bewusst offener Betriebsblocker** | Abschnitt 11 |
+| – | Aktivierung in der Entwicklungsumgebung (2026-10-10) | Migration `0011` aktiv, Ports nur `127.0.0.1`, Upload-Schranke, Sitzungswiderruf, Schreibgrenze und Datentrennung im echten Stack beobachtet; JWT-Entwicklungsersatz aktiv (kein `.env`) | `current-status.md` §2 |
+| R1 | Review: Invalid-IP-Limiter blockiert Unbeteiligte (Konflikt im Toleranzfenster, Kontogrenze) | **bestätigt und behoben** – nur echte ungültige Versuche zählen, eigene Reservierung exakt zurück | Abschnitt 11; Gegenprobe: 5 von 8 Tests scheitern mit altem Verhalten |
+| R2 | Review: Advisories uv, PyJWT, Vitest, tinypool, source-map-js | **bestätigt (Versionen betroffen) und aktualisiert**; Erreichbarkeit getrennt eingeordnet; zusätzlich Mako aus Scan | Abschnitt 15 |
+| R3 | Beim Prüfen gefunden: `localhost` hängt seit der IPv4-Loopback-Bindung | **bestätigt und behoben** (Werkzeuge auf `127.0.0.1`) | Abschnitt 8 |
+| 6 | Datenschutz und Wiederherstellung | **kein Codefix** – Checkliste angelegt, Punkte überwiegend **offen** bzw. **Entscheidung offen** | [`release-checklist-real-data.md`](release-checklist-real-data.md) |

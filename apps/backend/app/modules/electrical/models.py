@@ -29,6 +29,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -70,6 +71,15 @@ from app.modules.electrical.geometry import (
 ROOM_NUMBER_CONSTRAINT = "uq_el_rooms_floor_room_number"
 #: Name der eindeutigen Reihenfolge innerhalb eines Raums.
 WALL_ORDER_CONSTRAINT = "uq_el_walls_room_sort_order"
+#: Ein Raumwandpaar hoechstens einmal gekoppelt (Phase 6a, ADR 0024).
+WALL_LINK_PAIR_CONSTRAINT = "uq_el_wall_links_pair"
+
+#: Entscheidung einer Wandkopplung: eine Bauwand oder zwei Bauwaende (ADR 0024).
+WALL_LINK_RELATIONS: tuple[str, ...] = ("shared", "separate")
+#: Herkunft einer Wandkopplung: ausdruecklich angelegt oder Bestandsuebernahme.
+WALL_LINK_ORIGINS: tuple[str, ...] = ("user", "backfill")
+#: Verlauf eines Steigwegabschnitts (ADR 0025) - nur Schema-Vorbereitung.
+RISER_OFFSET_MODES: tuple[str, ...] = ("orthogonal", "direct")
 
 
 def _value_list(values: tuple[str, ...]) -> str:
@@ -347,3 +357,107 @@ class ElectricalDevice(UUIDPrimaryKey, TenantScoped, Timestamped, Base):
     label: Mapped[str | None] = mapped_column(
         String(MAX_DEVICE_LABEL_LENGTH), nullable=True, default=None
     )
+
+
+class ElectricalWallLink(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, Base):
+    """Wandkopplung: zwei Raumwaende verschiedener Raeume (Phase 6a, ADR 0024).
+
+    Speichert **nur die Entscheidung** (``relation``): ``shared`` = eine Bauwand,
+    ``separate`` = zwei Bauwaende auf derselben Achse. Lage, Laenge und Bereich
+    werden immer aus den Raumwaenden abgeleitet (``topology.py``) - die Raumwand
+    bleibt die einzige Geometriequelle. Ohne gemeinsamen Bereich ist eine
+    Kopplung "unterbrochen": Sie bleibt gespeichert, wirkt aber nicht.
+
+    Kanonisch ``wall_a_id < wall_b_id`` und je Paar hoechstens einmal. Beide
+    Verweise ``CASCADE``: Verschwindet eine Wand mit ihrem Raum, verschwindet
+    die Kopplung mit. Eine einzelne Wand mit Kopplung entfernt der Service nur
+    ausdruecklich (``removed_wall_link_ids``, sonst ``409 wall-has-links``).
+
+    Tabellenuebergreifende Regeln (selbes Geschoss, verschiedene Raeume, exakt
+    kollinear mit positiver Ueberlappung, eindeutig) prueft der Service unter
+    der Projektsperre.
+    """
+
+    __tablename__ = "electrical_wall_links"
+    __table_args__ = (
+        tenant_identity(),
+        # Ausdrueckliche Namen: Nach der Namenskonvention hiessen beide
+        # zusammengesetzten Fremdschluessel gleich (erste Spalte organization_id).
+        ForeignKeyConstraint(
+            ["organization_id", "wall_a_id"],
+            ["electrical_walls.organization_id", "electrical_walls.id"],
+            ondelete="CASCADE",
+            name="fk_electrical_wall_links_wall_a_electrical_walls",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "wall_b_id"],
+            ["electrical_walls.organization_id", "electrical_walls.id"],
+            ondelete="CASCADE",
+            name="fk_electrical_wall_links_wall_b_electrical_walls",
+        ),
+        UniqueConstraint(
+            "organization_id", "wall_a_id", "wall_b_id", name=WALL_LINK_PAIR_CONSTRAINT
+        ),
+        CheckConstraint("wall_a_id < wall_b_id", name="pair_canonical"),
+        CheckConstraint(f"relation IN ({_value_list(WALL_LINK_RELATIONS)})", name="relation_known"),
+        CheckConstraint(f"origin IN ({_value_list(WALL_LINK_ORIGINS)})", name="origin_known"),
+        Index("ix_electrical_wall_links_organization_id_wall_a_id", "organization_id", "wall_a_id"),
+        Index("ix_electrical_wall_links_organization_id_wall_b_id", "organization_id", "wall_b_id"),
+    )
+
+    wall_a_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    wall_b_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    relation: Mapped[str] = mapped_column(String(16), nullable=False)
+    origin: Mapped[str] = mapped_column(String(16), nullable=False)
+    #: Wer die Kopplung angelegt hat; ``NULL`` bei der Bestandsuebernahme.
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, default=None
+    )
+
+
+class ElectricalRiser(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, Base):
+    """Steigweg eines Gebaeudes (ADR 0025) - **nur Schema-Vorbereitung** (Phase 6a).
+
+    Die Tabelle entsteht mit Migration ``0010``, damit diese spaeter nicht
+    umgeschrieben werden muss. Es gibt in Phase 6a.0-6a.3 **keine** API, keinen
+    Service, keine Oberflaeche und keine Daten. Fachliche Regeln (Halte im
+    selben Gebaeude, Verlauf, Laengenstatus) entstehen erst mit 6a.4.
+    """
+
+    __tablename__ = "electrical_risers"
+    __table_args__ = (
+        tenant_identity(),
+        tenant_fk("building_id", "buildings", ondelete="RESTRICT"),
+        UniqueConstraint("organization_id", "building_id", "name"),
+        CheckConstraint(
+            f"offset_mode IN ({_value_list(RISER_OFFSET_MODES)})", name="offset_mode_known"
+        ),
+    )
+
+    building_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
+    offset_mode: Mapped[str] = mapped_column(String(16), nullable=False)
+
+
+class ElectricalRiserStop(UUIDPrimaryKey, TenantScoped, Timestamped, Base):
+    """Uebergabepunkt eines Steigwegs je Geschoss (ADR 0025) - **nur Schema-Vorbereitung**.
+
+    Hoechstens ein Halt je Steigweg und Geschoss. Keine eigene Version: Die
+    Halteliste wird spaeter als Ganzes unter der Steigwegversion gespeichert.
+    """
+
+    __tablename__ = "electrical_riser_stops"
+    __table_args__ = (
+        tenant_identity(),
+        tenant_fk("riser_id", "electrical_risers", ondelete="CASCADE"),
+        tenant_fk("floor_id", "floors", ondelete="RESTRICT"),
+        UniqueConstraint("organization_id", "riser_id", "floor_id"),
+        CheckConstraint(_coordinates_in_range("x_mm", "y_mm"), name="coordinates_in_range"),
+        Index("ix_electrical_riser_stops_organization_id_floor_id", "organization_id", "floor_id"),
+    )
+
+    riser_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    floor_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    x_mm: Mapped[int] = mapped_column(Integer, nullable=False)
+    y_mm: Mapped[int] = mapped_column(Integer, nullable=False)

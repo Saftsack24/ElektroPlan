@@ -32,7 +32,7 @@ from sqlalchemy import CursorResult, and_, delete, or_, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.core.auth.rate_limit import SlidingWindowLimiter
+from app.core.auth.rate_limit import SlidingWindowLimiter, enforce
 from app.core.auth.security import (
     MAX_ONE_TIME_TOKEN_LENGTH,
     generate_one_time_token,
@@ -68,7 +68,6 @@ from app.errors import (
     InvitationRequiresLoginError,
     NotFoundError,
     ProblemFieldError,
-    RateLimitedError,
     ValidationFailedError,
 )
 from app.logging_config import get_logger
@@ -93,6 +92,7 @@ _INVALID = (
 
 _settings = get_settings()
 _acceptance_limiter = SlidingWindowLimiter(
+    name="invitation_acceptance",
     limit=_settings.invitation_attempts_per_window,
     window_seconds=_settings.invitation_window_seconds,
 )
@@ -435,10 +435,14 @@ class InvitationAcceptance:
     # ----------------------------------------------------------------- intern
 
     def _load_open(self, token: str, *, lock: bool) -> tuple[MemberInvitation, Organization]:
-        key = f"ip:{self.client_ip or 'unbekannt'}"
-        if not _acceptance_limiter.check(key):
-            logger.warning("invitation_rate_limited")
-            raise RateLimitedError("Zu viele Versuche. Bitte spaeter erneut versuchen.")
+        # Atomar reserviert; ein gueltiges Token gibt den Versuch zurueck,
+        # nur ungueltige zaehlen (je IP).
+        reservation = enforce(
+            _acceptance_limiter,
+            f"ip:{self.client_ip or 'unbekannt'}",
+            message="Zu viele Versuche. Bitte spaeter erneut versuchen.",
+            log_event="invitation_rate_limited",
+        )
 
         invitation: MemberInvitation | None = None
         if 0 < len(token) <= MAX_TOKEN_LENGTH:
@@ -460,10 +464,10 @@ class InvitationAcceptance:
             or organization.deleted_at is not None
             or invitation.status_at(utcnow()) != "pending"
         ):
-            _acceptance_limiter.register(key)
             # Bewusst ohne Token, Hash oder Grund im Log.
             logger.info("invitation_rejected")
             raise InvitationInvalidError(_INVALID)
+        _acceptance_limiter.release(reservation)
         return invitation, organization
 
     def _complete(

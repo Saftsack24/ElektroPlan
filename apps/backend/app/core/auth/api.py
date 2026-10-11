@@ -138,7 +138,9 @@ def refresh(
     """
     service = AuthService(session)
     tokens = service.refresh(
-        _read_refresh_cookie(request), user_agent=request.headers.get("User-Agent")
+        _read_refresh_cookie(request),
+        user_agent=request.headers.get("User-Agent"),
+        client_ip=get_client_ip(request),
     )
     session.commit()
     _set_refresh_cookie(response, tokens)

@@ -1,0 +1,392 @@
+{
+  "version": 1,
+  "zweck": "Statische Beispiele zur Paritaet der Wandkopplung (Phase 6a, ADR 0024) zwischen Backend (verbindlich: topology.py, link_rules.py, devices.py) und Frontend (topologie/wandtopologie.ts, geraete/geraetepruefung.ts). Kein API-Vertrag. Ganze Millimeter. Erwartet werden je Wand die Zustaende ihrer atomaren Abschnitte in Wandrichtung (no-partner, undecided, shared, separate), je Wand die IDs der uebertragenen Nachbaroeffnungen, je Geraet die sortierten, eindeutigen Befundcodes, je Kopplung der Status (active, ambiguous, broken) und die Kandidaten (Paar kanonisch nach Wand-ID sortiert). Wandstaerke ohne Angabe: 115. Wird eine Regel geaendert, entsteht eine neue Version dieser Datei.",
+  "typen": {
+    "dose": { "breite": 80, "hoehe": 80, "innen": true, "aussen": true, "decke": false }
+  },
+  "faelle": [
+    {
+      "name": "Beispiel 3.1: gemeinsame Bauwand (shared) - Tuer abgeleitet, Steckdose in der Tuer abgelehnt",
+      "raeume": [
+        {
+          "id": "A",
+          "hoehe": 2500,
+          "waende": [
+            { "id": "a1", "w": [0, 0, 4000, 0], "oeffnungen": [] },
+            { "id": "a2", "w": [4000, 0, 4000, 3000], "oeffnungen": [{ "id": "t1", "abstand": 1000, "breite": 900, "bruestung": 0, "hoehe": 2000 }] },
+            { "id": "a3", "w": [4000, 3000, 0, 3000], "oeffnungen": [] },
+            { "id": "a4", "w": [0, 3000, 0, 0], "oeffnungen": [] }
+          ]
+        },
+        {
+          "id": "B",
+          "hoehe": 2500,
+          "waende": [
+            { "id": "b1", "w": [4000, 0, 7000, 0], "oeffnungen": [] },
+            { "id": "b2", "w": [7000, 0, 7000, 3000], "oeffnungen": [] },
+            { "id": "b3", "w": [7000, 3000, 4000, 3000], "oeffnungen": [] },
+            { "id": "b4", "w": [4000, 3000, 4000, 0], "oeffnungen": [] }
+          ]
+        }
+      ],
+      "kopplungen": [{ "id": "k1", "a": "a2", "b": "b4", "beziehung": "shared" }],
+      "geraete": [
+        { "id": "g1", "raum": "B", "typ": "dose", "flaeche": "wall_interior", "wand": "b4", "mitte": 1500, "mittelhoehe": 1000 },
+        { "id": "g2", "raum": "B", "typ": "dose", "flaeche": "wall_exterior", "wand": "b4", "mitte": 500, "mittelhoehe": 300 },
+        { "id": "g3", "raum": "B", "typ": "dose", "flaeche": "wall_exterior", "wand": "b2", "mitte": 500, "mittelhoehe": 300 }
+      ],
+      "erwartet": {
+        "abschnitte": { "a1": ["no-partner"], "a2": ["shared"], "b2": ["no-partner"], "b4": ["shared"] },
+        "fremdoeffnungen": { "a2": [], "b4": ["t1"] },
+        "geraete": { "g1": ["device-in-opening"], "g2": ["device-exterior-on-shared-wall"], "g3": [] },
+        "kopplungen": { "k1": "active" },
+        "kandidaten": []
+      }
+    },
+    {
+      "name": "Beispiel 3.2: getrennte Waende (separate) - Tuer nicht uebertragen, Zwischenflaeche keine Fassade",
+      "raeume": [
+        {
+          "id": "A",
+          "hoehe": 2500,
+          "waende": [
+            { "id": "a1", "w": [0, 0, 4000, 0], "oeffnungen": [] },
+            { "id": "a2", "w": [4000, 0, 4000, 3000], "oeffnungen": [{ "id": "t1", "abstand": 1000, "breite": 900, "bruestung": 0, "hoehe": 2000 }] },
+            { "id": "a3", "w": [4000, 3000, 0, 3000], "oeffnungen": [] },
+            { "id": "a4", "w": [0, 3000, 0, 0], "oeffnungen": [] }
+          ]
+        },
+        {
+          "id": "B",
+          "hoehe": 2500,
+          "waende": [
+            { "id": "b1", "w": [4000, 0, 7000, 0], "oeffnungen": [] },
+            { "id": "b2", "w": [7000, 0, 7000, 3000], "oeffnungen": [] },
+            { "id": "b3", "w": [7000, 3000, 4000, 3000], "oeffnungen": [] },
+            { "id": "b4", "w": [4000, 3000, 4000, 0], "oeffnungen": [] }
+          ]
+        }
+      ],
+      "kopplungen": [{ "id": "k1", "a": "a2", "b": "b4", "beziehung": "separate" }],
+      "geraete": [
+        { "id": "g1", "raum": "B", "typ": "dose", "flaeche": "wall_interior", "wand": "b4", "mitte": 1500, "mittelhoehe": 1000 },
+        { "id": "g2", "raum": "B", "typ": "dose", "flaeche": "wall_exterior", "wand": "b4", "mitte": 500, "mittelhoehe": 300 },
+        { "id": "g3", "raum": "B", "typ": "dose", "flaeche": "wall_exterior", "wand": "b2", "mitte": 500, "mittelhoehe": 300 },
+        { "id": "g4", "raum": "A", "typ": "dose", "flaeche": "wall_exterior", "wand": "a2", "mitte": 2500, "mittelhoehe": 300 }
+      ],
+      "erwartet": {
+        "abschnitte": { "a2": ["separate"], "b4": ["separate"] },
+        "fremdoeffnungen": { "a2": [], "b4": [] },
+        "geraete": { "g1": [], "g2": ["device-exterior-on-shared-wall"], "g3": [], "g4": ["device-exterior-on-shared-wall"] },
+        "kopplungen": { "k1": "active" },
+        "kandidaten": []
+      }
+    },
+    {
+      "name": "Unentschieden: Verhalten wie Phase 5, eindeutiger Vorschlag",
+      "raeume": [
+        {
+          "id": "A",
+          "hoehe": 2500,
+          "waende": [
+            { "id": "a1", "w": [0, 0, 4000, 0], "oeffnungen": [] },
+            { "id": "a2", "w": [4000, 0, 4000, 3000], "oeffnungen": [{ "id": "t1", "abstand": 1000, "breite": 900, "bruestung": 0, "hoehe": 2000 }] },
+            { "id": "a3", "w": [4000, 3000, 0, 3000], "oeffnungen": [] },
+            { "id": "a4", "w": [0, 3000, 0, 0], "oeffnungen": [] }
+          ]
+        },
+        {
+          "id": "B",
+          "hoehe": 2500,
+          "waende": [
+            { "id": "b1", "w": [4000, 0, 7000, 0], "oeffnungen": [] },
+            { "id": "b2", "w": [7000, 0, 7000, 3000], "oeffnungen": [] },
+            { "id": "b3", "w": [7000, 3000, 4000, 3000], "oeffnungen": [] },
+            { "id": "b4", "w": [4000, 3000, 4000, 0], "oeffnungen": [] }
+          ]
+        }
+      ],
+      "kopplungen": [],
+      "geraete": [
+        { "id": "g1", "raum": "B", "typ": "dose", "flaeche": "wall_interior", "wand": "b4", "mitte": 1500, "mittelhoehe": 1000 },
+        { "id": "g2", "raum": "B", "typ": "dose", "flaeche": "wall_exterior", "wand": "b4", "mitte": 500, "mittelhoehe": 300 }
+      ],
+      "erwartet": {
+        "abschnitte": { "a2": ["undecided"], "b4": ["undecided"] },
+        "fremdoeffnungen": { "a2": [], "b4": ["t1"] },
+        "geraete": { "g1": ["device-in-opening"], "g2": ["device-exterior-on-shared-wall"] },
+        "kopplungen": {},
+        "kandidaten": [{ "a": "a2", "b": "b4", "art": "suggested", "gruende": [] }]
+      }
+    },
+    {
+      "name": "Lange Flurwand mit drei Nachbarraeumen: gemeinsam, getrennt, unentschieden",
+      "raeume": [
+        {
+          "id": "F",
+          "hoehe": 2500,
+          "waende": [
+            {
+              "id": "f1",
+              "w": [0, 3000, 9000, 3000],
+              "oeffnungen": [
+                { "id": "tb", "abstand": 1000, "breite": 900, "bruestung": 0, "hoehe": 2000 },
+                { "id": "tk", "abstand": 4000, "breite": 900, "bruestung": 0, "hoehe": 2000 }
+              ]
+            },
+            { "id": "f2", "w": [9000, 3000, 9000, 5000], "oeffnungen": [] },
+            { "id": "f3", "w": [9000, 5000, 0, 5000], "oeffnungen": [] },
+            { "id": "f4", "w": [0, 5000, 0, 3000], "oeffnungen": [] }
+          ]
+        },
+        {
+          "id": "Bad",
+          "hoehe": 2500,
+          "waende": [
+            { "id": "b1", "w": [0, 0, 3000, 0], "oeffnungen": [] },
+            { "id": "b2", "w": [3000, 0, 3000, 3000], "oeffnungen": [] },
+            { "id": "b3", "w": [3000, 3000, 0, 3000], "oeffnungen": [] },
+            { "id": "b4", "w": [0, 3000, 0, 0], "oeffnungen": [] }
+          ]
+        },
+        {
+          "id": "Kind",
+          "hoehe": 2500,
+          "waende": [
+            { "id": "k1", "w": [3000, 0, 6000, 0], "oeffnungen": [] },
+            { "id": "k2", "w": [6000, 0, 6000, 3000], "oeffnungen": [] },
+            { "id": "k3", "w": [6000, 3000, 3000, 3000], "oeffnungen": [] },
+            { "id": "k4", "w": [3000, 3000, 3000, 0], "oeffnungen": [] }
+          ]
+        },
+        {
+          "id": "Arbeit",
+          "hoehe": 2500,
+          "waende": [
+            { "id": "w1", "w": [6000, 0, 9000, 0], "oeffnungen": [] },
+            { "id": "w2", "w": [9000, 0, 9000, 3000], "oeffnungen": [] },
+            { "id": "w3", "w": [9000, 3000, 6000, 3000], "oeffnungen": [] },
+            { "id": "w4", "w": [6000, 3000, 6000, 0], "oeffnungen": [] }
+          ]
+        }
+      ],
+      "kopplungen": [
+        { "id": "L1", "a": "b3", "b": "f1", "beziehung": "shared" },
+        { "id": "L2", "a": "f1", "b": "k3", "beziehung": "separate" }
+      ],
+      "geraete": [
+        { "id": "gb", "raum": "Bad", "typ": "dose", "flaeche": "wall_interior", "wand": "b3", "mitte": 1500, "mittelhoehe": 1000 },
+        { "id": "gk", "raum": "Kind", "typ": "dose", "flaeche": "wall_interior", "wand": "k3", "mitte": 1500, "mittelhoehe": 1000 },
+        { "id": "gw", "raum": "Arbeit", "typ": "dose", "flaeche": "wall_exterior", "wand": "w3", "mitte": 1500, "mittelhoehe": 300 }
+      ],
+      "erwartet": {
+        "abschnitte": {
+          "f1": ["shared", "separate", "undecided"],
+          "f4": ["no-partner"],
+          "b3": ["shared"],
+          "k3": ["separate"],
+          "w3": ["undecided"],
+          "b2": ["undecided"],
+          "k4": ["undecided"]
+        },
+        "fremdoeffnungen": { "f1": [], "b3": ["tb"], "k3": [], "w3": [] },
+        "geraete": { "gb": ["device-in-opening"], "gk": [], "gw": ["device-exterior-on-shared-wall"] },
+        "kopplungen": { "L1": "active", "L2": "active" },
+        "kandidaten": [
+          { "a": "b2", "b": "k4", "art": "suggested", "gruende": [] },
+          { "a": "f1", "b": "w3", "art": "suggested", "gruende": [] },
+          { "a": "k2", "b": "w4", "art": "suggested", "gruende": [] }
+        ]
+      }
+    },
+    {
+      "name": "Schraege Wand, Teilueberlappung mit irrationaler Grenze, getrennt",
+      "raeume": [
+        { "id": "A", "hoehe": 2500, "waende": [{ "id": "a1", "w": [0, 0, 2000, 4000], "oeffnungen": [{ "id": "t1", "abstand": 3000, "breite": 900, "bruestung": 0, "hoehe": 2000 }] }] },
+        { "id": "B", "hoehe": 2500, "waende": [{ "id": "b1", "w": [3000, 6000, 1000, 2000], "oeffnungen": [] }] }
+      ],
+      "kopplungen": [{ "id": "k1", "a": "a1", "b": "b1", "beziehung": "separate" }],
+      "geraete": [
+        { "id": "g1", "raum": "B", "typ": "dose", "flaeche": "wall_interior", "wand": "b1", "mitte": 3200, "mittelhoehe": 1000 }
+      ],
+      "erwartet": {
+        "abschnitte": { "a1": ["no-partner", "separate"], "b1": ["no-partner", "separate"] },
+        "fremdoeffnungen": { "a1": [], "b1": [] },
+        "geraete": { "g1": [] },
+        "kopplungen": { "k1": "active" },
+        "kandidaten": []
+      }
+    },
+    {
+      "name": "Schraege Wand ohne Kopplung: Nachbaroeffnung blockiert, Bestaetigung noetig (offene Kontur)",
+      "raeume": [
+        { "id": "A", "hoehe": 2500, "waende": [{ "id": "a1", "w": [0, 0, 2000, 4000], "oeffnungen": [{ "id": "t1", "abstand": 3000, "breite": 900, "bruestung": 0, "hoehe": 2000 }] }] },
+        { "id": "B", "hoehe": 2500, "waende": [{ "id": "b1", "w": [3000, 6000, 1000, 2000], "oeffnungen": [] }] }
+      ],
+      "kopplungen": [],
+      "geraete": [
+        { "id": "g1", "raum": "B", "typ": "dose", "flaeche": "wall_interior", "wand": "b1", "mitte": 3200, "mittelhoehe": 1000 },
+        { "id": "g2", "raum": "B", "typ": "dose", "flaeche": "wall_interior", "wand": "b1", "mitte": 2700, "mittelhoehe": 1000 }
+      ],
+      "erwartet": {
+        "abschnitte": { "a1": ["no-partner", "undecided"], "b1": ["no-partner", "undecided"] },
+        "fremdoeffnungen": { "a1": [], "b1": ["t1"] },
+        "geraete": { "g1": ["device-in-opening"], "g2": [] },
+        "kopplungen": {},
+        "kandidaten": [{ "a": "a1", "b": "b1", "art": "decision-needed", "gruende": ["contour-open"] }]
+      }
+    },
+    {
+      "name": "1 mm Versatz und Endpunktberuehrung: nie ein Vorschlag",
+      "raeume": [
+        {
+          "id": "A",
+          "hoehe": 2500,
+          "waende": [
+            { "id": "a1", "w": [0, 0, 3000, 0], "oeffnungen": [] },
+            { "id": "a2", "w": [3000, 0, 3000, 3000], "oeffnungen": [] },
+            { "id": "a3", "w": [3000, 3000, 0, 3000], "oeffnungen": [] },
+            { "id": "a4", "w": [0, 3000, 0, 0], "oeffnungen": [] }
+          ]
+        },
+        {
+          "id": "B",
+          "hoehe": 2500,
+          "waende": [
+            { "id": "b1", "w": [3001, 0, 6001, 0], "oeffnungen": [] },
+            { "id": "b2", "w": [6001, 0, 6001, 3000], "oeffnungen": [] },
+            { "id": "b3", "w": [6001, 3000, 3001, 3000], "oeffnungen": [] },
+            { "id": "b4", "w": [3001, 3000, 3001, 0], "oeffnungen": [] }
+          ]
+        },
+        {
+          "id": "C",
+          "hoehe": 2500,
+          "waende": [
+            { "id": "c1", "w": [-3000, 3000, 0, 3000], "oeffnungen": [] },
+            { "id": "c2", "w": [0, 3000, 0, 6000], "oeffnungen": [] },
+            { "id": "c3", "w": [0, 6000, -3000, 6000], "oeffnungen": [] },
+            { "id": "c4", "w": [-3000, 6000, -3000, 3000], "oeffnungen": [] }
+          ]
+        }
+      ],
+      "kopplungen": [],
+      "geraete": [],
+      "erwartet": {
+        "abschnitte": { "a2": ["no-partner"], "b4": ["no-partner"], "a3": ["no-partner"], "a4": ["no-partner"], "c1": ["no-partner"], "c2": ["no-partner"] },
+        "fremdoeffnungen": {},
+        "geraete": {},
+        "kopplungen": {},
+        "kandidaten": []
+      }
+    },
+    {
+      "name": "Abweichende Staerke und Oeffnungen auf beiden Seiten: nur ausdruecklich",
+      "raeume": [
+        {
+          "id": "A",
+          "hoehe": 2500,
+          "waende": [
+            { "id": "a1", "w": [0, 0, 4000, 0], "oeffnungen": [] },
+            { "id": "a2", "w": [4000, 0, 4000, 3000], "oeffnungen": [{ "id": "t1", "abstand": 1000, "breite": 900, "bruestung": 0, "hoehe": 2000 }] },
+            { "id": "a3", "w": [4000, 3000, 0, 3000], "oeffnungen": [] },
+            { "id": "a4", "w": [0, 3000, 0, 0], "oeffnungen": [] }
+          ]
+        },
+        {
+          "id": "B",
+          "hoehe": 2500,
+          "waende": [
+            { "id": "b1", "w": [4000, 0, 7000, 0], "oeffnungen": [] },
+            { "id": "b2", "w": [7000, 0, 7000, 3000], "oeffnungen": [] },
+            { "id": "b3", "w": [7000, 3000, 4000, 3000], "oeffnungen": [] },
+            { "id": "b4", "w": [4000, 3000, 4000, 0], "staerke": 240, "oeffnungen": [{ "id": "t2", "abstand": 1100, "breite": 900, "bruestung": 0, "hoehe": 2000 }] }
+          ]
+        }
+      ],
+      "kopplungen": [],
+      "geraete": [],
+      "erwartet": {
+        "abschnitte": { "a2": ["undecided"], "b4": ["undecided"] },
+        "fremdoeffnungen": { "a2": ["t2"], "b4": ["t1"] },
+        "geraete": {},
+        "kopplungen": {},
+        "kandidaten": [{ "a": "a2", "b": "b4", "art": "decision-needed", "gruende": ["thickness-differs", "openings-on-both-sides"] }]
+      }
+    },
+    {
+      "name": "Dritte Wand auf einem gekoppelten Stueck: dort konservativ, Kopplung mehrdeutig",
+      "raeume": [
+        {
+          "id": "A",
+          "hoehe": 2500,
+          "waende": [
+            { "id": "a1", "w": [0, 0, 4000, 0], "oeffnungen": [] },
+            { "id": "a2", "w": [4000, 0, 4000, 3000], "oeffnungen": [{ "id": "t1", "abstand": 1000, "breite": 900, "bruestung": 0, "hoehe": 2000 }] },
+            { "id": "a3", "w": [4000, 3000, 0, 3000], "oeffnungen": [] },
+            { "id": "a4", "w": [0, 3000, 0, 0], "oeffnungen": [] }
+          ]
+        },
+        {
+          "id": "B",
+          "hoehe": 2500,
+          "waende": [
+            { "id": "b1", "w": [4000, 0, 7000, 0], "oeffnungen": [] },
+            { "id": "b2", "w": [7000, 0, 7000, 3000], "oeffnungen": [] },
+            { "id": "b3", "w": [7000, 3000, 4000, 3000], "oeffnungen": [] },
+            { "id": "b4", "w": [4000, 3000, 4000, 0], "oeffnungen": [] }
+          ]
+        },
+        { "id": "C", "hoehe": 2500, "waende": [{ "id": "c1", "w": [4000, 0, 4000, 1500], "oeffnungen": [] }] }
+      ],
+      "kopplungen": [{ "id": "k1", "a": "a2", "b": "b4", "beziehung": "separate" }],
+      "geraete": [
+        { "id": "g1", "raum": "B", "typ": "dose", "flaeche": "wall_interior", "wand": "b4", "mitte": 1500, "mittelhoehe": 1000 }
+      ],
+      "erwartet": {
+        "abschnitte": { "a2": ["undecided", "separate"], "b4": ["separate", "undecided"], "c1": ["undecided"] },
+        "fremdoeffnungen": { "b4": ["t1"] },
+        "geraete": { "g1": ["device-in-opening"] },
+        "kopplungen": { "k1": "ambiguous" },
+        "kandidaten": [
+          { "a": "a2", "b": "c1", "art": "not-linkable", "gruende": ["ambiguous"] },
+          { "a": "b4", "b": "c1", "art": "not-linkable", "gruende": ["ambiguous"] }
+        ]
+      }
+    },
+    {
+      "name": "Unterbrochene Kopplung: wirkt nirgends, Stueck ohne Partner",
+      "raeume": [
+        {
+          "id": "A",
+          "hoehe": 2500,
+          "waende": [
+            { "id": "a1", "w": [0, 0, 4000, 0], "oeffnungen": [] },
+            { "id": "a2", "w": [4000, 0, 4000, 3000], "oeffnungen": [] },
+            { "id": "a3", "w": [4000, 3000, 0, 3000], "oeffnungen": [] },
+            { "id": "a4", "w": [0, 3000, 0, 0], "oeffnungen": [] }
+          ]
+        },
+        {
+          "id": "B",
+          "hoehe": 2500,
+          "waende": [
+            { "id": "b1", "w": [4001, 0, 7000, 0], "oeffnungen": [] },
+            { "id": "b2", "w": [7000, 0, 7000, 3000], "oeffnungen": [] },
+            { "id": "b3", "w": [7000, 3000, 4001, 3000], "oeffnungen": [] },
+            { "id": "b4", "w": [4001, 3000, 4001, 0], "oeffnungen": [] }
+          ]
+        }
+      ],
+      "kopplungen": [{ "id": "k1", "a": "a2", "b": "b4", "beziehung": "shared" }],
+      "geraete": [],
+      "erwartet": {
+        "abschnitte": { "a2": ["no-partner"], "b4": ["no-partner"] },
+        "fremdoeffnungen": { "a2": [], "b4": [] },
+        "geraete": {},
+        "kopplungen": { "k1": "broken" },
+        "kandidaten": []
+      }
+    }
+  ]
+}

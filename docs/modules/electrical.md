@@ -186,6 +186,43 @@ gelöscht. Die Geschoss-Standardhöhe prüft `floor_height.py` auch für Wandger
 Konturspeichern ohne ausdrückliche Entfernung); Gerätetyp → `RESTRICT`, deaktivieren statt
 löschen; Projektlöschung über den Teilnehmer (`electrical.devices`).
 
+### `electrical_wall_links` — umgesetzt (Phase 6a, ADR 0024)
+
+**Wandkopplung:** zwei Raumwände verschiedener Räume desselben Geschosses, exakt kollinear mit
+positiver Überlappung. Gespeichert wird nur die Entscheidung `relation` (`shared` = eine
+Bauwand, `separate` = zwei Bauwände auf derselben Achse), dazu `origin` (`user`/`backfill`),
+`created_by_user_id` und eine Version. Kanonisch `wall_a_id < wall_b_id`, je Paar einmal;
+beide Wände `CASCADE`. **Keine Geometrie:** Bereich, Länge und Status leitet die Topologie ab.
+
+Zustand je atomarem Abschnitt mit Wänden zweier Räume (`topology.SectionState`):
+
+| Zustand | Nachbaröffnung | Geräteprüfung gegen Nachbaröffnung | Außenmontage | 3D |
+|---|---|---|---|---|
+| `undecided` (keine wirksame Kopplung) | abgeleitet | blockiert (Phase 5) | verboten | ein Körper |
+| `shared` | abgeleitet, durchgehend | blockiert | verboten (Innenfläche des Nachbarn) | ein Körper; abweichende Stärke = Konflikt |
+| `separate` | **nicht** übertragen | **blockiert nicht** | verboten (Zwischenfläche, **keine** Fassade) | zwei vereinfachte Halbkörper |
+
+Eine Kopplung wirkt auf einem Abschnitt nur, wenn **genau ihre beiden Wände** ihn überdecken;
+liegt eine dritte Wand darauf, ist er `undecided`. Status je Kopplung (abgeleitet): `active`,
+`ambiguous` (teilweise mehrdeutig), `broken` („unterbrochen“: kein gemeinsamer Abschnitt; bleibt
+gespeichert, wirkt wieder, sobald die Geometrie passt). Ohne Nachbarraum heißt die äußere Seite
+„Außenseite – kein modellierter Nachbarraum“ (Außenmontage wie Phase 5).
+
+**Regeln:** Anlegen, Ändern, Lösen – jeweils „keine neuen, keine größeren Gerätekonflikte“
+(`422`), nichts wird verschoben. Jede Kopplungsänderung zählt die Raumversion **beider** Räume
+weiter. Entfernen einer gekoppelten Wand nur ausdrücklich (`removed_wall_link_ids`, sonst
+`409 wall-has-links`); Wandteilung: die ursprüngliche ID behält die Kopplung, das neue Stück ist
+unentschieden; Konturumkehr wirkt nicht; Raumlöschung nimmt die Kopplungen mit. Kopplungen
+werden **nie** automatisch angelegt – eindeutige Paare erscheinen als Vorschlag (Kandidat), der
+Bestand lässt sich mit dem Befehl `wall-links-backfill` übernehmen (nur `shared`, nie `separate`).
+
+**Reichweite:** eine Wandzuordnung, keine allgemeine Bauwandverwaltung (ADR 0024 „Reichweite“).
+
+### `electrical_risers`, `electrical_riser_stops` — nur Schema (Phase 6a, ADR 0025)
+
+Steigweg je Gebäude und Übergabepunkt je Geschoss. Die Tabellen bestehen seit Migration `0010`;
+**API, Service, Oberfläche und Daten folgen erst mit 6a.4–6a.5 (NOT STARTED).**
+
 ### `electrical_distribution_boards`
 Verteilungen mit Code (`HV`, `UV1`, …), Standort und Hauptabsicherung.
 
@@ -313,8 +350,9 @@ Die verbindliche Neuberechnung läuft über den Recompute-Endpunkt des Materialm
 
 `electrical.plan.updated` entsteht in Phase 3 bei jeder wirksamen Änderung am Raummodell.
 `change_kind` unterscheidet `room_created`, `room_updated`, `room_deleted`,
-`walls_changed`, `openings_changed` und seit Phase 5 `devices_changed` (Konturspeichern, bei dem
-sich nur Geräte geändert haben). Nutzlast: `project_id`, `floor_id`, `room_id`,
+`walls_changed`, `openings_changed`, seit Phase 5 `devices_changed` (Konturspeichern, bei dem
+sich nur Geräte geändert haben) und seit Phase 6a `wall_links_changed` (Wandkopplung angelegt,
+geändert oder gelöst – je beteiligtem Raum ein Event). Nutzlast: `project_id`, `floor_id`, `room_id`,
 `change_kind` — nur IDs und ein Schlüssel, keine Namen, keine Raumnummern.
 
 Seit Phase 4a: Das atomare Konturspeichern (`PUT …/contour`) erzeugt **genau ein**
@@ -424,6 +462,27 @@ Entfernung → `422 device-missing`; fremde ID → `device-foreign`; Fläche/Wan
 deaktivierter Typ (für neue/geänderte Geräte) → `device-type-unknown`/`device-type-inactive`;
 entfernte Wand mit Geräten → `409 wall-has-devices`; Lagebefunde siehe Abschnitt 4. Der Plan
 liefert je Raum `devices`, `RoomOut` den `room_type`.
+
+### Ergänzt in Phase 6a (ADR 0024)
+
+```
+GET    /floors/{floor_id}/wall-links       Kopplungen mit Status, Kandidaten (Vorschläge)
+POST   /floors/{floor_id}/wall-links       {wall_a_id, wall_b_id, relation}
+PATCH  /wall-links/{link_id}               {relation}, If-Match (Kopplungsversion)
+DELETE /wall-links/{link_id}               If-Match
+PUT    /rooms/{room_id}/contour            zusätzlich removed_wall_link_ids
+GET    /floors/{floor_id}/plan             zusätzlich wall_links, wall_link_candidates
+```
+
+Codes: `422` `wall-link-no-overlap`, `wall-link-ambiguous`, `wall-link-same-wall`,
+`wall-link-same-room`, `wall-link-other-floor`, `wall-link-wall-unknown`,
+`wall-link-not-affected`, `wall-link-id-duplicate`, Gerätebefunde (`device-in-opening` …);
+`409` `wall-link-exists`, `wall-has-links`, `version-conflict`, `project-completed`,
+`project-archived`. Rechte: `electrical.plan.read`/`.write`.
+
+Kommandozeile (Betrieb): `python -m app.cli wall-links-backfill [--project PR-…] [--apply]` –
+Standard Probelauf; je Projekt eine Transaktion unter Projektsperre; Prüfsumme und
+Gerätebefunde vorher/nachher; `completed`/`archived` nur berichtet.
 
 ### Geplant (Phase 6)
 
@@ -845,6 +904,22 @@ bearbeiten“; die Rückkehr stellt Kamera, Auswahl und Schalter wieder her. Kei
 **Lesemodus:** ohne Schreibrecht oder bei `completed`/`archived` Geräte sichtbar und auswählbar,
 keine Werkzeuge, Felder gesperrt.
 
+### Wandzuordnung (Phase 6a) — umgesetzt
+
+Grundriss-Editor: An der gewählten Wand zeigt der Bereich „Wandzuordnung“ je Nachbarwand den
+Zustand (Zuordnung offen, Vorschlag: gemeinsame Bauwand, gemeinsame Bauwand, getrennte Wände,
+Kopplung unterbrochen, nicht eindeutig; dazu „Widersprüchliche Stärke“), den Bereich ab
+Wandanfang und die Wirkung. Aktionen: bestätigen (`shared`), als getrennt festlegen, ändern und
+lösen – die beiden letzten mit Rückfrage; nur bei gespeichertem Entwurf, weil die Zuordnung die
+Raumversion beider Räume weiterzählt. Wer eine gekoppelte Wand entfernt, wird beim Speichern
+gefragt; erst dann gehen `removed_wall_link_ids` mit. Im Grundriss zeigt eine Fuge getrennte
+Wände, eine feine Strichlinie offene, die Warnfarbe mehrdeutige Abschnitte. Wandansicht:
+Abschnittsliste mit Zuordnung, Öffnungen getrennter Wände nur auf der eigenen Seite, Hinweis
+„Öffnung nur in einer der getrennten Wände“. 3D: `separate` als zwei Halbkörper mit Trennfuge
+(vereinfachte Darstellung); Seitenleiste und Hinweise nennen den Zustand. Raumlöschung in
+„Tabellen & Details“: Rückfrage mit der Zahl der Wandzuordnungen. Keine technischen IDs in der
+Bedienoberfläche.
+
 ### Ausdrücklich nicht in Phase 4a
 
 Keine 3D-Ansicht, kein Three.js, keine Elektrogeräte oder Symbolbibliothek, keine
@@ -871,9 +946,9 @@ Geometriefehler lesen. Die Wandtabelle ist die Konturvorschau.
 
 1. Ausstattungsvorlagen pro Raumtyp ("Küche Standard" setzt n Steckdosen) — der Raumtyp
    existiert seit Phase 5 (T7, nur Einordnung); Vorlagen sind weiterhin nicht entschieden.
-2. Mehrgeschossige Steigezonen: Leitungswege über Geschossgrenzen brauchen einen
-   definierten Übergabepunkt. Entwurf offen, Datenmodell erlaubt es bereits
-   (Punkte tragen z, Route ist nicht an ein Geschoss gebunden).
+2. Mehrgeschossige Steigezonen (T4): **beschlossen** als Steigwege mit Übergabepunkten
+   ([ADR 0025](../decisions/0025-risers-between-floors.md)); Tabellen seit `0010`,
+   Umsetzung 6a.4–6a.5 **nicht begonnen**. Die bestätigte Höhenlage (Core) ist umgesetzt.
 3. Import bestehender Grundrisse (PDF/DWG) — nicht im MVP.
 4. ~~Symbolbibliothek (T1)~~ — **entschieden in Phase 5** (ADR 0023): eigene SVG-Symbole,
    austauschbar, ohne DIN-Anspruch.
@@ -881,8 +956,9 @@ Geometriefehler lesen. Die Wandtabelle ist die Konturvorschau.
    [ADR 0016](../decisions/0016-derived-3d-view-wall-height-and-coincident-walls.md),
    **präzisiert in Phase 4b.2**: exakt kollineare Teilüberlappungen werden in atomare
    Abschnitte zerlegt; eine Öffnung ist genau einmal gespeichert, ihr Nachbarraum
-   abgeleitet; keine Migration. **Neu zu bewerten vor Phase 6/7:** ob Leitungsrouting und
-   Materialermittlung eine persistente physische Wandidentität brauchen (Querungen,
-   Doppelzählung, einseitig erfasste Öffnungen, teilweise überlappende Wände).
+   abgeleitet; keine Migration. **T10 entschieden (Phase 6a, begrenzt):** Wandkopplung je
+   Raumwandpaar ([ADR 0024](../decisions/0024-wall-links-physical-wall-assignment.md)); offen
+   bleiben D9 (Durchführung durch getrennte Wände), D10 (Kennzeichnung der äußeren Seite),
+   D11 (Kopplung auf neues Teilstück übertragen).
 6. Kanäle, Rohre und Verlegesysteme als eigene Materialposition je Meter — Entwurf mit
    Phase 7 abstimmen.

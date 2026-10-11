@@ -11,7 +11,7 @@ importieren muss (ADR 0001).
 from __future__ import annotations
 
 from app.core.audit.models import AuditEntry
-from app.core.auth.models import RefreshToken
+from app.core.auth.models import RefreshToken, RefreshTokenFamily
 from app.core.authorization.models import MemberRole, Permission, Role, RolePermission
 from app.core.customers.models import Customer
 from app.core.events.models import DomainEventRecord
@@ -28,8 +28,11 @@ from app.modules.electrical.models import (
     ElectricalDevice,
     ElectricalDeviceType,
     ElectricalOpening,
+    ElectricalRiser,
+    ElectricalRiserStop,
     ElectricalRoom,
     ElectricalWall,
+    ElectricalWallLink,
 )
 
 __all__ = [
@@ -41,8 +44,11 @@ __all__ = [
     "ElectricalDevice",
     "ElectricalDeviceType",
     "ElectricalOpening",
+    "ElectricalRiser",
+    "ElectricalRiserStop",
     "ElectricalRoom",
     "ElectricalWall",
+    "ElectricalWallLink",
     "FileRecord",
     "Floor",
     "MemberInvitation",
@@ -56,6 +62,7 @@ __all__ = [
     "Permission",
     "Project",
     "RefreshToken",
+    "RefreshTokenFamily",
     "Role",
     "RolePermission",
     "StorageCleanupJob",

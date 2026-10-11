@@ -2308,13 +2308,60 @@
           "files"
         ],
         "summary": "Datei hochladen",
-        "description": "Nimmt eine Datei entgegen, prueft sie und legt sie im Storage ab.\n\nMit ``project_id`` wird die Datei einem Projekt zugeordnet; das Projekt\nmuss der eigenen Organisation gehoeren und darf weder archiviert noch\nabgeschlossen sein.",
+        "description": "Nimmt eine Datei entgegen, prueft sie und legt sie im Storage ab.\n\nMit ``project_id`` wird die Datei einem Projekt zugeordnet; das Projekt\nmuss der eigenen Organisation gehoeren und darf weder archiviert noch\nabgeschlossen sein.\n\nDer Koerper wird erst nach Anmeldung, Berechtigung und Anfragegrenzen\ngelesen; eine zu grosse Anfrage endet mit ``413``, bevor sie vollstaendig\nangenommen ist (:mod:`app.core.files.upload_form`).",
         "operationId": "uploadFile",
         "requestBody": {
           "content": {
             "multipart/form-data": {
               "schema": {
-                "$ref": "#/components/schemas/Body_uploadFile"
+                "properties": {
+                  "upload": {
+                    "type": "string",
+                    "contentMediaType": "application/octet-stream",
+                    "title": "Upload"
+                  },
+                  "project_id": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "title": "Project Id"
+                  },
+                  "entity_type": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 60
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "title": "Entity Type"
+                  },
+                  "entity_id": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "title": "Entity Id"
+                  }
+                },
+                "type": "object",
+                "required": [
+                  "upload"
+                ],
+                "title": "Body_uploadFile"
               }
             }
           },
@@ -2351,8 +2398,28 @@
               }
             }
           },
+          "413": {
+            "description": "Anfrage groesser als erlaubt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
           "422": {
             "description": "Dateityp, Inhalt oder Groesse unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Uploads",
             "content": {
               "application/json": {
                 "schema": {
@@ -4638,7 +4705,7 @@
           "electrical"
         ],
         "summary": "Raumkontur als Ganzes speichern",
-        "description": "Ersetzt Waende und Oeffnungen eines Raums **atomar** durch den Zielzustand.\n\n``If-Match`` traegt die Version des **Raums** - sie ist die Version der\ngesamten Raumgeometrie. Die Reihenfolge der Waende ist die Reihenfolge in\nder Liste. Bekannte IDs werden geaendert, neue angelegt, fehlende Waende\nentfernt. Oeffnungen verschwinden nur, wenn sie in\n``removed_opening_ids`` stehen. Jeder Fehler laesst den Raum\nunveraendert; bei Erfolg entsteht genau ein ``electrical.plan.updated``\n(``walls_changed``).\n\nDer ``GET`` auf derselben Adresse liefert den Pruefbericht dieser Kontur.",
+        "description": "Ersetzt Waende und Oeffnungen eines Raums **atomar** durch den Zielzustand.\n\n``If-Match`` traegt die Version des **Raums** - sie ist die Version der\ngesamten Raumgeometrie. Die Reihenfolge der Waende ist die Reihenfolge in\nder Liste. Bekannte IDs werden geaendert, neue angelegt, fehlende Waende\nentfernt. Oeffnungen verschwinden nur, wenn sie in\n``removed_opening_ids`` stehen; Wandkopplungen entfallender Waende nur,\nwenn sie in ``removed_wall_link_ids`` stehen (sonst ``409 wall-has-links``).\nJeder Fehler laesst den Raum\nunveraendert; bei Erfolg entsteht genau ein ``electrical.plan.updated``\n(``walls_changed``).\n\nDer ``GET`` auf derselben Adresse liefert den Pruefbericht dieser Kontur.",
         "operationId": "replaceElectricalRoomContour",
         "parameters": [
           {
@@ -5538,6 +5605,313 @@
         }
       }
     },
+    "/api/v1/modules/electrical/floors/{floor_id}/wall-links": {
+      "get": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Wandkopplungen und Kandidaten eines Geschosses",
+        "description": "Gespeicherte Kopplungen mit Status und ungekoppelte Kandidaten (ADR 0024).\n\nReine Auskunft: Vorschlaege werden nie automatisch gespeichert.",
+        "operationId": "listElectricalWallLinks",
+        "parameters": [
+          {
+            "name": "floor_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Floor Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WallLinkOverviewOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Wandkopplung anlegen",
+        "description": "Ordnet zwei exakt ueberlappende Raumwaende verschiedener Raeume einander zu.\n\n``shared`` = eine Bauwand, ``separate`` = zwei Bauwaende auf derselben Achse.\nDie Raumversion beider Raeume zaehlt weiter. Wuerde ein vorhandenes Geraet\ndadurch unzulaessig, antwortet der Server ``422`` und speichert nichts.",
+        "operationId": "createElectricalWallLink",
+        "parameters": [
+          {
+            "name": "floor_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Floor Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WallLinkCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WallLinkOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Projekt schreibgeschuetzt oder Zuordnung besteht bereits",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules/electrical/wall-links/{link_id}": {
+      "patch": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Wandkopplung aendern",
+        "description": "Aendert ``shared`` <-> ``separate``; ``If-Match`` traegt die Kopplungsversion.",
+        "operationId": "updateElectricalWallLink",
+        "parameters": [
+          {
+            "name": "link_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Link Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WallLinkUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WallLinkOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Wandkopplung loesen",
+        "description": "Loest die Kopplung; der Abschnitt ist danach unentschieden (konservativ).",
+        "operationId": "deleteElectricalWallLink",
+        "parameters": [
+          {
+            "name": "link_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Link Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health/live": {
       "get": {
         "tags": [
@@ -5749,55 +6123,6 @@
           "created_at"
         ],
         "title": "AuditEntryOut"
-      },
-      "Body_uploadFile": {
-        "properties": {
-          "upload": {
-            "type": "string",
-            "contentMediaType": "application/octet-stream",
-            "title": "Upload"
-          },
-          "project_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Project Id"
-          },
-          "entity_type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Entity Type"
-          },
-          "entity_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Entity Id"
-          }
-        },
-        "type": "object",
-        "required": [
-          "upload"
-        ],
-        "title": "Body_uploadFile"
       },
       "BuildingCreate": {
         "properties": {
@@ -6976,6 +7301,11 @@
             "title": "Elevation Mm",
             "default": 0
           },
+          "elevation_confirmed": {
+            "type": "boolean",
+            "title": "Elevation Confirmed",
+            "default": false
+          },
           "default_ceiling_height_mm": {
             "type": "integer",
             "maximum": 20000.0,
@@ -7016,6 +7346,10 @@
             "type": "integer",
             "title": "Elevation Mm"
           },
+          "elevation_confirmed": {
+            "type": "boolean",
+            "title": "Elevation Confirmed"
+          },
           "default_ceiling_height_mm": {
             "type": "integer",
             "title": "Default Ceiling Height Mm"
@@ -7042,6 +7376,7 @@
           "name",
           "level",
           "elevation_mm",
+          "elevation_confirmed",
           "default_ceiling_height_mm",
           "version",
           "created_at",
@@ -7067,16 +7402,32 @@
             },
             "type": "array",
             "title": "Rooms"
+          },
+          "wall_links": {
+            "items": {
+              "$ref": "#/components/schemas/WallLinkOut"
+            },
+            "type": "array",
+            "title": "Wall Links"
+          },
+          "wall_link_candidates": {
+            "items": {
+              "$ref": "#/components/schemas/WallLinkCandidateOut"
+            },
+            "type": "array",
+            "title": "Wall Link Candidates"
           }
         },
         "type": "object",
         "required": [
           "floor_id",
           "project_id",
-          "rooms"
+          "rooms",
+          "wall_links",
+          "wall_link_candidates"
         ],
         "title": "FloorPlanOut",
-        "description": "Vollstaendiger Planungsstand eines Geschosses in **einer** Antwort.\n\nBewusst ohne Stammdaten des Geschosses oder Projekts: Die liefert der\nCore. Hier steht nur, was das Fachmodul besitzt - und die beiden IDs,\nan denen es haengt."
+        "description": "Vollstaendiger Planungsstand eines Geschosses in **einer** Antwort.\n\nBewusst ohne Stammdaten des Geschosses oder Projekts: Die liefert der\nCore. Hier steht nur, was das Fachmodul besitzt - und die beiden IDs,\nan denen es haengt. Seit Phase 6a gehoeren die Wandkopplungen dazu, damit\nEditor, Geraetepruefung und 3D denselben Stand lesen."
       },
       "FloorUpdate": {
         "properties": {
@@ -7119,6 +7470,17 @@
             ],
             "title": "Elevation Mm"
           },
+          "elevation_confirmed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Elevation Confirmed"
+          },
           "default_ceiling_height_mm": {
             "anyOf": [
               {
@@ -7135,7 +7497,8 @@
         },
         "additionalProperties": false,
         "type": "object",
-        "title": "FloorUpdate"
+        "title": "FloorUpdate",
+        "description": "Teilaenderung eines Geschosses.\n\n**Bestaetigte Hoehenlage (ADR 0025):** Eine Bestaetigung gilt genau fuer den\ngespeicherten Wert. Aendert die Anfrage ``elevation_mm`` tatsaechlich und\nsendet nicht zugleich ``elevation_confirmed: true``, faellt die Bestaetigung\nweg. Ein unveraenderter Wert laesst sie stehen. ``elevation_confirmed``\nallein setzt oder entzieht sie ohne Wertaenderung."
       },
       "GeometryProblemOut": {
         "properties": {
@@ -9135,6 +9498,15 @@
             "type": "array",
             "maxItems": 300,
             "title": "Removed Device Ids"
+          },
+          "removed_wall_link_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 800,
+            "title": "Removed Wall Link Ids"
           }
         },
         "additionalProperties": false,
@@ -9817,6 +10189,209 @@
         ],
         "title": "WallCreate",
         "description": "Neue Wand am Ende der Raumkontur.\n\n``sort_order`` wird **nicht** entgegengenommen: Eine neue Wand haengt sich\nhinten an, Umordnen ist ein eigener Vorgang. Damit kann eine Anfrage keine\nLuecke und keine Dublette in der Reihenfolge erzeugen."
+      },
+      "WallLinkCandidateOut": {
+        "properties": {
+          "wall_a_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Wall A Id"
+          },
+          "wall_b_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Wall B Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "suggested",
+              "decision-needed",
+              "not-linkable"
+            ],
+            "title": "Kind"
+          },
+          "reasons": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "ambiguous",
+                "thickness-differs",
+                "contour-open",
+                "openings-on-both-sides"
+              ]
+            },
+            "type": "array",
+            "title": "Reasons"
+          }
+        },
+        "type": "object",
+        "required": [
+          "wall_a_id",
+          "wall_b_id",
+          "kind",
+          "reasons"
+        ],
+        "title": "WallLinkCandidateOut",
+        "description": "Ein ungekoppeltes, exakt ueberlappendes Wandpaar verschiedener Raeume.\n\n``suggested``: eindeutig, Vorschlag ``shared`` - es wird **nichts**\nautomatisch gekoppelt. ``decision-needed``: koppelbar, aber nur\nausdruecklich (``reasons``). ``not-linkable``: mehrdeutig (drei oder mehr\nWaende auf einem Stueck)."
+      },
+      "WallLinkCreate": {
+        "properties": {
+          "wall_a_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Wall A Id"
+          },
+          "wall_b_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Wall B Id"
+          },
+          "relation": {
+            "type": "string",
+            "enum": [
+              "shared",
+              "separate"
+            ],
+            "title": "Relation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "wall_a_id",
+          "wall_b_id",
+          "relation"
+        ],
+        "title": "WallLinkCreate",
+        "description": "Neue Wandkopplung zweier Raumwaende verschiedener Raeume (ADR 0024).\n\nDie Reihenfolge der beiden Waende ist beliebig; gespeichert wird kanonisch.\n``separate`` wird nie vorgeschlagen - nur ausdruecklich angelegt."
+      },
+      "WallLinkOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "wall_a_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Wall A Id"
+          },
+          "wall_b_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Wall B Id"
+          },
+          "relation": {
+            "type": "string",
+            "enum": [
+              "shared",
+              "separate"
+            ],
+            "title": "Relation"
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "user",
+              "backfill"
+            ],
+            "title": "Origin"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "ambiguous",
+              "broken"
+            ],
+            "title": "Status"
+          },
+          "thickness_conflict": {
+            "type": "boolean",
+            "title": "Thickness Conflict"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "wall_a_id",
+          "wall_b_id",
+          "relation",
+          "origin",
+          "status",
+          "thickness_conflict",
+          "version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "WallLinkOut",
+        "description": "Eine gespeicherte Kopplung samt abgeleitetem Status.\n\n``status``: ``active`` (wirkt), ``ambiguous`` (auf einem Teil liegt eine\ndritte Wand - dort konservativ), ``broken`` (unterbrochen: kein gemeinsamer\nAbschnitt, wirkt nirgends; bleibt gespeichert und wirkt wieder, sobald die\nGeometrie passt). Lage und Laenge werden nie gespeichert."
+      },
+      "WallLinkOverviewOut": {
+        "properties": {
+          "floor_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Floor Id"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/WallLinkOut"
+            },
+            "type": "array",
+            "title": "Links"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/WallLinkCandidateOut"
+            },
+            "type": "array",
+            "title": "Candidates"
+          }
+        },
+        "type": "object",
+        "required": [
+          "floor_id",
+          "links",
+          "candidates"
+        ],
+        "title": "WallLinkOverviewOut",
+        "description": "Kopplungen und Kandidaten eines Geschosses."
+      },
+      "WallLinkUpdate": {
+        "properties": {
+          "relation": {
+            "type": "string",
+            "enum": [
+              "shared",
+              "separate"
+            ],
+            "title": "Relation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "relation"
+        ],
+        "title": "WallLinkUpdate",
+        "description": "Entscheidung einer Kopplung aendern (``If-Match`` der Kopplungsversion)."
       },
       "WallOrder": {
         "properties": {

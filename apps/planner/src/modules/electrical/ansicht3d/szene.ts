@@ -51,7 +51,7 @@ import {
   Vector3,
 } from "three";
 
-import { bodenGeometrie, oeffnungsGeometrie, umrissGeometrie, wandGeometrie } from "./geometrien";
+import { bodenGeometrie, fugenGeometrie, oeffnungsGeometrie, umrissGeometrie, wandGeometrie } from "./geometrien";
 import { MESSUNG, messen } from "./messung";
 import type { Auswahl, Szenenmodell } from "./modell";
 import { auswahlSchluessel } from "./modell";
@@ -546,6 +546,9 @@ export class Grundrissszene {
           ],
         );
       }
+      // Getrennte Wände (Phase 6a): Trennfuge zwischen den beiden Halbkörpern.
+      const fuge = fugenGeometrie(wand, t);
+      if (fuge !== null) this.planHinzufuegen(new Line(fuge, m.umriss));
       for (const oeffnung of wand.oeffnungen) {
         const flaeche = new Mesh(
           oeffnungsGeometrie(oeffnung, wand, t),
@@ -677,7 +680,7 @@ export class Grundrissszene {
     this.fuehrungGruppe.add(linie, ring);
   }
 
-  private planHinzufuegen(objekt: Mesh | LineLoop) {
+  private planHinzufuegen(objekt: Mesh | LineLoop | Line) {
     this.planGeometrien.add(objekt.geometry);
     this.planGruppe.add(objekt);
   }

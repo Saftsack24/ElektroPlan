@@ -31,7 +31,12 @@ from app.core.projects.models import Building, Floor, Project
 from app.core.seed import seed_initial_data
 from app.core.users.models import User
 from app.db.mixins import utcnow
-from app.modules.electrical.models import ElectricalOpening, ElectricalRoom, ElectricalWall
+from app.modules.electrical.models import (
+    ElectricalOpening,
+    ElectricalRoom,
+    ElectricalWall,
+    ElectricalWallLink,
+)
 from tests.conftest import ADMIN_PASSWORD, auth_headers, login, requires_database
 from tests.routes import all_routes
 
@@ -54,6 +59,10 @@ class Tenant:
     room_id: uuid.UUID
     wall_id: uuid.UUID
     opening_id: uuid.UUID
+    #: Wandkopplung (Phase 6a) zwischen ``wall_id`` und der Wand eines Nachbarraums.
+    link_id: uuid.UUID
+    neighbour_room_id: uuid.UUID
+    neighbour_wall_id: uuid.UUID
     #: Benutzerverwaltung (Phase 4.2): ein weiteres Mitglied und eine offene
     #: Einladung je Betrieb.
     member_id: uuid.UUID
@@ -138,6 +147,31 @@ def two_tenants(
                 height_mm=2_010,
             )
             session.add(oeffnung)
+            nachbar = ElectricalRoom(
+                organization_id=result.organization_id, floor_id=geschoss.id, name="Flur"
+            )
+            session.add(nachbar)
+            session.flush()
+            nachbarwand = ElectricalWall(
+                organization_id=result.organization_id,
+                room_id=nachbar.id,
+                x1_mm=5_000,
+                y1_mm=0,
+                x2_mm=0,
+                y2_mm=0,
+                sort_order=0,
+            )
+            session.add(nachbarwand)
+            session.flush()
+            erste, zweite = sorted((wand.id, nachbarwand.id))
+            kopplung = ElectricalWallLink(
+                organization_id=result.organization_id,
+                wall_a_id=erste,
+                wall_b_id=zweite,
+                relation="shared",
+                origin="user",
+            )
+            session.add(kopplung)
             datei = FileRecord(
                 organization_id=result.organization_id,
                 project_id=projekt.id,
@@ -187,6 +221,9 @@ def two_tenants(
                     room_id=raum.id,
                     wall_id=wand.id,
                     opening_id=oeffnung.id,
+                    link_id=kopplung.id,
+                    neighbour_room_id=nachbar.id,
+                    neighbour_wall_id=nachbarwand.id,
                     member_id=mitglied.id,
                     invitation_id=einladung.id,
                 )
@@ -290,6 +327,7 @@ def fremde_ids(tenant: Tenant) -> dict[str, str]:
         "room_id": str(tenant.room_id),
         "wall_id": str(tenant.wall_id),
         "opening_id": str(tenant.opening_id),
+        "link_id": str(tenant.link_id),
         "member_id": str(tenant.member_id),
         "invitation_id": str(tenant.invitation_id),
     }
@@ -718,15 +756,43 @@ def test_plan_eines_fremden_geschosses_liefert_404(
     assert response.status_code == 404
 
 
-def test_plan_zeigt_nur_eigene_raeume(api: TestClient, two_tenants: tuple[Tenant, Tenant]) -> None:
-    _, mueller = two_tenants
+def test_plan_zeigt_nur_eigene_raeume(
+    api: TestClient, engine: Engine, two_tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Genau die eigenen Raeume - auch ein fremder Raum **ohne Waende** bleibt aussen vor.
+
+    Ein reiner Wandvergleich wuerde einen wandlosen fremden Raum nicht bemerken; deshalb
+    werden die Raum-IDs exakt und mit Anzahl verglichen.
+    """
+    scholz, mueller = two_tenants
+    session = sessionmaker(bind=engine, expire_on_commit=False)()
+    try:
+        fremd_ohne_waende = ElectricalRoom(
+            organization_id=scholz.organization_id,
+            floor_id=scholz.floor_id,
+            name="Abstellraum ohne Waende",
+        )
+        session.add(fremd_ohne_waende)
+        session.commit()
+        fremd_ohne_waende_id = str(fremd_ohne_waende.id)
+    finally:
+        session.close()
     token = login(api, mueller.admin_email)
 
     response = api.get(f"{ELECTRICAL}/floors/{mueller.floor_id}/plan", headers=auth_headers(token))
 
     assert response.status_code == 200
-    assert [raum["id"] for raum in response.json()["rooms"]] == [str(mueller.room_id)]
-    assert response.json()["rooms"][0]["walls"][0]["id"] == str(mueller.wall_id)
+    raeume = response.json()["rooms"]
+    raum_ids = [raum["id"] for raum in raeume]
+    assert len(raum_ids) == 2
+    assert set(raum_ids) == {str(mueller.room_id), str(mueller.neighbour_room_id)}
+    assert fremd_ohne_waende_id not in raum_ids
+    assert {wand["id"] for raum in raeume for wand in raum["walls"]} == {
+        str(mueller.wall_id),
+        str(mueller.neighbour_wall_id),
+    }
+    # Wandkopplungen (Phase 6a): nur die eigene.
+    assert [link["id"] for link in response.json()["wall_links"]] == [str(mueller.link_id)]
 
 
 def test_kontur_kann_keine_fremde_wand_oder_oeffnung_uebernehmen(
@@ -818,4 +884,66 @@ def test_kontur_kann_keine_fremde_wand_oder_oeffnung_uebernehmen(
         )
         assert [w.id for w in eigene] == [mueller.wall_id]
     finally:
+        session.close()
+
+
+# ---------------------------------------------------- Wandkopplung (Phase 6a)
+
+
+def test_fremde_kopplung_ist_unsichtbar_und_unveraenderlich(
+    api: TestClient, two_tenants: tuple[Tenant, Tenant]
+) -> None:
+    scholz, mueller = two_tenants
+    token = login(api, mueller.admin_email)
+    basis = "/api/v1/modules/electrical"
+
+    patch = api.patch(
+        f"{basis}/wall-links/{scholz.link_id}",
+        headers={**auth_headers(token), "If-Match": "1"},
+        json={"relation": "separate"},
+    )
+    delete = api.delete(
+        f"{basis}/wall-links/{scholz.link_id}",
+        headers={**auth_headers(token), "If-Match": "1"},
+    )
+    assert patch.status_code == 404
+    assert delete.status_code == 404
+    # Fremde Waende lassen sich nicht koppeln - ohne zu verraten, ob es sie gibt.
+    fremd = api.post(
+        f"{basis}/floors/{mueller.floor_id}/wall-links",
+        headers=auth_headers(token),
+        json={
+            "wall_a_id": str(mueller.wall_id),
+            "wall_b_id": str(scholz.neighbour_wall_id),
+            "relation": "shared",
+        },
+    )
+    assert fremd.status_code == 422
+    assert {e["code"] for e in fremd.json()["errors"]} == {"wall-link-wall-unknown"}
+    # Die eigene Uebersicht zeigt nur die eigene Kopplung.
+    eigene = api.get(f"{basis}/floors/{mueller.floor_id}/wall-links", headers=auth_headers(token))
+    assert [link["id"] for link in eigene.json()["links"]] == [str(mueller.link_id)]
+
+
+def test_datenbank_verhindert_kopplung_ueber_mandantengrenzen(
+    engine: Engine, two_tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Zusammengesetzte Fremdschluessel: Kopplung von Mueller auf Waende von Scholz."""
+    scholz, mueller = two_tenants
+    session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)()
+    try:
+        erste, zweite = sorted((scholz.wall_id, mueller.neighbour_wall_id))
+        session.add(
+            ElectricalWallLink(
+                organization_id=mueller.organization_id,
+                wall_a_id=erste,
+                wall_b_id=zweite,
+                relation="separate",
+                origin="user",
+            )
+        )
+        with pytest.raises(IntegrityError):
+            session.flush()
+    finally:
+        session.rollback()
         session.close()

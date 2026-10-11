@@ -47,6 +47,8 @@ class PlanChangeKind(StrEnum):
     OPENINGS_CHANGED = "openings_changed"
     #: Phase 5: nur Geraete eines Raums geaendert (Raumentwurf ohne Geometrieaenderung).
     DEVICES_CHANGED = "devices_changed"
+    #: Phase 6a: Wandkopplung angelegt, geaendert oder geloest - je beteiligtem Raum.
+    WALL_LINKS_CHANGED = "wall_links_changed"
 
 
 def plan_updated(

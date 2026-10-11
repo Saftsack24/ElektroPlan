@@ -27,6 +27,7 @@ import type { Groesse, Viewport } from "./viewport";
 import { START_VIEWPORT, einpassen, grenzenVon, zoomen } from "./viewport";
 import { Werkzeugleiste } from "./Werkzeugleiste";
 import { editorEinordnung, editorTopologie } from "./platzierung";
+import { kopplungenAus, kopplungenDerWaende } from "../kopplung/zuordnung";
 import {
   letztenPunktEntfernen,
   oeffnungEntfernen,
@@ -170,6 +171,13 @@ export function GrundrissEditor({
     () => (Array.isArray(plan.data?.rooms) ? plan.data.rooms : []),
     [plan.data],
   );
+  // Wandkopplungen (Phase 6a) - gespeichert, mit Status und Vorschlägen des Servers.
+  const planKopplungen = useMemo(() => (Array.isArray(plan.data?.wall_links) ? plan.data.wall_links : []), [plan.data]);
+  const planKandidaten = useMemo(
+    () => (Array.isArray(plan.data?.wall_link_candidates) ? plan.data.wall_link_candidates : []),
+    [plan.data],
+  );
+  const kopplungen = useMemo(() => kopplungenAus(planKopplungen), [planKopplungen]);
 
   const offen = ungespeichert(zustand);
   const schreibbar = darfSchreiben;
@@ -265,7 +273,7 @@ export function GrundrissEditor({
     const je = new Map<string, Set<string>>();
     if (typen.size > 0) {
       const masse = new Map([...typen].map(([k, t]) => [k, pruefmass(t)] as const));
-      for (const b of geraetebefunde(floorId, raeumePruef, geraetePruef, masse)) {
+      for (const b of geraetebefunde(floorId, raeumePruef, geraetePruef, masse, kopplungen)) {
         const id = b.keys[0];
         if (id !== undefined) je.set(id, (je.get(id) ?? new Set()).add(b.code));
       }
@@ -276,7 +284,7 @@ export function GrundrissEditor({
       if (id !== undefined && geraeteIds.has(id)) je.set(id, (je.get(id) ?? new Set()).add(e.code));
     }
     return new Map([...je].map(([id, codes]) => [id, [...codes]] as const));
-  }, [darstellung, geraeteVon, typen, floorId, zustand.basis, zustand.serverFehler, raeume, standardhoehe_mm]);
+  }, [darstellung, geraeteVon, typen, floorId, zustand.basis, zustand.serverFehler, raeume, standardhoehe_mm, kopplungen]);
 
   /** Geräte für den Grundriss: Wandgeräte auf ihrer Montageseite neben der Wand. */
   const geraeteDarstellung: readonly Geraetedarstellung[] = useMemo(() => {
@@ -338,7 +346,7 @@ export function GrundrissEditor({
   // Gemeinsame Wandtopologie des gezeigten Stands: aktiver Raum aus dem
   // Entwurf, alle anderen vom Server - dieselbe Ableitung wie in der
   // 3D-Ansicht. Daraus: welche Öffnung welche zwei Räume verbindet.
-  const topologie = useMemo(() => editorTopologie(floorId, darstellung), [floorId, darstellung]);
+  const topologie = useMemo(() => editorTopologie(floorId, darstellung, kopplungen), [floorId, darstellung, kopplungen]);
   const einordnung = useMemo(() => editorEinordnung(topologie), [topologie]);
   const waendeVon = useCallback(
     (raumId: string) => darstellung.find((r) => r.id === raumId)?.walls ?? [],
@@ -493,17 +501,52 @@ export function GrundrissEditor({
       setHinweis("Der Entwurf enthält Werte, die keine ganzen Millimeter sind. Bitte prüfen.");
       return false;
     }
+    // Wandkopplungen entfallender Wände (Phase 6a): nie nebenbei - ausdrücklich bestätigen.
+    const verbleibend = new Set(entwurf.walls.map((w) => w.id));
+    const entfallend = new Set(basis.entwurf.walls.map((w) => w.id).filter((id) => !verbleibend.has(id)));
+    const betroffen = kopplungenDerWaende(planKopplungen, entfallend);
+    if (betroffen.length > 0) {
+      const antwort = await fragen({
+        titel: betroffen.length === 1 ? "Wandzuordnung mit lösen?" : `${betroffen.length} Wandzuordnungen mit lösen?`,
+        text: (
+          <>
+            <p>
+              Mindestens eine Wand, die entfernt wird, ist einer Wand eines Nachbarraums zugeordnet
+              (gemeinsame Bauwand oder getrennte Wände). Beim Speichern wird diese Zuordnung gelöst; der Nachbarraum
+              bleibt unverändert.
+            </p>
+            <ul>
+              {betroffen.map((k) => {
+                const andere = entfallend.has(k.wall_a_id) ? k.wall_b_id : k.wall_a_id;
+                const raum = raeume.find((r) => r.walls.some((w) => w.id === andere));
+                return (
+                  <li key={k.id}>
+                    {k.relation === "shared" ? "Gemeinsame Bauwand" : "Getrennte Wände"} mit „
+                    {raum === undefined ? "einem anderen Raum" : raumName(raum.id)}“
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        ),
+        bestaetigenLabel: "Speichern und Zuordnung lösen",
+        abbrechenLabel: "Nicht speichern",
+      });
+      if (antwort !== "bestaetigt") return false;
+    }
     dispatch({ typ: "speichern-beginnt" });
     try {
       const gespeichert = await api.put("/api/v1/modules/electrical/rooms/{room_id}/contour", {
         path: { room_id: basis.raum.id },
         ifMatch: basis.raum.version,
-        body: alsKonturanfrage(entwurf),
+        body: { ...alsKonturanfrage(entwurf), removed_wall_link_ids: betroffen.map((k) => k.id) },
       });
       dispatch({ typ: "gespeichert", raum: gespeichert });
       queryClient.setQueryData<Geschossplan>(planSchluessel(floorId), (alt) =>
         alt === undefined ? alt : { ...alt, rooms: alt.rooms.map((r) => (r.id === gespeichert.id ? gespeichert : r)) },
       );
+      // Kopplungsstatus und Versionen der Partnerräume kann das Speichern ändern.
+      await queryClient.invalidateQueries({ queryKey: planSchluessel(floorId) });
       await nachSchreiben(gespeichert.id);
       return true;
     } catch (error: unknown) {
@@ -968,6 +1011,8 @@ export function GrundrissEditor({
           raumName={raumName}
           typen={typen}
           geraetebefunde={geraeteBefunde}
+          kopplungen={planKopplungen}
+          kandidaten={planKandidaten}
           onGeraetBearbeiten={(geraetId) => {
             if (zustand.entwurf !== null) geraetBearbeiten(zustand.entwurf.roomId, geraetId);
           }}

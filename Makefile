@@ -21,7 +21,7 @@ help:
 	@echo "check       Alle Qualitaetsschranken"
 
 install:
-	cd $(BACKEND) && python -m venv .venv \n		&& .venv/Scripts/python.exe -m pip install --quiet --upgrade pip uv==0.12.17 \n		&& UV_PROJECT_ENVIRONMENT=.venv .venv/Scripts/uv.exe sync --frozen --extra dev
+	cd $(BACKEND) && python -m venv .venv \n		&& .venv/Scripts/python.exe -m pip install --quiet --upgrade pip uv==0.12.18 \n		&& UV_PROJECT_ENVIRONMENT=.venv .venv/Scripts/uv.exe sync --frozen --extra dev
 	npm ci
 
 dev:

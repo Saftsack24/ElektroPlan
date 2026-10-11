@@ -15,6 +15,7 @@ from fastapi import Depends, Request
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.core.auth.rate_limit import SlidingWindowLimiter, enforce
 from app.core.auth.security import decode_access_token
 from app.core.authorization.service import resolve_member_permissions
 from app.core.organizations.models import MEMBER_STATUS_ACTIVE, Organization, OrganizationMember
@@ -24,10 +25,30 @@ from app.errors import (
     AuthenticationError,
     CsrfValidationError,
     PermissionDeniedError,
+    RateLimitedError,
 )
 from app.logging_config import organization_id_var, user_id_var
 
 REFRESH_COOKIE_NAME = "elektroplan_refresh"
+
+#: Methoden, die als schreibender Zugriff zaehlen (docs/security.md, Abschnitt 11).
+WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+_write_settings = get_settings()
+#: Schreibende Anfragen je Betrieb - schuetzt den Betrieb als Ganzes.
+_write_limiter_organization = SlidingWindowLimiter(
+    name="write_organization",
+    limit=_write_settings.write_per_organization_per_window,
+    window_seconds=_write_settings.write_window_seconds,
+)
+#: Schreibende Anfragen je Mitgliedschaft - ein einzelnes Konto (oder ein
+#: entwendeter Token) verbraucht nicht das Kontingent des ganzen Betriebs.
+_write_limiter_member = SlidingWindowLimiter(
+    name="write_member",
+    limit=_write_settings.write_per_member_per_window,
+    window_seconds=_write_settings.write_window_seconds,
+)
+_WRITE_LIMITED = "Zu viele Aenderungen in kurzer Zeit. Bitte kurz warten und erneut versuchen."
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +110,28 @@ def get_current_user(
     organization = session.get(Organization, payload.organization_id)
     if organization is None or organization.deleted_at is not None:
         raise AuthenticationError("Der Betrieb ist nicht verfuegbar.")
+
+    if request.method in WRITE_METHODS:
+        # Zentral fuer jede angemeldete schreibende Anfrage - erst nach der
+        # Pruefung des Tokens, damit Fremde kein Kontingent verbrauchen.
+        # Je Limiter atomar; scheitert die Betriebsgrenze, zaehlt auch der
+        # Versuch des Mitglieds nicht.
+        reservation = enforce(
+            _write_limiter_member,
+            f"member:{member.id}",
+            message=_WRITE_LIMITED,
+            log_event="write_rate_limited",
+        )
+        try:
+            enforce(
+                _write_limiter_organization,
+                f"organization:{member.organization_id}",
+                message=_WRITE_LIMITED,
+                log_event="write_rate_limited",
+            )
+        except RateLimitedError:
+            _write_limiter_member.release(reservation)
+            raise
 
     user_id_var.set(str(user.id))
     organization_id_var.set(str(member.organization_id))
@@ -158,7 +201,13 @@ def require_trusted_origin(request: Request) -> None:
 
 
 def get_client_ip(request: Request) -> str | None:
-    """Client-IP fuer Rate Limiting. Kein Vertrauen in Proxy-Header ohne Setup."""
+    """Client-IP fuer Rate Limiting - die Adresse der ASGI-Verbindung.
+
+    Die Anwendung liest ``X-Forwarded-For`` nie selbst. Hinter einem Reverse
+    Proxy ersetzt Uvicorn die Adresse nur fuer Verbindungen aus
+    ``--forwarded-allow-ips`` (Standard ``127.0.0.1``); andere Absender koennen
+    die IP nicht vortaeuschen (docs/security.md, Abschnitt 11).
+    """
     if request.client is None:
         return None
     return request.client.host

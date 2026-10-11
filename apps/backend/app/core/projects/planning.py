@@ -58,6 +58,10 @@ class FloorPlanningContext:
     level: int
     elevation_mm: int
     default_ceiling_height_mm: int
+    #: Hoehenlage ausdruecklich bestaetigt (Phase 6a, ADR 0025) - additiv. Ohne
+    #: Bestaetigung darf ein Fachmodul ``elevation_mm`` nicht als verlaessliche
+    #: Hoehe verwenden (etwa fuer senkrechte Leitungslaengen).
+    elevation_confirmed: bool = False
 
 
 class FloorPlanningAccess:
@@ -95,6 +99,7 @@ class FloorPlanningAccess:
             level=floor.level,
             elevation_mm=floor.elevation_mm,
             default_ceiling_height_mm=floor.default_ceiling_height_mm,
+            elevation_confirmed=floor.elevation_confirmed,
         )
 
     def writable_context(self, floor_id: uuid.UUID) -> FloorPlanningContext:

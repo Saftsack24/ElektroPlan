@@ -154,8 +154,19 @@ export function rechteck(
   );
 }
 
-export function plan(rooms: readonly RaumImPlan[], floorId = "geschoss-1"): Geschossplan {
-  return { floor_id: floorId, project_id: "projekt-1", rooms: [...rooms] };
+export function plan(
+  rooms: readonly RaumImPlan[],
+  floorId = "geschoss-1",
+  kopplungen: Geschossplan["wall_links"] = [],
+  kandidaten: Geschossplan["wall_link_candidates"] = [],
+): Geschossplan {
+  return {
+    floor_id: floorId,
+    project_id: "projekt-1",
+    rooms: [...rooms],
+    wall_links: [...kopplungen],
+    wall_link_candidates: [...kandidaten],
+  };
 }
 
 const tuer = (id: string, offset: number, breite = 885): OeffnungsAngabe => ({

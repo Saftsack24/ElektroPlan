@@ -8,7 +8,7 @@
 import { useMasse } from "../../../core/ui/masseinheit";
 import { knopf } from "../../../core/ui/stil";
 import { OEFFNUNGSART_LABEL, flaecheAnzeigen } from "../texte";
-import type { Auswahl, Szenenmodell, Warnung } from "./modell";
+import type { Auswahl, Szenenmodell, Wand3d, Warnung } from "./modell";
 import { auswahlSchluessel, raumBezeichnung } from "./modell";
 import type { Objekt } from "./szenenmodell";
 import type { Geraet3d } from "./geraete3d";
@@ -258,30 +258,37 @@ function Auswahlinfo({
   const { wand } = objekt;
   const staerken = [...new Set(wand.quellen.map((q) => q.staerkeMm))];
   const raeume = wand.raumIds.map(name);
+  const getrennt = wand.zuordnung === "separate";
   const lage =
     wand.lage === "gemeinsam"
-      ? `Gemeinsame Wand (innen) zwischen ${raeume.map((r) => `„${r}“`).join(" und ")} – exakt auf derselben Linie erfasst`
-      : "Nicht geteilte Wand (als Außenwand dargestellt)";
+      ? `${getrennt ? "Zwei Wände" : "Wand"} zwischen ${raeume.map((r) => `„${r}“`).join(" und ")} – exakt auf derselben Linie erfasst`
+      : "Außenseite – kein modellierter Nachbarraum";
 
   if (objekt.art === "wand") {
     return (
       <>
-        <h3 className="mt-0 mb-1.5 text-[1rem]">{wand.lage === "gemeinsam" ? "Gemeinsame Wand" : "Wand"}</h3>
+        <h3 className="mt-0 mb-1.5 text-[1rem]">{zuordnungsTitel(wand)}</h3>
         <Werte
           zeilen={[
             ["Länge", mm(wand.laengeMm)],
             [
               "Stärke",
-              staerken.length > 1
-                ? `${mm(wand.staerkeMm)} dargestellt (erfasst: ${staerken.map(mm).join(" / ")})`
-                : mm(wand.staerkeMm),
+              getrennt
+                ? wand.quellen.map((q) => `„${name(q.raumId)}“ ${mm(q.staerkeMm)}`).join(" · ")
+                : staerken.length > 1
+                  ? `${mm(wand.staerkeMm)} dargestellt (erfasst: ${staerken.map(mm).join(" / ")})`
+                  : mm(wand.staerkeMm),
             ],
-            ["Darstellungshöhe", mm(wand.hoeheMm)],
+            ["Darstellungshöhe", getrennt ? wand.quellen.map((q) => `„${name(q.raumId)}“ ${mm(q.raumhoeheMm)}`).join(" · ") : mm(wand.hoeheMm)],
             ["Lage", lage],
+            ...(wand.lage === "gemeinsam" ? ([["Wandzuordnung", zuordnungsText(wand)]] as const) : []),
             ["Räume", wand.raumIds.map(name).join(", ")],
             ["Öffnungen", String(wand.oeffnungen.length)],
           ]}
         />
+        {wand.lage === "gemeinsam" && (
+          <p className="mt-0 mb-1.5 text-muted">Die Wandzuordnung wird im Grundriss an der Wand festgelegt.</p>
+        )}
       </>
     );
   }
@@ -296,7 +303,9 @@ function Auswahlinfo({
       ? `Verbindet ${oeffnung.raumIds.map((r) => `„${name(r)}“`).join(" und ")}`
       : oeffnung.klasse === "aussen"
         ? "Nicht geteilte Wand – kein zweiter Raum"
-        : "Nicht eindeutig – siehe Hinweis";
+        : oeffnung.klasse === "getrennt"
+          ? `Nur in der Wand von „${name(q?.raumId ?? "")}“ – die Wände sind als getrennt festgelegt`
+          : "Nicht eindeutig – siehe Hinweis";
   return (
     <>
       <h3 className="mt-0 mb-1.5 text-[1rem]">{oeffnung.arten.map((a) => OEFFNUNGSART_LABEL[a]).join(" / ")}</h3>
@@ -308,13 +317,34 @@ function Auswahlinfo({
           ["Höhe", q === undefined ? "—" : mm(q.hoeheMm)],
           ["Brüstung", q === undefined ? "—" : mm(q.bruestungMm)],
           ["Abstand vom Wandanfang", q === undefined ? "—" : `${mm(q.offsetMm)} (an der Wand von „${name(q.raumId)}“)`],
-          ["Wand", `${mm(wand.laengeMm)} · ${wand.lage === "gemeinsam" ? "gemeinsam" : "nicht geteilt"}`],
+          ["Wand", `${mm(wand.laengeMm)} · ${wand.lage === "gemeinsam" ? zuordnungsText(wand) : "nicht geteilt"}`],
           ["Räume der Wand", wand.raumIds.map(name).join(", ")],
           ["Gespeichert in", erfasstIn.join(", ")],
         ]}
       />
     </>
   );
+}
+
+/** Überschrift einer Darstellungswand nach ihrem Kopplungszustand (Phase 6a). */
+function zuordnungsTitel(wand: Wand3d): string {
+  if (wand.lage !== "gemeinsam") return "Wand";
+  if (wand.zuordnung === "shared") return "Gemeinsame Bauwand";
+  if (wand.zuordnung === "separate") return "Getrennte Wände";
+  return "Gemeinsame Wand – Zuordnung offen";
+}
+
+function zuordnungsText(wand: Wand3d): string {
+  if (wand.zuordnung === "shared") {
+    const staerken = new Set(wand.quellen.map((q) => q.staerkeMm));
+    return staerken.size > 1 ? "gemeinsame Bauwand – widersprüchliche Stärke" : "gemeinsame Bauwand";
+  }
+  if (wand.zuordnung === "separate") {
+    return "getrennte Wände – vereinfacht als zwei Halbkörper dargestellt (je Raum die eigene halbe Stärke), keine maßstäbliche Aussage über den Wandaufbau";
+  }
+  if (wand.kandidat?.art === "suggested") return "offen – Vorschlag: gemeinsame Bauwand";
+  if (wand.kandidat?.art === "not-linkable" || wand.raumIds.length > 2) return "nicht eindeutig zuordenbar";
+  return "offen – vorsichtig wie bisher behandelt";
 }
 
 export function Seitenleiste({

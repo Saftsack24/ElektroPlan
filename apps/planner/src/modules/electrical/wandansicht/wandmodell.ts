@@ -18,6 +18,7 @@ import { MAX_OEFFNUNG_MM, MIN_OEFFNUNG_MM, oeffnungsBefunde, oeffnungsHoehenBefu
 import type { EditorEinordnung, EditorTopologie } from "../editor/platzierung";
 import { alsZahl } from "../topologie/lage";
 import { fremdeBereiche } from "../topologie/oeffnungen";
+import type { Zuordnung } from "../topologie/wandtopologie";
 import { OEFFNUNGSART_LABEL } from "../texte";
 import type { Ansichtsrechteck, Wandbezug } from "./wandbezug";
 import { punktInAnsicht, rechteckInAnsicht } from "./wandbezug";
@@ -37,6 +38,8 @@ export interface AnsichtsOeffnung extends Ansichtsrechteck {
   readonly quelleWandId: string;
   /** Verständliche Befunde (passt nicht in die Wand, zu hoch, Überschneidung …). */
   readonly befunde: readonly string[];
+  /** Hinweise ohne Fehlercharakter (Phase 6a: nur in einer der getrennten Wände). */
+  readonly hinweise: readonly string[];
 }
 
 export interface Ansichtsabschnitt {
@@ -45,6 +48,8 @@ export interface Ansichtsabschnitt {
   /** Andere Räume auf diesem Wandstück (sortiert). */
   readonly nachbarn: readonly string[];
   readonly mehrdeutig: boolean;
+  /** Kopplungszustand (Phase 6a): offen, gemeinsame Bauwand, getrennte Wände. */
+  readonly zuordnung: Zuordnung;
 }
 
 export interface Wandmodell {
@@ -67,6 +72,7 @@ const BEFUND_TEXT: Record<string, string> = {
   "konflikt-teilweise": "liegt nur teilweise auf der gemeinsamen Wand",
   "konflikt-widerspruch": "widerspricht einer auf der Gegenseite erfassten Öffnung",
   "konflikt-art": "auf der Gegenseite als andere Art erfasst",
+  "nur-einseitig": "nur in dieser Wand – die getrennte Wand des Nachbarraums hat hier keine Öffnung",
 };
 
 export function befundText(code: string): string {
@@ -99,6 +105,8 @@ export function wandmodell(
     const e = einordnung.get(o.id);
     if (e?.klasse === "konflikt") codes.push(`konflikt-${e.grund ?? "unbekannt"}`);
     return {
+      // Getrennte Wände (Phase 6a): ein Hinweis, kein Fehler.
+      ...(e?.einseitig === true ? { hinweise: ["nur-einseitig"] } : { hinweise: [] }),
       ...rechteckInAnsicht(bezug, o),
       id: o.id,
       art: o.kind,
@@ -140,6 +148,7 @@ export function wandmodell(
         quelleRaumId: f.raumId,
         quelleWandId: f.wandId,
         befunde: e?.klasse === "konflikt" ? [`konflikt-${e.grund ?? "unbekannt"}`] : [],
+        hinweise: [],
       });
     }
     teilung.abschnitte.forEach((abschnitt, i) => {
@@ -150,6 +159,7 @@ export function wandmodell(
         rechts: Math.max(a, b),
         nachbarn: abschnitt.raumIds.filter((r) => r !== bezug.raumId),
         mehrdeutig: abschnitt.mehrdeutig,
+        zuordnung: abschnitt.zuordnung,
       });
     });
   }

@@ -9,7 +9,7 @@ import jwt
 import pytest
 
 from app.config import get_settings
-from app.core.auth.rate_limit import SlidingWindowLimiter
+from app.core.auth.rate_limit import RateLimitExceededError, SlidingWindowLimiter
 from app.core.auth.security import (
     create_access_token,
     decode_access_token,
@@ -153,22 +153,42 @@ def test_refresh_tokens_sind_eindeutig() -> None:
 
 
 def test_rate_limiter_greift_nach_dem_limit() -> None:
-    limiter = SlidingWindowLimiter(limit=3, window_seconds=60)
+    limiter = SlidingWindowLimiter(name="test", limit=3, window_seconds=60)
     for _ in range(3):
-        assert limiter.check("konto")
-        limiter.register("konto")
-    assert not limiter.check("konto")
+        limiter.acquire("konto")
+    with pytest.raises(RateLimitExceededError):
+        limiter.acquire("konto")
 
 
 def test_rate_limiter_trennt_schluessel() -> None:
-    limiter = SlidingWindowLimiter(limit=1, window_seconds=60)
-    limiter.register("a")
-    assert not limiter.check("a")
-    assert limiter.check("b")
+    limiter = SlidingWindowLimiter(name="test", limit=1, window_seconds=60)
+    limiter.acquire("a")
+    with pytest.raises(RateLimitExceededError):
+        limiter.acquire("a")
+    limiter.acquire("b")
 
 
 def test_rate_limiter_reset() -> None:
-    limiter = SlidingWindowLimiter(limit=1, window_seconds=60)
-    limiter.register("konto")
+    limiter = SlidingWindowLimiter(name="test", limit=1, window_seconds=60)
+    limiter.acquire("konto")
     limiter.reset("konto")
-    assert limiter.check("konto")
+    limiter.acquire("konto")
+
+
+def test_tief_verschachtelte_nutzlast_ergibt_401_statt_500() -> None:
+    """GHSA-42vr-xj54-vc7v: Auch ein korrekt signierter, tief verschachtelter Token
+    darf keinen unbehandelten ``RecursionError`` ausloesen (PyJWT >= 2.15.0).
+    """
+    import base64
+    import hashlib
+    import hmac
+    import json
+
+    def b64(daten: bytes) -> bytes:
+        return base64.urlsafe_b64encode(daten).rstrip(b"=")
+
+    kopf = b64(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
+    teil = kopf + b"." + b64(b"[" * 20000 + b"]" * 20000)
+    signatur = hmac.new(get_settings().jwt_secret.encode(), teil, hashlib.sha256).digest()
+    with pytest.raises(AuthenticationError):
+        decode_access_token((teil + b"." + b64(signatur)).decode())

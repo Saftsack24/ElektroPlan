@@ -1,4 +1,3 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { Route, RouterProvider, Routes, createBrowserRouter } from "react-router-dom";
 import type { RouteObject } from "react-router-dom";
@@ -114,21 +113,11 @@ export function erzeugeRouter(): AnwendungsRouter {
 /**
  * Anwendungshülle. Den Router erhält sie von außen: Sie rendert ihn nur und
  * erzeugt nie einen eigenen - auch nicht bei erneutem Rendern.
+ *
+ * Bewusst **kein** gemeinsamer `QueryClient` mehr: Den Abfrage-Cache stellt
+ * der `AuthProvider` je Sitzungskontext (Benutzer und Betrieb) bereit
+ * (`core/sitzung/sitzungsraum.ts`, Sicherheitsauftrag 2026-10-10).
  */
 export function App({ router }: { router: AnwendungsRouter }) {
-  const queryClient = useMemo(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: { retry: false, staleTime: 30_000, refetchOnWindowFocus: false },
-        },
-      }),
-    [],
-  );
-
-  return (
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
-  );
+  return <RouterProvider router={router} />;
 }

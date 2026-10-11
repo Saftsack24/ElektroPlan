@@ -16,7 +16,7 @@ Der Commit stellt anschliessend die gesammelten Events zu (Unit of Work).
 from __future__ import annotations
 
 import uuid
-from typing import cast
+from typing import Literal, cast
 
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
@@ -30,6 +30,7 @@ from app.db.session import get_session
 from app.errors import ProblemDetail
 from app.modules.electrical.events import PlanChangeKind, plan_updated
 from app.modules.electrical.geometry import GeometryProblem, Point, segment_length_mm
+from app.modules.electrical.link_rules import LinkCandidate
 from app.modules.electrical.models import ElectricalOpening
 from app.modules.electrical.permissions import PLAN_READ, PLAN_WRITE
 from app.modules.electrical.schemas import (
@@ -48,6 +49,11 @@ from app.modules.electrical.schemas import (
     RoomTypeValue,
     RoomUpdate,
     WallCreate,
+    WallLinkCandidateOut,
+    WallLinkCreate,
+    WallLinkOut,
+    WallLinkOverviewOut,
+    WallLinkUpdate,
     WallOrder,
     WallOut,
     WallPlanOut,
@@ -61,6 +67,7 @@ from app.modules.electrical.service import (
     WriteResult,
     area_m2,
 )
+from app.modules.electrical.wall_links import LinkWriteResult, WallLinkService, WallLinkView
 
 router = APIRouter(tags=["electrical"])
 
@@ -165,6 +172,34 @@ def _room_plan_out(plan: RoomPlan) -> RoomPlanOut:
     )
 
 
+def _link_out(view: WallLinkView) -> WallLinkOut:
+    link = view.link
+    return WallLinkOut(
+        id=link.id,
+        wall_a_id=link.wall_a_id,
+        wall_b_id=link.wall_b_id,
+        # Die Datenbank laesst nur die bekannten Werte zu (CHECK).
+        relation=cast(Literal["shared", "separate"], link.relation),
+        origin=cast(Literal["user", "backfill"], link.origin),
+        status=view.status.value,
+        thickness_conflict=view.thickness_conflict,
+        version=link.version,
+        created_at=link.created_at,
+        updated_at=link.updated_at,
+    )
+
+
+def _candidate_out(candidate: LinkCandidate) -> WallLinkCandidateOut:
+    return WallLinkCandidateOut.model_validate(
+        {
+            "wall_a_id": candidate.wall_a_id,
+            "wall_b_id": candidate.wall_b_id,
+            "kind": candidate.kind.value,
+            "reasons": list(candidate.reasons),
+        }
+    )
+
+
 def _commit(
     *,
     session: Session,
@@ -196,6 +231,32 @@ def _commit(
             actor_user_id=current_user.user_id,
         )
     )
+    uow.commit()
+
+
+def _commit_links(
+    *, session: Session, bus: EventBus, current_user: CurrentUser, result: LinkWriteResult
+) -> None:
+    """Wie :func:`_commit` - je beteiligtem Raum ein ``wall_links_changed``."""
+    if not result.changed:
+        # Unveraenderte Entscheidung: nichts vermerken, kein Event.
+        session.commit()
+        return
+    FloorPlanningAccess(session, current_user.organization_id).record_project_change(
+        result.context.project_id, actor_user_id=current_user.user_id
+    )
+    uow = UnitOfWork(session, bus)
+    for room_id in result.room_ids:
+        uow.add_event(
+            plan_updated(
+                organization_id=result.context.organization_id,
+                project_id=result.context.project_id,
+                floor_id=result.context.floor_id,
+                room_id=room_id,
+                change_kind=PlanChangeKind.WALL_LINKS_CHANGED,
+                actor_user_id=current_user.user_id,
+            )
+        )
     uow.commit()
 
 
@@ -383,6 +444,8 @@ def get_floor_plan(
         floor_id=plan.context.floor_id,
         project_id=plan.context.project_id,
         rooms=[_room_plan_out(room) for room in plan.rooms],
+        wall_links=[_link_out(view) for view in plan.wall_links],
+        wall_link_candidates=[_candidate_out(item) for item in plan.wall_link_candidates],
     )
 
 
@@ -407,7 +470,9 @@ def replace_contour(
     gesamten Raumgeometrie. Die Reihenfolge der Waende ist die Reihenfolge in
     der Liste. Bekannte IDs werden geaendert, neue angelegt, fehlende Waende
     entfernt. Oeffnungen verschwinden nur, wenn sie in
-    ``removed_opening_ids`` stehen. Jeder Fehler laesst den Raum
+    ``removed_opening_ids`` stehen; Wandkopplungen entfallender Waende nur,
+    wenn sie in ``removed_wall_link_ids`` stehen (sonst ``409 wall-has-links``).
+    Jeder Fehler laesst den Raum
     unveraendert; bei Erfolg entsteht genau ein ``electrical.plan.updated``
     (``walls_changed``).
 
@@ -689,3 +754,108 @@ def delete_opening(
         result=result,
         change_kind=PlanChangeKind.OPENINGS_CHANGED,
     )
+
+
+# -------------------------------------------------------- Wandkopplung (6a)
+
+
+@router.get(
+    "/floors/{floor_id}/wall-links",
+    response_model=WallLinkOverviewOut,
+    operation_id="listElectricalWallLinks",
+    summary="Wandkopplungen und Kandidaten eines Geschosses",
+    responses=_READ_RESPONSES,
+)
+def list_wall_links(
+    floor_id: uuid.UUID,
+    current_user: CurrentUser = Depends(require_permission(PLAN_READ)),
+    session: Session = Depends(get_session),
+) -> WallLinkOverviewOut:
+    """Gespeicherte Kopplungen mit Status und ungekoppelte Kandidaten (ADR 0024).
+
+    Reine Auskunft: Vorschlaege werden nie automatisch gespeichert.
+    """
+    overview = WallLinkService(session, current_user.organization_id).overview(floor_id)
+    return WallLinkOverviewOut(
+        floor_id=overview.floor_id,
+        links=[_link_out(view) for view in overview.links],
+        candidates=[_candidate_out(item) for item in overview.candidates],
+    )
+
+
+@router.post(
+    "/floors/{floor_id}/wall-links",
+    response_model=WallLinkOut,
+    status_code=status.HTTP_201_CREATED,
+    operation_id="createElectricalWallLink",
+    summary="Wandkopplung anlegen",
+    responses={
+        **_CREATE_RESPONSES,
+        409: {
+            "model": ProblemDetail,
+            "description": "Projekt schreibgeschuetzt oder Zuordnung besteht bereits",
+        },
+    },
+)
+def create_wall_link(
+    floor_id: uuid.UUID,
+    payload: WallLinkCreate,
+    current_user: CurrentUser = Depends(require_permission(PLAN_WRITE)),
+    session: Session = Depends(get_session),
+    bus: EventBus = Depends(get_event_bus),
+) -> WallLinkOut:
+    """Ordnet zwei exakt ueberlappende Raumwaende verschiedener Raeume einander zu.
+
+    ``shared`` = eine Bauwand, ``separate`` = zwei Bauwaende auf derselben Achse.
+    Die Raumversion beider Raeume zaehlt weiter. Wuerde ein vorhandenes Geraet
+    dadurch unzulaessig, antwortet der Server ``422`` und speichert nichts.
+    """
+    view, result = WallLinkService(session, current_user.organization_id).create(
+        floor_id, payload, actor_user_id=current_user.user_id
+    )
+    _commit_links(session=session, bus=bus, current_user=current_user, result=result)
+    return _link_out(view)
+
+
+@router.patch(
+    "/wall-links/{link_id}",
+    response_model=WallLinkOut,
+    operation_id="updateElectricalWallLink",
+    summary="Wandkopplung aendern",
+    responses=_WRITE_RESPONSES,
+)
+def update_wall_link(
+    link_id: uuid.UUID,
+    payload: WallLinkUpdate,
+    current_user: CurrentUser = Depends(require_permission(PLAN_WRITE)),
+    session: Session = Depends(get_session),
+    bus: EventBus = Depends(get_event_bus),
+    expected_version: int = Depends(require_if_match),
+) -> WallLinkOut:
+    """Aendert ``shared`` <-> ``separate``; ``If-Match`` traegt die Kopplungsversion."""
+    view, result = WallLinkService(session, current_user.organization_id).update(
+        link_id, payload, expected_version=expected_version
+    )
+    _commit_links(session=session, bus=bus, current_user=current_user, result=result)
+    return _link_out(view)
+
+
+@router.delete(
+    "/wall-links/{link_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="deleteElectricalWallLink",
+    summary="Wandkopplung loesen",
+    responses=_WRITE_RESPONSES,
+)
+def delete_wall_link(
+    link_id: uuid.UUID,
+    current_user: CurrentUser = Depends(require_permission(PLAN_WRITE)),
+    session: Session = Depends(get_session),
+    bus: EventBus = Depends(get_event_bus),
+    expected_version: int = Depends(require_if_match),
+) -> None:
+    """Loest die Kopplung; der Abschnitt ist danach unentschieden (konservativ)."""
+    result = WallLinkService(session, current_user.organization_id).delete(
+        link_id, expected_version=expected_version
+    )
+    _commit_links(session=session, bus=bus, current_user=current_user, result=result)

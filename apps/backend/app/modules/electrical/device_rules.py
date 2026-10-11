@@ -54,8 +54,9 @@ from app.modules.electrical.models import (
     ElectricalOpening,
     ElectricalRoom,
     ElectricalWall,
+    ElectricalWallLink,
 )
-from app.modules.electrical.topology import TopoOpening, TopoWall
+from app.modules.electrical.topology import TopoLink, TopoOpening, TopoWall
 
 #: Ausgangslage: Ausmass je Befundidentitaet ``(Geraet, Code, Partner ...)``.
 DeviceBaseline = dict[tuple[str, ...], Severity]
@@ -88,6 +89,26 @@ def type_specs(types: Mapping[str, ElectricalDeviceType]) -> dict[str, DeviceTyp
     }
 
 
+def topo_wall(wall: ElectricalWall, openings: Sequence[ElectricalOpening]) -> TopoWall:
+    """Wandzeile samt Oeffnungen als reine Topologie-Eingabe."""
+    return TopoWall(
+        id=str(wall.id),
+        room_id=str(wall.room_id),
+        start=Point(x_mm=wall.x1_mm, y_mm=wall.y1_mm),
+        end=Point(x_mm=wall.x2_mm, y_mm=wall.y2_mm),
+        openings=tuple(
+            TopoOpening(
+                id=str(opening.id),
+                offset_mm=opening.offset_mm,
+                width_mm=opening.width_mm,
+                sill_height_mm=opening.sill_height_mm,
+                height_mm=opening.height_mm,
+            )
+            for opening in openings
+        ),
+    )
+
+
 def planned_room(
     room: ElectricalRoom,
     walls: Sequence[ElectricalWall],
@@ -97,25 +118,7 @@ def planned_room(
     return PlannedRoom(
         id=str(room.id),
         height_mm=height_mm,
-        walls=tuple(
-            TopoWall(
-                id=str(wall.id),
-                room_id=str(room.id),
-                start=Point(x_mm=wall.x1_mm, y_mm=wall.y1_mm),
-                end=Point(x_mm=wall.x2_mm, y_mm=wall.y2_mm),
-                openings=tuple(
-                    TopoOpening(
-                        id=str(opening.id),
-                        offset_mm=opening.offset_mm,
-                        width_mm=opening.width_mm,
-                        sill_height_mm=opening.sill_height_mm,
-                        height_mm=opening.height_mm,
-                    )
-                    for opening in openings.get(wall.id, ())
-                ),
-            )
-            for wall in walls
-        ),
+        walls=tuple(topo_wall(wall, openings.get(wall.id, ())) for wall in walls),
     )
 
 
@@ -130,6 +133,34 @@ def planned_device(device: ElectricalDevice) -> PlannedDevice:
         center_height_mm=device.center_height_mm,
         x_mm=device.x_mm,
         y_mm=device.y_mm,
+    )
+
+
+def topo_link(link: ElectricalWallLink) -> TopoLink:
+    return TopoLink(
+        id=str(link.id),
+        wall_a_id=str(link.wall_a_id),
+        wall_b_id=str(link.wall_b_id),
+        relation=link.relation,
+    )
+
+
+def links_of_walls(
+    session: Session, organization_id: uuid.UUID, wall_ids: Sequence[uuid.UUID]
+) -> list[ElectricalWallLink]:
+    """Kopplungen, deren beide Waende in ``wall_ids`` liegen - eine Abfrage."""
+    if not wall_ids:
+        return []
+    return list(
+        session.execute(
+            select(ElectricalWallLink)
+            .where(
+                ElectricalWallLink.organization_id == organization_id,
+                ElectricalWallLink.wall_a_id.in_(wall_ids),
+                ElectricalWallLink.wall_b_id.in_(wall_ids),
+            )
+            .order_by(ElectricalWallLink.id.asc())
+        ).scalars()
     )
 
 
@@ -272,13 +303,23 @@ class FloorDeviceCheck:
             for room in rooms
         ]
         types = load_device_types(self.session)
+        # Wandkopplungen (Phase 6a): ``separate`` uebertraegt keine Nachbaroeffnung.
+        links = [
+            topo_link(link)
+            for link in links_of_walls(
+                self.session, self.organization_id, [wall.id for wall in walls]
+            )
+        ]
         return FloorDeviceState(
             rooms={room.id: room for room in rooms},
             walls={wall.id: wall for wall in walls},
             devices={str(device.id): device for device in devices},
             types=types,
             findings=device_findings(
-                planned_rooms, [planned_device(device) for device in devices], type_specs(types)
+                planned_rooms,
+                [planned_device(device) for device in devices],
+                type_specs(types),
+                links,
             ),
         )
 

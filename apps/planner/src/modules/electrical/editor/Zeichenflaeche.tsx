@@ -599,6 +599,7 @@ export function Zeichenflaeche(props: Props) {
               lokaleKeys={raum.aktiv ? props.lokaleKeys : LEER}
             />
           ))}
+          <Zuordnungsebene topologie={props.topologie} />
           <Oeffnungsebene
             topologie={props.topologie}
             einordnung={props.einordnung}
@@ -739,6 +740,32 @@ function bereichAufWand(wand: EditorWand, offsetMm: number, breiteMm: number): [
     { x: wand.start.x + ux * e, y: wand.start.y + uy * e },
   ];
 }
+
+/**
+ * Wandzuordnung im Grundriss (Phase 6a, ADR 0024): Jeder Abschnitt, auf dem
+ * Wände zweier Räume liegen, zeigt seinen Zustand - getrennte Wände mit einer
+ * Fuge auf der Achse, offene Zuordnungen fein gestrichelt, mehrdeutige in der
+ * Warnfarbe. Gemeinsame Bauwände bleiben ohne Zusatz. Reine Darstellung.
+ */
+const Zuordnungsebene = memo(function Zuordnungsebene({ topologie }: { topologie: EditorTopologie }) {
+  const linien = topologie.abschnitte
+    .filter((a) => a.lage === "gemeinsam" && a.zuordnung !== "shared")
+    .map((a) => {
+      const art = a.mehrdeutig ? "mehrdeutig" : a.zuordnung === "separate" ? "getrennt" : "offen";
+      return (
+        <line
+          key={a.id}
+          x1={a.start.x}
+          y1={a.start.y}
+          x2={a.ende.x}
+          y2={a.ende.y}
+          className={`grundriss__abschnitt grundriss__abschnitt--${art}`}
+          data-testid={`abschnitt-${art}`}
+        />
+      );
+    });
+  return <g className="grundriss__zuordnungen" aria-hidden="true">{linien}</g>;
+});
 
 /**
  * Alle gespeicherten Öffnungen des Geschosses - in **einer** Ebene über allen

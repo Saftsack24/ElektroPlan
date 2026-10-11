@@ -16,7 +16,7 @@ import { konturbericht, streckenlaenge } from "../editor/geometrie";
 import { ganzeLage, vergleichen } from "../topologie/lage";
 import type { LokalerBereich } from "../topologie/oeffnungen";
 import { fremdeBereiche } from "../topologie/oeffnungen";
-import type { TopoWand, Wandteilung } from "../topologie/wandtopologie";
+import type { TopoKopplung, TopoWand, Wandteilung } from "../topologie/wandtopologie";
 import { wandtopologie } from "../topologie/wandtopologie";
 
 export type Flaeche = "wall_interior" | "wall_exterior" | "ceiling";
@@ -235,16 +235,23 @@ export function deckengeraetBefunde(id: string, r: Rechteck, waende: readonly { 
 
 /**
  * Alle Befunde der Geräte eines Geschosses - deterministisch nach Geräte-ID,
- * genau wie `device_problems` im Backend.
+ * genau wie `device_problems` im Backend. `kopplungen` sind die Wandkopplungen
+ * des Geschosses (Phase 6a): Auf `separate` blockiert die Öffnung des Nachbarn
+ * nicht; die Außenmontage bleibt auf jedem Stück mit Nachbarraum verboten.
  */
 export function geraetebefunde(
   floorId: string,
   raeume: readonly PruefRaum[],
   geraete: readonly PruefGeraet[],
   typen: ReadonlyMap<string, Pruefmass>,
+  kopplungen: readonly TopoKopplung[] = [],
 ): Befund[] {
   const nachRaum = new Map(raeume.map((r) => [r.id, r]));
-  const topologie = wandtopologie(floorId, raeume.flatMap((r) => r.waende));
+  const topologie = wandtopologie(
+    floorId,
+    raeume.flatMap((r) => r.waende),
+    kopplungen,
+  );
   const befunde: Befund[] = [];
   const flaechen = new Map<string, { id: string; r: Rechteck }[]>();
 

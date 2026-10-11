@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile, status
+from fastapi import APIRouter, Depends, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
@@ -15,11 +15,11 @@ from app.core.audit import service as audit
 from app.core.auth.dependencies import CurrentUser, require_permission
 from app.core.authorization.permissions import (
     FILE_OBJECT_READ,
-    FILE_OBJECT_WRITE,
     PROJECT_RECORD_READ,
 )
 from app.core.files.service import FileService
 from app.core.files.storage import ObjectStorage, get_object_storage
+from app.core.files.upload_form import UploadForm, read_upload_form, upload_permission
 from app.core.projects.service import ProjectService
 from app.db.session import get_session
 from app.errors import ProblemDetail
@@ -41,6 +41,41 @@ class FileOut(BaseModel):
     created_at: datetime
 
 
+#: Das Formular liest :func:`read_upload_form` selbst (fruehe Upload-Schranke).
+#: Fuer OpenAPI und den generierten Client wird es hier beschrieben.
+_UPLOAD_REQUEST_BODY: dict[str, object] = {
+    "required": True,
+    "content": {
+        "multipart/form-data": {
+            "schema": {
+                "title": "Body_uploadFile",
+                "type": "object",
+                "required": ["upload"],
+                "properties": {
+                    "upload": {
+                        "type": "string",
+                        "contentMediaType": "application/octet-stream",
+                        "title": "Upload",
+                    },
+                    "project_id": {
+                        "anyOf": [{"type": "string", "format": "uuid"}, {"type": "null"}],
+                        "title": "Project Id",
+                    },
+                    "entity_type": {
+                        "anyOf": [{"type": "string", "maxLength": 60}, {"type": "null"}],
+                        "title": "Entity Type",
+                    },
+                    "entity_id": {
+                        "anyOf": [{"type": "string", "format": "uuid"}, {"type": "null"}],
+                        "title": "Entity Id",
+                    },
+                },
+            }
+        }
+    },
+}
+
+
 class FileDownloadUrl(BaseModel):
     """Kurzlebige Download-Adresse fuer den Browser."""
 
@@ -58,15 +93,15 @@ class FileDownloadUrl(BaseModel):
     responses={
         404: {"model": ProblemDetail, "description": "Projekt nicht gefunden"},
         409: {"model": ProblemDetail, "description": "Projekt ist archiviert oder abgeschlossen"},
+        413: {"model": ProblemDetail, "description": "Anfrage groesser als erlaubt"},
         422: {"model": ProblemDetail, "description": "Dateityp, Inhalt oder Groesse unzulaessig"},
+        429: {"model": ProblemDetail, "description": "Zu viele Uploads"},
     },
+    openapi_extra={"requestBody": _UPLOAD_REQUEST_BODY},
 )
 def upload_file(
-    upload: UploadFile = File(...),
-    project_id: uuid.UUID | None = Form(default=None),
-    entity_type: str | None = Form(default=None),
-    entity_id: uuid.UUID | None = Form(default=None),
-    current_user: CurrentUser = Depends(require_permission(FILE_OBJECT_WRITE)),
+    form: UploadForm = Depends(read_upload_form),
+    current_user: CurrentUser = Depends(upload_permission),
     session: Session = Depends(get_session),
     storage: ObjectStorage = Depends(get_object_storage),
 ) -> FileOut:
@@ -75,7 +110,15 @@ def upload_file(
     Mit ``project_id`` wird die Datei einem Projekt zugeordnet; das Projekt
     muss der eigenen Organisation gehoeren und darf weder archiviert noch
     abgeschlossen sein.
+
+    Der Koerper wird erst nach Anmeldung, Berechtigung und Anfragegrenzen
+    gelesen; eine zu grosse Anfrage endet mit ``413``, bevor sie vollstaendig
+    angenommen ist (:mod:`app.core.files.upload_form`).
     """
+    upload = form.upload
+    project_id = form.project_id
+    entity_type = form.entity_type
+    entity_id = form.entity_id
     projects = ProjectService(session, current_user.organization_id)
     if project_id is not None:
         # Erste Pruefung **ohne** Sperre: Fremde oder unbekannte Projekte

@@ -226,6 +226,7 @@ def test_oeffentlicher_einstiegspunkt_exportiert_nur_den_descriptor() -> None:
     # andere waere ein zusaetzlicher oeffentlicher Name.
     assert oeffentlich - {"DESCRIPTOR", "annotations"} <= {
         "api",
+        "backfill",
         "catalog",
         "device_rules",
         "devices",
@@ -233,6 +234,7 @@ def test_oeffentlicher_einstiegspunkt_exportiert_nur_den_descriptor() -> None:
         "floor_height",
         "geometry",
         "lifecycle",
+        "link_rules",
         "models",
         "module",
         "permissions",
@@ -240,6 +242,7 @@ def test_oeffentlicher_einstiegspunkt_exportiert_nur_den_descriptor() -> None:
         "schemas",
         "service",
         "topology",
+        "wall_links",
     }
 
 
@@ -269,6 +272,10 @@ def test_tabellen_tragen_das_modulpraefix(registry: ModuleRegistry) -> None:
         "electrical_openings",
         "electrical_device_types",
         "electrical_devices",
+        # Phase 6a: Wandkopplungen; Steigwege nur als Schema-Vorbereitung.
+        "electrical_wall_links",
+        "electrical_risers",
+        "electrical_riser_stops",
     }
     for name in eigene:
         assert name.startswith(DESCRIPTOR.table_prefix)

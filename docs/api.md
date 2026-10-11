@@ -58,7 +58,7 @@ POST   /api/v1/buildings/{building_id}/floors
 PATCH  /api/v1/floors/{floor_id}                             If-Match
 DELETE /api/v1/floors/{floor_id}                             If-Match  (Hard Delete)
 
-POST   /api/v1/files                          multipart, optional project_id
+POST   /api/v1/files                          multipart, optional project_id (413/429 vor dem Lesen)
 GET    /api/v1/projects/{project_id}/files
 GET    /api/v1/files/{file_id}
 GET    /api/v1/files/{file_id}/download-url   JSON mit signierter Adresse
@@ -484,9 +484,10 @@ Regeln:
 | 403 | Angemeldet, aber Permission fehlt |
 | 404 | Nicht vorhanden **oder fremder Mandant** (bewusst nicht unterscheidbar) |
 | 409 | Fachlicher Konflikt (Versionskonflikt, Bestand, Statuswechsel unzulässig, letzter Administrator) |
+| 413 | Anfrage größer als erlaubt (`payload-too-large`, bisher nur `POST /files`) |
 | 422 | Validierungsfehler im Inhalt |
 | 428 | `If-Match` fehlt bei einer Aenderung an einer versionierten Entität (RFC 6585) |
-| 429 | Rate Limit |
+| 429 | Anfragegrenze erreicht (`rate-limited`), immer mit `Retry-After` in Sekunden; Grenzen in `docs/security.md`, Abschnitt 11 |
 | 503 | Dienst nicht eingerichtet (z. B. kein Zustellweg für Einladungen) |
 | 500 | Unerwarteter Fehler (generische Meldung) |
 
@@ -683,6 +684,35 @@ Folgen für Clients:
   `docs/security.md`, Abschnitt 12.
 - Die spätere Baustellen-App erhält einen **getrennten** mobilen Tokenflow; sie
   verwendet dieses Schema nicht.
+
+### Datei-Upload: Prüfung vor dem Lesen (Sicherheitsauftrag 2026-10-10)
+
+`POST /files` liest den Körper erst nach Anmeldung, `file.object.write` und den
+Anfragegrenzen. Reihenfolge der Antworten:
+
+| Fall | Antwort | Körper gelesen? |
+|---|---|---|
+| kein oder ungültiger Token | `401` | nein |
+| Berechtigung fehlt | `403` | nein |
+| Schreib- oder Upload-Grenze erreicht | `429` + `Retry-After` | nein |
+| kein `multipart/form-data` | `422` | nein |
+| `Content-Length` > Dateilimit + Multipart-Zuschlag | `413 payload-too-large` | nein |
+| tatsächlich empfangene Bytes überschreiten die Grenze (auch ohne oder mit falscher `Content-Length`) | `413` | nur bis zur Grenze |
+| mehr als ein Dateiteil, unbekanntes Feld, Feld > 1 KiB, ungültige ID, `entity_type` > 60 Zeichen | `422` | ja |
+| Datei leer, zu groß, falscher Typ oder Inhalt | `422` (wie bisher, Service) | ja |
+
+Das OpenAPI-Schema des Formulars ist unverändert (Feld `upload`, optional `project_id`,
+`entity_type`, `entity_id`); es steht jetzt direkt am Endpunkt statt als Komponente
+`Body_uploadFile`.
+
+### Sitzungserneuerung und Abmeldung
+
+- `/auth/refresh` ist je Konto begrenzt (Standard 120 / Stunde) und für ungültige Tokens je
+  IP (30 / 15 min); beides `429` mit `Retry-After`.
+- `/auth/logout` beendet die Token-Familie dieser Sitzung dauerhaft; eine gleichzeitige
+  Erneuerung kann sie nicht mehr verlängern. **Ein bereits ausgestellter Access Token
+  bleibt bis zu seinem Ablauf gültig** (Standard 15 Minuten) – Clients verwerfen ihn beim
+  Abmelden selbst. Andere Sitzungen desselben Kontos bleiben bestehen.
 
 ### Abgelehnte Anmeldung
 

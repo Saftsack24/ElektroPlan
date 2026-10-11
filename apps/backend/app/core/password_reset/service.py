@@ -36,7 +36,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.core.auth.models import RefreshTokenRevocationReason
-from app.core.auth.rate_limit import SlidingWindowLimiter
+from app.core.auth.rate_limit import SlidingWindowLimiter, enforce
 from app.core.auth.security import (
     MAX_ONE_TIME_TOKEN_LENGTH,
     generate_one_time_token,
@@ -59,7 +59,6 @@ from app.errors import (
     PasswordResetDeliveryUnavailableError,
     PasswordResetInvalidError,
     ProblemFieldError,
-    RateLimitedError,
     ValidationFailedError,
 )
 from app.logging_config import get_logger
@@ -76,10 +75,12 @@ _INVALID = (
 
 _settings = get_settings()
 _issue_limiter = SlidingWindowLimiter(
+    name="password_reset_issue",
     limit=_settings.password_reset_issue_per_window,
     window_seconds=_settings.password_reset_window_seconds,
 )
 _redeem_limiter = SlidingWindowLimiter(
+    name="password_reset_redeem",
     limit=_settings.password_reset_attempts_per_window,
     window_seconds=_settings.password_reset_window_seconds,
 )
@@ -133,14 +134,15 @@ class PasswordResetService:
         require_not_removed(member)
         self.guard.require_exclusive_account(user.id)
 
-        key = f"member:{member.id}"
-        if not _issue_limiter.check(key):
-            logger.warning("password_reset_issue_limited")
-            raise RateLimitedError(
+        enforce(
+            _issue_limiter,
+            f"member:{member.id}",
+            message=(
                 "Fuer dieses Konto wurden gerade mehrere Links erzeugt. Bitte spaeter erneut "
                 "versuchen."
-            )
-        _issue_limiter.register(key)
+            ),
+            log_event="password_reset_issue_limited",
+        )
 
         # Hoechstens ein offener Link: der bisherige verschwindet.
         self.session.execute(
@@ -251,10 +253,13 @@ class PasswordResetRedemption:
     # ----------------------------------------------------------------- intern
 
     def _find_open(self, token: str) -> PasswordResetToken:
-        key = f"ip:{self.client_ip or 'unbekannt'}"
-        if not _redeem_limiter.check(key):
-            logger.warning("password_reset_rate_limited")
-            raise RateLimitedError("Zu viele Versuche. Bitte spaeter erneut versuchen.")
+        # Atomar reserviert; nur ungueltige Links zaehlen (je IP).
+        reservation = enforce(
+            _redeem_limiter,
+            f"ip:{self.client_ip or 'unbekannt'}",
+            message="Zu viele Versuche. Bitte spaeter erneut versuchen.",
+            log_event="password_reset_rate_limited",
+        )
         stored: PasswordResetToken | None = None
         if 0 < len(token) <= MAX_ONE_TIME_TOKEN_LENGTH:
             stored = self.session.execute(
@@ -271,8 +276,8 @@ class PasswordResetRedemption:
             or organization is None
             or organization.deleted_at is not None
         ):
-            _redeem_limiter.register(key)
             raise self._invalid()
+        _redeem_limiter.release(reservation)
         return stored
 
     @staticmethod

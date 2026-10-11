@@ -12,7 +12,7 @@ import type { Geraet3d } from "./geraete3d";
 import type { components } from "@elektroplan/api-client";
 
 import type { Oeffnungsklasse } from "../topologie/oeffnungen";
-import type { TopoOeffnung, TopoWand } from "../topologie/wandtopologie";
+import type { TopoOeffnung, TopoWand, Zuordnung } from "../topologie/wandtopologie";
 import type { GrenzenMm, Transformation } from "./transformation";
 import type { Wandrechteck } from "./wandzerlegung";
 
@@ -21,6 +21,8 @@ export type Geschossplan = Schemas["FloorPlanOut"];
 export type RaumImPlan = Schemas["RoomPlanOut"];
 export type WandImPlan = Schemas["WallPlanOut"];
 export type OeffnungImPlan = Schemas["OpeningOut"];
+export type KopplungImPlan = Schemas["WallLinkOut"];
+export type KandidatImPlan = Schemas["WallLinkCandidateOut"];
 export type Oeffnungsart = OeffnungImPlan["kind"];
 
 export interface PunktMm {
@@ -98,6 +100,11 @@ export interface LogischeWand extends TopoWand {
   /** Nach T8: die effektive Höhe des eigenen Raums. */
   readonly raumhoeheMm: number;
   readonly oeffnungen: readonly Oeffnungsquelle[];
+  /**
+   * Liegt das Rauminnere links der **eigenen** Wandrichtung (Kontur gegen den
+   * Uhrzeigersinn)? Nur für die Halbkörper getrennter Wände (Phase 6a).
+   */
+  readonly innenLinks?: boolean;
 }
 
 /**
@@ -121,12 +128,41 @@ export interface Oeffnung3d {
   readonly arten: readonly Oeffnungsart[];
   /** Rechteck in der kanonischen Richtung der Darstellungswand, auf sie beschnitten. */
   readonly rechteck: Wandrechteck;
+  /**
+   * Querlage der Auswahlfläche in mm (positiv = rechts der kanonischen
+   * Richtung im Grundriss). `0` = Wandachse; bei getrennten Wänden die Mitte
+   * des eigenen Halbkörpers.
+   */
+  readonly querMm: number;
   /** Gespeicherte Erfassungen; die erste ist die Eigentümerwand. */
   readonly quellen: readonly Oeffnungsquelle[];
   /** Abgeleitete Einordnung (`topologie/oeffnungen.ts`). */
   readonly klasse: Oeffnungsklasse;
   /** Verbundene Räume: bei `gemeinsam` Quellraum und Nachbar, sonst der Quellraum. */
   readonly raumIds: readonly string[];
+}
+
+/**
+ * Halbkörper einer **getrennten** Wand (`separate`, Phase 6a): je Raum nur auf
+ * der eigenen Achsseite, Tiefe = eigene halbe Stärke, Höhe = eigene Raumhöhe;
+ * nur die eigenen Öffnungen schneiden ihn. Vereinfachte Darstellung - keine
+ * maßstäbliche Aussage über einen zweischaligen Wandaufbau.
+ */
+export interface Halbkoerper3d {
+  readonly raumId: string;
+  /** Die gespeicherte Raumwand dieses Halbkörpers. */
+  readonly wandId: string;
+  /** Querlage in mm, positiv = rechts der kanonischen Richtung im Grundriss. */
+  readonly q0Mm: number;
+  readonly q1Mm: number;
+  readonly hoeheMm: number;
+  readonly teile: readonly Wandrechteck[];
+}
+
+/** Ungekoppeltes Wandpaar dieses Abschnitts mit Einordnung des Servers. */
+export interface Kandidat3d {
+  readonly art: KandidatImPlan["kind"];
+  readonly gruende: KandidatImPlan["reasons"];
 }
 
 /** Darstellungswand: ein atomarer Wandabschnitt mit seinen logischen Wänden. */
@@ -141,6 +177,13 @@ export interface Wand3d {
   /** Darstellungshöhe: größte beteiligte Raumhöhe. */
   readonly hoeheMm: number;
   readonly lage: Wandlage;
+  /** Kopplungszustand des Abschnitts (Phase 6a, ADR 0024). */
+  readonly zuordnung: Zuordnung;
+  readonly kopplungId: string | null;
+  /** Nur bei `undecided` mit genau zwei Wänden: die Einordnung des Paars. */
+  readonly kandidat: Kandidat3d | null;
+  /** Leer, außer bei `separate`: dann zwei Halbkörper statt eines Körpers. */
+  readonly halbkoerper: readonly Halbkoerper3d[];
   /** Schlüssel der unendlich gedachten Geraden (Geschoss, Richtung, Abstand) - exakt. */
   readonly gerade: string;
   readonly raumIds: readonly string[];
@@ -168,6 +211,9 @@ export type Warnungscode =
   | "oeffnung-teilweise"
   | "oeffnung-mehrdeutig"
   | "oeffnung-ungueltig"
+  | "oeffnung-einseitig"
+  | "kopplung-unterbrochen"
+  | "kopplung-mehrdeutig"
   | "wand-staerke-abweichend"
   | "wand-hoehe-abweichend"
   | "wand-mehrfach"

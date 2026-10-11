@@ -205,6 +205,10 @@ describe("Lebenszyklus", () => {
     const t = umgebungen[0]!;
     act(() => t.bild());
     const farben = vi.spyOn(t.umgebung, "farben");
+    // Seit Vitest 4 liefert `vi.spyOn` auf einem bestehenden Mock denselben
+    // Mock samt bisheriger Aufrufe (hier: der Szenenaufbau). Gezählt werden
+    // nur die Aufrufe des Theme-Wechsels.
+    farben.mockClear();
     const vorher = commits.mock.calls.length;
     act(() => {
       darstellungVorschauen({ modus: "dark", akzent: "teal" });
@@ -321,10 +325,12 @@ describe("Auswahl und Bedienung", () => {
     await geladen();
     waehlen({ art: "wand", id: "flur-w1+hwr-w3" });
     const seite = screen.getByRole("complementary", { name: "Informationen zur 3D-Ansicht" });
-    expect(within(seite).getByRole("heading", { name: "Gemeinsame Wand" })).toBeInTheDocument();
+    // Ohne Kopplung (Phase 6a): Zuordnung offen, vorsichtig wie bisher.
+    expect(within(seite).getByRole("heading", { name: "Gemeinsame Wand – Zuordnung offen" })).toBeInTheDocument();
     expect(within(seite).getByText("400 cm")).toBeInTheDocument();
     expect(within(seite).getByText("11,5 cm")).toBeInTheDocument();
-    expect(within(seite).getByText(/Gemeinsame Wand \(innen\) zwischen „0.03 Flur“ und „0.05 HWR“/)).toBeInTheDocument();
+    expect(within(seite).getByText(/Wand zwischen „0.03 Flur“ und „0.05 HWR“/)).toBeInTheDocument();
+    expect(within(seite).getByText("offen – vorsichtig wie bisher behandelt")).toBeInTheDocument();
     expect(within(seite).getByText("0.03 Flur, 0.05 HWR")).toBeInTheDocument();
   });
 

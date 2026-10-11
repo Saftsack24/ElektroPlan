@@ -341,9 +341,26 @@ class ValidationFailedError(AppError):
 
 
 class RateLimitedError(AppError):
+    """Eine Anfragegrenze ist erreicht (docs/security.md, Abschnitt 11).
+
+    ``retry_after`` (Sekunden) geht als ``Retry-After``-Header hinaus.
+    """
+
     error_type = "rate-limited"
     title = "Zu viele Anfragen"
     status_code = status.HTTP_429_TOO_MANY_REQUESTS
+
+    def __init__(self, detail: str | None = None, *, retry_after: int | None = None) -> None:
+        super().__init__(detail)
+        self.retry_after = retry_after
+
+
+class PayloadTooLargeError(AppError):
+    """Die Anfrage ist groesser als erlaubt - abgewiesen, bevor sie gelesen wurde."""
+
+    error_type = "payload-too-large"
+    title = "Anfrage zu gross"
+    status_code = status.HTTP_413_CONTENT_TOO_LARGE
 
 
 class OrganizationSelectionRequiredError(ConflictError):
@@ -397,7 +414,10 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def _app_error_handler(request: Request, exc: AppError) -> JSONResponse:
         if exc.status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR:
             logger.error("app_error", error_type=exc.error_type, detail=exc.detail)
-        return _problem_response(exc.to_problem(instance=request.url.path))
+        response = _problem_response(exc.to_problem(instance=request.url.path))
+        if isinstance(exc, RateLimitedError) and exc.retry_after is not None:
+            response.headers["Retry-After"] = str(exc.retry_after)
+        return response
 
     @app.exception_handler(RequestValidationError)
     async def _validation_handler(request: Request, exc: RequestValidationError) -> JSONResponse:

@@ -50,6 +50,7 @@ CORE_TABLES: tuple[str, ...] = (
     "role_permissions",
     "member_roles",
     "refresh_tokens",
+    "refresh_token_families",
     "password_reset_tokens",
     "user_preferences",
     "number_sequences",

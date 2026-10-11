@@ -24,6 +24,13 @@ Regeln je Geraet:
    weder eine eigene noch eine, die ein Nachbarraum auf demselben Wandstueck
    gespeichert hat. Aussen zusaetzlich: kein geteiltes Wandstueck (dort ist die
    andere Seite der Innenraum des Nachbarn).
+
+   **Wandkopplungen (Phase 6a, ADR 0024):** Auf einem als ``separate``
+   gekoppelten Stueck gehoert eine Oeffnung nur ihrer eigenen Bauwand - die
+   Oeffnung des Nachbarn blockiert dort nicht. ``shared`` und unentschiedene
+   Stuecke verhalten sich wie in Phase 5. Die Aussenmontage bleibt auf jedem
+   Stueck mit Nachbarraum verboten, auch bei ``separate``: Die aeussere Seite
+   ist dort eine Zwischenflaeche, keine Fassade.
 3. Decke: geschlossene Kontur, das Rechteck liegt vollstaendig in der echten
    Raumkontur - auch bei L-Form und anderen nicht rechteckigen Raeumen, nicht
    nur im umschliessenden Rechteck.
@@ -71,6 +78,7 @@ from app.modules.electrical.topology import (
     LineMeasure,
     Position,
     Span,
+    TopoLink,
     TopoWall,
     WallPartition,
     compare,
@@ -229,14 +237,16 @@ def device_findings(
     rooms: Sequence[PlannedRoom],
     devices: Sequence[PlannedDevice],
     types: Mapping[str, DeviceTypeSpec],
+    links: Sequence[TopoLink] = (),
 ) -> list[DeviceFinding]:
     """Alle Befunde der Geraete eines Geschosses - deterministisch nach Geraete-ID.
 
     ``rooms`` sind **alle** Raeume des Geschosses: Abgeleitete Oeffnungen und
-    geteilte Wandstuecke ergeben sich aus den Nachbarraeumen.
+    geteilte Wandstuecke ergeben sich aus den Nachbarraeumen. ``links`` sind
+    die Wandkopplungen des Geschosses (ohne sie: Phase-5-Verhalten).
     """
     by_room = {room.id: room for room in rooms}
-    partitions = partition([wall for room in rooms for wall in room.walls])
+    partitions = partition([wall for room in rooms for wall in room.walls], links)
     findings: list[DeviceFinding] = []
     surfaces: dict[tuple[str, str], list[tuple[str, _Rect]]] = {}
 
@@ -290,9 +300,10 @@ def device_problems(
     rooms: Sequence[PlannedRoom],
     devices: Sequence[PlannedDevice],
     types: Mapping[str, DeviceTypeSpec],
+    links: Sequence[TopoLink] = (),
 ) -> list[GeometryProblem]:
     """Nur die Befunde (Code, Meldung, Schluessel) - fuer Anzeige und Parität mit dem Editor."""
-    return [finding.problem for finding in device_findings(rooms, devices, types)]
+    return [finding.problem for finding in device_findings(rooms, devices, types, links)]
 
 
 # ---------------------------------------------------------------------- Wand

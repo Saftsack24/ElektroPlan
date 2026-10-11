@@ -439,6 +439,17 @@ Frontendtests bestanden. **Vom Auftraggeber manuell abgenommen und committet.**
 
 ## Phase 6 — Circuits & Cable Routes · NOT STARTED
 
+**Phase 6a** ([`docs/phase-6a-design.md`](phase-6a-design.md), ADR 0024/0025 accepted):
+
+| Schritt | Inhalt | Status |
+|---|---|---|
+| 6a.0 | bestätigte Höhenlage (Core, Migration `0009`) | **umgesetzt, wartet auf Abnahme** |
+| 6a.1 | Wandkopplungen Backend (Migration `0010`) | **umgesetzt, wartet auf Abnahme** |
+| 6a.2 | Darstellung und Bedienung (Editor, Wandansicht, 3D) | **umgesetzt, wartet auf Abnahme** |
+| 6a.3 | Backfill-Befehl (Probelauf als Standard) | **umgesetzt, wartet auf Abnahme** |
+| 6a.4 | Steigwege Backend (Tabellen bereits in `0010`) | NOT STARTED |
+| 6a.5 | Steigwege Frontend | NOT STARTED |
+
 Verteilungen, Stromkreise, Zuordnung von Geräten, Leitungswege mit Installationszonen,
 Längenberechnung, Mengenübersicht.
 

@@ -19,7 +19,7 @@ import type { Punkt } from "./geometrie";
 import { alsZahl, abgerundet, aufgerundet, ganzeLage, vergleichen } from "../topologie/lage";
 import type { Oeffnungseinordnung } from "../topologie/oeffnungen";
 import { bereichEinordnen, fremdeBereiche, oeffnungenEinordnen } from "../topologie/oeffnungen";
-import type { TopoWand, Wandabschnitt, Wandteilung, Wandtopologie } from "../topologie/wandtopologie";
+import type { TopoKopplung, TopoWand, Wandabschnitt, Wandteilung, Wandtopologie } from "../topologie/wandtopologie";
 import { wandtopologie } from "../topologie/wandtopologie";
 import { OEFFNUNGSART_LABEL } from "../texte";
 
@@ -51,8 +51,14 @@ interface Raumwaende {
 /**
  * Topologie des gezeigten Geschosses: aktiver Raum aus dem Entwurf, alle
  * anderen aus dem Serverstand - dieselbe Ableitung wie in der 3D-Ansicht.
+ * `kopplungen` sind die gespeicherten Wandkopplungen (Phase 6a); sie wirken
+ * nur, wo ihre beiden Wände im gezeigten Stand exakt aufeinanderliegen.
  */
-export function editorTopologie(floorId: string, raeume: readonly Raumwaende[]): EditorTopologie {
+export function editorTopologie(
+  floorId: string,
+  raeume: readonly Raumwaende[],
+  kopplungen: readonly TopoKopplung[] = [],
+): EditorTopologie {
   return wandtopologie(
     floorId,
     raeume.flatMap((raum) =>
@@ -72,6 +78,7 @@ export function editorTopologie(floorId: string, raeume: readonly Raumwaende[]):
         })),
       })),
     ),
+    kopplungen,
   );
 }
 
@@ -178,7 +185,7 @@ export type Platzierung =
       readonly wandId: string;
       readonly offsetMm: number;
       readonly breiteMm: number;
-      readonly klasse: "gemeinsam" | "aussen";
+      readonly klasse: "gemeinsam" | "aussen" | "getrennt";
       readonly nachbarRaumId: string | null;
       readonly abschnitt: Wandabschnitt<EditorWand>;
     }
@@ -263,7 +270,7 @@ export function platzierungBerechnen(
 export type Bereichspruefung =
   | {
       readonly ok: true;
-      readonly klasse: "gemeinsam" | "aussen";
+      readonly klasse: "gemeinsam" | "aussen" | "getrennt";
       readonly nachbarRaumId: string | null;
       readonly abschnitt: Wandabschnitt<EditorWand>;
     }
@@ -348,7 +355,9 @@ export function platzierungsText(
   const lage =
     platzierung.klasse === "gemeinsam" && platzierung.nachbarRaumId !== null
       ? `verbindet „${raumName(platzierung.raumId)}“ und „${raumName(platzierung.nachbarRaumId)}“`
-      : "nicht geteilte Wand – kein zweiter Raum";
+      : platzierung.klasse === "getrennt"
+        ? "getrennte Wand – nur auf dieser Seite"
+        : "nicht geteilte Wand – kein zweiter Raum";
   return `${OEFFNUNGSART_LABEL[art]} · ${lage} · Abstand ${mm(platzierung.offsetMm)}`;
 }
 
@@ -363,6 +372,10 @@ export function verbindungsText(
       return `Verbindet „${raumName(e.raumIds[0] ?? "")}“ und „${raumName(e.nachbarRaumId ?? "")}“`;
     case "aussen":
       return "An einer nicht geteilten Wand – kein zweiter Raum";
+    case "getrennt":
+      return e.einseitig
+        ? "Nur in dieser Wand: Die Wände sind als getrennt festgelegt; die andere Wand hat hier keine Öffnung."
+        : "Nur in dieser Wand: Die Wände sind als getrennt festgelegt.";
     case "ungueltig":
       return "Passt nicht in ihre Wand";
     case "konflikt":

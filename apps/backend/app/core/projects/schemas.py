@@ -177,22 +177,35 @@ class FloorCreate(_Strict):
     name: str = Field(min_length=1, max_length=120)
     level: int = Field(ge=MIN_FLOOR_LEVEL, le=MAX_FLOOR_LEVEL)
     elevation_mm: int = Field(default=0, ge=MIN_ELEVATION_MM, le=MAX_ELEVATION_MM)
+    #: Hoehenlage ausdruecklich bestaetigt (ADR 0025). Standard: nicht bestaetigt -
+    #: auch ``0`` ist ohne Bestaetigung kein gesicherter Gebaeudebezug.
+    elevation_confirmed: bool = False
     default_ceiling_height_mm: int = Field(
         default=2_500, ge=MIN_CEILING_HEIGHT_MM, le=MAX_CEILING_HEIGHT_MM
     )
 
 
 class FloorUpdate(_Strict):
+    """Teilaenderung eines Geschosses.
+
+    **Bestaetigte Hoehenlage (ADR 0025):** Eine Bestaetigung gilt genau fuer den
+    gespeicherten Wert. Aendert die Anfrage ``elevation_mm`` tatsaechlich und
+    sendet nicht zugleich ``elevation_confirmed: true``, faellt die Bestaetigung
+    weg. Ein unveraenderter Wert laesst sie stehen. ``elevation_confirmed``
+    allein setzt oder entzieht sie ohne Wertaenderung.
+    """
+
     name: str | None = Field(default=None, min_length=1, max_length=120)
     level: int | None = Field(default=None, ge=MIN_FLOOR_LEVEL, le=MAX_FLOOR_LEVEL)
     elevation_mm: int | None = Field(default=None, ge=MIN_ELEVATION_MM, le=MAX_ELEVATION_MM)
+    elevation_confirmed: bool | None = None
     default_ceiling_height_mm: int | None = Field(
         default=None, ge=MIN_CEILING_HEIGHT_MM, le=MAX_CEILING_HEIGHT_MM
     )
 
-    _not_nullable = field_validator("name", "level", "elevation_mm", "default_ceiling_height_mm")(
-        reject_explicit_null
-    )
+    _not_nullable = field_validator(
+        "name", "level", "elevation_mm", "elevation_confirmed", "default_ceiling_height_mm"
+    )(reject_explicit_null)
 
 
 class FloorOut(BaseModel):
@@ -203,6 +216,8 @@ class FloorOut(BaseModel):
     name: str
     level: int
     elevation_mm: int
+    #: Hoehenlage ausdruecklich bestaetigt (ADR 0025); Bestand: ``false``.
+    elevation_confirmed: bool
     default_ceiling_height_mm: int
     version: int
     created_at: datetime

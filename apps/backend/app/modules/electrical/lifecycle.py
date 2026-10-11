@@ -8,8 +8,10 @@ keine Core-Tabelle selbst.
 * :meth:`ElectricalProjectContent.describe_project_content` zaehlt Raeume,
   Waende, Oeffnungen und (seit Phase 5) Geraete des Projekts.
 * :meth:`ElectricalProjectContent.delete_project_content` loescht die Raeume;
-  Waende, Oeffnungen und Geraete folgen per ``ON DELETE CASCADE``
-  (Modelldefinition). Der Geraetekatalog ist global und bleibt unberuehrt.
+  Waende, Oeffnungen, Geraete und (seit Phase 6a) Wandkopplungen folgen per
+  ``ON DELETE CASCADE`` (Modelldefinition). Der Geraetekatalog ist global und
+  bleibt unberuehrt. Steigwege haben in Phase 6a.0-6a.3 noch keine Daten; ihre
+  Loeschung kommt mit 6a.4.
 
 Beides laeuft in der Transaktion des Core, der die Projektzeile bereits
 gesperrt haelt. Hier wird nicht committet.
@@ -33,6 +35,7 @@ from app.modules.electrical.models import (
     ElectricalOpening,
     ElectricalRoom,
     ElectricalWall,
+    ElectricalWallLink,
 )
 
 MODULE_ID = "electrical"
@@ -91,6 +94,22 @@ class ElectricalProjectContent:
                 )
             ).scalar_one()
         )
+        # Wandkopplungen (Phase 6a): beide Waende liegen auf demselben Geschoss.
+        link_count = int(
+            session.execute(
+                select(func.count())
+                .select_from(ElectricalWallLink)
+                .join(
+                    ElectricalWall,
+                    (ElectricalWall.organization_id == ElectricalWallLink.organization_id)
+                    & (ElectricalWall.id == ElectricalWallLink.wall_a_id),
+                )
+                .where(
+                    ElectricalWallLink.organization_id == request.organization_id,
+                    ElectricalWall.room_id.in_(rooms.with_only_columns(ElectricalRoom.id)),
+                )
+            ).scalar_one()
+        )
         items = [ProjectContentItem("electrical.rooms", "Räume", room_count)]
         if wall_count:
             items.append(ProjectContentItem("electrical.walls", "Wände", wall_count))
@@ -102,6 +121,8 @@ class ElectricalProjectContent:
             )
         if device_count:
             items.append(ProjectContentItem("electrical.devices", "Geräte", device_count))
+        if link_count:
+            items.append(ProjectContentItem("electrical.wall_links", "Wandzuordnungen", link_count))
         return ProjectContentReport(module_id=MODULE_ID, has_content=True, items=tuple(items))
 
     def delete_project_content(self, session: Session, request: ProjectContentRequest) -> None:

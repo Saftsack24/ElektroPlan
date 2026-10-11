@@ -52,7 +52,12 @@ from app.core.projects.schemas import (
 from app.core.projects.service import ProjectService
 from app.core.users.models import User
 from app.errors import ProjectArchivedError
-from app.modules.electrical.models import ElectricalDevice, ElectricalOpening, ElectricalRoom
+from app.modules.electrical.models import (
+    ElectricalDevice,
+    ElectricalOpening,
+    ElectricalRoom,
+    ElectricalWallLink,
+)
 from app.modules.electrical.reference_data import ElectricalReferenceData
 from app.modules.electrical.schemas import (
     ContourDeviceIn,
@@ -62,9 +67,11 @@ from app.modules.electrical.schemas import (
     RoomContourUpdate,
     RoomCreate,
     WallCreate,
+    WallLinkCreate,
     WallUpdate,
 )
 from app.modules.electrical.service import ElectricalRoomService
+from app.modules.electrical.wall_links import WallLinkService
 from tests.conftest import requires_database
 from tests.test_concurrency import ACTOR, gleichzeitig
 
@@ -220,6 +227,23 @@ def geraete_speichern(session: Session, welt: Welt) -> None:
     )
 
 
+def kopplung_anlegen(session: Session, welt: Welt) -> None:
+    """Phase 6a: Nachbarraum mit deckungsgleicher Wand und Wandkopplung."""
+    nachbarwand = uuid.uuid4()
+    ElectricalRoomService(session, welt.organization_id).create_room(
+        welt.floor_id,
+        RoomCreate(
+            name="Flur",
+            walls=[ContourWallIn(id=nachbarwand, x1_mm=5_000, y1_mm=0, x2_mm=0, y2_mm=0)],
+        ),
+    )
+    WallLinkService(session, welt.organization_id).create(
+        welt.floor_id,
+        WallLinkCreate(wall_a_id=welt.wall_id, wall_b_id=nachbarwand, relation="separate"),
+        actor_user_id=ACTOR,
+    )
+
+
 def gebaeude_anlegen(session: Session, welt: Welt) -> None:
     ProjectService(session, welt.organization_id).create_building(
         welt.project_id, BuildingCreate(name="Garage"), actor_user_id=ACTOR
@@ -274,6 +298,7 @@ SCHREIBWEGE: tuple[tuple[str, Fachaenderung], ...] = (
     ("oeffnung-anlegen", oeffnung_anlegen),
     ("kontur-speichern", kontur_speichern),
     ("geraete-speichern", geraete_speichern),
+    ("kopplung-anlegen", kopplung_anlegen),
     ("gebaeude-anlegen", gebaeude_anlegen),
     ("geschoss-anlegen", geschoss_anlegen),
     ("projekt-aendern", projekt_aendern),
@@ -334,6 +359,7 @@ def _bestand(factory: sessionmaker[Session], welt: Welt) -> dict[str, int]:
             "geraete": zaehlen(
                 select(func.count()).where(ElectricalDevice.room_id == welt.room_id)
             ),
+            "kopplungen": zaehlen(select(func.count()).select_from(ElectricalWallLink)),
         }
     finally:
         session.close()

@@ -12,7 +12,7 @@ ENV PYTHONUNBUFFERED=1 \
     UV_LINK_MODE=copy \
     PATH="/opt/venv/bin:$PATH"
 
-RUN pip install --no-cache-dir uv==0.12.17
+RUN pip install --no-cache-dir uv==0.12.18
 
 WORKDIR /app
 

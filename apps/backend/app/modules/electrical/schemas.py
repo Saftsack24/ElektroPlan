@@ -53,6 +53,14 @@ RoomTypeValue = Literal[
     "garage",
     "other",
 ]
+#: Wandkopplung (Phase 6a, ADR 0024) - dieselben Werte wie ``models.WALL_LINK_*``.
+WallLinkRelationValue = Literal["shared", "separate"]
+WallLinkOriginValue = Literal["user", "backfill"]
+WallLinkStatusValue = Literal["active", "ambiguous", "broken"]
+WallLinkCandidateKindValue = Literal["suggested", "decision-needed", "not-linkable"]
+WallLinkCandidateReasonValue = Literal[
+    "ambiguous", "thickness-differs", "contour-open", "openings-on-both-sides"
+]
 #: Tatsaechliche Montageflaeche eines Geraets (``catalog.MountingSurface``).
 MountingSurfaceValue = Literal["wall_interior", "wall_exterior", "ceiling"]
 DeviceCategoryValue = Literal["socket", "switch", "light", "data"]
@@ -185,6 +193,13 @@ class RoomContourUpdate(_Strict):
     devices: list[ContourDeviceIn] | None = Field(default=None, max_length=MAX_DEVICES_PER_ROOM)
     removed_device_ids: list[uuid.UUID] = Field(
         default_factory=list, max_length=MAX_DEVICES_PER_ROOM
+    )
+    #: Wandkopplungen entfallender Waende (Phase 6a, ADR 0024). Entfaellt eine
+    #: gekoppelte Wand, muss **jede** ihrer Kopplungen hier stehen (sonst
+    #: ``409 wall-has-links``); jede genannte Kopplung muss eine entfallende Wand
+    #: dieses Raums betreffen (sonst ``422``). Nichts wird nebenbei geloest.
+    removed_wall_link_ids: list[uuid.UUID] = Field(
+        default_factory=list, max_length=MAX_WALLS_PER_ROOM * 4
     )
 
 
@@ -464,14 +479,84 @@ class RoomPlanOut(RoomOut):
     devices: list[DeviceOut]
 
 
+# ------------------------------------------------------ Wandkopplung (6a)
+
+
+class WallLinkCreate(_Strict):
+    """Neue Wandkopplung zweier Raumwaende verschiedener Raeume (ADR 0024).
+
+    Die Reihenfolge der beiden Waende ist beliebig; gespeichert wird kanonisch.
+    ``separate`` wird nie vorgeschlagen - nur ausdruecklich angelegt.
+    """
+
+    wall_a_id: uuid.UUID
+    wall_b_id: uuid.UUID
+    relation: WallLinkRelationValue
+
+
+class WallLinkUpdate(_Strict):
+    """Entscheidung einer Kopplung aendern (``If-Match`` der Kopplungsversion)."""
+
+    relation: WallLinkRelationValue
+
+
+class WallLinkOut(BaseModel):
+    """Eine gespeicherte Kopplung samt abgeleitetem Status.
+
+    ``status``: ``active`` (wirkt), ``ambiguous`` (auf einem Teil liegt eine
+    dritte Wand - dort konservativ), ``broken`` (unterbrochen: kein gemeinsamer
+    Abschnitt, wirkt nirgends; bleibt gespeichert und wirkt wieder, sobald die
+    Geometrie passt). Lage und Laenge werden nie gespeichert.
+    """
+
+    id: uuid.UUID
+    wall_a_id: uuid.UUID
+    wall_b_id: uuid.UUID
+    relation: WallLinkRelationValue
+    #: ``user`` = ausdruecklich angelegt, ``backfill`` = Bestandsuebernahme.
+    origin: WallLinkOriginValue
+    status: WallLinkStatusValue
+    #: Nur bei ``shared``: die beiden Raumwaende sind verschieden stark erfasst.
+    thickness_conflict: bool
+    version: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class WallLinkCandidateOut(BaseModel):
+    """Ein ungekoppeltes, exakt ueberlappendes Wandpaar verschiedener Raeume.
+
+    ``suggested``: eindeutig, Vorschlag ``shared`` - es wird **nichts**
+    automatisch gekoppelt. ``decision-needed``: koppelbar, aber nur
+    ausdruecklich (``reasons``). ``not-linkable``: mehrdeutig (drei oder mehr
+    Waende auf einem Stueck).
+    """
+
+    wall_a_id: uuid.UUID
+    wall_b_id: uuid.UUID
+    kind: WallLinkCandidateKindValue
+    reasons: list[WallLinkCandidateReasonValue]
+
+
+class WallLinkOverviewOut(BaseModel):
+    """Kopplungen und Kandidaten eines Geschosses."""
+
+    floor_id: uuid.UUID
+    links: list[WallLinkOut]
+    candidates: list[WallLinkCandidateOut]
+
+
 class FloorPlanOut(BaseModel):
     """Vollstaendiger Planungsstand eines Geschosses in **einer** Antwort.
 
     Bewusst ohne Stammdaten des Geschosses oder Projekts: Die liefert der
     Core. Hier steht nur, was das Fachmodul besitzt - und die beiden IDs,
-    an denen es haengt.
+    an denen es haengt. Seit Phase 6a gehoeren die Wandkopplungen dazu, damit
+    Editor, Geraetepruefung und 3D denselben Stand lesen.
     """
 
     floor_id: uuid.UUID
     project_id: uuid.UUID
     rooms: list[RoomPlanOut]
+    wall_links: list[WallLinkOut]
+    wall_link_candidates: list[WallLinkCandidateOut]

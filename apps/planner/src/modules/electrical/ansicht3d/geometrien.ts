@@ -7,13 +7,15 @@
  * Szenenschicht (`szene.ts`).
  *
  * Wandkörper entstehen ohne CSG aus den rechteckigen Wandteilen
- * (`wandzerlegung.ts`) als Quader. Vertikale Flächen bilden Gruppe 0,
+ * (`wandzerlegung.ts`) als Quader. Getrennte Wände (`separate`, Phase 6a)
+ * bestehen aus zwei Halbkörpern - je Raum auf seiner Achsseite. Vertikale Flächen bilden Gruppe 0,
  * waagerechte (Wandkrone, Brüstungs- und Sturzflächen) Gruppe 1 - so tragen
  * sich überlagernde Kronen an Ecken dieselbe Farbe und flimmern nicht.
  */
 import { BufferGeometry, Float32BufferAttribute, ShapeUtils, Vector2, Vector3 } from "three";
 
 import type { Oeffnung3d, PunktMm, Raum3d, Wand3d } from "./modell";
+import type { Wandrechteck } from "./wandzerlegung";
 import type { Transformation } from "./transformation";
 import { inMeter, inSzene } from "./transformation";
 
@@ -140,7 +142,13 @@ class Vierecke {
  * aneinander. Die Verlängerung ist reine Darstellung.
  */
 export function wandGeometrie(wand: Wand3d, t: Transformation): BufferGeometry | null {
-  if (wand.teile.length === 0 || wand.laengeMm <= 0) return null;
+  if (wand.laengeMm <= 0) return null;
+  const halbkoerper = wand.halbkoerper ?? [];
+  const koerper: { teile: readonly Wandrechteck[]; q0: number; q1: number }[] =
+    halbkoerper.length > 0
+      ? halbkoerper.map((h) => ({ teile: h.teile, q0: inMeter(h.q0Mm), q1: inMeter(h.q1Mm) }))
+      : [{ teile: wand.teile, q0: -inMeter(wand.staerkeMm) / 2, q1: inMeter(wand.staerkeMm) / 2 }];
+  if (koerper.every((k) => k.teile.length === 0)) return null;
   const achsen = wandachsen(wand.start, wand.ende, wand.laengeMm, t);
   const halb = inMeter(wand.staerkeMm) / 2;
   const senkrecht = new Vierecke();
@@ -148,29 +156,31 @@ export function wandGeometrie(wand: Wand3d, t: Transformation): BufferGeometry |
   const oben = new Vector3(0, 1, 0);
   const unten = new Vector3(0, -1, 0);
 
-  for (const teil of wand.teile) {
-    const s0 = teil.s0 * achsen.meterJeS - (teil.s0 === 0 && wand.verlaengernAmStart ? halb : 0);
-    const s1 = teil.s1 * achsen.meterJeS + (teil.s1 === wand.laengeMm && wand.verlaengernAmEnde ? halb : 0);
-    const h0 = inMeter(teil.h0);
-    const h1 = inMeter(teil.h1);
-    const p = (s: number, h: number, q: number) => punktAuf(achsen, s, h, q);
+  for (const { teile, q0, q1 } of koerper) {
+    for (const teil of teile) {
+      const s0 = teil.s0 * achsen.meterJeS - (teil.s0 === 0 && wand.verlaengernAmStart ? halb : 0);
+      const s1 = teil.s1 * achsen.meterJeS + (teil.s1 === wand.laengeMm && wand.verlaengernAmEnde ? halb : 0);
+      const h0 = inMeter(teil.h0);
+      const h1 = inMeter(teil.h1);
+      const p = (s: number, h: number, q: number) => punktAuf(achsen, s, h, q);
 
-    // Längsseiten
-    senkrecht.hinzufuegen([p(s0, h0, halb), p(s1, h0, halb), p(s1, h1, halb), p(s0, h1, halb)], achsen.quer);
-    senkrecht.hinzufuegen(
-      [p(s0, h0, -halb), p(s1, h0, -halb), p(s1, h1, -halb), p(s0, h1, -halb)],
-      achsen.quer.clone().negate(),
-    );
-    // Stirnseiten (auch die Laibungen an Öffnungen)
-    senkrecht.hinzufuegen(
-      [p(s0, h0, -halb), p(s0, h0, halb), p(s0, h1, halb), p(s0, h1, -halb)],
-      achsen.entlang.clone().negate(),
-    );
-    senkrecht.hinzufuegen([p(s1, h0, -halb), p(s1, h0, halb), p(s1, h1, halb), p(s1, h1, -halb)], achsen.entlang);
-    // Oberseite (Krone oder Brüstung) und - über dem Boden - Unterseite (Sturz)
-    waagerecht.hinzufuegen([p(s0, h1, -halb), p(s1, h1, -halb), p(s1, h1, halb), p(s0, h1, halb)], oben);
-    if (teil.h0 > 0) {
-      waagerecht.hinzufuegen([p(s0, h0, -halb), p(s1, h0, -halb), p(s1, h0, halb), p(s0, h0, halb)], unten);
+      // Längsseiten
+      senkrecht.hinzufuegen([p(s0, h0, q1), p(s1, h0, q1), p(s1, h1, q1), p(s0, h1, q1)], achsen.quer);
+      senkrecht.hinzufuegen(
+        [p(s0, h0, q0), p(s1, h0, q0), p(s1, h1, q0), p(s0, h1, q0)],
+        achsen.quer.clone().negate(),
+      );
+      // Stirnseiten (auch die Laibungen an Öffnungen)
+      senkrecht.hinzufuegen(
+        [p(s0, h0, q0), p(s0, h0, q1), p(s0, h1, q1), p(s0, h1, q0)],
+        achsen.entlang.clone().negate(),
+      );
+      senkrecht.hinzufuegen([p(s1, h0, q0), p(s1, h0, q1), p(s1, h1, q1), p(s1, h1, q0)], achsen.entlang);
+      // Oberseite (Krone oder Brüstung) und - über dem Boden - Unterseite (Sturz)
+      waagerecht.hinzufuegen([p(s0, h1, q0), p(s1, h1, q0), p(s1, h1, q1), p(s0, h1, q1)], oben);
+      if (teil.h0 > 0) {
+        waagerecht.hinzufuegen([p(s0, h0, q0), p(s1, h0, q0), p(s1, h0, q1), p(s0, h0, q1)], unten);
+      }
     }
   }
 
@@ -198,14 +208,33 @@ export function oeffnungsGeometrie(oeffnung: Oeffnung3d, wand: Wand3d, t: Transf
   const s1 = r.s1 * achsen.meterJeS;
   const h0 = inMeter(r.h0);
   const h1 = inMeter(r.h1);
+  // Bei getrennten Wänden liegt die Fläche in der Mitte des eigenen Halbkörpers.
+  const q = inMeter(oeffnung.querMm ?? 0);
   const flaeche = new Vierecke();
   flaeche.hinzufuegen(
-    [punktAuf(achsen, s0, h0, 0), punktAuf(achsen, s1, h0, 0), punktAuf(achsen, s1, h1, 0), punktAuf(achsen, s0, h1, 0)],
+    [punktAuf(achsen, s0, h0, q), punktAuf(achsen, s1, h0, q), punktAuf(achsen, s1, h1, q), punktAuf(achsen, s0, h1, q)],
     achsen.quer,
   );
   const geometrie = new BufferGeometry();
   geometrie.setAttribute("position", new Float32BufferAttribute(flaeche.positionen, 3));
   geometrie.setAttribute("normal", new Float32BufferAttribute(flaeche.normalen, 3));
   geometrie.computeBoundingSphere();
+  return geometrie;
+}
+
+/**
+ * Trennfuge einer getrennten Wand (`separate`): eine Linie auf der Wandachse
+ * knapp über der niedrigeren Krone. Sie macht die zwei Bauwände sichtbar - reine
+ * Darstellung, keine Maßangabe. `null` bei allen anderen Wänden.
+ */
+export function fugenGeometrie(wand: Wand3d, t: Transformation): BufferGeometry | null {
+  const halbkoerper = wand.halbkoerper ?? [];
+  if (halbkoerper.length < 2 || wand.laengeMm <= 0) return null;
+  const achsen = wandachsen(wand.start, wand.ende, wand.laengeMm, t);
+  const h = inMeter(Math.min(...halbkoerper.map((k) => k.hoeheMm))) + 0.003;
+  const a = punktAuf(achsen, 0, h, 0);
+  const b = punktAuf(achsen, wand.laengeMm * achsen.meterJeS, h, 0);
+  const geometrie = new BufferGeometry();
+  geometrie.setAttribute("position", new Float32BufferAttribute([a.x, a.y, a.z, b.x, b.y, b.z], 3));
   return geometrie;
 }

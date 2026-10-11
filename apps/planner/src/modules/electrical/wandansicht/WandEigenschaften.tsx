@@ -151,14 +151,21 @@ export function WandEigenschaften({
           {modell.abschnitte.map((a, i) => {
             const bereich = `${masse.anzeigen(Math.round(a.links))} bis ${masse.anzeigen(Math.round(a.rechts))} von links`;
             if (a.mehrdeutig) return <li key={i}>{bereich}: mehr als zwei Räume – Zuordnung nicht eindeutig</li>;
-            if (a.nachbarn.length === 0) return <li key={i}>{bereich}: nicht geteilt (Außenwand)</li>;
+            if (a.nachbarn.length === 0) return <li key={i}>{bereich}: Außenseite – kein modellierter Nachbarraum</li>;
+            const zuordnung =
+              a.zuordnung === "shared"
+                ? "gemeinsame Bauwand"
+                : a.zuordnung === "separate"
+                  ? "getrennte Wände (Öffnungen gelten nur für ihre eigene Wand)"
+                  : "Zuordnung offen";
             return (
               <li key={i}>
                 {bereich}: grenzt an{" "}
                 {a.nachbarn.map((n) => {
                   const h = nachbarHoehe(n);
                   return `„${raumName(n)}“${h !== null && h !== H ? ` (Decke ${masse.anzeigen(h)} – abweichend)` : ""}`;
-                }).join(", ")}
+                }).join(", ")}{" "}
+                – {zuordnung}
               </li>
             );
           })}
@@ -181,6 +188,24 @@ export function WandEigenschaften({
             ))}
           </ul>
           <p className="m-0 text-muted">Nichts wird automatisch verschoben oder gelöscht – bitte die Öffnung anpassen.</p>
+        </div>
+      )}
+
+      {modell.oeffnungen.some((x) => x.hinweise.length > 0) && (
+        <div className={meldungsflaeche("schlicht")} role="status" data-testid="hinweis-einseitig">
+          <p className="m-0 font-semibold">Hinweis: Öffnung nur in einer der getrennten Wände</p>
+          <ul className="my-1 pl-[18px]">
+            {modell.oeffnungen
+              .filter((x) => x.hinweise.length > 0)
+              .map((x) => (
+                <li key={x.id}>
+                  {OEFFNUNGSART_LABEL[x.art]} {nummer(x.id)}: {x.hinweise.map(befundText).join(", ")}
+                </li>
+              ))}
+          </ul>
+          <p className="m-0 text-muted">
+            Kein Fehler. Soll die Öffnung durch beide Wände gehen, bitte auch in der Wand des Nachbarraums erfassen.
+          </p>
         </div>
       )}
 

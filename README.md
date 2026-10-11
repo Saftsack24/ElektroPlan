@@ -216,6 +216,22 @@ Modul- und Datenbankgrenzen, ein Alembic-Head, der vollständige Backend-Testlau
 cp .env.example .env
 ```
 
+`.env` liest **Docker Compose** im Projektverzeichnis. In die Container gelangen nur die
+Werte, die `docker-compose.yml` mit `${...}` nennt (Abschnitt A der Vorlage):
+`ELEKTROPLAN_JWT_SECRET`, `ELEKTROPLAN_JWT_KEY_ID`, `ELEKTROPLAN_S3_SECRET_KEY` und die
+Seed-Werte. Eine gleichnamige Variable der aufrufenden Shell hat Vorrang vor `.env`.
+
+- **JWT-Secret:** Bleibt `ELEKTROPLAN_JWT_SECRET` leer, signiert das Backend mit einem
+  öffentlich bekannten **Entwicklungsersatzwert** und protokolliert beim Start
+  `jwt_secret_development_default`. Für einen eigenen Wert in `.env` eintragen (der Befehl
+  erzeugt nur einen Zufallswert, nichts wird gespeichert):
+  `python -c "import secrets; print(secrets.token_urlsafe(64))"`.
+- **Alle Standardwerte sind Entwicklungswerte.** Mit `ELEKTROPLAN_ENVIRONMENT=production`
+  verweigert das Backend den Start, wenn JWT-Secret, S3-Schlüssel, Datenbankkennwort oder
+  Seed-Passwort einem bekannten Entwicklungswert entsprechen. Eine eigene
+  Produktionskonfiguration (Secrets, TLS, Backups) ist ein offener Freigabepunkt.
+- **Datenbankkennwort** bleibt fest: Es wird nur beim ersten Anlegen des Volumes gesetzt.
+
 ```powershell
 .\tasks.ps1 install
 ```
@@ -263,9 +279,21 @@ docker compose exec backend python -m app.cli seed
 | Backend-API | http://localhost:8000 |
 | API-Dokumentation | http://localhost:8000/docs |
 | MinIO-Konsole | http://localhost:9001 |
+| PostgreSQL | 127.0.0.1:5432 |
+
+Alle Ports sind ausdrücklich an **127.0.0.1** gebunden – erreichbar nur von diesem Rechner,
+nicht aus dem lokalen Netz. Untereinander sprechen die Dienste über das interne
+Compose-Netz. Eine bereits laufende Umgebung übernimmt die Bindung erst nach
+`docker compose up -d` (Container werden neu erstellt, Volumes bleiben).
 
 Anmeldedaten stammen aus `.env` (`ELEKTROPLAN_SEED_ADMIN_EMAIL`,
-`ELEKTROPLAN_SEED_ADMIN_PASSWORD`).
+`ELEKTROPLAN_SEED_ADMIN_PASSWORD`), ohne `.env` aus den Entwicklungswerten in
+`docker-compose.yml` (`admin@example.com` / `entwicklung-bitte-aendern`). Sie wirken nur beim
+ersten Anlegen durch den Seed.
+
+> **Nach dem Aktualisieren auf den Sicherheitsstand 2026-10-10:** `.\tasks.ps1 migrate`
+> (Migration `0011`, Refresh-Token-Familien). Ohne sie scheitern Anmeldung und
+> Sitzungserneuerung, weil der neue Code die Tabelle `refresh_token_families` erwartet.
 
 ### Qualitätsschranken
 
@@ -283,7 +311,7 @@ docker compose exec postgres createdb -U elektroplan elektroplan_test
 ```
 
 ```powershell
-$env:ELEKTROPLAN_TEST_DATABASE_URL = 'postgresql+psycopg://elektroplan:elektroplan@localhost:5432/elektroplan_test'
+$env:ELEKTROPLAN_TEST_DATABASE_URL = 'postgresql+psycopg://elektroplan:elektroplan@127.0.0.1:5432/elektroplan_test'
 ```
 
 Ohne diese Variable überspringen die Datenbanktests **sichtbar** — sie laufen

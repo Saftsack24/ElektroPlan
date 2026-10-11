@@ -9,17 +9,34 @@ from __future__ import annotations
 
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Environment = Literal["development", "test", "production"]
 
+#: Ersatzwert fuer das JWT-Secret - **nur** in Entwicklung und Test, wenn keins
+#: gesetzt ist. Beim Start als Warnung protokolliert, in Produktion verboten.
+DEVELOPMENT_JWT_SECRET = "development-only-insecure-secret-do-not-use"  # noqa: S105
+
 _PLACEHOLDER_SECRETS = frozenset(
     {
         "bitte-ersetzen-mindestens-32-zeichen-langer-zufallswert",
         "changeme",
         "secret",
+        DEVELOPMENT_JWT_SECRET,
+    }
+)
+
+#: Bekannte Entwicklungswerte aus docker-compose.yml und .env.example. In
+#: Produktion verweigert die Konfiguration mit ihnen den Start.
+_DEVELOPMENT_SECRET_VALUES = frozenset(
+    {
+        "elektroplan",
+        "elektroplan-dev-secret",
+        "entwicklung-bitte-aendern",
+        "aendere-dieses-passwort",
     }
 )
 
@@ -41,7 +58,10 @@ class Settings(BaseSettings):
     api_prefix: str = "/api/v1"
 
     # --- Datenbank ---
-    database_url: str = "postgresql+psycopg://elektroplan:elektroplan@localhost:5432/elektroplan"
+    #: ``127.0.0.1`` statt ``localhost``: Compose bindet nur IPv4-Loopback.
+    #: ``localhost`` loest unter Windows zuerst ``::1`` auf, und libpq wartet
+    #: dort bis zum Verbindungs-Timeout (Sicherheitsreview 2026-10-10).
+    database_url: str = "postgresql+psycopg://elektroplan:elektroplan@127.0.0.1:5432/elektroplan"
     database_echo: bool = False
     database_pool_size: int = 5
     database_connect_timeout: int = Field(default=5, ge=1, le=30)
@@ -60,12 +80,28 @@ class Settings(BaseSettings):
     refresh_race_grace_seconds: int = Field(default=10, ge=0, le=120)
 
     # --- Rate Limiting (Startwerte aus docs/security.md, Abschnitt 11) ---
-    login_attempts_per_window: int = 10
-    login_window_seconds: int = 900
+    #: Je Prozess gezaehlt (``app/core/auth/rate_limit.py``) - mehrere
+    #: Prozesse oder Instanzen vervielfachen die wirksame Grenze.
+    login_attempts_per_window: int = Field(default=10, ge=1)
+    login_window_seconds: int = Field(default=900, ge=1)
+    #: Erneuerungen je Konto. Jeder Seitenaufruf erneuert einmal; der Wert
+    #: laesst normale Arbeit mit mehreren Tabs und Geraeten unberuehrt.
+    refresh_per_account_per_window: int = Field(default=120, ge=1)
+    refresh_window_seconds: int = Field(default=3600, ge=1)
+    #: Erneuerungsversuche mit unbekanntem oder widerrufenem Token je IP.
+    refresh_invalid_per_ip_per_window: int = Field(default=30, ge=1)
+    refresh_invalid_window_seconds: int = Field(default=900, ge=1)
+    #: Datei-Uploads je Betrieb.
+    upload_per_organization_per_window: int = Field(default=100, ge=1)
+    upload_window_seconds: int = Field(default=3600, ge=1)
+    #: Schreibende Anfragen (POST/PUT/PATCH/DELETE) angemeldeter Benutzer.
+    write_per_organization_per_window: int = Field(default=600, ge=1)
+    write_per_member_per_window: int = Field(default=300, ge=1)
+    write_window_seconds: int = Field(default=60, ge=1)
 
     # --- Object Storage ---
     #: Endpunkt fuer Zugriffe des Backends (im Docker-Netz z. B. http://minio:9000).
-    s3_endpoint_url: str = "http://localhost:9000"
+    s3_endpoint_url: str = "http://127.0.0.1:9000"
     #: Endpunkt, der in signierte Download-URLs eingeht. Diese URLs ruft der
     #: **Browser** auf - ein Docker-interner Hostname waere dort nicht
     #: aufloesbar. Leer bedeutet: identisch mit dem internen Endpunkt.
@@ -74,7 +110,13 @@ class Settings(BaseSettings):
     s3_secret_key: str = ""
     s3_bucket: str = "elektroplan"
     s3_region: str = "eu-central-1"
-    upload_max_bytes: int = 50 * 1024 * 1024
+    #: Groesste zulaessige **Datei** (Inhalt des Dateiteils).
+    upload_max_bytes: int = Field(default=50 * 1024 * 1024, ge=1)
+    #: Zuschlag fuer den Multipart-Rahmen (Boundaries, Teilkoepfe, die kurzen
+    #: Formularfelder). Die **Anfrage** darf hoechstens
+    #: ``upload_max_bytes + upload_request_overhead_bytes`` Bytes haben; das
+    #: prueft die fruehe Schranke vor der Multipart-Verarbeitung.
+    upload_request_overhead_bytes: int = Field(default=64 * 1024, ge=1024, le=1024 * 1024)
     download_url_ttl_seconds: int = Field(default=300, ge=30, le=3600)
 
     # --- Einladungen (Phase 4.2, docs/security.md, Abschnitt 18) ---
@@ -121,6 +163,11 @@ class Settings(BaseSettings):
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
     @property
+    def upload_request_max_bytes(self) -> int:
+        """Obergrenze einer ganzen Upload-Anfrage samt Multipart-Rahmen."""
+        return self.upload_max_bytes + self.upload_request_overhead_bytes
+
+    @property
     def is_production(self) -> bool:
         return self.environment == "production"
 
@@ -161,7 +208,7 @@ class Settings(BaseSettings):
             if not self.jwt_secret:
                 # Nur Entwicklung/Test: In Produktion erzwingt die Pruefung unten
                 # ein echtes Secret mit mindestens 32 Zeichen.
-                self.jwt_secret = "development-only-insecure-secret-do-not-use"  # noqa: S105
+                self.jwt_secret = DEVELOPMENT_JWT_SECRET
             return self
         if len(self.jwt_secret) < 32:
             msg = "ELEKTROPLAN_JWT_SECRET muss in Produktion mindestens 32 Zeichen haben."
@@ -172,7 +219,21 @@ class Settings(BaseSettings):
         if not self.s3_secret_key:
             msg = "ELEKTROPLAN_S3_SECRET_KEY fehlt."
             raise ValueError(msg)
+        if self.s3_secret_key in _DEVELOPMENT_SECRET_VALUES:
+            msg = "ELEKTROPLAN_S3_SECRET_KEY ist ein Entwicklungswert."
+            raise ValueError(msg)
+        if (urlsplit(self.database_url).password or "") in _DEVELOPMENT_SECRET_VALUES:
+            msg = "ELEKTROPLAN_DATABASE_URL enthaelt ein Entwicklungskennwort."
+            raise ValueError(msg)
+        if self.seed_admin_password in _DEVELOPMENT_SECRET_VALUES:
+            msg = "ELEKTROPLAN_SEED_ADMIN_PASSWORD ist ein Entwicklungswert."
+            raise ValueError(msg)
         return self
+
+    @property
+    def uses_development_jwt_secret(self) -> bool:
+        """True, wenn der Entwicklungsersatzwert statt eines Secrets gilt."""
+        return self.jwt_secret == DEVELOPMENT_JWT_SECRET
 
 
 @lru_cache(maxsize=1)

@@ -1,5 +1,22 @@
 # Entwicklungsumgebung. Start mit:  docker compose up
-# Produktionsbetrieb erfordert eine eigene Compose-Datei (Secrets, TLS, Backups).
+# Produktionsbetrieb erfordert eine eigene Compose-Datei (Secrets, TLS, Backups) -
+# offener Freigabepunkt, siehe docs/security.md, Abschnitt 8.
+#
+# Netz (Sicherheitsauftrag 2026-10-10): Alle veroeffentlichten Ports sind
+# ausdruecklich an 127.0.0.1 gebunden - erreichbar nur von diesem Rechner, nicht
+# aus dem lokalen Netz. Die Dienste sprechen untereinander ueber das interne
+# Compose-Netz (postgres:5432, minio:9000); daran aendert die Bindung nichts.
+#
+# Secrets und Einstellungen: Docker Compose liest `.env` im Projektverzeichnis
+# (Vorlage: .env.example) und setzt die unten mit ${...} referenzierten Werte
+# ein. Nur diese erreichen die Container - eine Variable, die hier nicht
+# genannt ist, kommt im Backend-Container NICHT an. Alle Standardwerte sind
+# reine ENTWICKLUNGSWERTE; in Produktion verweigert das Backend den Start mit
+# ihnen (app/config.py).
+#
+# Datenbank-Zugangsdaten bleiben bewusst fest: Das Kennwort wird nur beim
+# allerersten Anlegen des Volumes gesetzt. Ein geaenderter Wert hier wuerde ein
+# bestehendes Volume nicht aendern, sondern das Backend aussperren.
 #
 # Images sind auf Digests gepinnt (Punkt 1 der Phase-1.1-Abnahme). Ein Update
 # erfolgt bewusst durch Austausch des Digests, nicht durch einen beweglichen Tag.
@@ -15,7 +32,7 @@ services:
       POSTGRES_DB: elektroplan
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./infrastructure/postgres-init:/docker-entrypoint-initdb.d:ro
@@ -34,10 +51,12 @@ services:
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: elektroplan
-      MINIO_ROOT_PASSWORD: elektroplan-dev-secret
+      # Entwicklungswert. Gleicher Wert wie ELEKTROPLAN_S3_SECRET_KEY des
+      # Backends. Bei einem bestehenden Volume nur bewusst aendern.
+      MINIO_ROOT_PASSWORD: ${ELEKTROPLAN_S3_SECRET_KEY:-elektroplan-dev-secret}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
       - minio-data:/data
     healthcheck:
@@ -66,7 +85,7 @@ services:
         echo "Bucket 'elektroplan' bereit, anonymer Zugriff deaktiviert."
     environment:
       MINIO_ROOT_USER: elektroplan
-      MINIO_ROOT_PASSWORD: elektroplan-dev-secret
+      MINIO_ROOT_PASSWORD: ${ELEKTROPLAN_S3_SECRET_KEY:-elektroplan-dev-secret}
     restart: "no"
 
   backend:
@@ -85,16 +104,25 @@ services:
       ELEKTROPLAN_ENVIRONMENT: development
       ELEKTROPLAN_DEBUG: "true"
       ELEKTROPLAN_DATABASE_URL: postgresql+psycopg://elektroplan:elektroplan@postgres:5432/elektroplan
+      # JWT-Signaturschluessel aus .env. Leer = Entwicklungsersatzwert des
+      # Backends (beim Start als Warnung protokolliert, in Produktion verboten).
+      ELEKTROPLAN_JWT_SECRET: ${ELEKTROPLAN_JWT_SECRET:-}
+      ELEKTROPLAN_JWT_KEY_ID: ${ELEKTROPLAN_JWT_KEY_ID:-key-1}
       # Interner Endpunkt: Backend -> MinIO im Docker-Netz.
       ELEKTROPLAN_S3_ENDPOINT_URL: http://minio:9000
       # Oeffentlicher Endpunkt: signierte URLs, die der Browser aufruft.
       # Muss vom Host aus aufloesbar sein - "minio" ist es nicht.
       ELEKTROPLAN_S3_PUBLIC_ENDPOINT_URL: http://localhost:9000
       ELEKTROPLAN_S3_ACCESS_KEY: elektroplan
-      ELEKTROPLAN_S3_SECRET_KEY: elektroplan-dev-secret
+      ELEKTROPLAN_S3_SECRET_KEY: ${ELEKTROPLAN_S3_SECRET_KEY:-elektroplan-dev-secret}
       ELEKTROPLAN_S3_BUCKET: elektroplan
       ELEKTROPLAN_CORS_ORIGINS: http://localhost:5173
-      ELEKTROPLAN_SEED_ADMIN_PASSWORD: entwicklung-bitte-aendern
+      # Startbestand (nur Entwicklung): Werte aus .env, sonst Entwicklungswerte.
+      # Wirkt nur beim Anlegen durch `python -m app.cli seed`; ein bestehendes
+      # Konto behaelt sein Passwort.
+      ELEKTROPLAN_SEED_ORG_NAME: ${ELEKTROPLAN_SEED_ORG_NAME:-Elektro Musterbetrieb GmbH}
+      ELEKTROPLAN_SEED_ADMIN_EMAIL: ${ELEKTROPLAN_SEED_ADMIN_EMAIL:-admin@example.com}
+      ELEKTROPLAN_SEED_ADMIN_PASSWORD: ${ELEKTROPLAN_SEED_ADMIN_PASSWORD:-entwicklung-bitte-aendern}
       # Einladungen (Phase 4.2): Es gibt noch keinen E-Mail-Versand. In der
       # Entwicklung erscheint der Einladungslink einmalig in der Oberflaeche.
       # In Produktion ist dieser Wert verboten - die Anwendung startet dann nicht.
@@ -105,7 +133,7 @@ services:
       ELEKTROPLAN_PASSWORD_RESET_DELIVERY: admin_link
       ELEKTROPLAN_PUBLIC_APP_URL: http://localhost:5173
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       # Nur die Anwendung neu laden - die Umgebung liegt unter /opt/venv und
       # wird von diesem Mount nicht verdeckt.
@@ -134,7 +162,7 @@ services:
       # Wird im Browser ausgewertet, nicht im Container - daher localhost.
       VITE_API_BASE_URL: http://localhost:8000
     ports:
-      - "5173:5173"
+      - "127.0.0.1:5173:5173"
     volumes:
       - ./apps/planner/src:/workspace/apps/planner/src:ro
       # Der generierte API-Client gehoert zum Quellstand des Planners. Ohne

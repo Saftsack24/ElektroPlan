@@ -74,7 +74,7 @@ ElektroPlan - Entwicklungsbefehle
   check        Alle Qualitaetsschranken
 
 Datenbanktests brauchen PostgreSQL:
-  `$env:ELEKTROPLAN_TEST_DATABASE_URL = 'postgresql+psycopg://elektroplan:elektroplan@localhost:5432/elektroplan_test'
+  `$env:ELEKTROPLAN_TEST_DATABASE_URL = 'postgresql+psycopg://elektroplan:elektroplan@127.0.0.1:5432/elektroplan_test'
 "@
     }
 
@@ -85,7 +85,7 @@ Datenbanktests brauchen PostgreSQL:
             Push-Location $backend
             if (-not (Test-Path '.venv')) { python -m venv .venv }
             # uv-Bootstrap: uv steht selbst im Lock und ueberlebt daher das sync.
-            & '.venv/Scripts/python.exe' -m pip install --quiet --upgrade pip 'uv==0.12.17'
+            & '.venv/Scripts/python.exe' -m pip install --quiet --upgrade pip 'uv==0.12.18'
             $env:UV_PROJECT_ENVIRONMENT = (Resolve-Path '.venv').Path
             & '.venv/Scripts/uv.exe' sync --frozen --extra dev
             Pop-Location

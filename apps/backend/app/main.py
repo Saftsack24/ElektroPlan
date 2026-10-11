@@ -41,11 +41,16 @@ def build_registry() -> ModuleRegistry:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Start- und Abschaltlogik."""
+    settings = get_settings()
     logger.info(
         "application_started",
-        environment=get_settings().environment,
+        environment=settings.environment,
         modules=[module.id for module in get_module_registry().modules],
     )
+    if settings.uses_development_jwt_secret:
+        # Sichtbar statt still: Ohne ELEKTROPLAN_JWT_SECRET signiert das Backend
+        # mit einem oeffentlich bekannten Entwicklungswert (docs/security.md, 8).
+        logger.warning("jwt_secret_development_default", environment=settings.environment)
     yield
     logger.info("application_stopped")
 
@@ -76,7 +81,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "X-Request-Id", "If-Match"],
-        expose_headers=["X-Request-Id"],
+        # Retry-After gehoert nicht zu den CORS-freigegebenen Antwortheadern.
+        expose_headers=["X-Request-Id", "Retry-After"],
     )
 
     register_exception_handlers(app)

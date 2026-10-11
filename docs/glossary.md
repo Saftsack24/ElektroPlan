@@ -47,6 +47,17 @@ Dokumentation und Oberfläche auf Deutsch, Code und API auf Englisch.
 | Aktionsicon | `AKTION`, `Symbol` (nur Oberfläche) | einheitliche Icons aus `lucide-react`, immer mit Text |
 | Geschossebene | `level` | `0` Erdgeschoss, `-1` Untergeschoss, `1` erstes Obergeschoss |
 | Höhenlage des Fertigfußbodens | `elevation_mm` | ganzzahlige Millimeter |
+| Bestätigte Höhenlage | `elevation_confirmed` | ausdrücklich bestätigter Wert von `elevation_mm` (Phase 6a, ADR 0025); Bestand und Neuanlage unbestätigt; eine Wertänderung ohne erneute Bestätigung entzieht sie; nie abgeleitet |
+| Wandkopplung / Wandzuordnung | `wall_link` | Zuordnung zweier exakt aufeinanderliegender Raumwände verschiedener Räume; speichert nur die Entscheidung, keine Geometrie (ADR 0024). In der Oberfläche „Wandzuordnung“ |
+| Gemeinsame Bauwand | `relation = shared` | beide Raumwände sind dieselbe Bauwand: Öffnungen gelten durchgehend |
+| Getrennte Wände | `relation = separate` | zwei Bauwände auf derselben Achse (z. B. zweischalige Trennwand, Fuge): Öffnungen gelten nur für ihre eigene Wand; in 3D vereinfacht als zwei Halbkörper |
+| Zuordnung offen (unentschieden) | Abschnittszustand `undecided` | keine wirksame Kopplung; vorsichtige Regel wie Phase 5 |
+| Kopplung unterbrochen | Status `broken` | die gekoppelten Wände liegen nicht mehr aufeinander; die Kopplung bleibt gespeichert und wirkt wieder, sobald die Geometrie passt |
+| Zwischenfläche | – | äußere Seite einer getrennten Wand; **keine** Fassade – Außenmontage verboten |
+| Außenseite ohne modellierten Nachbarraum | Abschnittszustand `no-partner` | äußere Seite einer Raumwand ohne anderen Raum auf derselben Linie; keine gesicherte Fassade |
+| Vorschlag (Kandidat) | `wall_link_candidate` | ungekoppeltes, exakt überlappendes Wandpaar mit Einordnung `suggested`, `decision-needed` oder `not-linkable`; wird nie automatisch gekoppelt |
+| Bestandsübernahme (Backfill) | `wall-links-backfill`, `origin = backfill` | Befehl, der eindeutige Bestandsfälle als gemeinsame Bauwand anlegt; Standard Probelauf |
+| Steigweg / Übergabepunkt | `riser` / `riser_stop` | ausdrücklich angelegter Geschossübergang je Gebäude bzw. sein Punkt je Geschoss (ADR 0025); **noch nicht umgesetzt** (6a.4) |
 | Standard-Geschosshöhe | `default_ceiling_height_mm` | lichte Höhe in Millimetern |
 | Protokolleintrag | `audit_entry` | |
 | Statusgruppe | `status_group`: `current`, `closed` | Listenfilter: laufend (Entwurf + in Bearbeitung) bzw. abgeschlossen + archiviert |
@@ -61,6 +72,10 @@ Dokumentation und Oberfläche auf Deutsch, Code und API auf Englisch.
 | Entfernter Benutzer | `UserReference.kind = "removed"` | neutrale Anzeige eines entfernten Mitglieds – ohne Name, E-Mail, ID |
 | Exklusives Konto | – (`account_shared = false`) | Konto, das keinem anderen Betrieb (nicht entfernt) angehört; nur dann ändert ein Betrieb Name, E-Mail, Passwort |
 | Sitzungsversion | `session_version` (Claim `sv`) | Zähler je Mitgliedschaft; jede sicherheitsrelevante Änderung macht alle älteren Tokens wertlos |
+| Token-Familie | `refresh_token_family` (Tabelle `refresh_token_families`) | alle Refresh Tokens einer Sitzung seit Anmeldung oder Betriebswechsel; ihr Widerruf ist dauerhaft und schließt jede spätere Erneuerung aus |
+| Sitzungskontext / Sitzungsraum | `Sitzungskontext` / `Sitzungsraum` (Planner, `core/sitzung`) | Benutzer + Betrieb + Mitgliedschaft aus dem Access Token / eigener Abfrage-Cache und eigenes Abbruchsignal je Kontext im Browser |
+| Anfragegrenze | `rate limit` (`SlidingWindowLimiter`) | Höchstzahl von Anfragen je Schlüssel und Zeitfenster; Antwort `429` mit `Retry-After` |
+| Anfragegrenze vs. Dateilimit (Upload) | `upload_request_max_bytes` / `upload_max_bytes` | ganze Anfrage samt Multipart-Rahmen / Inhalt der Datei |
 | Passwort zurücksetzen | `password-reset`, `password_reset_tokens` | Einmal-Link, vom Administrator ausgelöst; das Passwort setzt die Person selbst |
 | Einmal-Link | `reset_url`, Token im Fragment `#t=` | nur als Hash gespeichert, befristet, genau einmal verwendbar |
 | Adressvorschlag | – (nur Oberfläche) | Rechnungsadresse des Kunden als Vorschlag für die Baustellenadresse; keine Verknüpfung |

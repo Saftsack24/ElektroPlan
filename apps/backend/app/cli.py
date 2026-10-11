@@ -5,6 +5,7 @@ python -m app.cli check-modules
 python -m app.cli export-openapi [pfad]
 python -m app.cli purge-invitations
 python -m app.cli storage-cleanup
+python -m app.cli wall-links-backfill [--project PR-...] [--apply]
 """
 
 from __future__ import annotations
@@ -19,8 +20,9 @@ from app.core.files.storage import get_object_storage
 from app.core.invitations.service import purge_invitations
 from app.core.seed import seed_initial_data
 from app.db.mixins import utcnow
-from app.db.session import session_scope
+from app.db.session import get_session_factory, session_scope
 from app.main import build_registry, create_app
+from app.modules.electrical.backfill import format_report, run_backfill
 
 
 def cmd_seed(args: list[str]) -> int:
@@ -84,12 +86,38 @@ def cmd_storage_cleanup(_: list[str]) -> int:
     return 1 if remaining else 0
 
 
+def cmd_wall_links_backfill(args: list[str]) -> int:
+    """Uebernimmt eindeutige Bestandsfaelle als gemeinsame Bauwand (ADR 0024).
+
+    Standard ist der **Probelauf**; geschrieben wird nur mit ``--apply``. Je
+    Projekt eine Transaktion unter Projektsperre; wiederholbar. Rueckgabe 1,
+    wenn ein Projekt zurueckgerollt wurde.
+    """
+    apply = "--apply" in args
+    project: str | None = None
+    if "--project" in args:
+        index = args.index("--project")
+        if index + 1 >= len(args):
+            print("Verwendung: wall-links-backfill [--project PR-...] [--apply]")
+            return 2
+        project = args[index + 1]
+    unknown = [a for a in args if a not in {"--apply", "--project", project}]
+    if unknown:
+        print(f"Unbekannte Angabe: {' '.join(unknown)}")
+        return 2
+    report = run_backfill(get_session_factory(), apply=apply, project_number=project)
+    for line in format_report(report):
+        print(line)
+    return 1 if report.failed else 0
+
+
 COMMANDS = {
     "seed": cmd_seed,
     "check-modules": cmd_check_modules,
     "export-openapi": cmd_export_openapi,
     "purge-invitations": cmd_purge_invitations,
     "storage-cleanup": cmd_storage_cleanup,
+    "wall-links-backfill": cmd_wall_links_backfill,
 }
 
 

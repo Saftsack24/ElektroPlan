@@ -30,6 +30,9 @@ import { geraetEntfernen } from "../geraete/geraeteentwurf";
 import type { Geraetetypen } from "../geraete/katalog";
 import { FLAECHE_LABEL, geraetName } from "../geraete/katalog";
 import { Geraetesymbol } from "../geraete/symbole";
+import { Wandzuordnung } from "../kopplung/Wandzuordnung";
+import type { KandidatImPlan, KopplungImPlan } from "../kopplung/zuordnung";
+import { ungespeichert } from "./zustand";
 
 /** Seitenleiste: scrollt selbst, damit die Zeichenfläche daneben stehen bleibt. */
 const SEITENLEISTE = "flex max-h-[62vh] flex-col gap-2 overflow-y-auto text-small [&_:is(h3,h4)]:my-1";
@@ -142,6 +145,8 @@ export function Eigenschaften({
   typen = new Map(),
   geraetebefunde = new Map(),
   onGeraetBearbeiten,
+  kopplungen = [],
+  kandidaten = [],
 }: {
   zustand: EditorZustand;
   raeume: readonly RaumImPlan[];
@@ -161,6 +166,9 @@ export function Eigenschaften({
   typen?: Geraetetypen;
   geraetebefunde?: ReadonlyMap<string, readonly string[]>;
   onGeraetBearbeiten?: (geraetId: string) => void;
+  /** Phase 6a: gespeicherte Wandkopplungen und Vorschläge des Servers. */
+  kopplungen?: readonly KopplungImPlan[];
+  kandidaten?: readonly KandidatImPlan[];
 }) {
   const [hinweis, setHinweis] = useState<string | null>(null);
   const masse = useMasse();
@@ -398,6 +406,19 @@ export function Eigenschaften({
             einordnung={einordnung}
             raumName={raumName}
             onWaehlen={onWaehlen}
+          />
+          <Wandzuordnung
+            topologie={topologie}
+            wandId={wand.id}
+            kopplungen={kopplungen}
+            kandidaten={kandidaten}
+            wandName={(wandId) => {
+              const raum = raeume.find((r) => r.walls.some((w) => w.id === wandId));
+              const nummer = raum === undefined ? 0 : raum.walls.findIndex((w) => w.id === wandId) + 1;
+              return raum === undefined ? "einer Wand eines anderen Raums" : `Wand ${nummer} von „${raumName(raum.id)}“`;
+            }}
+            darfSchreiben={darfSchreiben}
+            entwurfOffen={ungespeichert(zustand)}
           />
         </section>
       )}

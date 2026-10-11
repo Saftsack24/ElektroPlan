@@ -93,6 +93,16 @@ requires_object_storage = pytest.mark.skipif(
 )
 
 
+@pytest.fixture(autouse=True)
+def _anfragegrenzen_zuruecksetzen() -> Iterator[None]:
+    """Jeder Test beginnt mit leeren Anfragezaehlern (Limiter sind prozessweit)."""
+    from app.core.auth.rate_limit import clear_all_limiters
+
+    clear_all_limiters()
+    yield
+    clear_all_limiters()
+
+
 # --------------------------------------------------------------- ohne Datenbank
 
 

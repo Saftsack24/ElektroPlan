@@ -89,6 +89,10 @@ nicht wiederholt, sondern von `ProjectService.lock_writable` übernommen — sie
 weiterhin an genau einer Stelle. Der Core kennt kein Fachmodul; er stellt den Kanal, das
 Modul benutzt ihn.
 
+Seit Phase 6a trägt `FloorPlanningContext` additiv `elevation_confirmed` (ADR 0025): Ein
+Fachmodul darf `elevation_mm` nur dann als verlässliche Höhe verwenden, wenn die Höhenlage
+ausdrücklich bestätigt ist.
+
 Seit Phase 4d zusätzlich:
 
 * `record_project_change(project_id, actor_user_id=…)` vermerkt nach einem wirksamen
@@ -423,6 +427,20 @@ export const MODULES: PlannerModule[] = [
   electricalModule,
 ];
 ```
+
+### Geschützte Daten im Browser: Sitzungsraum (Sicherheitsauftrag 2026-10-10)
+
+Den `QueryClient` stellt der Core je **Sitzungskontext** (Benutzer + Betrieb) bereit
+(`core/sitzung/sitzungsraum.ts`, über `AuthProvider`). Bei einem Wechsel wird er samt
+laufender Anfragen beendet und der Teilbaum neu aufgebaut. Für Module heißt das:
+
+- Daten über `useAuth().api` und `useQuery`/`useMutation`/`useQueryClient()` laden – wie
+  bisher. Abfrageschlüssel brauchen weder Benutzer noch Betrieb; die Trennung ist
+  strukturell.
+- **Keinen** eigenen `QueryClient` anlegen und geschützte Daten nicht in modulweiten
+  Variablen, `localStorage` oder `sessionStorage` halten – sie überlebten einen
+  Sitzungswechsel. Reine Darstellungswahl (etwa 2D/3D) ist davon nicht betroffen.
+- Ein `AbortError` nach einem Sitzungswechsel ist erwartet und braucht keine Meldung.
 
 ### Gemeinsame UI-Bausteine
 

@@ -552,6 +552,10 @@ export interface paths {
          *     Mit ``project_id`` wird die Datei einem Projekt zugeordnet; das Projekt
          *     muss der eigenen Organisation gehoeren und darf weder archiviert noch
          *     abgeschlossen sein.
+         *
+         *     Der Koerper wird erst nach Anmeldung, Berechtigung und Anfragegrenzen
+         *     gelesen; eine zu grosse Anfrage endet mit ``413``, bevor sie vollstaendig
+         *     angenommen ist (:mod:`app.core.files.upload_form`).
          */
         post: operations["uploadFile"];
         delete?: never;
@@ -1198,7 +1202,9 @@ export interface paths {
          *     gesamten Raumgeometrie. Die Reihenfolge der Waende ist die Reihenfolge in
          *     der Liste. Bekannte IDs werden geaendert, neue angelegt, fehlende Waende
          *     entfernt. Oeffnungen verschwinden nur, wenn sie in
-         *     ``removed_opening_ids`` stehen. Jeder Fehler laesst den Raum
+         *     ``removed_opening_ids`` stehen; Wandkopplungen entfallender Waende nur,
+         *     wenn sie in ``removed_wall_link_ids`` stehen (sonst ``409 wall-has-links``).
+         *     Jeder Fehler laesst den Raum
          *     unveraendert; bei Erfolg entsteht genau ein ``electrical.plan.updated``
          *     (``walls_changed``).
          *
@@ -1384,6 +1390,60 @@ export interface paths {
         patch: operations["updateElectricalOpening"];
         trace?: never;
     };
+    "/api/v1/modules/electrical/floors/{floor_id}/wall-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wandkopplungen und Kandidaten eines Geschosses
+         * @description Gespeicherte Kopplungen mit Status und ungekoppelte Kandidaten (ADR 0024).
+         *
+         *     Reine Auskunft: Vorschlaege werden nie automatisch gespeichert.
+         */
+        get: operations["listElectricalWallLinks"];
+        put?: never;
+        /**
+         * Wandkopplung anlegen
+         * @description Ordnet zwei exakt ueberlappende Raumwaende verschiedener Raeume einander zu.
+         *
+         *     ``shared`` = eine Bauwand, ``separate`` = zwei Bauwaende auf derselben Achse.
+         *     Die Raumversion beider Raeume zaehlt weiter. Wuerde ein vorhandenes Geraet
+         *     dadurch unzulaessig, antwortet der Server ``422`` und speichert nichts.
+         */
+        post: operations["createElectricalWallLink"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/modules/electrical/wall-links/{link_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Wandkopplung loesen
+         * @description Loest die Kopplung; der Abschnitt ist danach unentschieden (konservativ).
+         */
+        delete: operations["deleteElectricalWallLink"];
+        options?: never;
+        head?: never;
+        /**
+         * Wandkopplung aendern
+         * @description Aendert ``shared`` <-> ``separate``; ``If-Match`` traegt die Kopplungsversion.
+         */
+        patch: operations["updateElectricalWallLink"];
+        trace?: never;
+    };
     "/health/live": {
         parameters: {
             query?: never;
@@ -1486,17 +1546,6 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
-        };
-        /** Body_uploadFile */
-        Body_uploadFile: {
-            /** Upload */
-            upload: string;
-            /** Project Id */
-            project_id?: string | null;
-            /** Entity Type */
-            entity_type?: string | null;
-            /** Entity Id */
-            entity_id?: string | null;
         };
         /** BuildingCreate */
         BuildingCreate: {
@@ -1938,6 +1987,11 @@ export interface components {
              */
             elevation_mm: number;
             /**
+             * Elevation Confirmed
+             * @default false
+             */
+            elevation_confirmed: boolean;
+            /**
              * Default Ceiling Height Mm
              * @default 2500
              */
@@ -1961,6 +2015,8 @@ export interface components {
             level: number;
             /** Elevation Mm */
             elevation_mm: number;
+            /** Elevation Confirmed */
+            elevation_confirmed: boolean;
             /** Default Ceiling Height Mm */
             default_ceiling_height_mm: number;
             /** Version */
@@ -1982,7 +2038,8 @@ export interface components {
          *
          *     Bewusst ohne Stammdaten des Geschosses oder Projekts: Die liefert der
          *     Core. Hier steht nur, was das Fachmodul besitzt - und die beiden IDs,
-         *     an denen es haengt.
+         *     an denen es haengt. Seit Phase 6a gehoeren die Wandkopplungen dazu, damit
+         *     Editor, Geraetepruefung und 3D denselben Stand lesen.
          */
         FloorPlanOut: {
             /**
@@ -1997,8 +2054,21 @@ export interface components {
             project_id: string;
             /** Rooms */
             rooms: components["schemas"]["RoomPlanOut"][];
+            /** Wall Links */
+            wall_links: components["schemas"]["WallLinkOut"][];
+            /** Wall Link Candidates */
+            wall_link_candidates: components["schemas"]["WallLinkCandidateOut"][];
         };
-        /** FloorUpdate */
+        /**
+         * FloorUpdate
+         * @description Teilaenderung eines Geschosses.
+         *
+         *     **Bestaetigte Hoehenlage (ADR 0025):** Eine Bestaetigung gilt genau fuer den
+         *     gespeicherten Wert. Aendert die Anfrage ``elevation_mm`` tatsaechlich und
+         *     sendet nicht zugleich ``elevation_confirmed: true``, faellt die Bestaetigung
+         *     weg. Ein unveraenderter Wert laesst sie stehen. ``elevation_confirmed``
+         *     allein setzt oder entzieht sie ohne Wertaenderung.
+         */
         FloorUpdate: {
             /** Name */
             name?: string | null;
@@ -2006,6 +2076,8 @@ export interface components {
             level?: number | null;
             /** Elevation Mm */
             elevation_mm?: number | null;
+            /** Elevation Confirmed */
+            elevation_confirmed?: boolean | null;
             /** Default Ceiling Height Mm */
             default_ceiling_height_mm?: number | null;
         };
@@ -2878,6 +2950,8 @@ export interface components {
             devices?: components["schemas"]["ContourDeviceIn"][] | null;
             /** Removed Device Ids */
             removed_device_ids?: string[];
+            /** Removed Wall Link Ids */
+            removed_wall_link_ids?: string[];
         };
         /**
          * RoomCreate
@@ -3137,6 +3211,139 @@ export interface components {
              * @default 115
              */
             thickness_mm: number;
+        };
+        /**
+         * WallLinkCandidateOut
+         * @description Ein ungekoppeltes, exakt ueberlappendes Wandpaar verschiedener Raeume.
+         *
+         *     ``suggested``: eindeutig, Vorschlag ``shared`` - es wird **nichts**
+         *     automatisch gekoppelt. ``decision-needed``: koppelbar, aber nur
+         *     ausdruecklich (``reasons``). ``not-linkable``: mehrdeutig (drei oder mehr
+         *     Waende auf einem Stueck).
+         */
+        WallLinkCandidateOut: {
+            /**
+             * Wall A Id
+             * Format: uuid
+             */
+            wall_a_id: string;
+            /**
+             * Wall B Id
+             * Format: uuid
+             */
+            wall_b_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "suggested" | "decision-needed" | "not-linkable";
+            /** Reasons */
+            reasons: ("ambiguous" | "thickness-differs" | "contour-open" | "openings-on-both-sides")[];
+        };
+        /**
+         * WallLinkCreate
+         * @description Neue Wandkopplung zweier Raumwaende verschiedener Raeume (ADR 0024).
+         *
+         *     Die Reihenfolge der beiden Waende ist beliebig; gespeichert wird kanonisch.
+         *     ``separate`` wird nie vorgeschlagen - nur ausdruecklich angelegt.
+         */
+        WallLinkCreate: {
+            /**
+             * Wall A Id
+             * Format: uuid
+             */
+            wall_a_id: string;
+            /**
+             * Wall B Id
+             * Format: uuid
+             */
+            wall_b_id: string;
+            /**
+             * Relation
+             * @enum {string}
+             */
+            relation: "shared" | "separate";
+        };
+        /**
+         * WallLinkOut
+         * @description Eine gespeicherte Kopplung samt abgeleitetem Status.
+         *
+         *     ``status``: ``active`` (wirkt), ``ambiguous`` (auf einem Teil liegt eine
+         *     dritte Wand - dort konservativ), ``broken`` (unterbrochen: kein gemeinsamer
+         *     Abschnitt, wirkt nirgends; bleibt gespeichert und wirkt wieder, sobald die
+         *     Geometrie passt). Lage und Laenge werden nie gespeichert.
+         */
+        WallLinkOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Wall A Id
+             * Format: uuid
+             */
+            wall_a_id: string;
+            /**
+             * Wall B Id
+             * Format: uuid
+             */
+            wall_b_id: string;
+            /**
+             * Relation
+             * @enum {string}
+             */
+            relation: "shared" | "separate";
+            /**
+             * Origin
+             * @enum {string}
+             */
+            origin: "user" | "backfill";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "ambiguous" | "broken";
+            /** Thickness Conflict */
+            thickness_conflict: boolean;
+            /** Version */
+            version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * WallLinkOverviewOut
+         * @description Kopplungen und Kandidaten eines Geschosses.
+         */
+        WallLinkOverviewOut: {
+            /**
+             * Floor Id
+             * Format: uuid
+             */
+            floor_id: string;
+            /** Links */
+            links: components["schemas"]["WallLinkOut"][];
+            /** Candidates */
+            candidates: components["schemas"]["WallLinkCandidateOut"][];
+        };
+        /**
+         * WallLinkUpdate
+         * @description Entscheidung einer Kopplung aendern (``If-Match`` der Kopplungsversion).
+         */
+        WallLinkUpdate: {
+            /**
+             * Relation
+             * @enum {string}
+             */
+            relation: "shared" | "separate";
         };
         /**
          * WallOrder
@@ -4771,7 +4978,16 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "multipart/form-data": components["schemas"]["Body_uploadFile"];
+                "multipart/form-data": {
+                    /** Upload */
+                    upload: string;
+                    /** Project Id */
+                    project_id?: string | null;
+                    /** Entity Type */
+                    entity_type?: string | null;
+                    /** Entity Id */
+                    entity_id?: string | null;
+                };
             };
         };
         responses: {
@@ -4802,8 +5018,26 @@ export interface operations {
                     "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
+            /** @description Anfrage groesser als erlaubt */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
             /** @description Dateityp, Inhalt oder Groesse unzulaessig */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Zu viele Uploads */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7015,6 +7249,221 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OpeningOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    listElectricalWallLinks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                floor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WallLinkOverviewOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    createElectricalWallLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                floor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WallLinkCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WallLinkOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Projekt schreibgeschuetzt oder Zuordnung besteht bereits */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    deleteElectricalWallLink: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                link_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    updateElectricalWallLink: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                link_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WallLinkUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WallLinkOut"];
                 };
             };
             /** @description Nicht gefunden */

@@ -20,8 +20,18 @@
  *   Endpunkt (T-Stoß, Fortsetzung) ergibt keinen gemeinsamen Abschnitt.
  *
  * Die gespeicherten Wände bleiben unverändert; nichts hier wird je
- * zurückgeschrieben. Eine persistente physische Wandidentität ist bewusst
- * **nicht** Teil dieser Ableitung (T10, vor Phase 6).
+ * zurückgeschrieben.
+ *
+ * **Wandkopplungen (Phase 6a, ADR 0024).** Jeder Abschnitt mit Wänden
+ * verschiedener Räume ist in genau einem Zustand (`Zuordnung`):
+ * `undecided` (keine wirksame Kopplung - konservativ wie Phase 5), `shared`
+ * (eine Bauwand) oder `separate` (zwei Bauwände auf derselben Achse). Eine
+ * Kopplung wirkt auf einem Abschnitt genau dann, wenn **genau ihre beiden
+ * Wände** ihn überdecken; liegt eine dritte Wand darauf, bleibt er
+ * `undecided`. Ohne gemeinsamen Abschnitt ist sie „unterbrochen“ und wirkt
+ * nirgends - passt die Geometrie wieder, wirkt sie von selbst wieder.
+ * Dieselbe Regel steht im Backend (`topology.py`); die Fixture
+ * `testdata/geometry/wandkopplung.v1.json` hält beide Seiten gleich.
  */
 import { streckenlaenge } from "../editor/geometrie";
 import type { Punkt } from "../editor/geometrie";
@@ -49,6 +59,26 @@ export interface TopoWand {
   readonly start: Punkt;
   readonly ende: Punkt;
   readonly oeffnungen: readonly TopoOeffnung[];
+}
+
+/** Gespeicherte Wandkopplung - nur die Entscheidung, keine Geometrie. */
+export interface TopoKopplung {
+  readonly id: string;
+  readonly wandA: string;
+  readonly wandB: string;
+  readonly beziehung: "shared" | "separate";
+}
+
+/**
+ * Zustand eines atomaren Abschnitts. Die Werte entsprechen dem Server
+ * (`SectionState`): `no-partner` = nur ein Raum (äußere Fläche ohne
+ * modellierten Nachbarraum).
+ */
+export type Zuordnung = "no-partner" | "undecided" | "shared" | "separate";
+
+/** Reihenfolgeunabhängiger Schlüssel eines Wandpaars. */
+export function paarSchluessel(a: string, b: string): string {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
 // ------------------------------------------------------------ kanonisch
@@ -155,6 +185,10 @@ export interface Wandabschnitt<W extends TopoWand> {
   /** Beteiligte Räume, sortiert. */
   readonly raumIds: readonly string[];
   readonly lage: Abschnittslage;
+  /** Kopplungszustand (Phase 6a). `lage` bleibt die rein geometrische Aussage. */
+  readonly zuordnung: Zuordnung;
+  /** Die wirksame Kopplung bei `shared`/`separate`, sonst `null`. */
+  readonly kopplungId: string | null;
   /** Mehr als zwei Räume auf demselben Abschnitt - keine eindeutige Nachbarschaft. */
   readonly mehrdeutig: boolean;
   /** Zwei Wände desselben Raums überdecken den Abschnitt. */
@@ -199,7 +233,12 @@ interface Eintrag<W extends TopoWand> {
  * deterministisch: Das Ergebnis hängt nicht von der Reihenfolge der
  * Eingabe ab; dieselbe Wand-ID wird nur einmal berücksichtigt.
  */
-export function wandtopologie<W extends TopoWand>(floorId: string, waende: readonly W[]): Wandtopologie<W> {
+export function wandtopologie<W extends TopoWand>(
+  floorId: string,
+  waende: readonly W[],
+  kopplungen: readonly TopoKopplung[] = [],
+): Wandtopologie<W> {
+  const nachPaar = new Map(kopplungen.map((k) => [paarSchluessel(k.wandA, k.wandB), k] as const));
   const geraden = new Map<string, { gerade: Gerade; waende: W[] }>();
   const gesehen = new Set<string>();
   for (const wand of waende) {
@@ -216,7 +255,7 @@ export function wandtopologie<W extends TopoWand>(floorId: string, waende: reado
   const teilung = new Map<string, Wandteilung<W>>();
   for (const schluessel of [...geraden.keys()].sort()) {
     const { gerade, waende: aufGerade } = geraden.get(schluessel) as { gerade: Gerade; waende: W[] };
-    const ergebnis = geradeZerlegen(gerade, aufGerade);
+    const ergebnis = geradeZerlegen(gerade, aufGerade, nachPaar);
     abschnitte.push(...ergebnis.abschnitte);
     for (const t of ergebnis.teilung) teilung.set(t.wand.id, t);
   }
@@ -227,6 +266,7 @@ export function wandtopologie<W extends TopoWand>(floorId: string, waende: reado
 function geradeZerlegen<W extends TopoWand>(
   gerade: Gerade,
   waende: readonly W[],
+  kopplungen: ReadonlyMap<string, TopoKopplung>,
 ): { abschnitte: Wandabschnitt<W>[]; teilung: Wandteilung<W>[] } {
   const { dx, dy, mass } = gerade;
   const t = (p: Punkt) => dx * p.x + dy * p.y;
@@ -264,6 +304,11 @@ function geradeZerlegen<W extends TopoWand>(
     const raumIds = [...new Set(ueber.map((e) => e.wand.raumId))].sort();
     const vollstaendig = ueber.every((e) => Math.min(e.kStart, e.kEnde) === ka && Math.max(e.kStart, e.kEnde) === kb);
     const basis = gruppenId(ueber.map((e) => e.wand.id));
+    const { zuordnung, kopplungId } = abschnittsZuordnung(
+      raumIds,
+      ueber.map((e) => e.wand.id),
+      kopplungen,
+    );
     return {
       id: vollstaendig ? basis : `${basis}@${start.x},${start.y}~${ende.x},${ende.y}`,
       gerade: gerade.schluessel,
@@ -274,6 +319,8 @@ function geradeZerlegen<W extends TopoWand>(
       quellen,
       raumIds,
       lage: raumIds.length >= 2 ? "gemeinsam" : "aussen",
+      zuordnung,
+      kopplungId,
       mehrdeutig: raumIds.length > 2,
       doppeltImRaum: raumIds.length < ueber.length,
       fortgesetztAmStart: endetBei.has(ka),
@@ -301,6 +348,38 @@ function geradeZerlegen<W extends TopoWand>(
   });
 
   return { abschnitte, teilung };
+}
+
+/**
+ * Zustand eines Abschnitts aus seinen überdeckenden Wänden: Eine Kopplung wirkt
+ * nur, wenn genau ihre beiden Wände ihn überdecken (verschiedene Räume).
+ */
+export function abschnittsZuordnung(
+  raumIds: readonly string[],
+  wandIds: readonly string[],
+  kopplungen: ReadonlyMap<string, TopoKopplung>,
+): { zuordnung: Zuordnung; kopplungId: string | null } {
+  if (raumIds.length < 2) return { zuordnung: "no-partner", kopplungId: null };
+  if (wandIds.length === 2 && raumIds.length === 2) {
+    const k = kopplungen.get(paarSchluessel(wandIds[0] as string, wandIds[1] as string));
+    if (k !== undefined) return { zuordnung: k.beziehung, kopplungId: k.id };
+  }
+  return { zuordnung: "undecided", kopplungId: null };
+}
+
+export type Kopplungsstatus = "active" | "ambiguous" | "broken";
+
+/**
+ * Abgeleiteter Status einer Kopplung - wie `link_status` im Backend:
+ * `broken` ohne gemeinsamen Abschnitt, `ambiguous`, wenn auf einem Teil eine
+ * dritte Wand liegt (dort konservativ), sonst `active`.
+ */
+export function kopplungsstatus<W extends TopoWand>(topologie: Wandtopologie<W>, k: TopoKopplung): Kopplungsstatus {
+  const gemeinsam = (topologie.teilung.get(k.wandA)?.abschnitte ?? []).filter(
+    (a) => a.quellen.some((q) => q.wand.id === k.wandA) && a.quellen.some((q) => q.wand.id === k.wandB),
+  );
+  if (gemeinsam.length === 0) return "broken";
+  return gemeinsam.some((a) => a.quellen.length > 2) ? "ambiguous" : "active";
 }
 
 /** Bereich des Intervalls `[ka, kb]` auf der Quellwand, ab deren Anfang gemessen. */

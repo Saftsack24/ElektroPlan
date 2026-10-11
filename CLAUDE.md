@@ -211,7 +211,9 @@ leeren und erzeugen das Schema (`drop_all`); gegen die Entwicklungsdatenbank
 
 ```powershell
 # einmalig: docker compose exec postgres createdb -U elektroplan elektroplan_test
-$env:ELEKTROPLAN_TEST_DATABASE_URL = 'postgresql+psycopg://elektroplan:elektroplan@localhost:5432/elektroplan_test'
+$env:ELEKTROPLAN_TEST_DATABASE_URL = 'postgresql+psycopg://elektroplan:elektroplan@127.0.0.1:5432/elektroplan_test'
+# 127.0.0.1, nicht localhost: Die Ports sind nur an IPv4-Loopback gebunden;
+# localhost (zuerst ::1) wartet unter Windows bis zum Verbindungs-Timeout.
 ```
 
 Technisch abgesichert (`apps/backend/tests/datenbankschutz.py`): Der Testlauf bricht vor

@@ -181,7 +181,7 @@ Das erste tatsächlich erzeugte Fachmodul-Event.
 | **Aggregat** | `project` (`aggregate_id` = Projekt-ID) |
 | **`event_version`** | `1` |
 | **Nutzlast** | `project_id`, `floor_id`, `room_id`, `change_kind` |
-| **`change_kind`** | `room_created`, `room_updated`, `room_deleted`, `walls_changed`, `openings_changed`, seit Phase 5 `devices_changed` (Raumentwurf ohne Geometrieänderung; additiv, `v1` bleibt) |
+| **`change_kind`** | `room_created`, `room_updated`, `room_deleted`, `walls_changed`, `openings_changed`, seit Phase 5 `devices_changed` (Raumentwurf ohne Geometrieänderung; additiv, `v1` bleibt), seit Phase 6a `wall_links_changed` (Wandkopplung angelegt, geändert oder gelöst; je beteiligtem Raum ein Event; additiv, `v1` bleibt) |
 | **Phase 4a** | `PUT …/rooms/{id}/contour` erzeugt **genau ein** Event `walls_changed`, auch wenn dabei Öffnungen geändert werden; ein abgelehnter Vorgang erzeugt keines. `POST …/rooms` mit Wänden erzeugt nur `room_created`. Keine neuen Werte, keine neue `event_version` |
 | **Handler** | **keiner** in Phase 3 — `materials` entsteht erst in Phase 7 |
 

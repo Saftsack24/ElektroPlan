@@ -1,7 +1,7 @@
 # Aktueller Projektstand
 
-**Letzte Aktualisierung:** 2026-10-04
-**Aktualisiert nach:** Task 0025 — Phase 5 (Electrical Devices) einschließlich Nachkorrekturen – abgeschlossen, vom Auftraggeber manuell abgenommen, mit diesem Checkpoint committet
+**Letzte Aktualisierung:** 2026-10-10
+**Aktualisiert nach:** Checkpoint-Commit Phase 6a.0–6a.3 mit Sicherheitskorrekturen und Abhängigkeitsupdates (Tasks 0027–0032; technisch umgesetzt und geprüft, manuelle Gesamtprüfung nach Phase 6 offen). Davor: Task 0031 — eigener lokaler JWT-Schlüssel aktiv (Entwicklungsersatz nicht mehr verwendet). Davor: Task 0030 — geprüften Stand im Docker-Entwicklungsstack aktiviert (Images neu gebaut, Updates aktiv). Davor: Task 0029 — Review-Restbefunde (Refresh-Limiter, Sicherheitsupdates, `127.0.0.1`), nicht committet. Davor: Task 0028 — Sicherheitsauftrag (sechs Befunde, getrennt von Phase 6a), umgesetzt und automatisiert geprüft, **nicht committet, keine manuelle Abnahme**. Davor: Task 0027 — Phase 6a.0–6a.3 (bestätigte Höhenlage, Wandkopplungen, Darstellung und Bedienung, Backfill-Befehl) umgesetzt, **wartet auf Abnahme, nicht committet**. Davor: Task 0026 — Entwurf Phase 6a; Task 0025 — Phase 5 als `fb4cc85` committet
 
 > Dieses Dokument soll einer neuen Session in wenigen Minuten vermitteln, wo das Projekt
 > steht.
@@ -49,7 +49,14 @@ Checkpoint committet
 mit diesem Checkpoint committet
 **Phase 5 — Electrical Devices: ABGESCHLOSSEN** (einschließlich Nachkorrekturen; vom
 Auftraggeber manuell abgenommen, siehe Abschnitt 2) — mit diesem Checkpoint committet
-**Phase 6: NICHT BEGONNEN**
+**Phase 6a.0–6a.3 — bestätigte Höhenlage und Wandkopplungen: TECHNISCH UMGESETZT UND GEPRÜFT**
+— mit dem Checkpoint vom 2026-10-11 committet; die **manuelle Gesamtprüfung durch den
+Auftraggeber erfolgt nach Phase 6 und ist offen** ([`phase-6a-design.md`](phase-6a-design.md)
+§10, ADR 0024 accepted, ADR 0025 accepted mit umgesetztem Höhenlage-Teil)
+**Sicherheitskorrekturen und Abhängigkeitsupdates 2026-10-10 (Tasks 0028–0032): TECHNISCH
+UMGESETZT UND GEPRÜFT** — im selben Checkpoint committet; keine manuelle Abnahme, **keine
+Produktions- oder Echtdatenfreigabe**; Befundstatus [`security.md`](security.md) §19
+**Phase 6a.4–6a.5 — Steigwege: NOT STARTED** · **Phase 6b und übriges Phase 6: NOT STARTED**
 
 > Phase 4a und 4a.1 sind als `887f254`, Phase 4.2 als `66cbff3` committet. Die
 > Entscheidungen **T8** (Wandhöhe und Wandtyp) und **T9** (deckungsgleiche Wände) sind
@@ -59,6 +66,167 @@ Auftraggeber manuell abgenommen, siehe Abschnitt 2) — mit diesem Checkpoint co
 ---
 
 ## 2. Zuletzt abgeschlossene Aufgabe
+
+**Checkpoint 2026-10-11 (Task 0032):** Phase 6a.0–6a.3, Sicherheitskorrekturen und kontrollierte
+Abhängigkeitsupdates gemeinsam committet (nicht gepusht). Grundlage: unabhängig bestätigte 1131
+Backendtests ohne Überspringungen und 935 Frontendtests, Laufzeitprüfungen nach Neubau und
+Schlüsselumstellung, vor dem Commit die gezielten Mandantentests (36/36). Vor dem Commit
+gefunden und behoben: Ein Phase-6a-Mandantentest prüfte die Räume eines Plans nur noch auf
+„enthalten“; jetzt wieder exakt (Raum-IDs und Anzahl) und mit einem fremden Raum **ohne Wände**,
+der nicht zurückkommen darf. Manuelle Gesamtprüfung nach Phase 6 offen.
+
+---
+
+**Vorherige Aufgaben (Tasks 0027–0031, jetzt im Checkpoint):**
+
+**Task 0029 — Restbefunde aus dem Sicherheitsreview** — umgesetzt und automatisiert geprüft,
+mit dem Checkpoint committet, keine manuelle Abnahme. Details: [`task-history.md`](task-history.md),
+Einordnung [`security.md`](security.md) §15 und §19.
+
+* Grenze für ungültige Erneuerungen je IP zählt nur echte ungültige Versuche; eigene
+  Reservierung wird exakt zurückgegeben (zwei Benutzer hinter einer IP blockieren sich nicht).
+* uv 0.12.18, PyJWT 2.15.1, Vitest 4.1.11 (tinypool entfällt), source-map-js 1.2.2,
+  Mako 1.4.3; `npm audit` und OSV-Abfrage ohne Treffer – keine Sicherheitszusage.
+* Werkzeuge auf `127.0.0.1` statt `localhost` (Test-URL in CLAUDE.md geändert!).
+* **Tests:** `tasks.ps1 check` gegen PostgreSQL und MinIO grün – Backend 1131 bestanden (0 übersprungen, vorher 1121), Frontend 935 (Vitest 4.1.11), Typecheck, Lint, Modulgrenzen, Lockfile, ein Head `0011`, API-Drift, Build
+* ~~Container enthalten die alten Paketversionen~~ – erledigt mit Task 0030, siehe unten.
+
+### Aktiver Stand im laufenden Entwicklungsstack (2026-10-10, nach Neubau)
+
+Freigegebener Neubau von Backend- und Planner-Image (`docker compose build backend planner`,
+dann `docker compose up -d --no-deps backend planner`). Postgres und MinIO nicht neu erstellt;
+Volumes, Daten, Migrationen und Secrets unverändert; Arbeitsbaum vorher/nachher identisch
+(116 Einträge). Keine zusätzlichen Paketupdates.
+
+| Ort | Paket | vorher | **jetzt aktiv** |
+|---|---|---|---|
+| Backend-Container, System-Python `/usr/local` (Werkzeug) | uv | 0.12.17 | **0.12.18** |
+| Backend-Container, Laufzeit `/opt/venv` | PyJWT | 2.14.0 | **2.15.1** |
+| Backend-Container, Laufzeit `/opt/venv` | Mako | 1.4.1 | **1.4.3** |
+| Planner-Container, `/workspace/node_modules` | Vitest / `@vitest/mocker` | 3.2.7 | **4.1.11** |
+| Planner-Container, `/workspace/node_modules` | source-map-js | 1.2.1 | **1.2.2** (Vite/PostCSS und Tailwind) |
+| Planner-Container, `/workspace/node_modules` | tinypool | 1.1.1 | **nicht installiert** |
+| Lokal (Windows), `apps/backend/.venv` | uv / PyJWT / Mako | – | 0.12.18 / 2.15.1 / 1.4.3 (kein globales uv im PATH) |
+| Lokal, `node_modules` | Vitest / source-map-js / tinypool | – | 4.1.11 / 1.2.2 / nicht installiert |
+
+**Geprüft im laufenden Stack:** alle Dienste healthy; Datenbank `0011` (`alembic current` im
+Container); Ports nur `127.0.0.1` (Docker-Bindung, Windows-Listener, über LAN nicht
+erreichbar); PyJWT-Korrektur wirksam (gültig signierter, tief verschachtelter Token → `401`
+statt `RecursionError`); API: Anmeldung, Erneuerung, paralleler Refresh im Toleranzfenster,
+Abmeldung mit widerrufener Familie (Access Token bis Ablauf weiter gültig – dokumentierte
+Regel), frühe Upload-Abweisung (`401`/`413` nach 0,02/0,04 s), gültiger Upload und Download,
+`429` mit `Retry-After`. Browser: Anmeldung, Benutzerwechsel Administrator → Planer ohne
+Admin-Daten, verzögerte Admin-Anfrage endet mit `AbortError`, Kunden, Projekt, Dateien,
+2D-Editor, 3D-Ansicht geladen (Canvas, WebGL2 verfügbar), Rückkehr zur Admin-Sitzung. Keine
+Serverfehler, keine Kennwörter im Log.
+
+~~JWT-Entwicklungsersatz weiterhin aktiv~~ – mit Task 0031 ersetzt, siehe unten.
+
+### Eigener JWT-Schlüssel lokal aktiv (2026-10-10, Task 0031)
+
+* Zufallswert (`secrets.token_urlsafe(64)`, 86 Zeichen) in einer **neu angelegten** lokalen
+  `.env` (von Git ignoriert, vorher nicht vorhanden; enthält nur `ELEKTROPLAN_JWT_SECRET`). Kein
+  Wert ausgegeben, geloggt oder dokumentiert; außerhalb der `.env` nirgends gefunden (Log,
+  Repository, Scratchpad geprüft). Andere Zugangsdaten unverändert; keine Shell- oder
+  Windows-Variable überdeckt die `.env`.
+* Nur der Backend-Container neu erstellt; Volumes, Daten, DB-Head `0011` unverändert.
+* Aktiv: Fingerabdruck `.env` = Backend-Konfiguration, `uses_development_jwt_secret = False`,
+  keine Startwarnung `jwt_secret_development_default` mehr.
+* **Alte Access Tokens:** mit dem alten Schlüssel ausgestellt → `401` („Ungueltiges Token.“).
+* **Bestehende Refresh-Sitzungen:** werden **weiter erneuert** (`200`) und erhalten Access Tokens
+  mit dem neuen Schlüssel. Grund: Refresh Tokens sind Zufallswerte mit SHA-256-Hash in der
+  Datenbank, unabhängig vom JWT-Schlüssel. Ein Schlüsselwechsel beendet also **keine** Sitzung;
+  Clients erneuern beim nächsten `401` still. Sollen alle Sitzungen enden, braucht es zusätzlich
+  einen Familienwiderruf – eigene Entscheidung, nicht durchgeführt.
+* Anmeldung, Refresh und Logout mit neuem Schlüssel geprüft; Refresh nach Logout `401`; der
+  Access Token bleibt nach Logout bis zum Ablauf gültig (dokumentierte Regel).
+* Keine Implementierung geändert, kein großer Testlauf. Keine manuelle Gesamtabnahme.
+
+
+**Nicht prüfbar:** Das Browserfenster war ausgeblendet (Viewport 0×0) – Bedienung per
+DOM-Ereignissen, **keine** sichtbare Darstellung (insbesondere 3D-Bild), keine echte Maus.
+Betriebswechsel ohne Bedienelement in der Oberfläche (nur automatisiert). Das neu geöffnete
+Browserfenster hatte kein Refresh-Cookie mehr (Antwort „Keine gueltige Sitzung vorhanden.“,
+kein serverseitiger Widerruf) – Anmeldung deshalb neu.
+
+**Teststabilität (Hinweis aus dem Nachreview):** Ein 3D-Test lief im unabhängigen Lauf einmal
+in den Lade-Timeout. `Ansicht3d.test.tsx` wartet mit `findByText(/7 von 7 Räumen
+dargestellt/)` und damit mit dem Standard-Timeout von Testing Library (1 s) auf die lazy
+geladene Ansicht; unter Last (parallele Worker, Windows) kann das knapp werden. In den eigenen
+Läufen nicht aufgetreten (935/935). Bewusst **nicht** geändert – kein pauschal erhöhter Timeout,
+kein abgeschwächter Test. Tritt es erneut auf: Ursache im Ladeweg deterministisch machen
+(etwa den Lazy-Import im Test vorab auflösen), nicht die Wartezeit verlängern.
+
+Keine manuelle Abnahme durch den Auftraggeber, keine Produktionsfreigabe.
+
+
+---
+
+**Vorherige Aufgabe:**
+
+**Task 0028 — Sicherheitsauftrag** (Migration `0011`, keine ADR) — **umgesetzt und
+automatisiert geprüft, nicht committet, keine manuelle Abnahme.** Getrennt von Phase 6a, deren
+Änderungen unverändert im Arbeitsbaum liegen. Details: [`task-history.md`](task-history.md),
+Befundstatus [`security.md`](security.md) §19.
+
+| # | Befund | Ergebnis |
+|---|---|---|
+| 1 | Browser-Datentrennung | bestätigt (Gegenprobe) und behoben: Sitzungsraum je Benutzer + Betrieb im Core |
+| 2 | Upload vor Multipart | bestätigt (2 MiB unangemeldet gelesen) und behoben: Körper erst nach Prüfungen, `413` |
+| 3 | Compose/Secrets | bestätigt und behoben (Entwicklung); Produktionskonfiguration offener Freigabepunkt |
+| 4 | Refresh gegen Widerruf | bestätigt (PostgreSQL-Wettlauf) und behoben: Token-Familien `0011`; Deadlock mitbehoben |
+| 5 | Anfragegrenzen | bestätigt und behoben; Mehrinstanzbetrieb offen, PDF-Grenze ohne PDF-Erzeugung |
+| 6 | Datenschutz/Restore | Checkliste [`release-checklist-real-data.md`](release-checklist-real-data.md): **nicht freigegeben** |
+
+**Tests:** `tasks.ps1 check` gegen PostgreSQL und MinIO grün – Backend 1121 bestanden (0 übersprungen, vorher 1070),
+Frontend 935 bestanden (vorher 922), Build, Drift, Grenzen, ein Head `0011`.
+
+**Entwicklungsumgebung aktiviert (2026-10-10, freigegeben):** gesichert, auf `0011` migriert,
+Dienste neu erstellt, Ports nur `127.0.0.1`, funktional per API und im Browser geprüft – keine
+manuelle Abnahme durch den Auftraggeber. Einzelheiten:
+
+### Aktivierung in der Entwicklungsumgebung (2026-10-10, freigegeben)
+
+| Schritt | Ergebnis |
+|---|---|
+| Ausgangsstand | DB `0010`, alle Dienste healthy, Ports auf `0.0.0.0`, keine `.env` |
+| Sicherung | `pg_dump -Fc` nach `C:\Users\arneb\elektroplan-backups\elektroplan-dev-vor-0011-20261010-184020.dump` (außerhalb des Repos, 149 KB); `pg_restore --list` lesbar (31 Tabelleninhalte); Probewiederherstellung in eine Wegwerf-DB: Zeilenzahlen identisch, Wegwerf-DB danach entfernt |
+| Migration | `alembic upgrade head` → `0011`; 42 Token-Familien aus 42 vorhandenen `family_id` (26 offen); Zeilenzahlen von Benutzern, Kunden, Projekten, Räumen, Kopplungen, Tokens unverändert |
+| Dienste | `docker compose up -d` (kein Neubau nötig: Abhängigkeiten unverändert, Code eingebunden); Volumes unverändert, alle Dienste healthy |
+| Ports | nur `127.0.0.1` (Docker-Bindung und Windows-Listener); über die LAN-Adresse nicht erreichbar |
+| Secrets | S3-Schlüssel Backend = MinIO (Hashvergleich); **kein `.env` vorhanden → JWT-Entwicklungsersatz aktiv**, Startwarnung `jwt_secret_development_default` im Log. Kein Kennwort geändert |
+| API (echter Stack) | Anmeldung, Erneuerung, paralleler Refresh im Toleranzfenster (`401 refresh-conflict`, Sitzung bleibt), Abmeldung; Refresh danach `401`; **Access Token nach Abmeldung bis Ablauf weiter gültig** (dokumentierte Regel, beobachtet). Upload über TCP: 200 MB angekündigt, 64 KiB gesendet → unangemeldet `401`, angemeldet `413` nach 0,01 s; gestreamt ohne Länge → `413`; gültiger Upload `201` und Download. Schreibgrenze je Mitglied → `429` mit `Retry-After` (per CORS lesbar), Lesen bleibt frei |
+| Browser | Sitzung aus dem Cookie wiederhergestellt; Administrator → Abmelden → synthetischer Planer in derselben Seite: keine Daten der Admin-Ansicht sichtbar; eine absichtlich um 6 s verzögerte Admin-Anfrage endete mit `AbortError` statt Daten. Kunden, Projekt, Dateien, 2D-Editor und 3D-Umschaltung als Planer; Stammdaten speichern und zurücksetzen. Keine Konsolen- oder Serverfehler |
+| Nicht im Browser geprüft | Betriebswechsel (kein Bedienelement in der Oberfläche; Nachweis nur automatisiert), Sitzungsende während einer laufenden Anfrage und Cookie aus anderem Tab (automatisiert), Upload über die Oberfläche (Dateiauswahl nicht bedienbar; per API geprüft), Login-/Refresh-Grenzen (würden die gemeinsame IP für 15 min sperren; automatisiert) |
+| Synthetische Daten | Konto `sicherheitspruefung-planer@example.com` (Planer), Datei `sicherheitspruefung.pdf` in PR-2026-0005; dürfen entfernt werden |
+
+
+---
+
+**Vorherige Aufgabe:**
+
+**Task 0027 — Phase 6a.0–6a.3** ([ADR 0024](decisions/0024-wall-links-physical-wall-assignment.md),
+[ADR 0025](decisions/0025-risers-between-floors.md), Migrationen `0009`, `0010`) —
+**umgesetzt, wartet auf die Abnahme durch den Auftraggeber, nicht committet.**
+Details: [`phase-6a-design.md`](phase-6a-design.md) §10, [`task-history.md`](task-history.md).
+
+1. **6a.0 bestätigte Höhenlage:** `floors.elevation_confirmed` (Bestand unbestätigt, auch EG 0;
+   Wertänderung ohne erneute Bestätigung entzieht sie); Projektstruktur zeigt und pflegt sie.
+2. **6a.1 Wandkopplungen:** Paarmodell `shared`/`separate`, abgeleiteter Status, Kandidaten,
+   CRUD mit If-Match, `removed_wall_link_ids`, Geräteprüfung je Zustand, Raumversion beider Räume
+   zählt bei jeder Kopplungsänderung weiter.
+3. **6a.2 Oberfläche:** Wandzuordnung im Editor, Markierung im Grundriss, Wandansicht, 3D-Halbkörper.
+4. **6a.3 Backfill:** `python -m app.cli wall-links-backfill` (Standard Probelauf).
+5. **Tests:** `tasks.ps1 check` gegen PostgreSQL grün – **1070 Backendtests (0 übersprungen)**,
+   **922 Frontendtests**, Build, Drift, Grenzen, ein Head. Parallelitätstests 3× wiederholt grün.
+6. **Entwicklungsdatenbank:** vorher gesichert (`pg_dump`), auf `0010` migriert; Backfill nur als
+   **Probelauf** (15 eindeutige Fälle würden angelegt, nichts gespeichert). Für die Sichtprüfung
+   synthetisches Projekt **PR-2026-0005 „Sichtprüfung 6a (synthetisch)“** angelegt – darf gelöscht
+   werden.
+
+---
+
+**Vorherige Aufgabe:**
 
 **Task 0025 — Phase 5: Electrical Devices**
 ([ADR 0023](decisions/0023-electrical-devices-symbols-room-types.md), Migration `0008`, danach
@@ -1014,7 +1182,7 @@ was offen ist, ist eine Schuld.
 | # | Frage | Spätestens vor |
 |---|---|---|
 | T6 | **Projektarten** (Neubau, Sanierung, Service): Braucht es sie, und was unterscheidet sie? Bis dahin deckt die abwählbare Startstruktur den Serviceauftrag ab | vor Phase 8 |
-| T10 | **Physische Wandidentität** (Neubewertung aus ADR 0016): Brauchen Leitungsrouting und Materialermittlung eine persistente Wand, auf die sich beide Raumseiten beziehen (Querungen, keine Doppelzählung, einseitig erfasste Öffnungen, teilweise überlappende Wände)? | vor Phase 6 |
+| ~~T10~~ | **Entschieden im begrenzten Umfang** (Phase 6a): Wandkopplung je Raumwandpaar, [ADR 0024](decisions/0024-wall-links-physical-wall-assignment.md) accepted und umgesetzt. Offen bleiben D9 (Durchführung durch getrennte Wände, 6b), D10 (Kennzeichnung der äußeren Seite), D11 (Kopplung auf neues Teilstück übertragen) | – |
 
 **Entschieden in Phase 5** ([ADR 0023](decisions/0023-electrical-devices-symbols-room-types.md)):
 ~~T1 Symbolbibliothek~~ — eigene SVG-Planungssymbole mit Legende, kein DIN-Anspruch, zentral
@@ -1027,7 +1195,7 @@ Bezeichnungen, keine automatische Zuordnung, keine Vorlagen.
 gruppiert, nur bei exakt gleichen Endpunkten, keine Migration.
 | T2 | PDF-Erzeugung: WeasyPrint (Empfehlung) oder ReportLab | Phase 10 |
 | T3 | Kleinmaterial: eigenes Material oder prozentualer Zuschlag | Phase 8 |
-| T4 | Mehrgeschossige Steigezonen für Leitungswege | Phase 6 |
+| T4 | Mehrgeschossige Steigezonen: **architektonisch beschlossen** (Steigwege, [ADR 0025](decisions/0025-risers-between-floors.md)), Tabellen in `0010`; **nicht implementiert** (6a.4–6a.5 NOT STARTED). Bestätigte Höhenlage als Voraussetzung umgesetzt | 6a.4 |
 | T5 | Reservierungsstrategie bei mehreren Lagerorten | Phase 12 |
 | F1 | Verschnittzuschläge je Materialgruppe, reale Ringgrößen | Phase 7 |
 | F2 | 20–30 reale ServiceTemplates mit Zeiten | Phase 8 |
@@ -1080,6 +1248,42 @@ HSTS, Virenscan, MFA für administrative Konten.
 ---
 
 ## 9. Nächste geplante Aufgabe
+
+**Nach dem Checkpoint (Stand 2026-10-11):** Phase 6a.0–6a.3 und die Sicherheitskorrekturen sind
+committet (nicht gepusht). Die manuelle Gesamtprüfung durch den Auftraggeber folgt nach Phase 6.
+Andere Umgebungen: Migrationen `0009`–`0011` (kein Seed nötig), Test-URL mit `127.0.0.1`.
+
+*Vorheriger Stand (2026-10-10):* Abnahme durch den Auftraggeber, danach Commit.
+Andere Umgebungen: Migrationen `0009`, `0010` (kein Seed nötig). Bestand bleibt unentschieden;
+der Backfill nur ausdrücklich mit `--apply` und nach Freigabe. **Nicht** eigenständig fortsetzen:
+6a.4–6a.5 (Steigwege) und Phase 6b brauchen eine ausdrückliche Freigabe.
+
+**Offene Punkte aus dem Sicherheitsauftrag (Task 0028):**
+* Erledigt 2026-10-10: Sicherung, Migration `0011`, Neuerstellung, Prüfung (siehe Abschnitt 2).
+* Kein `.env`: Das Backend läuft mit dem gekennzeichneten JWT-Entwicklungsersatz. Ein eigener
+  Wert wäre eine Entscheidung des Auftraggebers (beendet bestehende Sitzungen).
+* Allgemeine Größengrenze für JSON-Anfragekörper am Reverse Proxy (G-3).
+* Gemeinsamer Zähler für Anfragegrenzen bei mehr als einem Prozess – nur nach Freigabe (G-2).
+* Produktionskonfiguration (G-1) und die Punkte der Checkliste für echte Daten.
+* Access Tokens bleiben nach einem Logout bis zum Ablauf (15 min) gültig – bewusst, dokumentiert.
+
+**Offene Punkte aus 6a.0–6a.3:**
+* Sichtprüfung der 3D-Halbkörper und Mausbedienung im sichtbaren Fenster durch den Auftraggeber
+  (in dieser Session nur per DOM geprüft, siehe task-history).
+* Lokal blockiert seit einem Neustart eine Windows-Anwendungssteuerungsrichtlinie Teile der
+  Python-Umgebung (`mypy.exe`, psycopg-Binär-DLL). `python -m mypy` läuft; Datenbanktests lokal
+  erst wieder, wenn die Richtlinie die Dateien zulässt (vorher lief alles grün).
+* Projekte mit gleicher Nummer in verschiedenen Betrieben: Der Backfill-Bericht nennt dann die
+  Betriebskennung; `--project` filtert über alle Betriebe.
+
+**Entwurf Phase 6a (Stand 2026-10-04):** [`phase-6a-design.md`](phase-6a-design.md) mit
+ADR-Entwürfen 0024 (Wandkopplung, T10) und 0025 (Steigwege, T4), beide *proposed*. Nächster
+Schritt: gemeinsame Prüfung, Entscheidungen D1–D8 (Entwurf §7.2), danach ausdrückliche Freigabe.
+Keine Implementierung, keine Migration begonnen. Befund dabei: `floors.elevation_mm` ist
+`NOT NULL DEFAULT 0` – „nicht gepflegt“ ist von 0 nicht unterscheidbar (Entwurf §1.2, D3).
+2. Fassung (gleicher Tag): Zustände unentschieden/shared/separate mit definierter Wirkung,
+bestätigte Höhenlage als Core-Spalte, definierter Steigwegverlauf, Reichweite des Paarmodells;
+verbliebene Entscheidungen D1–D12 (Entwurf §7.5).
 
 **Nach Phase 5 (Stand 2026-10-04):** Phase 5 ist abgeschlossen, vom Auftraggeber manuell
 abgenommen und mit diesem Checkpoint committet (nicht gepusht). Nach dem Aktualisieren anderer

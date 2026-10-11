@@ -15,7 +15,7 @@ import { GrundrissEditor } from "./editor/GrundrissEditor";
 import type { Rueckkehr3d } from "./ansicht3d/Ansicht3d";
 import type { Wandziel } from "./wandansicht/Wandansicht";
 import type { Deckenziel } from "./editor/GrundrissEditor";
-import { planSchluessel } from "./plan";
+import { planAbfrage, planSchluessel } from "./plan";
 import { RaumDetail } from "./RaumDetail";
 import { RaumDialog } from "./RaumDialog";
 import type { Raumwerte } from "./RaumDialog";
@@ -251,6 +251,38 @@ export default function RoomsTab() {
       ),
   });
 
+  /**
+   * Raum entfernen. Ist er über Wandzuordnungen mit Nachbarräumen verbunden
+   * (Phase 6a), nennt eine Rückfrage deren Anzahl - sie verschwinden mit ihm.
+   */
+  const raumEntfernen = async (raum: RoomOut) => {
+    let anzahl = 0;
+    try {
+      const plan = await queryClient.fetchQuery(planAbfrage(api, raum.floor_id));
+      const waende = new Set(plan.rooms.find((r) => r.id === raum.id)?.walls.map((w) => w.id) ?? []);
+      anzahl = (plan.wall_links ?? []).filter((k) => waende.has(k.wall_a_id) || waende.has(k.wall_b_id)).length;
+    } catch {
+      // Ohne Planungsstand keine Zusatzfrage; der Server entscheidet ohnehin.
+    }
+    if (anzahl > 0) {
+      const antwort = await fragen({
+        titel: "Raum mit Wandzuordnungen entfernen?",
+        text: (
+          <p>
+            Der Raum „{raum.name}“ ist über {anzahl === 1 ? "eine Wandzuordnung" : `${anzahl} Wandzuordnungen`} mit
+            Nachbarräumen verbunden (gemeinsame Bauwand oder getrennte Wände). Sie werden mit dem Raum entfernt; die
+            Nachbarräume selbst bleiben unverändert.
+          </p>
+        ),
+        bestaetigenLabel: "Raum entfernen",
+        abbrechenLabel: "Abbrechen",
+        gefaehrlich: true,
+      });
+      if (antwort !== "bestaetigt") return;
+    }
+    raumLoeschen.mutate(raum);
+  };
+
   if (projekt.isPending || gebaeude.isPending) {
     return <p className="text-muted">Grundriss wird geladen ...</p>;
   }
@@ -403,7 +435,7 @@ export default function RoomsTab() {
                             type="button"
                             aria-label={`Raum ${raum.name} entfernen`}
                             disabled={raumLoeschen.isPending}
-                            onClick={() => raumLoeschen.mutate(raum)}
+                            onClick={() => void raumEntfernen(raum)}
                           >
                             <MitSymbol icon={AKTION.loeschen}>Entfernen</MitSymbol>
                           </button>

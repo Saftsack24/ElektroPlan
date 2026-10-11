@@ -6,7 +6,15 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, text
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Integer,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -46,6 +54,39 @@ class RefreshTokenRevocationReason(StrEnum):
     SESSION_OUTDATED = "session_outdated"
 
 
+class RefreshTokenFamily(UUIDPrimaryKey, Timestamped, Base):
+    """Eine Sitzung: alle Refresh Tokens seit einer Anmeldung oder einem Wechsel.
+
+    Der **dauerhaft gespeicherte Familienzustand** (Sicherheitsauftrag
+    2026-10-10, Befund 4). Rotation und Widerruf sperren beide zuerst diese
+    Zeile (``FOR UPDATE``). Ein Widerruf setzt ``revoked_at`` hier - eine
+    gleichzeitige Rotation wartet auf die Sperre und findet danach eine
+    widerrufene Familie vor; ein Nachfolger, den sie vor dem Widerruf
+    angelegt hat, ist ueber diesen Zustand ebenso wertlos. Ein Widerruf der
+    zum Abfragezeitpunkt sichtbaren Tokenzeilen allein genuegte nicht.
+    """
+
+    __tablename__ = "refresh_token_families"
+    __table_args__ = (UniqueConstraint("organization_id", "id"),)
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    #: Erster Widerrufsgrund (``RefreshTokenRevocationReason``); spaetere
+    #: Widerrufe ueberschreiben ihn nicht.
+    revoked_reason: Mapped[str | None] = mapped_column(String(32), nullable=True, default=None)
+
+    @property
+    def is_revoked(self) -> bool:
+        return self.revoked_at is not None
+
+
 class RefreshToken(UUIDPrimaryKey, Timestamped, Base):
     """Ein Refresh-Token.
 
@@ -55,7 +96,14 @@ class RefreshToken(UUIDPrimaryKey, Timestamped, Base):
     """
 
     __tablename__ = "refresh_tokens"
-    __table_args__ = (UniqueConstraint("token_hash"),)
+    __table_args__ = (
+        UniqueConstraint("token_hash"),
+        ForeignKeyConstraint(
+            ["organization_id", "family_id"],
+            ["refresh_token_families.organization_id", "refresh_token_families.id"],
+            ondelete="CASCADE",
+        ),
+    )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True

@@ -14,12 +14,15 @@
  *   Topologie `topologie/wandtopologie.ts`, dieselbe wie im 2D-Editor).
  * * Alle Werte bleiben ganze Millimeter; die Transformation in Szenenmeter
  *   steht im Modell und wird erst beim Geometrieaufbau angewandt.
+ * * Wandkopplungen (Phase 6a) kommen mit dem Plan; unterbrochene und
+ *   mehrdeutige Kopplungen erscheinen als Hinweis - der Status stammt vom
+ *   Server (`wall_links[].status`).
  */
 import type { Fassade3d, Raumwand3d } from "./raumwand";
 import type { Geraet3d } from "./geraete3d";
 import { geraeteAus } from "./geraete3d";
 import type { Geraetetyp } from "../geraete/katalog";
-import { fassadenAus, raumwaendeAus } from "./raumwand";
+import { fassadenAus, innenLinks, raumwaendeAus } from "./raumwand";
 import type {
   Auswahl,
   AusgelassenerRaum,
@@ -34,9 +37,10 @@ import type {
   Warnung,
 } from "./modell";
 import { auswahlSchluessel, raumBezeichnung } from "./modell";
+import { kopplungenAus, paarKandidatenAus } from "../kopplung/zuordnung";
 import type { GrenzenMm } from "./transformation";
 import { transformationFuer } from "./transformation";
-import { MM_TEXT, wandGruppieren } from "./wandgruppen";
+import { MM_TEXT, wandGruppieren, warnung } from "./wandgruppen";
 import type { Laengentext } from "./wandgruppen";
 
 export const LEERES_MODELL: Szenenmodell = {
@@ -125,6 +129,7 @@ export function szenenmodellAus(
       continue;
     }
     const kontur: PunktMm[] = raum.walls.map((w) => ({ x: w.x1_mm, y: w.y1_mm }));
+    const innen = innenLinks({ kontur });
     raeume.push({
       id: raum.id,
       name: raum.name,
@@ -143,6 +148,7 @@ export function szenenmodellAus(
         ende: { x: wand.x2_mm, y: wand.y2_mm },
         staerkeMm: wand.thickness_mm,
         raumhoeheMm: raum.effective_height_mm,
+        innenLinks: innen,
         oeffnungen: wand.openings.map((o) => ({
           oeffnungId: o.id,
           wandId: wand.id,
@@ -160,7 +166,45 @@ export function szenenmodellAus(
   const namen = new Map(raeume.map((r) => [r.id, raumBezeichnung(r)]));
   const raumName = (id: string) => namen.get(id) ?? "unbekannter Raum";
 
-  const { waende, warnungen } = wandGruppieren(plan.floor_id, logisch, raumName, laengentext);
+  const kopplungen = Array.isArray(plan.wall_links) ? plan.wall_links : [];
+  const { waende, warnungen: wandwarnungen } = wandGruppieren(plan.floor_id, logisch, raumName, laengentext, {
+    kopplungen: kopplungenAus(kopplungen),
+    kandidaten: paarKandidatenAus(Array.isArray(plan.wall_link_candidates) ? plan.wall_link_candidates : []),
+  });
+  const wandRaum = new Map(logisch.map((w) => [w.id, w.raumId] as const));
+  const warnungen: Warnung[] = [...wandwarnungen];
+  for (const k of kopplungen) {
+    if (k.status === "active") continue;
+    const raeumeDerKopplung = [k.wall_a_id, k.wall_b_id].map((id) => wandRaum.get(id));
+    const bezug: Auswahl[] = [k.wall_a_id, k.wall_b_id]
+      .filter((id) => wandRaum.has(id))
+      .map((id) => ({ art: "raumwand", id }));
+    const namenText = raeumeDerKopplung
+      .filter((r) => r !== undefined)
+      .map((r) => `„${raumName(r)}“`)
+      .join(" und ");
+    const art = k.relation === "shared" ? "gemeinsame Bauwand" : "getrennte Wände";
+    warnungen.push(
+      k.status === "broken"
+        ? warnung(
+            "kopplung-unterbrochen",
+            "Wandzuordnung unterbrochen",
+            `Die Zuordnung „${art}“ zwischen ${namenText || "zwei Räumen"} wirkt zurzeit nicht: Die beiden Wände liegen ` +
+              "nicht mehr exakt aufeinander. Sie bleibt gespeichert und wirkt wieder, sobald die Wände wieder passen. " +
+              "Im Grundriss lässt sie sich lösen.",
+            bezug,
+            k.id,
+          )
+        : warnung(
+            "kopplung-mehrdeutig",
+            "Wandzuordnung teilweise nicht eindeutig",
+            `Auf einem Teil der Zuordnung „${art}“ zwischen ${namenText || "zwei Räumen"} liegt eine weitere Wand. ` +
+              "Dort gilt sie nicht; der Abschnitt wird vorsichtig wie unentschieden behandelt.",
+            bezug,
+            k.id,
+          ),
+    );
+  }
   // Eine (als Konflikt) über eine Abschnittsgrenze reichende Öffnung steckt in
   // mehreren Wandkörpern - als fachliches Objekt zählt sie einmal.
   const oeffnungen: Oeffnung3d[] = [...new Map(waende.flatMap((w) => w.oeffnungen).map((o) => [o.id, o] as const)).values()];

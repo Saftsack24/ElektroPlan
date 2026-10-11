@@ -14,13 +14,22 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import NoReturn
 
-from sqlalchemy import select, update
+from sqlalchemy import ColumnElement, select, update
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.audit import service as audit
-from app.core.auth.models import RefreshToken, RefreshTokenRevocationReason
-from app.core.auth.rate_limit import SlidingWindowLimiter
+from app.core.auth.models import (
+    RefreshToken,
+    RefreshTokenFamily,
+    RefreshTokenRevocationReason,
+)
+from app.core.auth.rate_limit import (
+    Reservation,
+    SlidingWindowLimiter,
+    enforce,
+    pseudonymous_key,
+)
 from app.core.auth.security import (
     create_access_token,
     generate_refresh_token,
@@ -36,7 +45,6 @@ from app.errors import (
     NotFoundError,
     OrganizationChoice,
     OrganizationSelectionRequiredError,
-    RateLimitedError,
     RefreshConflictError,
 )
 from app.logging_config import get_logger
@@ -53,10 +61,41 @@ LOGIN_REJECTED = (
 )
 
 _settings = get_settings()
+#: Fehlversuche je Konto und je IP (docs/security.md, Abschnitt 11).
 _login_limiter = SlidingWindowLimiter(
+    name="login",
     limit=_settings.login_attempts_per_window,
     window_seconds=_settings.login_window_seconds,
 )
+#: Erneuerungen je Konto - zaehlt jede Erneuerung mit gueltigem Token.
+_refresh_limiter = SlidingWindowLimiter(
+    name="refresh",
+    limit=_settings.refresh_per_account_per_window,
+    window_seconds=_settings.refresh_window_seconds,
+)
+#: Erneuerungsversuche mit unbekanntem, widerrufenem oder abgelaufenem Token je IP.
+_refresh_invalid_limiter = SlidingWindowLimiter(
+    name="refresh_invalid",
+    limit=_settings.refresh_invalid_per_ip_per_window,
+    window_seconds=_settings.refresh_invalid_window_seconds,
+)
+
+
+class _InvalidRefreshTokenError(AuthenticationError):
+    """Ablehnung, die als **ungueltiger Versuch** fuer die IP zaehlt.
+
+    Ausschliesslich: unbekannter Token, Token einer widerrufenen Familie,
+    widerrufener Token, Wiederverwendung eines ersetzten Tokens nach dem
+    Toleranzfenster, abgelaufener Token. Nach aussen identisch mit
+    :class:`AuthenticationError`. Alles andere - Erfolg, paralleler Refresh im
+    Toleranzfenster, persoenliche Kontogrenze, Kontozustand (deaktiviert,
+    Mitgliedschaft gesperrt, Sitzungsversion) und interne Fehler - gibt die
+    eigene Reservierung zurueck (Sicherheitsreview 2026-10-10).
+    """
+
+
+_LOGIN_LIMITED = "Zu viele Anmeldeversuche. Bitte spaeter erneut versuchen."
+_REFRESH_LIMITED = "Zu viele Sitzungserneuerungen. Bitte spaeter erneut versuchen."
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,27 +151,41 @@ class AuthService:
         Zugangsdaten ist kein Fehler (``409 organization-selection-required``).
         """
         normalized = normalize_email(email)
-        self._check_rate_limit(normalized, client_ip)
-
-        user = self.session.execute(
-            select(User).where(User.email == normalized)
-        ).scalar_one_or_none()
-
-        if user is None or not verify_password(user.password_hash, password) or not user.is_active:
-            self._reject_login(normalized, client_ip, user)
-
-        assert user is not None  # durch _reject_login ausgeschlossen
+        # Pruefen und Reservieren in einem Schritt: Parallele Versuche koennen
+        # die Grenze nicht gemeinsam ueberschreiten. Ein abgelehnter Versuch
+        # behaelt seine Reservierung (zaehlt), alles andere gibt sie zurueck.
+        reservation = self._reserve_attempt(normalized, client_ip)
         try:
-            member = self._select_member(user.id, organization_id)
-        except NotFoundError:
-            # Gesperrt, entfernt, ohne Mitgliedschaft oder fremder Betrieb:
-            # nach aussen nicht vom falschen Passwort zu unterscheiden.
-            self._reject_login(normalized, client_ip, user)
+            user = self.session.execute(
+                select(User).where(User.email == normalized)
+            ).scalar_one_or_none()
+
+            if (
+                user is None
+                or not verify_password(user.password_hash, password)
+                or not user.is_active
+            ):
+                self._reject_login(user)
+
+            assert user is not None  # durch _reject_login ausgeschlossen
+            try:
+                member = self._select_member(user.id, organization_id)
+            except NotFoundError:
+                # Gesperrt, entfernt, ohne Mitgliedschaft oder fremder Betrieb:
+                # nach aussen nicht vom falschen Passwort zu unterscheiden.
+                self._reject_login(user)
+        except AuthenticationError:
+            raise
+        except BaseException:
+            # Auch die Auswahl zwischen mehreren Betrieben ist kein Fehlversuch.
+            _login_limiter.release(reservation)
+            raise
+        _login_limiter.release(reservation)
         if needs_rehash(user.password_hash):
             user.password_hash = hash_password(password)
 
         user.last_login_at = datetime.now(tz=UTC)
-        _login_limiter.reset(f"user:{normalized}")
+        _login_limiter.reset(pseudonymous_key("user", normalized))
 
         tokens = self._issue(user=user, member=member, user_agent=user_agent, family_id=None)
         audit.record(
@@ -161,19 +214,30 @@ class AuthService:
         geaendert.
         """
         normalized = normalize_email(email)
-        self._check_rate_limit(normalized, client_ip)
-        user = self.session.execute(
-            select(User).where(User.email == normalized)
-        ).scalar_one_or_none()
+        reservation = self._reserve_attempt(normalized, client_ip)
+        try:
+            user = self.session.execute(
+                select(User).where(User.email == normalized)
+            ).scalar_one_or_none()
+        except BaseException:
+            _login_limiter.release(reservation)
+            raise
         if user is None or not verify_password(user.password_hash, password) or not user.is_active:
-            self._register_failed_attempt(normalized, client_ip)
+            # Die Reservierung bleibt: ein Fehlversuch.
             raise AuthenticationError(LOGIN_REJECTED)
-        _login_limiter.reset(f"user:{normalized}")
+        _login_limiter.release(reservation)
+        _login_limiter.reset(pseudonymous_key("user", normalized))
         return user
 
     # ------------------------------------------------------------ Erneuerung
 
-    def refresh(self, raw_token: str, *, user_agent: str | None = None) -> IssuedTokens:
+    def refresh(
+        self,
+        raw_token: str,
+        *,
+        user_agent: str | None = None,
+        client_ip: str | None = None,
+    ) -> IssuedTokens:
         """Erneuert eine Sitzung und rotiert den Refresh Token.
 
         Die Zeile wird mit ``SELECT ... FOR UPDATE`` gesperrt. Zwei parallele
@@ -195,12 +259,75 @@ class AuthService:
           ungueltig, ohne dass die Familie erneut widerrufen wird.
         """
         token_hash = hash_refresh_token(raw_token)
+        # Ungueltige Tokens je IP: vorab reserviert (atomar, gegen parallele
+        # Raterei). Die Reservierung bleibt nur bei einer gezaehlten Ablehnung
+        # (:class:`_InvalidRefreshTokenError`); in jedem anderen Fall wird
+        # genau **diese** Reservierung zurueckgegeben - nie fremde Versuche.
+        invalid_reservation = enforce(
+            _refresh_invalid_limiter,
+            f"ip:{client_ip or 'unbekannt'}",
+            message=_REFRESH_LIMITED,
+            log_event="refresh_rate_limited",
+        )
+        try:
+            tokens = self._rotate(token_hash, user_agent=user_agent)
+        except _InvalidRefreshTokenError:
+            raise  # zaehlt: Reservierung bleibt
+        except BaseException:
+            _refresh_invalid_limiter.release(invalid_reservation)
+            raise
+        _refresh_invalid_limiter.release(invalid_reservation)
+        return tokens
+
+    def _rotate(self, token_hash: str, *, user_agent: str | None) -> IssuedTokens:
+        """Kern der Erneuerung - siehe :meth:`refresh`."""
+        found = self.session.execute(
+            select(RefreshToken.family_id, RefreshToken.user_id).where(
+                RefreshToken.token_hash == token_hash
+            )
+        ).one_or_none()
+        if found is None:
+            raise _InvalidRefreshTokenError("Die Sitzung ist ungueltig.")
+        family_id, user_id = found
+        # Erneuerungen je Konto - vor jeder Sperre, damit eine Flut von
+        # Erneuerungen keine Datenbanksperren haelt.
+        enforce(
+            _refresh_limiter,
+            f"user:{user_id}",
+            message=_REFRESH_LIMITED,
+            log_event="refresh_rate_limited",
+        )
+        # Sperrreihenfolge Konto -> Familie -> Token. ``KEY SHARE`` auf dem
+        # Konto braucht der Nachfolger ohnehin (Fremdschluessel); vorab
+        # genommen, kann eine Kontoaenderung (Lebenszyklus: ... -> users ->
+        # Familien) nicht zwischen Familiensperre und Nachfolger geraten -
+        # sonst Deadlock. Familie vor Token wie bei jedem Widerruf: Widerruf
+        # und Rotation schliessen sich ueber die Familienzeile aus.
+        self.session.execute(
+            select(User.id).where(User.id == user_id).with_for_update(read=True, key_share=True)
+        )
+        family = _lock_family(self.session, family_id)
         stored = self.session.execute(
-            select(RefreshToken).where(RefreshToken.token_hash == token_hash).with_for_update()
+            select(RefreshToken)
+            .where(RefreshToken.token_hash == token_hash)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         ).scalar_one_or_none()
 
-        if stored is None:
-            raise AuthenticationError("Die Sitzung ist ungueltig.")
+        if stored is None or family is None:
+            raise _InvalidRefreshTokenError("Die Sitzung ist ungueltig.")
+
+        if family.is_revoked:
+            # Abgeschlossener Widerruf (Logout, Wiederverwendung, Sperre ...):
+            # Kein Token dieser Familie erneuert je wieder eine Sitzung - auch
+            # kein Nachfolger, den eine gleichzeitige Rotation noch angelegt
+            # hat. Kein weiterer Sammelwiderruf noetig.
+            logger.info(
+                "refresh_family_revoked",
+                user_id=str(stored.user_id),
+                reason=family.revoked_reason,
+            )
+            raise _InvalidRefreshTokenError("Die Sitzung ist ungueltig.")
 
         if stored.is_revoked:
             if stored.is_rotated and self._is_parallel_refresh(stored):
@@ -230,7 +357,9 @@ class AuthService:
                 )
                 self.session.commit()
                 logger.warning("refresh_token_reuse_detected", user_id=str(stored.user_id))
-                raise AuthenticationError("Die Sitzung wurde aus Sicherheitsgruenden beendet.")
+                raise _InvalidRefreshTokenError(
+                    "Die Sitzung wurde aus Sicherheitsgruenden beendet."
+                )
             # Logout, Familienwiderruf oder bereits erkannte Wiederverwendung:
             # kein weiterer Sammelwiderruf noetig, der Token ist ungueltig.
             logger.info(
@@ -238,10 +367,10 @@ class AuthService:
                 user_id=str(stored.user_id),
                 reason=stored.revoked_reason,
             )
-            raise AuthenticationError("Die Sitzung ist ungueltig.")
+            raise _InvalidRefreshTokenError("Die Sitzung ist ungueltig.")
 
         if stored.expires_at <= datetime.now(tz=UTC):
-            raise AuthenticationError("Die Sitzung ist abgelaufen.")
+            raise _InvalidRefreshTokenError("Die Sitzung ist abgelaufen.")
 
         user = self.session.get(User, stored.user_id)
         if user is None or not user.is_active:
@@ -296,6 +425,9 @@ class AuthService:
         ).scalar_one_or_none()
         if stored is None:
             return
+        # Nur diese Sitzung (Familie) endet - andere Geraete und Betriebe
+        # bleiben angemeldet. Bereits ausgestellte Access Tokens dieser
+        # Sitzung laufen bis zu ihrem Ablauf weiter (docs/security.md, Abschnitt 3).
         self._revoke_family(stored.family_id, reason=RefreshTokenRevocationReason.LOGOUT)
         audit.record(
             self.session,
@@ -447,10 +579,16 @@ class AuthService:
             session_version=member.session_version,
         )
         raw_refresh, refresh_hash = generate_refresh_token()
+        if family_id is None:
+            # Neue Sitzung: eigene Familie mit dauerhaft gespeichertem Zustand.
+            family = RefreshTokenFamily(user_id=user.id, organization_id=member.organization_id)
+            self.session.add(family)
+            self.session.flush()
+            family_id = family.id
         record = RefreshToken(
             user_id=user.id,
             organization_id=member.organization_id,
-            family_id=family_id or uuid.uuid4(),
+            family_id=family_id,
             token_hash=refresh_hash,
             expires_at=datetime.now(tz=UTC) + timedelta(days=self.settings.refresh_token_days),
             user_agent=(user_agent or "")[:255] or None,
@@ -474,51 +612,35 @@ class AuthService:
         *,
         reason: RefreshTokenRevocationReason,
     ) -> None:
-        """Widerruft alle noch gueltigen Tokens einer Familie.
+        """Widerruft eine Familie dauerhaft - siehe :func:`revoke_family`."""
+        revoke_family(self.session, family_id, reason=reason)
 
-        Rotierte Vorgaenger behalten ihren Grund (``ROTATED``) und werden
-        nicht ueberschrieben - die Kette zur Ursache soll lesbar bleiben.
-        """
-        now = datetime.now(tz=UTC)
-        tokens = (
-            self.session.execute(
-                select(RefreshToken).where(
-                    RefreshToken.family_id == family_id, RefreshToken.revoked_at.is_(None)
-                )
-            )
-            .scalars()
-            .all()
-        )
-        for token in tokens:
-            token.revoked_at = now
-            token.revoked_reason = reason.value
-
-    def _reject_login(self, email: str, client_ip: str | None, user: User | None) -> NoReturn:
+    def _reject_login(self, user: User | None) -> NoReturn:
         """Ein abgelehnter Anmeldeversuch - immer derselbe Weg.
 
-        Zaehlt als Fehlversuch je normalisierter E-Mail und je IP; bei einem
-        vorhandenen Konto ein Protokolleintrag nur mit der Konto-ID und einer
-        neutralen Beschreibung. Keine E-Mail in Protokoll oder Log.
+        Der Versuch ist bereits je normalisierter E-Mail und je IP reserviert
+        und zaehlt damit als Fehlversuch; bei einem vorhandenen Konto ein
+        Protokolleintrag nur mit der Konto-ID und einer neutralen
+        Beschreibung. Keine E-Mail in Protokoll oder Log.
         """
-        self._register_failed_attempt(email, client_ip)
         if user is not None:
             self._audit_failed_login(user)
         logger.info("login_rejected")
         raise AuthenticationError(LOGIN_REJECTED)
 
-    def _check_rate_limit(self, email: str, client_ip: str | None) -> None:
-        for key in self._limit_keys(email, client_ip):
-            if not _login_limiter.check(key):
-                logger.warning("login_rate_limited", key_kind=key.split(":", 1)[0])
-                raise RateLimitedError("Zu viele Anmeldeversuche. Bitte spaeter erneut versuchen.")
-
-    def _register_failed_attempt(self, email: str, client_ip: str | None) -> None:
-        for key in self._limit_keys(email, client_ip):
-            _login_limiter.register(key)
+    def _reserve_attempt(self, email: str, client_ip: str | None) -> Reservation:
+        """Reserviert atomar einen Versuch je Konto und je IP - oder ``429``."""
+        return enforce(
+            _login_limiter,
+            *self._limit_keys(email, client_ip),
+            message=_LOGIN_LIMITED,
+            log_event="login_rate_limited",
+        )
 
     @staticmethod
     def _limit_keys(email: str, client_ip: str | None) -> tuple[str, ...]:
-        keys = [f"user:{email}"]
+        # Die E-Mail steht nur als Hash im Speicher des Limiters.
+        keys = [pseudonymous_key("user", email)]
         if client_ip:
             keys.append(f"ip:{client_ip}")
         return tuple(keys)
@@ -561,6 +683,12 @@ def revoke_membership_sessions(
     Aufrufer zusaetzlich die Sitzungsversion hoch
     (:func:`bump_session_version`).
     """
+    _revoke_families(
+        session,
+        reason,
+        RefreshTokenFamily.user_id == user_id,
+        RefreshTokenFamily.organization_id == organization_id,
+    )
     tokens = (
         session.execute(
             select(RefreshToken).where(
@@ -589,6 +717,7 @@ def revoke_user_sessions(
     keinem anderen Betrieb angehoeren (ADR 0021); fuer sie ist "alle" und
     "dieser Betrieb" dasselbe.
     """
+    _revoke_families(session, reason, RefreshTokenFamily.user_id == user_id)
     tokens = (
         session.execute(
             select(RefreshToken).where(
@@ -603,6 +732,66 @@ def revoke_user_sessions(
         token.revoked_at = now
         token.revoked_reason = reason.value
     return len(tokens)
+
+
+def _lock_family(session: Session, family_id: uuid.UUID) -> RefreshTokenFamily | None:
+    """Sperrt die Familienzeile (``FOR UPDATE``) und liest ihren aktuellen Stand."""
+    return session.execute(
+        select(RefreshTokenFamily)
+        .where(RefreshTokenFamily.id == family_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+
+
+def revoke_family(
+    session: Session, family_id: uuid.UUID, *, reason: RefreshTokenRevocationReason
+) -> None:
+    """Widerruft eine Familie **dauerhaft** (Sicherheitsauftrag 2026-10-10, Befund 4).
+
+    Zuerst wird die Familienzeile gesperrt und als widerrufen markiert; eine
+    gleichzeitige Rotation wartet auf diese Sperre und scheitert danach am
+    Familienzustand. Erst dann werden die Tokenzeilen widerrufen - in einer
+    neuen Abfrage, die auch einen inzwischen committeten Nachfolger sieht.
+    Rotierte Vorgaenger behalten ihren Grund (``ROTATED``) und werden nicht
+    ueberschrieben - die Kette zur Ursache soll lesbar bleiben. Eine schon
+    widerrufene Familie behaelt ihren ersten Grund.
+    """
+    now = datetime.now(tz=UTC)
+    family = _lock_family(session, family_id)
+    if family is not None and family.revoked_at is None:
+        family.revoked_at = now
+        family.revoked_reason = reason.value
+        session.flush()
+    tokens = (
+        session.execute(
+            select(RefreshToken).where(
+                RefreshToken.family_id == family_id, RefreshToken.revoked_at.is_(None)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for token in tokens:
+        token.revoked_at = now
+        token.revoked_reason = reason.value
+
+
+def _revoke_families(
+    session: Session, reason: RefreshTokenRevocationReason, *criteria: ColumnElement[bool]
+) -> None:
+    """Markiert alle noch offenen Familien dauerhaft als widerrufen.
+
+    Das ``UPDATE`` sperrt jede betroffene Familienzeile. Haelt eine laufende
+    Rotation die Sperre, wartet es bis zu deren Commit und erfasst die Familie
+    danach trotzdem (PostgreSQL wertet die Bedingung nach dem Warten neu aus).
+    """
+    session.execute(
+        update(RefreshTokenFamily)
+        .where(RefreshTokenFamily.revoked_at.is_(None), *criteria)
+        .values(revoked_at=datetime.now(tz=UTC), revoked_reason=reason.value)
+        .execution_options(synchronize_session=False)
+    )
 
 
 def bump_session_version(session: Session, member_id: uuid.UUID) -> None:

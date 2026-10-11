@@ -12,9 +12,26 @@ Wandendpunkten in atomare Abschnitte zerlegt. Daraus folgt fuer eine Wand
 
 Der Server braucht das, damit ein Geraet nicht in eine Tuer gesetzt wird, die
 der Nachbarraum gespeichert hat, und damit eine Aussenmontage nicht auf einem
-geteilten Wandstueck landet. Es entsteht **keine** persistente physische
-Wandidentitaet (T10 bleibt offen) - alles hier ist eine reine, wiederholbare
-Ableitung aus den gespeicherten Waenden.
+geteilten Wandstueck landet.
+
+**Wandkopplungen (Phase 6a, ADR 0024).** Jeder Abschnitt, auf dem Waende
+verschiedener Raeume exakt ueberlappen, ist in genau einem Zustand
+(:class:`SectionState`):
+
+* ``undecided`` - keine wirksame Kopplung: konservativ wie Phase 5,
+* ``shared`` - bestaetigt eine Bauwand,
+* ``separate`` - bestaetigt zwei Bauwaende auf derselben Achse.
+
+Eine Kopplung wirkt auf einem Abschnitt genau dann, wenn **genau ihre beiden
+Waende** ihn ueberdecken. Liegt eine dritte Wand darauf (drei Raeume, sich
+ueberschneidende Kopplungen, doppelte Wand im Raum), bleibt der Abschnitt
+konservativ ``undecided`` - nichts wird geraten. Ohne gemeinsamen Abschnitt
+ist eine Kopplung "unterbrochen" und wirkt nirgends; passt die Geometrie
+wieder, wirkt sie von selbst wieder. Die Kopplung speichert keine Geometrie:
+Alles hier bleibt eine reine, wiederholbare Ableitung aus den gespeicherten
+Waenden und Kopplungen. Dieselbe Regel steht im Frontend
+(``topologie/wandtopologie.ts``); die Fixture
+``testdata/geometry/wandkopplung.v1.json`` haelt beide Seiten gleich.
 
 **Exakt, ohne Toleranz.** Eine Lage entlang einer Wand hat die Form
 ``whole + steps * sqrt(m)`` (``m`` = Quadrat des kleinsten Gitterschritts der
@@ -27,8 +44,9 @@ dieselbe wie im Frontend; die gemeinsame Fixture
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from enum import StrEnum
 from itertools import pairwise
 from math import gcd, isqrt
 
@@ -141,6 +159,37 @@ class TopoWall:
     openings: tuple[TopoOpening, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class TopoLink:
+    """Gespeicherte Wandkopplung - nur die Entscheidung, keine Geometrie."""
+
+    id: str
+    wall_a_id: str
+    wall_b_id: str
+    #: ``shared`` oder ``separate``.
+    relation: str
+
+    @property
+    def pair(self) -> tuple[str, str]:
+        return pair_key(self.wall_a_id, self.wall_b_id)
+
+
+def pair_key(first: str, second: str) -> tuple[str, str]:
+    """Reihenfolgeunabhaengiger Schluessel eines Wandpaars."""
+    return (first, second) if first < second else (second, first)
+
+
+class SectionState(StrEnum):
+    """Zustand eines atomaren Abschnitts (ADR 0024)."""
+
+    #: Nur ein Raum - aeussere Flaeche ohne modellierten Nachbarraum.
+    NO_PARTNER = "no-partner"
+    #: Mehrere Raeume, keine wirksame Kopplung - konservativ wie Phase 5.
+    UNDECIDED = "undecided"
+    SHARED = "shared"
+    SEPARATE = "separate"
+
+
 # ------------------------------------------------------------------ Ergebnis
 
 
@@ -160,9 +209,19 @@ class Section:
 
     room_ids: tuple[str, ...]
     sources: tuple[SectionSource, ...]
+    state: SectionState = SectionState.NO_PARTNER
+    #: Die wirksame Kopplung bei ``shared``/``separate``, sonst ``None``.
+    link_id: str | None = None
 
     @property
     def shared(self) -> bool:
+        """Grenzt an einen anderen Raum - unabhaengig vom Kopplungszustand.
+
+        Die Aussenmontage ist auf jedem solchen Abschnitt verboten: bei
+        ``undecided`` und ``shared`` ist die andere Seite (moeglicherweise) die
+        Innenflaeche des Nachbarn, bei ``separate`` eine Zwischenflaeche - keine
+        Fassade (ADR 0024).
+        """
         return len(self.room_ids) >= 2
 
 
@@ -218,12 +277,16 @@ def _line_key(start: Point, end: Point) -> tuple[int, int, int] | None:
     return dx, dy, dy * start.x_mm - dx * start.y_mm
 
 
-def partition(walls: Sequence[TopoWall]) -> dict[str, WallPartition]:
+def partition(
+    walls: Sequence[TopoWall], links: Iterable[TopoLink] = ()
+) -> dict[str, WallPartition]:
     """Teilung je Wand-ID fuer die Waende **eines** Geschosses.
 
     Rein und deterministisch; dieselbe Wand-ID zaehlt nur einmal, Waende ohne
-    Laenge fehlen im Ergebnis.
+    Laenge fehlen im Ergebnis. ``links`` bestimmen den Zustand der Abschnitte;
+    ohne sie ist jeder geteilte Abschnitt ``undecided`` (Phase-5-Verhalten).
     """
+    by_pair = {link.pair: link for link in links}
     lines: dict[tuple[int, int, int], list[TopoWall]] = {}
     seen: set[str] = set()
     for wall in walls:
@@ -237,12 +300,14 @@ def partition(walls: Sequence[TopoWall]) -> dict[str, WallPartition]:
 
     result: dict[str, WallPartition] = {}
     for key in sorted(lines):
-        for item in _split_line(key[0], key[1], lines[key]):
+        for item in _split_line(key[0], key[1], lines[key], by_pair):
             result[item.wall.id] = item
     return result
 
 
-def _split_line(dx: int, dy: int, walls: list[TopoWall]) -> list[WallPartition]:
+def _split_line(
+    dx: int, dy: int, walls: list[TopoWall], links: Mapping[tuple[str, str], TopoLink]
+) -> list[WallPartition]:
     measure = line_measure(dx * dx + dy * dy)
 
     def t(point: Point) -> int:
@@ -268,9 +333,13 @@ def _split_line(dx: int, dy: int, walls: list[TopoWall]) -> list[WallPartition]:
         ]
         if not covering:
             continue
+        room_ids = tuple(sorted({e.wall.room_id for e in covering}))
+        state, link_id = section_state(room_ids, [e.wall.id for e in covering], links)
         section = Section(
-            room_ids=tuple(sorted({e.wall.room_id for e in covering})),
+            room_ids=room_ids,
             sources=tuple(_source(e, ka, kb, measure) for e in covering),
+            state=state,
+            link_id=link_id,
         )
         intervals.append((ka, kb, section))
 
@@ -298,6 +367,25 @@ def _split_line(dx: int, dy: int, walls: list[TopoWall]) -> list[WallPartition]:
     return partitions
 
 
+def section_state(
+    room_ids: Sequence[str],
+    wall_ids: Sequence[str],
+    links: Mapping[tuple[str, str], TopoLink],
+) -> tuple[SectionState, str | None]:
+    """Zustand eines Abschnitts aus seinen ueberdeckenden Waenden.
+
+    Eine Kopplung wirkt nur, wenn genau ihre beiden Waende den Abschnitt
+    ueberdecken und sie zu verschiedenen Raeumen gehoeren.
+    """
+    if len(room_ids) < 2:
+        return SectionState.NO_PARTNER, None
+    if len(wall_ids) == 2 and len(room_ids) == 2:
+        link = links.get(pair_key(wall_ids[0], wall_ids[1]))
+        if link is not None:
+            return SectionState(link.relation), link.id
+    return SectionState.UNDECIDED, None
+
+
 def _source(e: _Entry, ka: int, kb: int, measure: LineMeasure) -> SectionSource:
     reversed_ = e.k_start > e.k_end
 
@@ -323,6 +411,16 @@ def _local(source: SectionSource, offset_mm: int, width_mm: int, measure: LineMe
     return Span(_minus(a, source.start, measure), _minus(b, source.start, measure))
 
 
+def local_span(source: SectionSource, offset_mm: int, width_mm: int, measure: LineMeasure) -> Span:
+    """Bereich ``[offset, offset + width]`` der Quellwand in Abschnittsrichtung."""
+    return _local(source, offset_mm, width_mm, measure)
+
+
+def section_span(source: SectionSource, measure: LineMeasure) -> Span:
+    """Der Abschnitt selbst in seiner Richtung: ``[0, Laenge]``."""
+    return Span(Position(0), _minus(source.end, source.start, measure))
+
+
 def _back(source: SectionSource, local: Span, measure: LineMeasure) -> Span:
     """Umkehrung: ein Bereich des Abschnitts auf der Quellwand, ab deren Anfang."""
     if source.reversed:
@@ -333,9 +431,15 @@ def _back(source: SectionSource, local: Span, measure: LineMeasure) -> Span:
 
 
 def foreign_openings(item: WallPartition) -> list[ForeignOpening]:
-    """Oeffnungen, die andere Waende auf den gemeinsamen Abschnitten dieser Wand tragen."""
+    """Oeffnungen, die andere Waende auf den gemeinsamen Abschnitten dieser Wand tragen.
+
+    Abschnitte im Zustand ``separate`` uebertragen nichts: Dort gehoert eine
+    Oeffnung nur ihrer eigenen Bauwand (ADR 0024).
+    """
     found: dict[str, ForeignOpening] = {}
     for section in item.sections:
+        if section.state is SectionState.SEPARATE:
+            continue
         own = next((s for s in section.sources if s.wall.id == item.wall.id), None)
         if own is None:
             continue

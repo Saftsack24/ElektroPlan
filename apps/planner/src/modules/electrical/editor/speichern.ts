@@ -46,6 +46,17 @@ export const GEOMETRIEFEHLER: Record<string, string> = {
   "device-id-duplicate": "Eine Geräte-ID kommt mehrfach vor.",
   "device-type-inactive": "Dieser Gerätetyp wird für neue Geräte nicht mehr angeboten.",
   "device-list-missing": "Geräte werden nur zusammen mit der vollständigen Liste entfernt.",
+  // Wandzuordnung (Phase 6a, ADR 0024)
+  "wall-has-links": "Eine Wand, die entfernt werden soll, ist einer Wand eines Nachbarraums zugeordnet.",
+  "wall-link-not-affected": "Eine genannte Wandzuordnung betrifft keine Wand, die hier entfernt wird.",
+  "wall-link-id-duplicate": "Eine Wandzuordnung ist mehrfach genannt.",
+  "wall-link-no-overlap": "Die beiden Wände liegen nicht exakt aufeinander.",
+  "wall-link-ambiguous": "Auf diesem Wandstück liegt eine weitere Wand – die Zuordnung wäre nicht eindeutig.",
+  "wall-link-exists": "Die beiden Wände sind bereits einander zugeordnet.",
+  "wall-link-same-room": "Beide Wände gehören zum selben Raum.",
+  "wall-link-same-wall": "Eine Wand kann nicht sich selbst zugeordnet werden.",
+  "wall-link-other-floor": "Die Wände liegen auf verschiedenen Geschossen.",
+  "wall-link-wall-unknown": "Eine der Wände wurde nicht gefunden – bitte neu laden.",
 };
 
 export function geometrietext(code: string, rueckfall?: string): string {

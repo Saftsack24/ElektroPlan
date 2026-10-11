@@ -54,7 +54,7 @@ describe("gemeinsame Wand: eine Öffnung, zwei Ansichten", () => {
     const m = wandmodell(b, wand!, g.topologie, g.einordnung);
     expect(m.oeffnungen).toHaveLength(1);
     expect(m.oeffnungen[0]).toMatchObject({ id: "tuer", eigen: true, links: 2115, rechts: 3000, unten: 0, oben: 2010 });
-    expect(m.abschnitte).toEqual([{ links: 0, rechts: 4000, nachbarn: ["raum-2"], mehrdeutig: false }]);
+    expect(m.abschnitte).toEqual([{ links: 0, rechts: 4000, nachbarn: ["raum-2"], mehrdeutig: false, zuordnung: "undecided" }]);
   });
 
   it("aus dem Flur (Blick nach links/Westen) - dieselbe ID, gespiegelt, abgeleitet", () => {
@@ -82,8 +82,8 @@ describe("teilweise gemeinsame Wand", () => {
     const m = wandmodell(b, basisAus(flur).entwurf.walls[0]!, g.topologie, g.einordnung);
     // Blick nach Süden: Osten (x = 6000) ist links. Bad liegt links, Wohnzimmer rechts.
     expect(m.abschnitte).toEqual([
-      { links: 0, rechts: 3000, nachbarn: ["raum-3"], mehrdeutig: false },
-      { links: 3000, rechts: 6000, nachbarn: ["raum-1"], mehrdeutig: false },
+      { links: 0, rechts: 3000, nachbarn: ["raum-3"], mehrdeutig: false, zuordnung: "undecided" },
+      { links: 3000, rechts: 6000, nachbarn: ["raum-1"], mehrdeutig: false, zuordnung: "undecided" },
     ]);
     // Wohnzimmer-Nordwand läuft (3000,4000)→(0,4000); Tür bei 500…1385 ab x = 3000 → x 1615…2500.
     expect(m.oeffnungen[0]).toMatchObject({ id: "ta", eigen: false, links: 3500, rechts: 4385 });

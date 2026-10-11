@@ -15,6 +15,10 @@
  *   die volle Stärke; ihre zweite Raumseite ist abgeleitet,
  * * Konflikte in den **gespeicherten** Daten werden als Warnung mit der
  *   Darstellungsregel gemeldet - nichts wird bereinigt.
+ * * **Wandkopplungen (Phase 6a, ADR 0024):** Ein als `separate` gekoppelter
+ *   Abschnitt wird als **zwei Halbkörper** gezeigt - je Raum auf der eigenen
+ *   Achsseite mit der eigenen halben Stärke; eine Öffnung schneidet nur den
+ *   eigenen. `shared` und unentschiedene Abschnitte bleiben ein Körper.
  *
  * Alle Entscheidungen fallen exakt auf ganzen Millimetern bzw. exakten Lagen
  * (`topologie/lage.ts`); erst das fertige Rechteck wird für die Darstellung
@@ -22,11 +26,13 @@
  */
 import type { LokalerBereich, Oeffnungseinordnung } from "../topologie/oeffnungen";
 import { bereicheUeberlappen, lokalerBereich, oeffnungenEinordnen } from "../topologie/oeffnungen";
-import type { Wandabschnitt } from "../topologie/wandtopologie";
-import { wandtopologie } from "../topologie/wandtopologie";
+import type { TopoKopplung, Wandabschnitt } from "../topologie/wandtopologie";
+import { paarSchluessel, wandtopologie } from "../topologie/wandtopologie";
 import { alsZahl, ganzeLage, gleicheLage, minus } from "../topologie/lage";
 import { OEFFNUNGSART_LABEL } from "../texte";
 import type {
+  Halbkoerper3d,
+  Kandidat3d,
   LogischeWand,
   Oeffnung3d,
   Oeffnungsart,
@@ -104,6 +110,14 @@ export interface Gruppierung {
   readonly warnungen: Warnung[];
 }
 
+/** Gespeicherte Kopplungen und die Kandidaten des Servers (je `paarSchluessel`). */
+export interface Zuordnungsdaten {
+  readonly kopplungen: readonly TopoKopplung[];
+  readonly kandidaten: ReadonlyMap<string, Kandidat3d>;
+}
+
+export const KEINE_ZUORDNUNGEN: Zuordnungsdaten = { kopplungen: [], kandidaten: new Map() };
+
 interface Kandidat {
   readonly quelle: Oeffnungsquelle;
   /** Exakter waagerechter Bereich im Abschnitt - Grundlage jeder Gleichheit. */
@@ -122,8 +136,9 @@ export function wandGruppieren(
   waende: readonly LogischeWand[],
   raumName: RaumName,
   mm: Laengentext = MM_TEXT,
+  zuordnungen: Zuordnungsdaten = KEINE_ZUORDNUNGEN,
 ): Gruppierung {
-  const topologie = wandtopologie(floorId, waende);
+  const topologie = wandtopologie(floorId, waende, zuordnungen.kopplungen);
   const einordnung = oeffnungenEinordnen(topologie);
   const warnungen = new Map<string, Warnung>();
   const melden = (w: Warnung) => warnungen.set(w.id, w);
@@ -149,7 +164,14 @@ export function wandGruppieren(
   }
 
   const ergebnis = topologie.abschnitte.map((abschnitt) => {
-    const { wand, warnungen: befunde } = darstellungswand(abschnitt, einordnung, ungueltig, raumName, mm);
+    const { wand, warnungen: befunde } = darstellungswand(
+      abschnitt,
+      einordnung,
+      ungueltig,
+      raumName,
+      mm,
+      zuordnungen.kandidaten,
+    );
     befunde.forEach(melden);
     return wand;
   });
@@ -167,6 +189,7 @@ function darstellungswand(
   ungueltig: ReadonlySet<string>,
   raumName: RaumName,
   mm: Laengentext,
+  paarKandidaten: ReadonlyMap<string, Kandidat3d>,
 ): { wand: Wand3d; warnungen: Warnung[] } {
   const quellen = abschnitt.quellen.map((q) => q.wand);
   const { id, laengeMm, mass } = abschnitt;
@@ -174,6 +197,8 @@ function darstellungswand(
   const staerkeMm = Math.max(...quellen.map((w) => w.staerkeMm));
   const hoeheMm = Math.max(...quellen.map((w) => w.raumhoeheMm));
   const warnungen: Warnung[] = [];
+  // Zwei Bauwände: Stärke und Höhe gehören je Raum zu seiner eigenen Wand.
+  const getrennt = abschnitt.zuordnung === "separate";
 
   if (abschnitt.mehrdeutig) {
     warnungen.push(
@@ -198,11 +223,11 @@ function darstellungswand(
       ),
     );
   }
-  if (new Set(quellen.map((w) => w.staerkeMm)).size > 1) {
+  if (!getrennt && new Set(quellen.map((w) => w.staerkeMm)).size > 1) {
     warnungen.push(
       warnung(
         "wand-staerke-abweichend",
-        "Unterschiedliche Wandstärke",
+        abschnitt.zuordnung === "shared" ? "Widersprüchliche Stärke der gemeinsamen Bauwand" : "Unterschiedliche Wandstärke",
         `Dieser gemeinsame Wandabschnitt ist unterschiedlich stark erfasst: ${quellen
           .map((w) => `„${raumName(w.raumId)}“ ${mm(w.staerkeMm)}`)
           .join(", ")}. Dargestellt wird die größere Stärke (${mm(staerkeMm)}). ` +
@@ -211,7 +236,7 @@ function darstellungswand(
       ),
     );
   }
-  if (new Set(quellen.map((w) => w.raumhoeheMm)).size > 1) {
+  if (!getrennt && new Set(quellen.map((w) => w.raumhoeheMm)).size > 1) {
     warnungen.push(
       warnung(
         "wand-hoehe-abweichend",
@@ -240,13 +265,40 @@ function darstellungswand(
         h0: q.bruestungMm,
         h1: q.bruestungMm + q.hoeheMm,
       };
-      const rechteck = beschneiden(roh, laengeMm, hoeheMm);
+      const rechteck = beschneiden(roh, laengeMm, getrennt ? quelle.wand.raumhoeheMm : hoeheMm);
       if (rechteck !== null) kandidaten.push({ quelle: q, bereich, rechteck });
     }
   }
 
-  const oeffnungen = oeffnungenZusammenfassen(kandidaten, id, einordnung, abschnitt);
-  warnungen.push(...ueberlappungsBefunde(oeffnungen, wandRef, raumName, mm));
+  const halbkoerper = getrennt ? halbkoerperVon(abschnitt, kandidaten) : [];
+  const querVon = (q: Oeffnungsquelle) => {
+    const h = halbkoerper.find((k) => k.wandId === q.wandId);
+    return h === undefined ? 0 : (h.q0Mm + h.q1Mm) / 2;
+  };
+  // Getrennte Wände: Öffnungen beider Seiten sind voneinander unabhängig -
+  // nur Erfassungen derselben Wand werden zusammengefasst und verglichen.
+  const oeffnungen = getrennt
+    ? quellen.flatMap((w) =>
+        oeffnungenZusammenfassen(
+          kandidaten.filter((k) => k.quelle.wandId === w.id),
+          id,
+          einordnung,
+          abschnitt,
+          querVon,
+        ),
+      )
+    : oeffnungenZusammenfassen(kandidaten, id, einordnung, abschnitt, querVon);
+  if (getrennt) {
+    for (const w of quellen) {
+      warnungen.push(...ueberlappungsBefunde(oeffnungen.filter((o) => o.quellen[0]?.wandId === w.id), wandRef, raumName, mm));
+    }
+  } else {
+    warnungen.push(...ueberlappungsBefunde(oeffnungen, wandRef, raumName, mm));
+  }
+  const paar =
+    abschnitt.zuordnung === "undecided" && quellen.length === 2
+      ? paarSchluessel((quellen[0] as LogischeWand).id, (quellen[1] as LogischeWand).id)
+      : null;
 
   const wand: Wand3d = {
     id,
@@ -256,6 +308,10 @@ function darstellungswand(
     staerkeMm,
     hoeheMm,
     lage: abschnitt.lage,
+    zuordnung: abschnitt.zuordnung,
+    kopplungId: abschnitt.kopplungId,
+    kandidat: paar === null ? null : (paarKandidaten.get(paar) ?? null),
+    halbkoerper,
     gerade: abschnitt.gerade,
     raumIds: abschnitt.raumIds,
     quellen,
@@ -281,6 +337,7 @@ function oeffnungenZusammenfassen(
   wandId: string,
   einordnung: ReadonlyMap<string, Oeffnungseinordnung<LogischeWand>>,
   abschnitt: Wandabschnitt<LogischeWand>,
+  querVon: (q: Oeffnungsquelle) => number,
 ): Oeffnung3d[] {
   const { mass } = abschnitt;
   const gleich = (a: Kandidat, b: Kandidat) =>
@@ -306,12 +363,41 @@ function oeffnungenZusammenfassen(
         art: arten[0] ?? "door",
         arten,
         rechteck: (gruppe[0] as Kandidat).rechteck,
+        querMm: querVon((gruppe[0] as Kandidat).quelle),
         quellen,
         klasse,
         raumIds: [...new Set(e.flatMap((x) => x.raumIds))],
       };
     })
     .sort((a, b) => a.rechteck.s0 - b.rechteck.s0 || a.rechteck.h0 - b.rechteck.h0 || a.id.localeCompare(b.id));
+}
+
+/**
+ * Zwei Halbkörper eines `separate` gekoppelten Abschnitts: je Raum auf der Seite
+ * seines Rauminneren, Tiefe = eigene halbe Stärke, Höhe = eigene Raumhöhe, mit
+ * den Aussparungen nur der eigenen Öffnungen. Quer positiv = rechts der
+ * kanonischen Richtung im Grundriss (in der Szene `+quer`).
+ */
+function halbkoerperVon(abschnitt: Wandabschnitt<LogischeWand>, kandidaten: readonly Kandidat[]): Halbkoerper3d[] {
+  const dx = abschnitt.ende.x - abschnitt.start.x;
+  const dy = abschnitt.ende.y - abschnitt.start.y;
+  return abschnitt.quellen.map(({ wand }) => {
+    const gleichgerichtet = (wand.ende.x - wand.start.x) * dx + (wand.ende.y - wand.start.y) * dy > 0;
+    const innenLinks = gleichgerichtet === (wand.innenLinks ?? true);
+    const tiefe = wand.staerkeMm / 2;
+    return {
+      raumId: wand.raumId,
+      wandId: wand.id,
+      q0Mm: innenLinks ? -tiefe : 0,
+      q1Mm: innenLinks ? 0 : tiefe,
+      hoeheMm: wand.raumhoeheMm,
+      teile: wandZerlegen(
+        abschnitt.laengeMm,
+        wand.raumhoeheMm,
+        kandidaten.filter((k) => k.quelle.wandId === wand.id).map((k) => k.rechteck),
+      ),
+    };
+  });
 }
 
 /** Überlappende, nicht gleiche Darstellungsöffnungen desselben Abschnitts. */
@@ -406,6 +492,16 @@ function einordnungsBefund(
       "Öffnung nur teilweise in der gemeinsamen Wand",
       `Die Öffnung (${beschrieben}) liegt nur zum Teil auf dem gemeinsamen Wandabschnitt. Sie wird ausgespart, ` +
         "gilt aber nicht als Verbindung zweier Räume. Bitte im 2D-Editor ganz auf den gemeinsamen Abschnitt oder davon weg schieben.",
+      [eigene, ...waende],
+    );
+  }
+  if (e.einseitig) {
+    return warnung(
+      "oeffnung-einseitig",
+      "Öffnung nur in einer der getrennten Wände",
+      `Die Öffnung (${beschrieben}) liegt auf einem Abschnitt, der als zwei getrennte Wände festgelegt ist. ` +
+        "Sie gehört nur zu dieser Wand und erscheint auf der anderen Seite nicht. Hinweis, kein Fehler: " +
+        "Soll sie durch beide Wände gehen, bitte auch in der anderen Wand erfassen.",
       [eigene, ...waende],
     );
   }
