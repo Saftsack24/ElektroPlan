@@ -1,13 +1,14 @@
 # Phase 6a – Entwurf: physische Wandzuordnung (T10) und Steigwege (T4)
 
 **Status:** 2. Fassung · **Empfehlungen D1–D12 vom Auftraggeber als begrenzte MVP-Richtung
-bestätigt (2026-10-06)** · **6a.0–6a.3 umgesetzt** (warten auf Abnahme, nicht committet) ·
-**6a.4–6a.5 (Steigwege) NOT STARTED** · Umsetzungsstand und Präzisierungen: **§10**
-**Stand:** 2026-10-04 (Entwurf), 2026-10-06 (Umsetzung 6a.0–6a.3), auf Basis von `fb4cc85`
+bestätigt (2026-10-06)** · **6a.0–6a.3 umgesetzt** (Checkpoint `595e8ac`) · **6a.4–6a.5
+(Steigwege) umgesetzt** (2026-10-11, committet) · manuelle Gesamtprüfung nach Phase 6 ·
+Umsetzungsstand und Präzisierungen: **§10**
+**Stand:** 2026-10-04 (Entwurf), 2026-10-06 (Umsetzung 6a.0–6a.3), 2026-10-11 (Umsetzung 6a.4–6a.5)
 **ADRs (accepted):**
 [0024 – Wandkopplung](decisions/0024-wall-links-physical-wall-assignment.md) (umgesetzt),
 [0025 – Steigwege und bestätigte Höhenlage](decisions/0025-risers-between-floors.md)
-(Höhenlage umgesetzt; Steigwege beschlossen, nicht implementiert)
+(Höhenlage und Steigwege umgesetzt)
 
 > §1–§9 sind der bestätigte Entwurf. Wo die Umsetzung präzisiert oder abweicht, steht das in §10 –
 > maßgeblich ist dann §10. Alle Beispiele sind synthetisch.
@@ -589,6 +590,9 @@ Normprüfung (CLAUDE.md Regel 12).
 
 ## 10. Umsetzungsstand 6a.0–6a.3 (2026-10-06)
 
+> **Historischer Stand vom 2026-10-06.** Aussagen über Steigwege („NOT STARTED“, „keine API,
+> kein Service“) sind **überholt**: 6a.4–6a.5 sind seit 2026-10-11 umgesetzt, siehe **§10.5**.
+
 Freigegeben und umgesetzt: **6a.0** (bestätigte Höhenlage), **6a.1** (Wandkopplungen im Backend),
 **6a.2** (Darstellung und Bedienung), **6a.3** (Backfill-Befehl). **Nicht** umgesetzt und weiterhin
 **NOT STARTED:** 6a.4–6a.5 (Steigweg-API, -Service, -Oberfläche, Verlauf, Längen),
@@ -653,3 +657,34 @@ Raumentwurfs.
 | 18–20 Backfill | `tests/test_wall_link_backfill.py` |
 | 21–24 Höhenlage | `tests/test_floor_elevation_confirmation.py`, `tests/test_migration_wall_links.py`, `platform/Hoehenlage.test.tsx` |
 | 34–35 Architektur | import-linter, `tests/test_module_boundaries.py`, `tests/test_migration_acceptance.py`, `tests/test_migration_wall_links.py`, OpenAPI-Drift-Check |
+
+### 10.5 Umsetzungsstand 6a.4–6a.5 – Steigwege (2026-10-11)
+
+Umgesetzt nach §2.4–§2.6 und §4.4; **keine** zusätzliche Migration (Head bleibt `0011`).
+Phase 6b bleibt NOT STARTED. Präzisierungen stehen zusätzlich in ADR 0025.
+
+| Thema | Umsetzung |
+|---|---|
+| Core | `FloorPlanningAccess.building_context()` / `writable_building_context()` (Projekt sperren, danach Gebäude und Geschosse frisch lesen) und `building_ids_of_project()`; `BuildingPlanningContext` mit allen Geschossen als `FloorPlanningContext`. Kein Electrical-Import im Core |
+| Reine Funktion | `electrical/riser_course.py` (`riser_course`, `analyse_riser`); Spiegel `steigweg/verlauf.ts`; gemeinsame Fixture `testdata/geometry/steigweg.v1.json` (10 Fälle) |
+| API | `GET/POST /buildings/{id}/risers`, `PUT/DELETE /risers/{id}` (If-Match). Antwort mit Halten nach Ebene, Abschnitten (`course`, `vertical_mm`, `horizontal_mm`, `length_mm`, `hints`, `traversed_floor_ids`), `status`, `known_length_mm`, `length_mm`. Kein Event |
+| Codes | `422` `riser-stop-floor-unknown` (fremd, anderes Gebäude, unbekannt), `riser-stop-floor-duplicate`, `riser-stop-unknown`, `riser-stop-id-duplicate`, `riser-stop-floor-changed`, `riser-name-taken`; `409` `version-conflict`, `project-completed`, `project-archived`; Geschoss bzw. Gebäude mit Steigweg `409` (fachneutrale Core-Meldung) |
+| Gesamtstatus | `confirmed`, `incomplete`, `conflict`, `single-stop`, `no-stops` |
+| Unverändertes PUT | keine Versionserhöhung, kein Projektvermerk |
+| Oberfläche | neue Ansicht „Steigwege“ im Tab „Räume & Grundriss“ (Gebäude des gewählten Geschosses): Liste mit Status und Länge bzw. „Teilsumme … (unvollständig)“; Bearbeitung mit Name, Notiz, Versatzart, Geschosstabelle (anbinden, x/y in mm/cm/m, „Im Grundriss zeigen“, „Lage von … übernehmen“), Abschnittstabelle mit Status, Hinweis und Summe („Gesamtlänge“ bzw. „Bekannte Teilsumme – keine vollständige Leitungslänge“); Speichern, Verwerfen, Schließen, Entfernen; Konflikt mit „Änderungen verwerfen und neu laden“; „Zurück zu …“ zur Ausgangsansicht |
+| Grundriss | Wandlinien nur zur Orientierung; leere Geschosse haben eine Standardfläche 10 m × 7,5 m; Klick setzt (Raster 1 cm), Symbol ziehen verschiebt; Kreis mit Kreuz = Übergabepunkt, Pfeil = weiter nach oben, Linie mit Pfeil = Versatz auf dem oberen Geschoss, gestrichelter Kreis = durchquert |
+| Verlässlichkeit | bestätigt durchgezogen, vorläufig gestrichelt (Warnfarbe), widersprüchlich strichpunktiert (Fehlerfarbe) – im Grundriss, in der 3D-Vorschau und in der Legende |
+| 3D | kleine SVG-Parallelprojektion „3D-Vorschau (vereinfacht, nur Steigwege)“, vier Blickrichtungen; die geschossbezogene WebGL-Ansicht bleibt unverändert |
+| Aktualität | Längen werden im Browser aus der Geschossabfrage (`["floors", building]`, `staleTime 0`) und den Halten berechnet; Änderungen an Höhenlage, Bestätigung und Ebene wirken sofort |
+| Entwurfsschutz | Ungespeicherte Steigwegänderungen melden sich beim Navigationsschutz, beim Ansichtswechsel und beim Gebäudewechsel; ein Geschosswechsel im selben Gebäude behält den Entwurf. Nie gemischt mit dem Raumentwurf (eigene Ansicht) |
+
+**Abnahmekriterien 25–33 → Tests:** `tests/test_riser_course.py` (25–30, 33),
+`tests/test_electrical_risers.py` (25–32, Status, If-Match, Rechte, Löschwege, stabile IDs,
+Aktualität), `tests/test_riser_concurrency.py`, `tests/test_archive_concurrency.py` und
+`test_completed_concurrency.py` (Schreibweg `steigweg-anlegen`), `tests/test_tenant_isolation.py`,
+`steigweg/verlauf.test.ts` (Parität), `steigweg/entwurf.test.ts`, `steigweg/Steigwege.test.tsx`,
+`RoomsTab.test.tsx` (Ansichtswechsel).
+
+**Grenzen (sichtbar):** keine Austrittshöhe am Halt (D4); Steigwege erscheinen nicht im
+Raum-Grundrisseditor und nicht in der geschossbezogenen 3D-Ansicht, sondern in der eigenen
+Ansicht; die 3D-Vorschau zeigt keine Räume.

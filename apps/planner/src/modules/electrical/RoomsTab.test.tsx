@@ -746,3 +746,49 @@ describe("Schreibschutz", () => {
     expect(await screen.findByText("Tür")).toBeInTheDocument();
   });
 });
+
+// ------------------------------------------------------ Steigwege (Phase 6a.5)
+
+describe("Steigwege-Ansicht", () => {
+  beforeEach(() => {
+    const standard = api.get.getMockImplementation();
+    api.get.mockImplementation((pfad: string, optionen?: { path?: Record<string, string> }) => {
+      if (pfad.endsWith("/risers")) return Promise.resolve({ building_id: "gebaeude-1", risers: [] });
+      if (pfad.endsWith("/plan")) {
+        return Promise.resolve({
+          floor_id: optionen?.path?.floor_id,
+          project_id: "projekt-1",
+          rooms: [],
+          wall_links: [],
+          wall_link_candidates: [],
+        });
+      }
+      return standard?.(pfad, optionen) as Promise<unknown>;
+    });
+  });
+
+  it("schützt den Steigwegentwurf beim Ansichtswechsel und behält ihn beim Geschosswechsel", async () => {
+    zeigen();
+    await screen.findByText("Wohnzimmer");
+    klicken("Steigwege");
+    expect(await screen.findByText("Steigwege · Hauptgebäude")).toBeInTheDocument();
+    klicken("Zurück zu „Tabellen & Details“");
+    expect(await screen.findByText("Wohnzimmer")).toBeInTheDocument();
+
+    klicken("Steigwege");
+    fireEvent.click(await screen.findByRole("button", { name: "Steigweg anlegen" }));
+    await screen.findByLabelText("Name *");
+    tippen("Name *", "Schacht");
+
+    // Geschoss im selben Gebäude wechseln: keine Rückfrage, der Entwurf bleibt.
+    waehlen("Geschoss", "geschoss-og");
+    expect(await screen.findByText("Grundriss · Obergeschoss")).toBeInTheDocument();
+    expect(screen.getByLabelText("Name *")).toHaveValue("Schacht");
+
+    // Ansicht wechseln: Rückfrage mit der Steigwegmeldung; „behalten" bleibt hier.
+    klicken("Tabellen & Details");
+    expect(await screen.findByText(/In der Steigwegverwaltung gibt es ungespeicherte Änderungen/)).toBeInTheDocument();
+    klicken("Änderungen behalten");
+    await waitFor(() => expect(screen.getByLabelText("Name *")).toHaveValue("Schacht"));
+  });
+});

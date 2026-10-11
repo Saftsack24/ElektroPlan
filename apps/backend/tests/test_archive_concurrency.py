@@ -55,15 +55,19 @@ from app.errors import ProjectArchivedError
 from app.modules.electrical.models import (
     ElectricalDevice,
     ElectricalOpening,
+    ElectricalRiser,
     ElectricalRoom,
     ElectricalWallLink,
 )
 from app.modules.electrical.reference_data import ElectricalReferenceData
+from app.modules.electrical.risers import RiserService
 from app.modules.electrical.schemas import (
     ContourDeviceIn,
     ContourOpeningIn,
     ContourWallIn,
     OpeningCreate,
+    RiserCreate,
+    RiserStopIn,
     RoomContourUpdate,
     RoomCreate,
     WallCreate,
@@ -244,6 +248,18 @@ def kopplung_anlegen(session: Session, welt: Welt) -> None:
     )
 
 
+def steigweg_anlegen(session: Session, welt: Welt) -> None:
+    """Phase 6a.4: Steigweg mit einem Uebergabepunkt am Gebaeude."""
+    RiserService(session, welt.organization_id).create(
+        welt.building_id,
+        RiserCreate(
+            name="Schacht",
+            offset_mode="orthogonal",
+            stops=[RiserStopIn(floor_id=welt.floor_id, x_mm=1_200, y_mm=3_400)],
+        ),
+    )
+
+
 def gebaeude_anlegen(session: Session, welt: Welt) -> None:
     ProjectService(session, welt.organization_id).create_building(
         welt.project_id, BuildingCreate(name="Garage"), actor_user_id=ACTOR
@@ -299,6 +315,7 @@ SCHREIBWEGE: tuple[tuple[str, Fachaenderung], ...] = (
     ("kontur-speichern", kontur_speichern),
     ("geraete-speichern", geraete_speichern),
     ("kopplung-anlegen", kopplung_anlegen),
+    ("steigweg-anlegen", steigweg_anlegen),
     ("gebaeude-anlegen", gebaeude_anlegen),
     ("geschoss-anlegen", geschoss_anlegen),
     ("projekt-aendern", projekt_aendern),
@@ -360,6 +377,7 @@ def _bestand(factory: sessionmaker[Session], welt: Welt) -> dict[str, int]:
                 select(func.count()).where(ElectricalDevice.room_id == welt.room_id)
             ),
             "kopplungen": zaehlen(select(func.count()).select_from(ElectricalWallLink)),
+            "steigwege": zaehlen(select(func.count()).select_from(ElectricalRiser)),
         }
     finally:
         session.close()

@@ -1,0 +1,47 @@
+/*
+ * Steigwege im Grundriss und in der 3D-Vorschau (Phase 6a.5, ADR 0025).
+ *
+ * Farben nur aus Tokens (core/theme/tokens.css, modules/electrical/darstellung.css).
+ * Verlässlichkeit ist nie nur Farbe: bestätigt = durchgezogen, vorläufig
+ * (Höhenlage nicht bestätigt) = gestrichelt in Warnfarbe, widersprüchlich =
+ * strichpunktiert in Fehlerfarbe. Die Legende nennt alle drei.
+ */
+
+@layer components {
+  .steigweg__svg { display: block; width: 100%; user-select: none; touch-action: none; background: var(--ep-canvas); }
+  .steigweg__flaeche { aspect-ratio: 4 / 3; max-height: 60vh; }
+  .steigweg__vorschau { aspect-ratio: 4 / 3; max-height: 50vh; }
+  .steigweg__hintergrund { fill: transparent; }
+  .steigweg__hintergrund--setzbar { cursor: crosshair; }
+  .steigweg__raster { fill: none; stroke: var(--ep-canvas-grid); stroke-width: 0.5px; vector-effect: non-scaling-stroke; }
+  .steigweg__wand { fill: none; stroke: var(--ep-plan-wall); stroke-width: 2px; vector-effect: non-scaling-stroke; stroke-linecap: square; }
+
+  .steigweg__linie { fill: none; stroke: var(--ep-plan-riser); stroke-width: 2.5px; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+  .steigweg__linie--vorlaeufig { stroke: var(--ep-warning); stroke-dasharray: 7 4; }
+  .steigweg__linie--konflikt { stroke: var(--ep-danger); stroke-dasharray: 9 3 2 3; }
+  .steigweg__linie--passiv { stroke-width: 1.5px; opacity: 0.45; }
+
+  .steigweg__halt { fill: var(--ep-canvas); stroke: var(--ep-plan-riser); stroke-width: 2.5px; vector-effect: non-scaling-stroke; }
+  .steigweg__halt-kreuz { fill: none; stroke: var(--ep-plan-riser); stroke-width: 2px; vector-effect: non-scaling-stroke; }
+  .steigweg__halt--passiv { opacity: 0.45; }
+  .steigweg__halt--ziehbar { cursor: grab; }
+  .steigweg__halt--aktiv .steigweg__halt { stroke: var(--ep-selected); stroke-width: 3.5px; }
+  .steigweg__durchquert { fill: none; stroke: var(--ep-plan-riser); stroke-width: 1.5px; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+  .steigweg__pfeil { fill: var(--ep-plan-riser); stroke: none; }
+  .steigweg__pfeil--vorlaeufig { fill: var(--ep-warning); }
+  .steigweg__pfeil--konflikt { fill: var(--ep-danger); }
+
+  .steigweg__ebene { fill: var(--ep-accent); fill-opacity: 0.04; stroke: var(--ep-text-muted); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+  .steigweg__ebene--unbestaetigt { stroke: var(--ep-warning); stroke-dasharray: 5 4; }
+
+  .steigweg__text {
+    fill: var(--ep-text); font-weight: 600; paint-order: stroke; stroke: var(--ep-canvas); stroke-width: 3px;
+    stroke-linejoin: round; pointer-events: none;
+  }
+  .steigweg__text--leise { fill: var(--ep-text-muted); font-weight: 400; }
+
+  /* Legende unter den Zeichnungen */
+  .steigweg__legende-linie { display: inline-block; width: 28px; height: 0; border-top: 3px solid var(--ep-plan-riser); vertical-align: middle; }
+  .steigweg__legende-linie--vorlaeufig { border-top-style: dashed; border-top-color: var(--ep-warning); }
+  .steigweg__legende-linie--konflikt { border-top-style: dotted; border-top-color: var(--ep-danger); }
+}

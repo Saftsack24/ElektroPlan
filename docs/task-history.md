@@ -3247,3 +3247,67 @@ offen; keine Produktions- oder Echtdatenfreigabe.
 * **Commit-Prüfung:** Migrationen `0001`–`0008` unverändert, `0009` → `0010` → `0011` verkettet,
   ein Head; keine Gegenproben- oder Diagnosereste; Architekturprüfungen nur um exakte
   Tabellenzahlen ergänzt; `git diff --check` sauber; `.env` und `.claude/` nicht aufgenommen.
+
+---
+
+## Task 0033 – Checkpoint pushen, Phase 6a.4–6a.5 Steigwege
+
+**Datum:** 2026-10-11 · **Status:** umgesetzt und automatisiert geprüft; committet mit Task 0034;
+manuelle Gesamtprüfung nach Phase 6 offen; keine Produktions- oder Echtdatenfreigabe.
+
+**Ziel:** Checkpoint `595e8ac` regulär pushen, danach ausschließlich Steigwege (6a.4–6a.5)
+nach Entwurf §2.4–§2.6/§4.4 und ADR 0025.
+
+**Durchgeführte Änderungen:**
+* Push: Arbeitsbaum sauber, `main` = `595e8ac`, `origin/main` = Vorgänger `fb4cc85`; regulärer
+  Push (Fast-Forward), kein Force, kein Amend.
+* Core: `BuildingPlanningContext`, `building_context()`, `writable_building_context()`
+  (Projektsperre, danach Gebäude und Geschosse frisch), `building_ids_of_project()`.
+* Electrical: `riser_course.py` (reine Funktion, eine Polylinie für Länge und Darstellung),
+  `risers.py` (Service; Projekt → Steigweg sperren, Halte gegen frische Geschosse prüfen,
+  stabile Halt-IDs, kein Event), Schemas, Routen, Löschteilnehmer, Modelldoku.
+* Frontend: `steigweg/` (Spiegel `verlauf.ts`, Entwurf, Grundrissfläche, 3D-Vorschau,
+  Verwaltung), Ansicht „Steigwege“ in `RoomsTab.tsx`, Token `--ep-plan-riser` hell/dunkel.
+* Fixture `testdata/geometry/steigweg.v1.json` (10 Fälle) für beide Seiten.
+
+**Annahmen (ohne erhebliche Auswirkung, begründet entschieden):** Halt-IDs vergibt nur der
+Server; zusätzlicher Gesamtstatus `conflict`/`single-stop`/`no-stops`; Hinweis nur bei
+bestätigtem Abschnitt; durchquerte Geschosse ohne Einfluss auf Länge/Status; 3D als kleine
+SVG-Vorschau statt Umbau der WebGL-Geschossansicht.
+
+**Tests:** `tasks.ps1 check` gegen PostgreSQL und MinIO: Backend 1187 bestanden (0 übersprungen, vorher 1131), Frontend
+965 bestanden (vorher 935); Ruff, mypy, Modulgrenzen, ein Head `0011`, Lockfile, API-Drift, Typecheck, ESLint,
+Build grün. Neu: `test_riser_course.py`, `test_electrical_risers.py`,
+`test_riser_concurrency.py`, Erweiterungen in `test_tenant_isolation.py` und
+`test_archive_concurrency.py` (Schreibweg `steigweg-anlegen`, wirkt auch in
+`test_completed_concurrency.py`); Frontend `verlauf.test.ts`, `entwurf.test.ts`,
+`Steigwege.test.tsx`, `RoomsTab.test.tsx`.
+
+**Browser (Entwicklungsstack):** Ansicht geöffnet, Steigweg angelegt, Übergabepunkt per
+Mausklick gesetzt, Obergeschoss angebunden, Lage übernommen, x-Maß eingegeben, Teilsumme bei
+unbestätigter Höhenlage, Speichern (`POST 201`, Liste neu geladen). Nicht sichtbar prüfbar
+(Browserbereich ausgeblendet, keine Bildschirmfotos): Ziehen, Themes, Bild der 3D-Vorschau,
+Höhenbestätigung über die Oberfläche. Prüfdaten: „Pruefschacht synthetisch“ im Projekt
+„Sichtprüfung 6a (synthetisch)“.
+
+**Nächster sinnvoller Schritt:** Prüfung durch den Auftraggeber; danach Commit von 6a.4–6a.5.
+
+---
+
+## Task 0034 – Checkpoint Phase 6a.4–6a.5 (Steigwege)
+
+**Datum:** 2026-10-11 · **Status:** committet; manuelle Gesamtprüfung nach Phase 6 offen; keine
+Produktions- oder Echtdatenfreigabe.
+
+* **Vorabprüfung:** alle Änderungen gehören zu 6a.4–6a.5 (Task 0033); keine `.env`, `.claude/`,
+  Caches, Logs, Dumps oder Bildschirmfotos im Commit; keine Debug-Reste; keine entfernten oder
+  abgeschwächten Testzeilen (einzige Teständerungen: neue Fälle, ergänzte Submodulliste,
+  Ansichtsliste um „Steigwege“); Migrationen `0001`–`0011` unverändert, ein Head `0011`;
+  OpenAPI und generierter Client im letzten Lauf ohne Drift, seither keine API-Änderung.
+* **Grundlage:** zuletzt dokumentierter Lauf `tasks.ps1 check` (1187 Backend-, 965
+  Frontendtests); kein erneuter Großlauf, weil seither nur Dokumentation geändert wurde.
+* **Dokumentation bereinigt:** veraltete Aussagen „Steigwege nicht implementiert / nur Schema“
+  in `modules/electrical.md`, `database.md`, `current-status.md` (T4) und `roadmap.md`
+  korrigiert; `phase-6a-design.md` §10 als historischer Stand markiert; Phase 6 als begonnen,
+  nicht abgeschlossen. Die historische Docstring der Migration `0010` bleibt unverändert.
+* **Nicht stattgefunden:** Sichtprüfung im sichtbaren Browser (siehe Task 0033).

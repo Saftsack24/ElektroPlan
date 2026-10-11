@@ -78,8 +78,12 @@ WALL_LINK_PAIR_CONSTRAINT = "uq_el_wall_links_pair"
 WALL_LINK_RELATIONS: tuple[str, ...] = ("shared", "separate")
 #: Herkunft einer Wandkopplung: ausdruecklich angelegt oder Bestandsuebernahme.
 WALL_LINK_ORIGINS: tuple[str, ...] = ("user", "backfill")
-#: Verlauf eines Steigwegabschnitts (ADR 0025) - nur Schema-Vorbereitung.
+#: Verlauf eines Steigwegabschnitts (ADR 0025, ``riser_course.py``).
 RISER_OFFSET_MODES: tuple[str, ...] = ("orthogonal", "direct")
+#: Name eines Steigwegs ist je Gebaeude eindeutig (Migration ``0010``).
+RISER_NAME_CONSTRAINT = "uq_electrical_risers_organization_id_building_id_name"
+#: Hoechstens ein Halt je Steigweg und Geschoss (Migration ``0010``).
+RISER_STOP_FLOOR_CONSTRAINT = "uq_electrical_riser_stops_organization_id_riser_id_floor_id"
 
 
 def _value_list(values: tuple[str, ...]) -> str:
@@ -416,12 +420,11 @@ class ElectricalWallLink(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, B
 
 
 class ElectricalRiser(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, Base):
-    """Steigweg eines Gebaeudes (ADR 0025) - **nur Schema-Vorbereitung** (Phase 6a).
+    """Steigweg eines Gebaeudes (ADR 0025, seit Phase 6a.4 mit API und Service).
 
-    Die Tabelle entsteht mit Migration ``0010``, damit diese spaeter nicht
-    umgeschrieben werden muss. Es gibt in Phase 6a.0-6a.3 **keine** API, keinen
-    Service, keine Oberflaeche und keine Daten. Fachliche Regeln (Halte im
-    selben Gebaeude, Verlauf, Laengenstatus) entstehen erst mit 6a.4.
+    Die Tabelle entstand mit Migration ``0010``. Fachliche Regeln (Halte im
+    selben Gebaeude, Verlauf, Laengenstatus) stehen in ``risers.py`` und
+    ``riser_course.py``; Laengen werden nie gespeichert.
     """
 
     __tablename__ = "electrical_risers"
@@ -441,10 +444,11 @@ class ElectricalRiser(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, Base
 
 
 class ElectricalRiserStop(UUIDPrimaryKey, TenantScoped, Timestamped, Base):
-    """Uebergabepunkt eines Steigwegs je Geschoss (ADR 0025) - **nur Schema-Vorbereitung**.
+    """Uebergabepunkt eines Steigwegs je Geschoss (ADR 0025).
 
     Hoechstens ein Halt je Steigweg und Geschoss. Keine eigene Version: Die
-    Halteliste wird spaeter als Ganzes unter der Steigwegversion gespeichert.
+    Halteliste wird als Ganzes unter der Steigwegversion gespeichert; ein
+    vorhandener Halt behaelt dabei seine ID und sein Geschoss.
     """
 
     __tablename__ = "electrical_riser_stops"

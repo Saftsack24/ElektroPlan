@@ -560,3 +560,137 @@ class FloorPlanOut(BaseModel):
     rooms: list[RoomPlanOut]
     wall_links: list[WallLinkOut]
     wall_link_candidates: list[WallLinkCandidateOut]
+
+
+# ------------------------------------------------------- Steigwege (6a.4)
+
+RiserOffsetModeValue = Literal["orthogonal", "direct"]
+RiserSectionStatusValue = Literal["confirmed", "elevation-unconfirmed", "elevation-inconsistent"]
+RiserStatusValue = Literal["confirmed", "incomplete", "conflict", "single-stop", "no-stops"]
+RiserSectionHintValue = Literal["floor-gap-below-ceiling-height"]
+
+#: Obergrenze der Halte je Steigweg - ein Gebaeude mit mehr Geschossen ist
+#: ein Eingabefehler, kein Planungsfall.
+MAX_RISER_STOPS = 100
+
+
+class RiserStopIn(_Strict):
+    """Uebergabepunkt eines Steigwegs auf einem Geschoss (ADR 0025).
+
+    ``id`` weglassen heisst: neuer Halt, der Server vergibt die ID. Eine
+    angegebene ``id`` muss ein vorhandener Halt **dieses** Steigwegs sein; er
+    behaelt seine ID (spaetere Leitungswege verweisen darauf) und wechselt nie
+    das Geschoss. Lage in ganzen Millimetern, Geschosskoordinaten, auf Hoehe
+    des Fertigfussbodens.
+    """
+
+    id: uuid.UUID | None = None
+    floor_id: uuid.UUID
+    x_mm: int = _coordinate(required=True)
+    y_mm: int = _coordinate(required=True)
+
+
+class _RiserFields(_Strict):
+    name: str = Field(min_length=1, max_length=120)
+    note: str | None = Field(default=None, max_length=500)
+    offset_mode: RiserOffsetModeValue
+    #: Vollstaendige Halteliste; hoechstens ein Halt je Geschoss. Reihenfolge
+    #: beliebig - massgeblich ist die Geschossebene.
+    stops: list[RiserStopIn] = Field(default_factory=list, max_length=MAX_RISER_STOPS)
+
+    @field_validator("name")
+    @classmethod
+    def _name_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            msg = "Der Name darf nicht leer sein."
+            raise ValueError(msg)
+        return value
+
+    @field_validator("note")
+    @classmethod
+    def _note_trimmed(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+
+class RiserCreate(_RiserFields):
+    """Neuer Steigweg eines Gebaeudes."""
+
+
+class RiserUpdate(_RiserFields):
+    """Steigweg vollstaendig ersetzen (``If-Match`` der Steigwegversion).
+
+    Halte, die in ``stops`` fehlen, werden entfernt; Halte mit ``id`` behalten
+    sie.
+    """
+
+
+class RiserStopOut(BaseModel):
+    id: uuid.UUID
+    floor_id: uuid.UUID
+    x_mm: int
+    y_mm: int
+
+
+class RiserCoursePointOut(BaseModel):
+    """Punkt des Verlaufs: Geschosskoordinaten, ``z`` = Hoehenlage ueber Gebaeudebezug."""
+
+    x_mm: int
+    y_mm: int
+    z_mm: int
+
+
+class RiserSectionOut(BaseModel):
+    """Abschnitt zwischen zwei aufeinanderfolgenden Halten - vereinfachter Planungsverlauf.
+
+    ``course`` ist die einzige Quelle fuer Laenge und Darstellung. Bei
+    ``elevation-unconfirmed`` ist er **vorlaeufig** (gespeicherte, nicht
+    bestaetigte Hoehenlagen) und ``vertical_mm``/``length_mm`` fehlen; bei
+    ``elevation-inconsistent`` ebenso. ``horizontal_mm`` ist immer bekannt.
+    Keine Aussage ueber bauliche Machbarkeit, Brandschutz oder Normen.
+    """
+
+    lower_stop_id: uuid.UUID
+    upper_stop_id: uuid.UUID
+    lower_floor_id: uuid.UUID
+    upper_floor_id: uuid.UUID
+    traversed_floor_ids: list[uuid.UUID]
+    status: RiserSectionStatusValue
+    course: list[RiserCoursePointOut]
+    vertical_mm: int | None
+    horizontal_mm: int
+    length_mm: int | None
+    hints: list[RiserSectionHintValue]
+
+
+class RiserOut(BaseModel):
+    """Steigweg samt Halten (nach Geschossebene), Abschnitten und Laengenstatus.
+
+    ``length_mm`` gibt es nur bei ``status = confirmed``. Sonst ist
+    ``known_length_mm`` ausdruecklich eine **Teilsumme** der bekannten Teile -
+    nie die Leitungslaenge.
+    """
+
+    id: uuid.UUID
+    building_id: uuid.UUID
+    name: str
+    note: str | None
+    offset_mode: RiserOffsetModeValue
+    stops: list[RiserStopOut]
+    sections: list[RiserSectionOut]
+    status: RiserStatusValue
+    known_length_mm: int
+    length_mm: int | None
+    version: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class RiserListOut(BaseModel):
+    """Alle Steigwege eines Gebaeudes, nach Name sortiert."""
+
+    building_id: uuid.UUID
+    risers: list[RiserOut]

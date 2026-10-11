@@ -33,6 +33,8 @@ from app.core.users.models import User
 from app.db.mixins import utcnow
 from app.modules.electrical.models import (
     ElectricalOpening,
+    ElectricalRiser,
+    ElectricalRiserStop,
     ElectricalRoom,
     ElectricalWall,
     ElectricalWallLink,
@@ -63,6 +65,9 @@ class Tenant:
     link_id: uuid.UUID
     neighbour_room_id: uuid.UUID
     neighbour_wall_id: uuid.UUID
+    #: Steigweg (Phase 6a.4) mit einem Uebergabepunkt auf ``floor_id``.
+    riser_id: uuid.UUID
+    riser_stop_id: uuid.UUID
     #: Benutzerverwaltung (Phase 4.2): ein weiteres Mitglied und eine offene
     #: Einladung je Betrieb.
     member_id: uuid.UUID
@@ -172,6 +177,22 @@ def two_tenants(
                 origin="user",
             )
             session.add(kopplung)
+            steigweg = ElectricalRiser(
+                organization_id=result.organization_id,
+                building_id=gebaeude.id,
+                name="Schacht Flur",
+                offset_mode="orthogonal",
+            )
+            session.add(steigweg)
+            session.flush()
+            halt = ElectricalRiserStop(
+                organization_id=result.organization_id,
+                riser_id=steigweg.id,
+                floor_id=geschoss.id,
+                x_mm=1_200,
+                y_mm=3_400,
+            )
+            session.add(halt)
             datei = FileRecord(
                 organization_id=result.organization_id,
                 project_id=projekt.id,
@@ -224,6 +245,8 @@ def two_tenants(
                     link_id=kopplung.id,
                     neighbour_room_id=nachbar.id,
                     neighbour_wall_id=nachbarwand.id,
+                    riser_id=steigweg.id,
+                    riser_stop_id=halt.id,
                     member_id=mitglied.id,
                     invitation_id=einladung.id,
                 )
@@ -328,6 +351,7 @@ def fremde_ids(tenant: Tenant) -> dict[str, str]:
         "wall_id": str(tenant.wall_id),
         "opening_id": str(tenant.opening_id),
         "link_id": str(tenant.link_id),
+        "riser_id": str(tenant.riser_id),
         "member_id": str(tenant.member_id),
         "invitation_id": str(tenant.invitation_id),
     }
@@ -940,6 +964,111 @@ def test_datenbank_verhindert_kopplung_ueber_mandantengrenzen(
                 wall_b_id=zweite,
                 relation="separate",
                 origin="user",
+            )
+        )
+        with pytest.raises(IntegrityError):
+            session.flush()
+    finally:
+        session.rollback()
+        session.close()
+
+
+# ------------------------------------------------------- Steigwege (Phase 6a.4)
+
+
+def test_fremder_steigweg_ist_unsichtbar_und_unveraenderlich(
+    api: TestClient, two_tenants: tuple[Tenant, Tenant]
+) -> None:
+    scholz, mueller = two_tenants
+    token = login(api, mueller.admin_email)
+    basis = "/api/v1/modules/electrical"
+    koerper = {"name": "Uebernommen", "offset_mode": "direct", "stops": []}
+
+    liste = api.get(f"{basis}/buildings/{scholz.building_id}/risers", headers=auth_headers(token))
+    anlegen = api.post(
+        f"{basis}/buildings/{scholz.building_id}/risers", headers=auth_headers(token), json=koerper
+    )
+    ersetzen = api.put(
+        f"{basis}/risers/{scholz.riser_id}",
+        headers={**auth_headers(token), "If-Match": "1"},
+        json=koerper,
+    )
+    loeschen = api.delete(
+        f"{basis}/risers/{scholz.riser_id}", headers={**auth_headers(token), "If-Match": "1"}
+    )
+    assert (liste.status_code, anlegen.status_code) == (404, 404)
+    assert (ersetzen.status_code, loeschen.status_code) == (404, 404)
+
+    # Ein fremdes Geschoss bzw. ein fremder Halt im eigenen Steigweg: 422, ohne
+    # zu verraten, ob es sie gibt.
+    fremdes_geschoss = api.put(
+        f"{basis}/risers/{mueller.riser_id}",
+        headers={**auth_headers(token), "If-Match": "1"},
+        json={
+            "name": "Schacht Flur",
+            "offset_mode": "orthogonal",
+            "stops": [{"floor_id": str(scholz.floor_id), "x_mm": 0, "y_mm": 0}],
+        },
+    )
+    assert fremdes_geschoss.status_code == 422
+    assert {e["code"] for e in fremdes_geschoss.json()["errors"]} == {"riser-stop-floor-unknown"}
+    fremder_halt = api.put(
+        f"{basis}/risers/{mueller.riser_id}",
+        headers={**auth_headers(token), "If-Match": "1"},
+        json={
+            "name": "Schacht Flur",
+            "offset_mode": "orthogonal",
+            "stops": [
+                {
+                    "id": str(scholz.riser_stop_id),
+                    "floor_id": str(mueller.floor_id),
+                    "x_mm": 0,
+                    "y_mm": 0,
+                }
+            ],
+        },
+    )
+    assert fremder_halt.status_code == 422
+    assert {e["code"] for e in fremder_halt.json()["errors"]} == {"riser-stop-unknown"}
+
+    eigene = api.get(f"{basis}/buildings/{mueller.building_id}/risers", headers=auth_headers(token))
+    assert eigene.status_code == 200
+    assert [r["id"] for r in eigene.json()["risers"]] == [str(mueller.riser_id)]
+    assert [s["id"] for s in eigene.json()["risers"][0]["stops"]] == [str(mueller.riser_stop_id)]
+    # Der fremde Steigweg ist unveraendert.
+    session_check = api.get(
+        f"{basis}/buildings/{scholz.building_id}/risers",
+        headers=auth_headers(login(api, scholz.admin_email)),
+    )
+    fremd = session_check.json()["risers"][0]
+    assert (fremd["name"], fremd["version"]) == ("Schacht Flur", 1)
+
+
+def test_datenbank_verhindert_steigweg_ueber_mandantengrenzen(
+    engine: Engine, two_tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Zusammengesetzte Fremdschluessel: Ein Halt kann nicht auf ein fremdes Geschoss zeigen."""
+    scholz, mueller = two_tenants
+    session = sessionmaker(bind=engine)()
+    try:
+        session.add(
+            ElectricalRiserStop(
+                organization_id=mueller.organization_id,
+                riser_id=mueller.riser_id,
+                floor_id=scholz.floor_id,
+                x_mm=0,
+                y_mm=0,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            session.flush()
+        session.rollback()
+        session.add(
+            ElectricalRiser(
+                organization_id=mueller.organization_id,
+                building_id=scholz.building_id,
+                name="Fremdgebaeude",
+                offset_mode="direct",
             )
         )
         with pytest.raises(IntegrityError):

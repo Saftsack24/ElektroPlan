@@ -218,10 +218,14 @@ Bestand lässt sich mit dem Befehl `wall-links-backfill` übernehmen (nur `share
 
 **Reichweite:** eine Wandzuordnung, keine allgemeine Bauwandverwaltung (ADR 0024 „Reichweite“).
 
-### `electrical_risers`, `electrical_riser_stops` — nur Schema (Phase 6a, ADR 0025)
+### `electrical_risers`, `electrical_riser_stops` (Phase 6a.4, ADR 0025)
 
-Steigweg je Gebäude und Übergabepunkt je Geschoss. Die Tabellen bestehen seit Migration `0010`;
-**API, Service, Oberfläche und Daten folgen erst mit 6a.4–6a.5 (NOT STARTED).**
+Steigweg je Gebäude (Name eindeutig im Gebäude, Notiz, `offset_mode`, versioniert) und
+höchstens ein Übergabepunkt je Geschoss (`x_mm`, `y_mm` auf Fertigfußbodenhöhe, stabile ID).
+Tabellen seit Migration `0010`; API, Service und Oberfläche seit 6a.4–6a.5. Verlauf und
+Längen werden nie gespeichert, sondern aus Halten und Höhenlagen abgeleitet
+(`riser_course.py`). Löschung über die Projektlöschung; Geschoss bzw. Gebäude mit Steigweg
+lassen sich nicht löschen (`409`).
 
 ### `electrical_distribution_boards`
 Verteilungen mit Code (`HV`, `UV1`, …), Standort und Hauptabsicherung.
@@ -483,6 +487,23 @@ Codes: `422` `wall-link-no-overlap`, `wall-link-ambiguous`, `wall-link-same-wall
 Kommandozeile (Betrieb): `python -m app.cli wall-links-backfill [--project PR-…] [--apply]` –
 Standard Probelauf; je Projekt eine Transaktion unter Projektsperre; Prüfsumme und
 Gerätebefunde vorher/nachher; `completed`/`archived` nur berichtet.
+
+### Ergänzt in Phase 6a.4 (ADR 0025)
+
+```
+GET    /buildings/{building_id}/risers     Steigwege mit Halten, Abschnitten, Längenstatus
+POST   /buildings/{building_id}/risers     {name, note?, offset_mode, stops[]}
+PUT    /risers/{riser_id}                  ganze Halteliste, If-Match (Steigwegversion)
+DELETE /risers/{riser_id}                  If-Match
+```
+
+Halte mit `id` behalten ID und Geschoss; Halte ohne `id` legt der Server an. Verlauf und
+Längen werden bei jedem Lesen aus den aktuellen Höhenlagen abgeleitet (`riser_course.py`),
+nie gespeichert. `length_mm` nur bei `status = confirmed`, sonst `known_length_mm` als
+Teilsumme. Codes: `422` `riser-stop-floor-unknown`, `riser-stop-floor-duplicate`,
+`riser-stop-unknown`, `riser-stop-id-duplicate`, `riser-stop-floor-changed`,
+`riser-name-taken`; `409` `version-conflict`, `project-completed`, `project-archived`. Kein
+Event. Rechte: `electrical.plan.read`/`.write`. Details: `docs/phase-6a-design.md` §10.5.
 
 ### Geplant (Phase 6)
 
@@ -919,6 +940,17 @@ Abschnittsliste mit Zuordnung, Öffnungen getrennter Wände nur auf der eigenen 
 (vereinfachte Darstellung); Seitenleiste und Hinweise nennen den Zustand. Raumlöschung in
 „Tabellen & Details“: Rückfrage mit der Zahl der Wandzuordnungen. Keine technischen IDs in der
 Bedienoberfläche.
+
+### Steigwege (Phase 6a.5) — umgesetzt
+
+Eigene Ansicht „Steigwege“ im Tab „Räume & Grundriss“ für das Gebäude des gewählten Geschosses:
+Liste, Bearbeitung (Name, Notiz, Versatzart, angebundene Geschosse, Maße in mm/cm/m),
+Abschnittstabelle mit Status und Summe bzw. ausdrücklicher Teilsumme, Grundriss mit
+Übergabepunktsymbol, Versatzlinie auf dem oberen Geschoss und durchquerten Geschossen, kleine
+3D-Vorschau (SVG, vier Blickrichtungen). Leere Geschosse haben eine bedienbare Standardfläche.
+Vorläufig (Höhenlage nicht bestätigt) = gestrichelt, widersprüchlich = strichpunktiert.
+Verlauf und Längen im Browser aus `steigweg/verlauf.ts` (Spiegel von `riser_course.py`,
+Fixture `steigweg.v1.json`). Eigener Entwurf mit Navigationsschutz – getrennt vom Raumentwurf.
 
 ### Ausdrücklich nicht in Phase 4a
 

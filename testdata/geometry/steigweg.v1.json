@@ -1,0 +1,258 @@
+{
+  "version": 1,
+  "beschreibung": "Verlauf und Laengen von Steigwegen (Phase 6a.4, ADR 0025). Backend (riser_course.py) und Frontend (steigweg/verlauf.ts) pruefen dieselben Faelle. Synthetische Werte, ganze Millimeter. Geschosse: id, ebene (level), hoehe (elevation_mm), bestaetigt (elevation_confirmed), decke (default_ceiling_height_mm).",
+  "faelle": [
+    {
+      "name": "3.4 orthogonal, alle Hoehen bestaetigt (KG negativ, EG 0)",
+      "versatz": "orthogonal",
+      "geschosse": [
+        { "id": "kg", "ebene": -1, "hoehe": -2800, "bestaetigt": true, "decke": 2500 },
+        { "id": "eg", "ebene": 0, "hoehe": 0, "bestaetigt": true, "decke": 2500 },
+        { "id": "og", "ebene": 1, "hoehe": 2900, "bestaetigt": true, "decke": 2500 }
+      ],
+      "halte": [
+        { "id": "h-og", "geschoss": "og", "x": 1650, "y": 3700 },
+        { "id": "h-kg", "geschoss": "kg", "x": 1200, "y": 3400 },
+        { "id": "h-eg", "geschoss": "eg", "x": 1200, "y": 3400 }
+      ],
+      "erwartet": {
+        "reihenfolge": ["h-kg", "h-eg", "h-og"],
+        "status": "confirmed",
+        "bekannt": 6450,
+        "laenge": 6450,
+        "abschnitte": [
+          {
+            "von": "h-kg", "bis": "h-eg", "durchquert": [], "status": "confirmed",
+            "verlauf": [[1200, 3400, -2800], [1200, 3400, 0]],
+            "senkrecht": 2800, "waagerecht": 0, "laenge": 2800, "hinweise": []
+          },
+          {
+            "von": "h-eg", "bis": "h-og", "durchquert": [], "status": "confirmed",
+            "verlauf": [[1200, 3400, 0], [1200, 3400, 2900], [1650, 3400, 2900], [1650, 3700, 2900]],
+            "senkrecht": 2900, "waagerecht": 750, "laenge": 3650, "hinweise": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "3.4 direct - eine waagerechte Gerade, einmal gerundet",
+      "versatz": "direct",
+      "geschosse": [
+        { "id": "kg", "ebene": -1, "hoehe": -2800, "bestaetigt": true, "decke": 2500 },
+        { "id": "eg", "ebene": 0, "hoehe": 0, "bestaetigt": true, "decke": 2500 },
+        { "id": "og", "ebene": 1, "hoehe": 2900, "bestaetigt": true, "decke": 2500 }
+      ],
+      "halte": [
+        { "id": "h-kg", "geschoss": "kg", "x": 1200, "y": 3400 },
+        { "id": "h-eg", "geschoss": "eg", "x": 1200, "y": 3400 },
+        { "id": "h-og", "geschoss": "og", "x": 1650, "y": 3700 }
+      ],
+      "erwartet": {
+        "reihenfolge": ["h-kg", "h-eg", "h-og"],
+        "status": "confirmed",
+        "bekannt": 6241,
+        "laenge": 6241,
+        "abschnitte": [
+          {
+            "von": "h-kg", "bis": "h-eg", "durchquert": [], "status": "confirmed",
+            "verlauf": [[1200, 3400, -2800], [1200, 3400, 0]],
+            "senkrecht": 2800, "waagerecht": 0, "laenge": 2800, "hinweise": []
+          },
+          {
+            "von": "h-eg", "bis": "h-og", "durchquert": [], "status": "confirmed",
+            "verlauf": [[1200, 3400, 0], [1200, 3400, 2900], [1650, 3700, 2900]],
+            "senkrecht": 2900, "waagerecht": 541, "laenge": 3441, "hinweise": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "OG-Hoehenlage unbestaetigt - nur Teilsumme",
+      "versatz": "orthogonal",
+      "geschosse": [
+        { "id": "kg", "ebene": -1, "hoehe": -2800, "bestaetigt": true, "decke": 2500 },
+        { "id": "eg", "ebene": 0, "hoehe": 0, "bestaetigt": true, "decke": 2500 },
+        { "id": "og", "ebene": 1, "hoehe": 2900, "bestaetigt": false, "decke": 2500 }
+      ],
+      "halte": [
+        { "id": "h-kg", "geschoss": "kg", "x": 1200, "y": 3400 },
+        { "id": "h-eg", "geschoss": "eg", "x": 1200, "y": 3400 },
+        { "id": "h-og", "geschoss": "og", "x": 1650, "y": 3700 }
+      ],
+      "erwartet": {
+        "reihenfolge": ["h-kg", "h-eg", "h-og"],
+        "status": "incomplete",
+        "bekannt": 3550,
+        "laenge": null,
+        "abschnitte": [
+          {
+            "von": "h-kg", "bis": "h-eg", "durchquert": [], "status": "confirmed",
+            "verlauf": [[1200, 3400, -2800], [1200, 3400, 0]],
+            "senkrecht": 2800, "waagerecht": 0, "laenge": 2800, "hinweise": []
+          },
+          {
+            "von": "h-eg", "bis": "h-og", "durchquert": [], "status": "elevation-unconfirmed",
+            "verlauf": [[1200, 3400, 0], [1200, 3400, 2900], [1650, 3400, 2900], [1650, 3700, 2900]],
+            "senkrecht": null, "waagerecht": 750, "laenge": null, "hinweise": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "Hoeheres Geschoss liegt tiefer - Konflikt",
+      "versatz": "orthogonal",
+      "geschosse": [
+        { "id": "eg", "ebene": 0, "hoehe": 0, "bestaetigt": true, "decke": 2500 },
+        { "id": "og", "ebene": 1, "hoehe": -300, "bestaetigt": true, "decke": 2500 }
+      ],
+      "halte": [
+        { "id": "h-eg", "geschoss": "eg", "x": 0, "y": 0 },
+        { "id": "h-og", "geschoss": "og", "x": 0, "y": 500 }
+      ],
+      "erwartet": {
+        "reihenfolge": ["h-eg", "h-og"],
+        "status": "conflict",
+        "bekannt": 500,
+        "laenge": null,
+        "abschnitte": [
+          {
+            "von": "h-eg", "bis": "h-og", "durchquert": [], "status": "elevation-inconsistent",
+            "verlauf": [[0, 0, 0], [0, 0, -300], [0, 500, -300]],
+            "senkrecht": null, "waagerecht": 500, "laenge": null, "hinweise": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "Gleiche bestaetigte Hoehenlage - Konflikt, Teilstrecken der Laenge 0 entfallen",
+      "versatz": "orthogonal",
+      "geschosse": [
+        { "id": "eg", "ebene": 0, "hoehe": 0, "bestaetigt": true, "decke": 2500 },
+        { "id": "og", "ebene": 1, "hoehe": 0, "bestaetigt": true, "decke": 2500 }
+      ],
+      "halte": [
+        { "id": "h-eg", "geschoss": "eg", "x": 0, "y": 0 },
+        { "id": "h-og", "geschoss": "og", "x": 1000, "y": 0 }
+      ],
+      "erwartet": {
+        "reihenfolge": ["h-eg", "h-og"],
+        "status": "conflict",
+        "bekannt": 1000,
+        "laenge": null,
+        "abschnitte": [
+          {
+            "von": "h-eg", "bis": "h-og", "durchquert": [], "status": "elevation-inconsistent",
+            "verlauf": [[0, 0, 0], [1000, 0, 0]],
+            "senkrecht": null, "waagerecht": 1000, "laenge": null, "hinweise": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "Geschossabstand kleiner als lichte Hoehe unten - nur Hinweis",
+      "versatz": "orthogonal",
+      "geschosse": [
+        { "id": "eg", "ebene": 0, "hoehe": 0, "bestaetigt": true, "decke": 2500 },
+        { "id": "og", "ebene": 1, "hoehe": 2200, "bestaetigt": true, "decke": 2500 }
+      ],
+      "halte": [
+        { "id": "h-eg", "geschoss": "eg", "x": 100, "y": 100 },
+        { "id": "h-og", "geschoss": "og", "x": 100, "y": 100 }
+      ],
+      "erwartet": {
+        "reihenfolge": ["h-eg", "h-og"],
+        "status": "confirmed",
+        "bekannt": 2200,
+        "laenge": 2200,
+        "abschnitte": [
+          {
+            "von": "h-eg", "bis": "h-og", "durchquert": [], "status": "confirmed",
+            "verlauf": [[100, 100, 0], [100, 100, 2200]],
+            "senkrecht": 2200, "waagerecht": 0, "laenge": 2200,
+            "hinweise": ["floor-gap-below-ceiling-height"]
+          }
+        ]
+      }
+    },
+    {
+      "name": "Ausgelassenes EG wird durchquert",
+      "versatz": "orthogonal",
+      "geschosse": [
+        { "id": "kg", "ebene": -1, "hoehe": -2800, "bestaetigt": true, "decke": 2500 },
+        { "id": "eg", "ebene": 0, "hoehe": 0, "bestaetigt": false, "decke": 2500 },
+        { "id": "og", "ebene": 1, "hoehe": 2900, "bestaetigt": true, "decke": 2500 }
+      ],
+      "halte": [
+        { "id": "h-kg", "geschoss": "kg", "x": 1200, "y": 3400 },
+        { "id": "h-og", "geschoss": "og", "x": 1650, "y": 3700 }
+      ],
+      "erwartet": {
+        "reihenfolge": ["h-kg", "h-og"],
+        "status": "confirmed",
+        "bekannt": 6450,
+        "laenge": 6450,
+        "abschnitte": [
+          {
+            "von": "h-kg", "bis": "h-og", "durchquert": ["eg"], "status": "confirmed",
+            "verlauf": [[1200, 3400, -2800], [1200, 3400, 2900], [1650, 3400, 2900], [1650, 3700, 2900]],
+            "senkrecht": 5700, "waagerecht": 750, "laenge": 6450, "hinweise": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "Direct mit kleinem Versatz - kaufmaennisch gerundet",
+      "versatz": "direct",
+      "geschosse": [
+        { "id": "eg", "ebene": 0, "hoehe": 0, "bestaetigt": true, "decke": 2500 },
+        { "id": "og", "ebene": 1, "hoehe": 3000, "bestaetigt": true, "decke": 2500 }
+      ],
+      "halte": [
+        { "id": "h-eg", "geschoss": "eg", "x": 0, "y": 0 },
+        { "id": "h-og", "geschoss": "og", "x": 5, "y": -5 }
+      ],
+      "erwartet": {
+        "reihenfolge": ["h-eg", "h-og"],
+        "status": "confirmed",
+        "bekannt": 3007,
+        "laenge": 3007,
+        "abschnitte": [
+          {
+            "von": "h-eg", "bis": "h-og", "durchquert": [], "status": "confirmed",
+            "verlauf": [[0, 0, 0], [0, 0, 3000], [5, -5, 3000]],
+            "senkrecht": 3000, "waagerecht": 7, "laenge": 3007, "hinweise": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "Ein einzelner Uebergabepunkt - noch kein Abschnitt",
+      "versatz": "orthogonal",
+      "geschosse": [
+        { "id": "eg", "ebene": 0, "hoehe": 0, "bestaetigt": true, "decke": 2500 },
+        { "id": "og", "ebene": 1, "hoehe": 2900, "bestaetigt": true, "decke": 2500 }
+      ],
+      "halte": [{ "id": "h-eg", "geschoss": "eg", "x": 0, "y": 0 }],
+      "erwartet": {
+        "reihenfolge": ["h-eg"],
+        "status": "single-stop",
+        "bekannt": 0,
+        "laenge": null,
+        "abschnitte": []
+      }
+    },
+    {
+      "name": "Ohne Uebergabepunkt",
+      "versatz": "direct",
+      "geschosse": [{ "id": "eg", "ebene": 0, "hoehe": 0, "bestaetigt": false, "decke": 2500 }],
+      "halte": [],
+      "erwartet": {
+        "reihenfolge": [],
+        "status": "no-stops",
+        "bekannt": 0,
+        "laenge": null,
+        "abschnitte": []
+      }
+    }
+  ]
+}

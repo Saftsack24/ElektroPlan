@@ -33,6 +33,7 @@ from app.modules.electrical.geometry import GeometryProblem, Point, segment_leng
 from app.modules.electrical.link_rules import LinkCandidate
 from app.modules.electrical.models import ElectricalOpening
 from app.modules.electrical.permissions import PLAN_READ, PLAN_WRITE
+from app.modules.electrical.risers import RiserService, RiserView, RiserWriteResult
 from app.modules.electrical.schemas import (
     DeviceOut,
     DeviceTypeOut,
@@ -41,6 +42,13 @@ from app.modules.electrical.schemas import (
     OpeningCreate,
     OpeningOut,
     OpeningUpdate,
+    RiserCoursePointOut,
+    RiserCreate,
+    RiserListOut,
+    RiserOut,
+    RiserSectionOut,
+    RiserStopOut,
+    RiserUpdate,
     RoomContourOut,
     RoomContourUpdate,
     RoomCreate,
@@ -859,3 +867,145 @@ def delete_wall_link(
         link_id, expected_version=expected_version
     )
     _commit_links(session=session, bus=bus, current_user=current_user, result=result)
+
+
+# ------------------------------------------------------------ Steigwege (6a.4)
+
+
+def _riser_out(view: RiserView) -> RiserOut:
+    riser = view.riser
+    analysis = view.analysis
+    return RiserOut(
+        id=riser.id,
+        building_id=riser.building_id,
+        name=riser.name,
+        note=riser.note,
+        # Die Datenbank laesst nur die bekannten Werte zu (CHECK).
+        offset_mode=cast(Literal["orthogonal", "direct"], riser.offset_mode),
+        stops=[
+            RiserStopOut(id=stop.stop_id, floor_id=stop.floor_id, x_mm=stop.x_mm, y_mm=stop.y_mm)
+            for stop in analysis.stops
+        ],
+        sections=[
+            RiserSectionOut(
+                lower_stop_id=section.lower.stop_id,
+                upper_stop_id=section.upper.stop_id,
+                lower_floor_id=section.lower.floor_id,
+                upper_floor_id=section.upper.floor_id,
+                traversed_floor_ids=list(section.traversed_floor_ids),
+                status=section.status.value,
+                course=[
+                    RiserCoursePointOut(x_mm=point.x_mm, y_mm=point.y_mm, z_mm=point.z_mm)
+                    for point in section.course
+                ],
+                vertical_mm=section.vertical_mm,
+                horizontal_mm=section.horizontal_mm,
+                length_mm=section.length_mm,
+                hints=[hint.value for hint in section.hints],
+            )
+            for section in analysis.sections
+        ],
+        status=analysis.status.value,
+        known_length_mm=analysis.known_length_mm,
+        length_mm=analysis.length_mm,
+        version=riser.version,
+        created_at=riser.created_at,
+        updated_at=riser.updated_at,
+    )
+
+
+def _commit_riser(*, session: Session, current_user: CurrentUser, result: RiserWriteResult) -> None:
+    """Schliesst die Transaktion. Steigwege senden kein Event (Entwurf §5)."""
+    if result.changed:
+        FloorPlanningAccess(session, current_user.organization_id).record_project_change(
+            result.context.project_id, actor_user_id=current_user.user_id
+        )
+    session.commit()
+
+
+@router.get(
+    "/buildings/{building_id}/risers",
+    response_model=RiserListOut,
+    operation_id="listElectricalRisers",
+    summary="Steigwege eines Gebaeudes",
+    responses=_READ_RESPONSES,
+)
+def list_risers(
+    building_id: uuid.UUID,
+    current_user: CurrentUser = Depends(require_permission(PLAN_READ)),
+    session: Session = Depends(get_session),
+) -> RiserListOut:
+    """Steigwege mit Halten, Verlauf je Abschnitt und Laengenstatus (ADR 0025).
+
+    Verlauf und Laengen werden bei jedem Lesen aus den aktuellen Hoehenlagen
+    abgeleitet. Vereinfachter Planungsverlauf - keine Aussage ueber bauliche
+    Machbarkeit, Brandschutz oder Normen.
+    """
+    _, views = RiserService(session, current_user.organization_id).overview(building_id)
+    return RiserListOut(building_id=building_id, risers=[_riser_out(view) for view in views])
+
+
+@router.post(
+    "/buildings/{building_id}/risers",
+    response_model=RiserOut,
+    status_code=status.HTTP_201_CREATED,
+    operation_id="createElectricalRiser",
+    summary="Steigweg anlegen",
+    responses=_CREATE_RESPONSES,
+)
+def create_riser(
+    building_id: uuid.UUID,
+    payload: RiserCreate,
+    current_user: CurrentUser = Depends(require_permission(PLAN_WRITE)),
+    session: Session = Depends(get_session),
+) -> RiserOut:
+    """Legt einen benannten Steigweg an - hoechstens ein Halt je Geschoss des Gebaeudes."""
+    view, result = RiserService(session, current_user.organization_id).create(building_id, payload)
+    _commit_riser(session=session, current_user=current_user, result=result)
+    return _riser_out(view)
+
+
+@router.put(
+    "/risers/{riser_id}",
+    response_model=RiserOut,
+    operation_id="replaceElectricalRiser",
+    summary="Steigweg ersetzen",
+    responses=_WRITE_RESPONSES,
+)
+def replace_riser(
+    riser_id: uuid.UUID,
+    payload: RiserUpdate,
+    current_user: CurrentUser = Depends(require_permission(PLAN_WRITE)),
+    session: Session = Depends(get_session),
+    expected_version: int = Depends(require_if_match),
+) -> RiserOut:
+    """Ersetzt Stammdaten und die ganze Halteliste; ``If-Match`` traegt die Steigwegversion.
+
+    Halte mit ``id`` behalten ihre ID, fehlende werden entfernt, Halte ohne
+    ``id`` neu angelegt.
+    """
+    view, result = RiserService(session, current_user.organization_id).replace(
+        riser_id, payload, expected_version=expected_version
+    )
+    _commit_riser(session=session, current_user=current_user, result=result)
+    return _riser_out(view)
+
+
+@router.delete(
+    "/risers/{riser_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="deleteElectricalRiser",
+    summary="Steigweg loeschen",
+    responses=_WRITE_RESPONSES,
+)
+def delete_riser(
+    riser_id: uuid.UUID,
+    current_user: CurrentUser = Depends(require_permission(PLAN_WRITE)),
+    session: Session = Depends(get_session),
+    expected_version: int = Depends(require_if_match),
+) -> None:
+    """Entfernt den Steigweg samt Uebergabepunkten."""
+    result = RiserService(session, current_user.organization_id).delete(
+        riser_id, expected_version=expected_version
+    )
+    _commit_riser(session=session, current_user=current_user, result=result)

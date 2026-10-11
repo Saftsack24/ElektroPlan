@@ -1,9 +1,10 @@
 # 0025 — Steigwege zwischen Geschossen und bestätigte Höhenlage (T4)
 
 Status: **accepted** (2026-10-06) – **Teil „bestätigte Höhenlage“ umgesetzt** (Phase 6a.0);
-**Teil „Steigwege“ architektonisch beschlossen, aber NICHT implementiert** (6a.4–6a.5
-NOT STARTED; nur die Tabellen sind in Migration `0010` als Schema-Vorbereitung angelegt)
-Datum: 2026-10-04 (Entwurf), 2026-10-06 (angenommen)
+**Teil „Steigwege“ umgesetzt** (Phase 6a.4–6a.5, 2026-10-11, technisch geprüft und
+committet; manuelle Gesamtprüfung nach Phase 6 offen). Keine zusätzliche Migration – die
+Tabellen aus `0010` genügen.
+Datum: 2026-10-04 (Entwurf), 2026-10-06 (angenommen), 2026-10-11 (Steigwege umgesetzt)
 Betrifft: Phase 6a (Vorbereitung Leitungsrouting) und eine kleine Core-Ergänzung
 Baut auf: [ADR 0007](0007-identifiers-and-geometry-units.md) (ganze Millimeter),
 [ADR 0013](0013-room-contour-as-ordered-wall-segments.md) (Rundungsregel),
@@ -34,12 +35,12 @@ eine fehlende Bestätigung nicht ersetzen.
 5. Die Projektstruktur zeigt neben jeder Höhenlage „Höhenlage bestätigt“ bzw. „nicht
    bestätigt“; Bearbeiten setzt das Häkchen bei geändertem Wert zurück.
 
-**Electrical – Steigwege (beschlossen, nicht implementiert)**
+**Electrical – Steigwege (umgesetzt in 6a.4–6a.5, Präzisierungen unten)**
 
 6. `electrical_risers` je Gebäude (Name eindeutig im Gebäude, `offset_mode = orthogonal | direct`)
    und `electrical_riser_stops` je Geschoss (`x_mm`, `y_mm`, höchstens ein Halt je Geschoss); FKs
-   zu Gebäude und Geschoss `RESTRICT`, Halte `CASCADE`. **Die Tabellen bestehen seit `0010`;
-   API, Service, Oberfläche und Daten fehlen bewusst.**
+   zu Gebäude und Geschoss `RESTRICT`, Halte `CASCADE`. Tabellen seit `0010`; API, Service
+   und Oberfläche seit 6a.4–6a.5.
 7. Halte nach `level` sortiert; ein Abschnitt je zwei aufeinanderfolgende Halte; ausgelassene
    Geschosse werden durchquert, ohne Anschluss.
 8. **Verlauf** (eine reine Funktion für Länge, 2D und 3D): senkrecht am **unteren** Übergabepunkt
@@ -74,5 +75,29 @@ eine fehlende Bestätigung nicht ersetzen.
   `alembic_version.version_num varchar(32)` und wurde vor jeder Anwendung gekürzt) und
   `0010_wall_links_and_risers` (Electrical, mit ADR 0024).
 * Bis zur Bestätigung haben Bestandsprojekte keine senkrechten Steigweglängen – gewollt, sichtbar.
-* Offen für 6a.4–6a.5: Steigweg-API, `riser_course`, Längenstatus, Löschteilnehmer,
-  `building_context()`, Oberfläche (Entwurf §8).
+* Umgesetzt mit 6a.4–6a.5: Steigweg-API, `riser_course`, Längenstatus, Löschteilnehmer,
+  `building_context()`/`writable_building_context()`/`building_ids_of_project()`, Oberfläche
+  (Entwurf §10.5).
+
+## Präzisierungen bei der Umsetzung (6a.4–6a.5)
+
+* **Stabile Halt-IDs:** `PUT /risers/{id}` ersetzt die ganze Halteliste; ein Halt mit `id`
+  muss zu diesem Steigweg gehören (`422 riser-stop-unknown`) und behält ID und Geschoss
+  (`422 riser-stop-floor-changed`); ohne `id` entsteht ein neuer Halt (Server-ID). Clients
+  erzeugen keine Halt-IDs.
+* **Gesamtstatus** zusätzlich zu `confirmed`/`incomplete`: `conflict` (mindestens ein Abschnitt
+  `elevation-inconsistent`), `single-stop`, `no-stops`. `length_mm` nur bei `confirmed`;
+  sonst ist `known_length_mm` ausdrücklich eine Teilsumme.
+* **Durchquerte Geschosse** beeinflussen weder Länge noch Status – maßgeblich sind nur die
+  Höhenlagen der beiden Halte eines Abschnitts.
+* **Plausibilitätshinweis** nur bei `confirmed` (Δz kleiner als die Standardhöhe des unteren
+  Haltgeschosses).
+* **Vorläufiger Verlauf:** Bei unbestätigter Höhenlage liefert der Server den Verlauf mit den
+  gespeicherten Werten, aber ohne senkrechte Länge; die Oberfläche zeichnet ihn gestrichelt in
+  Warnfarbe, widersprüchliche strichpunktiert in Fehlerfarbe.
+* **Projektlöschung** findet Steigwege über die Gebäude des Projekts (auch ohne Halt) und löscht
+  sie vor dem Core-Kaskadieren; die Inhaltsprüfung meldet `electrical.risers` und
+  `electrical.riser_stops`. Gebäude-/Geschosslöschung mit Steigweg bzw. Halt: vorhandenes `409`.
+* **3D:** kleine, eigens bezeichnete Vorschau (Parallelprojektion der Polylinien und
+  Geschossebenen, SVG) in der Steigwegverwaltung; die geschossbezogene 3D-Ansicht (ADR 0016)
+  bleibt unverändert.

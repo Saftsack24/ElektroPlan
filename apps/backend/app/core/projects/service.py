@@ -519,6 +519,18 @@ class ProjectService:
         )
         return tuple(self.session.execute(stmt).scalars().all())
 
+    def building_ids_of_project(self, project_id: uuid.UUID) -> tuple[uuid.UUID, ...]:
+        """Gebaeude-IDs eines Projekts - ohne Sperre, mandantengefiltert."""
+        stmt = (
+            select(Building.id)
+            .where(
+                Building.organization_id == self.organization_id,
+                Building.project_id == project_id,
+            )
+            .order_by(Building.id)
+        )
+        return tuple(self.session.execute(stmt).scalars().all())
+
     # -------------------------------------------------- Schreibschutz
 
     def lock_project(self, project_id: uuid.UUID) -> Project:

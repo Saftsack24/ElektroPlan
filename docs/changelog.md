@@ -5,6 +5,30 @@ Einträge entstehen nach relevanten Änderungen, nicht nach jedem Commit.
 
 ---
 
+## 2026-10-11 — Phase 6a.4–6a.5: Steigwege (technisch geprüft, committet)
+
+Keine Migration (Tabellen aus `0010`), kein Seed nötig. [ADR 0025](decisions/0025-risers-between-floors.md)
+vollständig umgesetzt; Details `phase-6a-design.md` §10.5.
+
+### Added
+
+- API `GET/POST /api/v1/modules/electrical/buildings/{building_id}/risers`,
+  `PUT/DELETE /api/v1/modules/electrical/risers/{riser_id}` (If-Match). Halte behalten ihre ID.
+  Verlauf je Abschnitt als 3D-Polylinie, Status `confirmed`/`elevation-unconfirmed`/
+  `elevation-inconsistent`, Gesamtstatus, `length_mm` nur bestätigt, sonst Teilsumme.
+- Core: `FloorPlanningAccess.building_context()`, `writable_building_context()`,
+  `building_ids_of_project()` (additiv).
+- Projektlöschung entfernt Steigwege; Inhaltsprüfung meldet `electrical.risers`,
+  `electrical.riser_stops`.
+- Oberfläche: Ansicht „Steigwege“ im Tab „Räume & Grundriss“ mit Grundriss, Maßfeldern,
+  Abschnittstabelle und 3D-Vorschau (vereinfacht).
+
+### Tests
+
+- Backend 1187 bestanden (0 übersprungen, vorher 1131), Frontend 965 bestanden (vorher 935) (`tasks.ps1 check` gegen PostgreSQL und MinIO).
+
+---
+
 ## 2026-10-10 — Review-Restbefunde: Refresh-Limiter, Sicherheitsupdates
 
 ### Betrieb (Task 0031)

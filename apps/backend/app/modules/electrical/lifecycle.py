@@ -10,8 +10,12 @@ keine Core-Tabelle selbst.
 * :meth:`ElectricalProjectContent.delete_project_content` loescht die Raeume;
   Waende, Oeffnungen, Geraete und (seit Phase 6a) Wandkopplungen folgen per
   ``ON DELETE CASCADE`` (Modelldefinition). Der Geraetekatalog ist global und
-  bleibt unberuehrt. Steigwege haben in Phase 6a.0-6a.3 noch keine Daten; ihre
-  Loeschung kommt mit 6a.4.
+  bleibt unberuehrt.
+* Seit Phase 6a.4 auch Steigwege (ADR 0025): Sie haengen am **Gebaeude** und
+  werden ueber ``building_ids_of_project`` gefunden - auch ein Steigweg ohne
+  Halt. Sie muessen **vor** dem Core-Kaskadieren weg, weil ihre Fremdschluessel
+  auf Gebaeude und Geschosse ``RESTRICT`` tragen; die Halte folgen per
+  ``CASCADE``.
 
 Beides laeuft in der Transaktion des Core, der die Projektzeile bereits
 gesperrt haelt. Hier wird nicht committet.
@@ -33,6 +37,8 @@ from app.core.projects.planning import FloorPlanningAccess
 from app.modules.electrical.models import (
     ElectricalDevice,
     ElectricalOpening,
+    ElectricalRiser,
+    ElectricalRiserStop,
     ElectricalRoom,
     ElectricalWall,
     ElectricalWallLink,
@@ -47,18 +53,20 @@ class ElectricalProjectContent:
     def describe_project_content(
         self, session: Session, request: ProjectContentRequest
     ) -> ProjectContentReport:
-        floor_ids = FloorPlanningAccess(session, request.organization_id).floor_ids_of_project(
-            request.project_id
+        access = FloorPlanningAccess(session, request.organization_id)
+        riser_items = _riser_items(
+            session, request, access.building_ids_of_project(request.project_id)
         )
+        floor_ids = access.floor_ids_of_project(request.project_id)
         if not floor_ids:
-            return ProjectContentReport(module_id=MODULE_ID, has_content=False)
+            return _report(riser_items)
 
         rooms = _rooms(request, floor_ids)
         room_count = int(
             session.execute(select(func.count()).select_from(rooms.subquery())).scalar_one()
         )
         if room_count == 0:
-            return ProjectContentReport(module_id=MODULE_ID, has_content=False)
+            return _report(riser_items)
         wall_count = int(
             session.execute(
                 select(func.count())
@@ -123,12 +131,23 @@ class ElectricalProjectContent:
             items.append(ProjectContentItem("electrical.devices", "Geräte", device_count))
         if link_count:
             items.append(ProjectContentItem("electrical.wall_links", "Wandzuordnungen", link_count))
-        return ProjectContentReport(module_id=MODULE_ID, has_content=True, items=tuple(items))
+        return _report([*items, *riser_items])
 
     def delete_project_content(self, session: Session, request: ProjectContentRequest) -> None:
-        floor_ids = FloorPlanningAccess(session, request.organization_id).floor_ids_of_project(
-            request.project_id
-        )
+        access = FloorPlanningAccess(session, request.organization_id)
+        building_ids = access.building_ids_of_project(request.project_id)
+        if building_ids:
+            # Steigwege zuerst: Ihre Fremdschluessel auf Gebaeude und Geschosse
+            # tragen RESTRICT. Die Halte folgen per CASCADE.
+            session.execute(
+                delete(ElectricalRiser)
+                .where(
+                    ElectricalRiser.organization_id == request.organization_id,
+                    ElectricalRiser.building_id.in_(building_ids),
+                )
+                .execution_options(synchronize_session=False)
+            )
+        floor_ids = access.floor_ids_of_project(request.project_id)
         if not floor_ids:
             return
         session.execute(
@@ -139,6 +158,45 @@ class ElectricalProjectContent:
             )
             .execution_options(synchronize_session=False)
         )
+
+
+def _report(items: list[ProjectContentItem]) -> ProjectContentReport:
+    return ProjectContentReport(module_id=MODULE_ID, has_content=bool(items), items=tuple(items))
+
+
+def _riser_items(
+    session: Session, request: ProjectContentRequest, building_ids: tuple[uuid.UUID, ...]
+) -> list[ProjectContentItem]:
+    """Steigwege und Uebergabepunkte des Projekts (Phase 6a.4)."""
+    if not building_ids:
+        return []
+    riser_ids = select(ElectricalRiser.id).where(
+        ElectricalRiser.organization_id == request.organization_id,
+        ElectricalRiser.building_id.in_(building_ids),
+    )
+    riser_count = int(
+        session.execute(select(func.count()).select_from(riser_ids.subquery())).scalar_one()
+    )
+    if riser_count == 0:
+        return []
+    stop_count = int(
+        session.execute(
+            select(func.count())
+            .select_from(ElectricalRiserStop)
+            .where(
+                ElectricalRiserStop.organization_id == request.organization_id,
+                ElectricalRiserStop.riser_id.in_(riser_ids),
+            )
+        ).scalar_one()
+    )
+    items = [ProjectContentItem("electrical.risers", "Steigwege", riser_count)]
+    if stop_count:
+        items.append(
+            ProjectContentItem(
+                "electrical.riser_stops", "Übergabepunkte von Steigwegen", stop_count
+            )
+        )
+    return items
 
 
 def _rooms(

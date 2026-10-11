@@ -239,6 +239,8 @@ def test_oeffentlicher_einstiegspunkt_exportiert_nur_den_descriptor() -> None:
         "module",
         "permissions",
         "reference_data",
+        "riser_course",
+        "risers",
         "schemas",
         "service",
         "topology",

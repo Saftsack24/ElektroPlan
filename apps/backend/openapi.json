@@ -5912,6 +5912,313 @@
         }
       }
     },
+    "/api/v1/modules/electrical/buildings/{building_id}/risers": {
+      "get": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Steigwege eines Gebaeudes",
+        "description": "Steigwege mit Halten, Verlauf je Abschnitt und Laengenstatus (ADR 0025).\n\nVerlauf und Laengen werden bei jedem Lesen aus den aktuellen Hoehenlagen\nabgeleitet. Vereinfachter Planungsverlauf - keine Aussage ueber bauliche\nMachbarkeit, Brandschutz oder Normen.",
+        "operationId": "listElectricalRisers",
+        "parameters": [
+          {
+            "name": "building_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Building Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiserListOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Steigweg anlegen",
+        "description": "Legt einen benannten Steigweg an - hoechstens ein Halt je Geschoss des Gebaeudes.",
+        "operationId": "createElectricalRiser",
+        "parameters": [
+          {
+            "name": "building_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Building Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiserCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiserOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Projekt ist archiviert oder abgeschlossen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules/electrical/risers/{riser_id}": {
+      "put": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Steigweg ersetzen",
+        "description": "Ersetzt Stammdaten und die ganze Halteliste; ``If-Match`` traegt die Steigwegversion.\n\nHalte mit ``id`` behalten ihre ID, fehlende werden entfernt, Halte ohne\n``id`` neu angelegt.",
+        "operationId": "replaceElectricalRiser",
+        "parameters": [
+          {
+            "name": "riser_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Riser Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RiserUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiserOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Steigweg loeschen",
+        "description": "Entfernt den Steigweg samt Uebergabepunkten.",
+        "operationId": "deleteElectricalRiser",
+        "parameters": [
+          {
+            "name": "riser_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Riser Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health/live": {
       "get": {
         "tags": [
@@ -9345,6 +9652,424 @@
         "type": "object",
         "title": "ProjectUpdate",
         "description": "Teilaenderung.\n\nWeder Projektnummer noch Status stehen hier: Die Nummer ist der Bezug\nbestehender Belege, und ein Statuswechsel hat Vorbedingungen und laeuft\nueber eigene Endpunkte (docs/api.md, Abschnitt 5)."
+      },
+      "RiserCoursePointOut": {
+        "properties": {
+          "x_mm": {
+            "type": "integer",
+            "title": "X Mm"
+          },
+          "y_mm": {
+            "type": "integer",
+            "title": "Y Mm"
+          },
+          "z_mm": {
+            "type": "integer",
+            "title": "Z Mm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "x_mm",
+          "y_mm",
+          "z_mm"
+        ],
+        "title": "RiserCoursePointOut",
+        "description": "Punkt des Verlaufs: Geschosskoordinaten, ``z`` = Hoehenlage ueber Gebaeudebezug."
+      },
+      "RiserCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "offset_mode": {
+            "type": "string",
+            "enum": [
+              "orthogonal",
+              "direct"
+            ],
+            "title": "Offset Mode"
+          },
+          "stops": {
+            "items": {
+              "$ref": "#/components/schemas/RiserStopIn"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Stops"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "offset_mode"
+        ],
+        "title": "RiserCreate",
+        "description": "Neuer Steigweg eines Gebaeudes."
+      },
+      "RiserListOut": {
+        "properties": {
+          "building_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Building Id"
+          },
+          "risers": {
+            "items": {
+              "$ref": "#/components/schemas/RiserOut"
+            },
+            "type": "array",
+            "title": "Risers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "building_id",
+          "risers"
+        ],
+        "title": "RiserListOut",
+        "description": "Alle Steigwege eines Gebaeudes, nach Name sortiert."
+      },
+      "RiserOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "building_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Building Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "offset_mode": {
+            "type": "string",
+            "enum": [
+              "orthogonal",
+              "direct"
+            ],
+            "title": "Offset Mode"
+          },
+          "stops": {
+            "items": {
+              "$ref": "#/components/schemas/RiserStopOut"
+            },
+            "type": "array",
+            "title": "Stops"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/RiserSectionOut"
+            },
+            "type": "array",
+            "title": "Sections"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "incomplete",
+              "conflict",
+              "single-stop",
+              "no-stops"
+            ],
+            "title": "Status"
+          },
+          "known_length_mm": {
+            "type": "integer",
+            "title": "Known Length Mm"
+          },
+          "length_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Length Mm"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "building_id",
+          "name",
+          "note",
+          "offset_mode",
+          "stops",
+          "sections",
+          "status",
+          "known_length_mm",
+          "length_mm",
+          "version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "RiserOut",
+        "description": "Steigweg samt Halten (nach Geschossebene), Abschnitten und Laengenstatus.\n\n``length_mm`` gibt es nur bei ``status = confirmed``. Sonst ist\n``known_length_mm`` ausdruecklich eine **Teilsumme** der bekannten Teile -\nnie die Leitungslaenge."
+      },
+      "RiserSectionOut": {
+        "properties": {
+          "lower_stop_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Lower Stop Id"
+          },
+          "upper_stop_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Upper Stop Id"
+          },
+          "lower_floor_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Lower Floor Id"
+          },
+          "upper_floor_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Upper Floor Id"
+          },
+          "traversed_floor_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Traversed Floor Ids"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "elevation-unconfirmed",
+              "elevation-inconsistent"
+            ],
+            "title": "Status"
+          },
+          "course": {
+            "items": {
+              "$ref": "#/components/schemas/RiserCoursePointOut"
+            },
+            "type": "array",
+            "title": "Course"
+          },
+          "vertical_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vertical Mm"
+          },
+          "horizontal_mm": {
+            "type": "integer",
+            "title": "Horizontal Mm"
+          },
+          "length_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Length Mm"
+          },
+          "hints": {
+            "items": {
+              "type": "string",
+              "const": "floor-gap-below-ceiling-height"
+            },
+            "type": "array",
+            "title": "Hints"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lower_stop_id",
+          "upper_stop_id",
+          "lower_floor_id",
+          "upper_floor_id",
+          "traversed_floor_ids",
+          "status",
+          "course",
+          "vertical_mm",
+          "horizontal_mm",
+          "length_mm",
+          "hints"
+        ],
+        "title": "RiserSectionOut",
+        "description": "Abschnitt zwischen zwei aufeinanderfolgenden Halten - vereinfachter Planungsverlauf.\n\n``course`` ist die einzige Quelle fuer Laenge und Darstellung. Bei\n``elevation-unconfirmed`` ist er **vorlaeufig** (gespeicherte, nicht\nbestaetigte Hoehenlagen) und ``vertical_mm``/``length_mm`` fehlen; bei\n``elevation-inconsistent`` ebenso. ``horizontal_mm`` ist immer bekannt.\nKeine Aussage ueber bauliche Machbarkeit, Brandschutz oder Normen."
+      },
+      "RiserStopIn": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "floor_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Floor Id"
+          },
+          "x_mm": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": -1000000.0,
+            "title": "X Mm"
+          },
+          "y_mm": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": -1000000.0,
+            "title": "Y Mm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "floor_id",
+          "x_mm",
+          "y_mm"
+        ],
+        "title": "RiserStopIn",
+        "description": "Uebergabepunkt eines Steigwegs auf einem Geschoss (ADR 0025).\n\n``id`` weglassen heisst: neuer Halt, der Server vergibt die ID. Eine\nangegebene ``id`` muss ein vorhandener Halt **dieses** Steigwegs sein; er\nbehaelt seine ID (spaetere Leitungswege verweisen darauf) und wechselt nie\ndas Geschoss. Lage in ganzen Millimetern, Geschosskoordinaten, auf Hoehe\ndes Fertigfussbodens."
+      },
+      "RiserStopOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "floor_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Floor Id"
+          },
+          "x_mm": {
+            "type": "integer",
+            "title": "X Mm"
+          },
+          "y_mm": {
+            "type": "integer",
+            "title": "Y Mm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "floor_id",
+          "x_mm",
+          "y_mm"
+        ],
+        "title": "RiserStopOut"
+      },
+      "RiserUpdate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "offset_mode": {
+            "type": "string",
+            "enum": [
+              "orthogonal",
+              "direct"
+            ],
+            "title": "Offset Mode"
+          },
+          "stops": {
+            "items": {
+              "$ref": "#/components/schemas/RiserStopIn"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Stops"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "offset_mode"
+        ],
+        "title": "RiserUpdate",
+        "description": "Steigweg vollstaendig ersetzen (``If-Match`` der Steigwegversion).\n\nHalte, die in ``stops`` fehlen, werden entfernt; Halte mit ``id`` behalten\nsie."
       },
       "RoleRef": {
         "properties": {

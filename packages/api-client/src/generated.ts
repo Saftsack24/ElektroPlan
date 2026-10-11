@@ -1444,6 +1444,61 @@ export interface paths {
         patch: operations["updateElectricalWallLink"];
         trace?: never;
     };
+    "/api/v1/modules/electrical/buildings/{building_id}/risers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Steigwege eines Gebaeudes
+         * @description Steigwege mit Halten, Verlauf je Abschnitt und Laengenstatus (ADR 0025).
+         *
+         *     Verlauf und Laengen werden bei jedem Lesen aus den aktuellen Hoehenlagen
+         *     abgeleitet. Vereinfachter Planungsverlauf - keine Aussage ueber bauliche
+         *     Machbarkeit, Brandschutz oder Normen.
+         */
+        get: operations["listElectricalRisers"];
+        put?: never;
+        /**
+         * Steigweg anlegen
+         * @description Legt einen benannten Steigweg an - hoechstens ein Halt je Geschoss des Gebaeudes.
+         */
+        post: operations["createElectricalRiser"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/modules/electrical/risers/{riser_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Steigweg ersetzen
+         * @description Ersetzt Stammdaten und die ganze Halteliste; ``If-Match`` traegt die Steigwegversion.
+         *
+         *     Halte mit ``id`` behalten ihre ID, fehlende werden entfernt, Halte ohne
+         *     ``id`` neu angelegt.
+         */
+        put: operations["replaceElectricalRiser"];
+        post?: never;
+        /**
+         * Steigweg loeschen
+         * @description Entfernt den Steigweg samt Uebergabepunkten.
+         */
+        delete: operations["deleteElectricalRiser"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health/live": {
         parameters: {
             query?: never;
@@ -2876,6 +2931,211 @@ export interface components {
             site_city?: string | null;
             /** Site Country Code */
             site_country_code?: string | null;
+        };
+        /**
+         * RiserCoursePointOut
+         * @description Punkt des Verlaufs: Geschosskoordinaten, ``z`` = Hoehenlage ueber Gebaeudebezug.
+         */
+        RiserCoursePointOut: {
+            /** X Mm */
+            x_mm: number;
+            /** Y Mm */
+            y_mm: number;
+            /** Z Mm */
+            z_mm: number;
+        };
+        /**
+         * RiserCreate
+         * @description Neuer Steigweg eines Gebaeudes.
+         */
+        RiserCreate: {
+            /** Name */
+            name: string;
+            /** Note */
+            note?: string | null;
+            /**
+             * Offset Mode
+             * @enum {string}
+             */
+            offset_mode: "orthogonal" | "direct";
+            /** Stops */
+            stops?: components["schemas"]["RiserStopIn"][];
+        };
+        /**
+         * RiserListOut
+         * @description Alle Steigwege eines Gebaeudes, nach Name sortiert.
+         */
+        RiserListOut: {
+            /**
+             * Building Id
+             * Format: uuid
+             */
+            building_id: string;
+            /** Risers */
+            risers: components["schemas"]["RiserOut"][];
+        };
+        /**
+         * RiserOut
+         * @description Steigweg samt Halten (nach Geschossebene), Abschnitten und Laengenstatus.
+         *
+         *     ``length_mm`` gibt es nur bei ``status = confirmed``. Sonst ist
+         *     ``known_length_mm`` ausdruecklich eine **Teilsumme** der bekannten Teile -
+         *     nie die Leitungslaenge.
+         */
+        RiserOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Building Id
+             * Format: uuid
+             */
+            building_id: string;
+            /** Name */
+            name: string;
+            /** Note */
+            note: string | null;
+            /**
+             * Offset Mode
+             * @enum {string}
+             */
+            offset_mode: "orthogonal" | "direct";
+            /** Stops */
+            stops: components["schemas"]["RiserStopOut"][];
+            /** Sections */
+            sections: components["schemas"]["RiserSectionOut"][];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "confirmed" | "incomplete" | "conflict" | "single-stop" | "no-stops";
+            /** Known Length Mm */
+            known_length_mm: number;
+            /** Length Mm */
+            length_mm: number | null;
+            /** Version */
+            version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * RiserSectionOut
+         * @description Abschnitt zwischen zwei aufeinanderfolgenden Halten - vereinfachter Planungsverlauf.
+         *
+         *     ``course`` ist die einzige Quelle fuer Laenge und Darstellung. Bei
+         *     ``elevation-unconfirmed`` ist er **vorlaeufig** (gespeicherte, nicht
+         *     bestaetigte Hoehenlagen) und ``vertical_mm``/``length_mm`` fehlen; bei
+         *     ``elevation-inconsistent`` ebenso. ``horizontal_mm`` ist immer bekannt.
+         *     Keine Aussage ueber bauliche Machbarkeit, Brandschutz oder Normen.
+         */
+        RiserSectionOut: {
+            /**
+             * Lower Stop Id
+             * Format: uuid
+             */
+            lower_stop_id: string;
+            /**
+             * Upper Stop Id
+             * Format: uuid
+             */
+            upper_stop_id: string;
+            /**
+             * Lower Floor Id
+             * Format: uuid
+             */
+            lower_floor_id: string;
+            /**
+             * Upper Floor Id
+             * Format: uuid
+             */
+            upper_floor_id: string;
+            /** Traversed Floor Ids */
+            traversed_floor_ids: string[];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "confirmed" | "elevation-unconfirmed" | "elevation-inconsistent";
+            /** Course */
+            course: components["schemas"]["RiserCoursePointOut"][];
+            /** Vertical Mm */
+            vertical_mm: number | null;
+            /** Horizontal Mm */
+            horizontal_mm: number;
+            /** Length Mm */
+            length_mm: number | null;
+            /** Hints */
+            hints: "floor-gap-below-ceiling-height"[];
+        };
+        /**
+         * RiserStopIn
+         * @description Uebergabepunkt eines Steigwegs auf einem Geschoss (ADR 0025).
+         *
+         *     ``id`` weglassen heisst: neuer Halt, der Server vergibt die ID. Eine
+         *     angegebene ``id`` muss ein vorhandener Halt **dieses** Steigwegs sein; er
+         *     behaelt seine ID (spaetere Leitungswege verweisen darauf) und wechselt nie
+         *     das Geschoss. Lage in ganzen Millimetern, Geschosskoordinaten, auf Hoehe
+         *     des Fertigfussbodens.
+         */
+        RiserStopIn: {
+            /** Id */
+            id?: string | null;
+            /**
+             * Floor Id
+             * Format: uuid
+             */
+            floor_id: string;
+            /** X Mm */
+            x_mm: number;
+            /** Y Mm */
+            y_mm: number;
+        };
+        /** RiserStopOut */
+        RiserStopOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Floor Id
+             * Format: uuid
+             */
+            floor_id: string;
+            /** X Mm */
+            x_mm: number;
+            /** Y Mm */
+            y_mm: number;
+        };
+        /**
+         * RiserUpdate
+         * @description Steigweg vollstaendig ersetzen (``If-Match`` der Steigwegversion).
+         *
+         *     Halte, die in ``stops`` fehlen, werden entfernt; Halte mit ``id`` behalten
+         *     sie.
+         */
+        RiserUpdate: {
+            /** Name */
+            name: string;
+            /** Note */
+            note?: string | null;
+            /**
+             * Offset Mode
+             * @enum {string}
+             */
+            offset_mode: "orthogonal" | "direct";
+            /** Stops */
+            stops?: components["schemas"]["RiserStopIn"][];
         };
         /**
          * RoleRef
@@ -7465,6 +7725,221 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["WallLinkOut"];
                 };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    listElectricalRisers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                building_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RiserListOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    createElectricalRiser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                building_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RiserCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RiserOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Projekt ist archiviert oder abgeschlossen */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    replaceElectricalRiser: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                riser_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RiserUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RiserOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    deleteElectricalRiser: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                riser_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Nicht gefunden */
             404: {

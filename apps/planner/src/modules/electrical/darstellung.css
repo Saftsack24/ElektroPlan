@@ -1,8 +1,8 @@
 /*
  * Fachliche Darstellungstokens der Elektroplanung (ADR 0018, Phase 4c.2).
  *
- * Geladen vom 2D-Editor (editor/Zeichenflaeche.tsx) und von der 3D-Ansicht
- * (ansicht3d/Ansicht3d.tsx). Hell auf :root, dunkel auf
+ * Geladen vom 2D-Editor (editor/Zeichenflaeche.tsx), von der 3D-Ansicht
+ * (ansicht3d/Ansicht3d.tsx) und von der Steigwegverwaltung (steigweg/). Hell auf :root, dunkel auf
  * `:root[data-theme="dark"]` - dasselbe Attribut wie die Core-Tokens, gesetzt
  * von `core/theme/darstellung.ts`.
  *
@@ -31,6 +31,8 @@
   /* Geräte (Phase 5): Symbole und Planungsmaß, akzentunabhängig */
   --ep-plan-device: #3a2f86;
   --ep-plan-device-face: #ece9fb;
+  /* Steigwege (Phase 6a.5): Übergabepunkt und bestätigter Verlauf, akzentunabhängig */
+  --ep-plan-riser: #0f6b5c;
 
   /* 3D */
   --ep-plan3d-background: #f4f6f8;
@@ -58,6 +60,7 @@
   --ep-plan-door: #f0a35a;
   --ep-plan-window: #6cb8ea;
   --ep-plan-device: #c9c0ff;
+  --ep-plan-riser: #6fd6c2;
   --ep-plan-device-face: #2e2a4d;
 
   --ep-plan3d-background: #1d232b;

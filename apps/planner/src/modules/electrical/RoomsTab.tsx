@@ -18,6 +18,8 @@ import type { Deckenziel } from "./editor/GrundrissEditor";
 import { planAbfrage, planSchluessel } from "./plan";
 import { RaumDetail } from "./RaumDetail";
 import { RaumDialog } from "./RaumDialog";
+import { Steigwege } from "./steigweg/Steigwege";
+import { STEIGWEG_MELDUNG } from "./steigweg/texte";
 import type { Raumwerte } from "./RaumDialog";
 import { KONTURZUSTAND_LABEL, RAUMTYP_LABEL, flaecheAnzeigen, raumtypAusWert } from "./texte";
 import { AKTION } from "../../core/ui/aktionssymbole";
@@ -30,15 +32,19 @@ type FloorOut = Schemas["FloorOut"];
 type Geschosswahl = {
   id: string;
   label: string;
+  name: string;
+  building_id: string;
+  building_name: string;
   default_ceiling_height_mm: number;
 };
 
-type Ansicht = "editor" | "3d" | "tabelle";
+type Ansicht = "editor" | "3d" | "tabelle" | "steigwege";
 
 const ANSICHTEN: readonly { wert: Ansicht; label: string }[] = [
   { wert: "editor", label: "2D-Editor" },
   { wert: "3d", label: "3D-Ansicht" },
   { wert: "tabelle", label: "Tabellen & Details" },
+  { wert: "steigwege", label: "Steigwege" },
 ];
 
 /** Zuletzt gewählte Ansicht - eine reine Bequemlichkeit je Browser. */
@@ -65,6 +71,11 @@ function ansichtMerken(ansicht: Ansicht) {
 const EDITOR_MELDUNG =
   "Im Grundrisseditor gibt es ungespeicherte Änderungen. Wenn Sie fortfahren, gehen sie verloren.";
 
+/** Ansichten mit eigenem, ungespeichertem Entwurf (2D-Editor, Steigwegverwaltung). */
+function hatEntwurf(ansicht: Ansicht): boolean {
+  return ansicht === "editor" || ansicht === "steigwege";
+}
+
 /**
  * Projekt-Tab „Räume & Grundriss" (Phase 3).
  *
@@ -80,6 +91,8 @@ const EDITOR_MELDUNG =
  *   liest denselben Plan-Eintrag wie der Editor und wird lazy geladen.
  * * „Tabellen & Details" - die formularbasierte Erfassung aus Phase 3. Sie
  *   bleibt präzise Alternative, barriereärmerer Weg und Diagnosehilfe.
+ * * „Steigwege" (Phase 6a.5, ADR 0025) - Steigwege des Gebäudes, zu dem das
+ *   gewählte Geschoss gehört. Eigener Entwurf, getrennt vom Raumentwurf.
  *
  * Alle lesen über React Query vom Server; nach jedem Schreibvorgang werden
  * die anderen Ansichten neu geladen. Einen zweiten, unabhängigen Datenstand
@@ -103,6 +116,8 @@ export default function RoomsTab() {
   const [startWandansicht, setStartWandansicht] = useState<Wandziel | null>(null);
   const [startDeckenansicht, setStartDeckenansicht] = useState<Deckenziel | null>(null);
   const [rueckkehr3d, setRueckkehr3d] = useState<Rueckkehr3d | null>(null);
+  // Woher die Steigwegverwaltung geöffnet wurde - für „Zurück zu …".
+  const [vorherigeAnsicht, setVorherigeAnsicht] = useState<Ansicht | null>(null);
   // Ungespeicherte Änderungen im Editor - für Geschoss- und Ansichtswechsel.
   const editorOffen = useRef(false);
   const ungespeichertMelden = useCallback((offen: boolean) => {
@@ -134,6 +149,9 @@ export default function RoomsTab() {
     return eintraege.map((geschoss) => ({
       id: geschoss.id,
       label: `${haus.name} · ${geschoss.name}`,
+      name: geschoss.name,
+      building_id: haus.id,
+      building_name: haus.name,
       default_ceiling_height_mm: geschoss.default_ceiling_height_mm,
     }));
   });
@@ -185,7 +203,8 @@ export default function RoomsTab() {
    */
   const editorVerlassen = async (titel: string, situation: string): Promise<boolean> => {
     if (!editorOffen.current) return true;
-    const antwort = await fragen(verwerfenOptionen(titel, situation, EDITOR_MELDUNG));
+    const meldung = ansicht === "steigwege" ? STEIGWEG_MELDUNG : EDITOR_MELDUNG;
+    const antwort = await fragen(verwerfenOptionen(titel, situation, meldung));
     if (antwort !== "bestaetigt") return false;
     editorOffen.current = false;
     return true;
@@ -194,9 +213,10 @@ export default function RoomsTab() {
   const ansichtWechseln = async (neu: Ansicht, optionen: { rueckkehr?: boolean } = {}) => {
     if (neu === ansicht) return;
     const ziel = ANSICHTEN.find((a) => a.wert === neu)?.label ?? neu;
-    if (ansicht === "editor" && !(await editorVerlassen("Ansicht wechseln?", `Sie wollen zur Ansicht „${ziel}“ wechseln.`))) {
+    if (hatEntwurf(ansicht) && !(await editorVerlassen("Ansicht wechseln?", `Sie wollen zur Ansicht „${ziel}“ wechseln.`))) {
       return;
     }
+    if (neu === "steigwege") setVorherigeAnsicht(ansicht);
     // Ein gewöhnlicher Ansichtswechsel vergisst den gemerkten 3D-Stand; nur der
     // Weg Wandansicht hin und zurück stellt ihn wieder her.
     if (optionen.rueckkehr !== true) setRueckkehr3d(null);
@@ -338,7 +358,14 @@ export default function RoomsTab() {
           label="Geschoss"
           value={aktivesGeschoss?.id ?? ""}
           onChange={(id) => {
-            const ziel = auswahl.find((eintrag) => eintrag.id === id)?.label ?? "";
+            const zielEintrag = auswahl.find((eintrag) => eintrag.id === id);
+            const ziel = zielEintrag?.label ?? "";
+            // In der Steigwegverwaltung bleibt der Entwurf beim Wechsel innerhalb
+            // desselben Gebäudes erhalten - nur das Grundrissgeschoss wechselt.
+            if (ansicht === "steigwege" && zielEintrag?.building_id === aktivesGeschoss?.building_id) {
+              setGeschossId(id);
+              return;
+            }
             void editorVerlassen("Geschoss wechseln?", `Sie wollen zum Geschoss „${ziel}“ wechseln.`).then((weiter) => {
               if (!weiter) return;
               setGeschossId(id);
@@ -489,6 +516,28 @@ export default function RoomsTab() {
               setStartDeckenansicht({ ...ziel, herkunft: "3d" });
               void ansichtWechseln("editor", { rueckkehr: true });
             }}
+          />
+        </section>
+      )}
+
+      {ansicht === "steigwege" && aktivesGeschoss !== undefined && (
+        <section className={karte("kompakt")}>
+          <Steigwege
+            key={aktivesGeschoss.building_id}
+            buildingId={aktivesGeschoss.building_id}
+            buildingName={aktivesGeschoss.building_name}
+            aktivesGeschossId={aktivesGeschoss.id}
+            onGeschoss={setGeschossId}
+            darfSchreiben={darfSchreiben}
+            onUngespeichert={ungespeichertMelden}
+            zurueck={
+              vorherigeAnsicht === null || vorherigeAnsicht === "steigwege"
+                ? undefined
+                : {
+                    label: `Zurück zu „${ANSICHTEN.find((a) => a.wert === vorherigeAnsicht)?.label ?? ""}“`,
+                    onClick: () => void ansichtWechseln(vorherigeAnsicht),
+                  }
+            }
           />
         </section>
       )}

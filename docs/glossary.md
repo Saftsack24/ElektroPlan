@@ -57,7 +57,7 @@ Dokumentation und Oberfläche auf Deutsch, Code und API auf Englisch.
 | Außenseite ohne modellierten Nachbarraum | Abschnittszustand `no-partner` | äußere Seite einer Raumwand ohne anderen Raum auf derselben Linie; keine gesicherte Fassade |
 | Vorschlag (Kandidat) | `wall_link_candidate` | ungekoppeltes, exakt überlappendes Wandpaar mit Einordnung `suggested`, `decision-needed` oder `not-linkable`; wird nie automatisch gekoppelt |
 | Bestandsübernahme (Backfill) | `wall-links-backfill`, `origin = backfill` | Befehl, der eindeutige Bestandsfälle als gemeinsame Bauwand anlegt; Standard Probelauf |
-| Steigweg / Übergabepunkt | `riser` / `riser_stop` | ausdrücklich angelegter Geschossübergang je Gebäude bzw. sein Punkt je Geschoss (ADR 0025); **noch nicht umgesetzt** (6a.4) |
+| Steigweg / Übergabepunkt | `riser` / `riser_stop` | ausdrücklich angelegter Geschossübergang je Gebäude bzw. sein Punkt je Geschoss auf Fertigfußbodenhöhe (ADR 0025); seit 6a.4–6a.5 |
 | Standard-Geschosshöhe | `default_ceiling_height_mm` | lichte Höhe in Millimetern |
 | Protokolleintrag | `audit_entry` | |
 | Statusgruppe | `status_group`: `current`, `closed` | Listenfilter: laufend (Entwurf + in Bearbeitung) bzw. abgeschlossen + archiviert |

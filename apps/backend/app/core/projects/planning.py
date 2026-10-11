@@ -64,6 +64,25 @@ class FloorPlanningContext:
     elevation_confirmed: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class BuildingPlanningContext:
+    """Was ein Fachmodul ueber ein Gebaeude wissen darf (Phase 6a.4, ADR 0025).
+
+    Fuer gebaeudebezogene Planungsdaten wie Steigwege. ``floors`` sind alle
+    Geschosse des Gebaeudes, nach ``level`` aufsteigend sortiert - jeweils als
+    :class:`FloorPlanningContext`, damit Hoehenlage und Bestaetigung genau so
+    ankommen wie beim einzelnen Geschoss.
+    """
+
+    organization_id: uuid.UUID
+    project_id: uuid.UUID
+    project_number: str
+    project_status: str
+    building_id: uuid.UUID
+    building_name: str
+    floors: tuple[FloorPlanningContext, ...]
+
+
 class FloorPlanningAccess:
     """Zugang zum Geschosskontext fuer ein Fachmodul.
 
@@ -130,6 +149,66 @@ class FloorPlanningAccess:
         # Werte des Geschosses werden neu gelesen.
         self._projects.session.refresh(self._projects.floors.get_or_404(floor_id))
         return self.context(floor_id)
+
+    def building_context(self, building_id: uuid.UUID) -> BuildingPlanningContext:
+        """Loest ein Gebaeude samt Geschossen auf, **ohne** zu sperren (ADR 0025).
+
+        Fremd oder unbekannt: ``404``. Fuer lesende Zugriffe. Die Kette
+        ``Gebaeude -> Projekt`` ist unveraenderlich wie die eines Geschosses
+        (siehe :meth:`context`).
+        """
+        building = self._projects.buildings.get_or_404(building_id)
+        project = self._projects.get(building.project_id)
+        floors = tuple(
+            FloorPlanningContext(
+                organization_id=self._organization_id,
+                project_id=project.id,
+                project_number=project.project_number,
+                project_status=project.status,
+                building_id=building.id,
+                floor_id=floor.id,
+                floor_name=floor.name,
+                level=floor.level,
+                elevation_mm=floor.elevation_mm,
+                default_ceiling_height_mm=floor.default_ceiling_height_mm,
+                elevation_confirmed=floor.elevation_confirmed,
+            )
+            for floor in self._projects.list_floors(building.id)
+        )
+        return BuildingPlanningContext(
+            organization_id=self._organization_id,
+            project_id=project.id,
+            project_number=project.project_number,
+            project_status=project.status,
+            building_id=building.id,
+            building_name=building.name,
+            floors=floors,
+        )
+
+    def writable_building_context(self, building_id: uuid.UUID) -> BuildingPlanningContext:
+        """Wie :meth:`building_context`, **sperrt** aber zuerst die Projektzeile.
+
+        Danach werden Gebaeude und Geschosse frisch gelesen: Eine gleichzeitig
+        committete Aenderung von Hoehenlage, Bestaetigung oder Geschossebene
+        (``update_floor`` sperrt dieselbe Projektzeile) ist dann sichtbar, und
+        ein in der Zwischenzeit angelegtes oder geloeschtes Geschoss ebenso.
+        ``409 project-archived`` bzw. ``project-completed`` wie bei
+        :meth:`writable_context`.
+        """
+        building = self._projects.buildings.get_or_404(building_id)
+        self._projects.lock_writable(building.project_id)
+        self._projects.session.refresh(building)
+        for floor in self._projects.list_floors(building.id):
+            self._projects.session.refresh(floor)
+        return self.building_context(building_id)
+
+    def building_ids_of_project(self, project_id: uuid.UUID) -> tuple[uuid.UUID, ...]:
+        """Alle Gebaeude eines Projekts dieses Mandanten - fuer das Loeschprotokoll.
+
+        Wie :meth:`floor_ids_of_project`, fuer gebaeudebezogene Planungsdaten
+        (Steigwege, ADR 0025). Sperrt nichts.
+        """
+        return self._projects.building_ids_of_project(project_id)
 
     def record_project_change(self, project_id: uuid.UUID, *, actor_user_id: uuid.UUID) -> None:
         """Vermerkt eine Aenderung an Planungsdaten am Projekt (Phase 4d).

@@ -1,7 +1,7 @@
 # Aktueller Projektstand
 
-**Letzte Aktualisierung:** 2026-10-10
-**Aktualisiert nach:** Checkpoint-Commit Phase 6a.0–6a.3 mit Sicherheitskorrekturen und Abhängigkeitsupdates (Tasks 0027–0032; technisch umgesetzt und geprüft, manuelle Gesamtprüfung nach Phase 6 offen). Davor: Task 0031 — eigener lokaler JWT-Schlüssel aktiv (Entwicklungsersatz nicht mehr verwendet). Davor: Task 0030 — geprüften Stand im Docker-Entwicklungsstack aktiviert (Images neu gebaut, Updates aktiv). Davor: Task 0029 — Review-Restbefunde (Refresh-Limiter, Sicherheitsupdates, `127.0.0.1`), nicht committet. Davor: Task 0028 — Sicherheitsauftrag (sechs Befunde, getrennt von Phase 6a), umgesetzt und automatisiert geprüft, **nicht committet, keine manuelle Abnahme**. Davor: Task 0027 — Phase 6a.0–6a.3 (bestätigte Höhenlage, Wandkopplungen, Darstellung und Bedienung, Backfill-Befehl) umgesetzt, **wartet auf Abnahme, nicht committet**. Davor: Task 0026 — Entwurf Phase 6a; Task 0025 — Phase 5 als `fb4cc85` committet
+**Letzte Aktualisierung:** 2026-10-11
+**Aktualisiert nach:** Task 0034 — Checkpoint-Commit Phase 6a.4–6a.5 (Steigwege). Davor: Task 0033 — Checkpoint `595e8ac` gepusht; Phase 6a.4–6a.5 umgesetzt und automatisiert geprüft. Davor: Checkpoint-Commit Phase 6a.0–6a.3 mit Sicherheitskorrekturen und Abhängigkeitsupdates (Tasks 0027–0032; technisch umgesetzt und geprüft, manuelle Gesamtprüfung nach Phase 6 offen). Davor: Task 0031 — eigener lokaler JWT-Schlüssel aktiv (Entwicklungsersatz nicht mehr verwendet). Davor: Task 0030 — geprüften Stand im Docker-Entwicklungsstack aktiviert (Images neu gebaut, Updates aktiv). Davor: Task 0029 — Review-Restbefunde (Refresh-Limiter, Sicherheitsupdates, `127.0.0.1`), nicht committet. Davor: Task 0028 — Sicherheitsauftrag (sechs Befunde, getrennt von Phase 6a), umgesetzt und automatisiert geprüft, **nicht committet, keine manuelle Abnahme**. Davor: Task 0027 — Phase 6a.0–6a.3 (bestätigte Höhenlage, Wandkopplungen, Darstellung und Bedienung, Backfill-Befehl) umgesetzt, **wartet auf Abnahme, nicht committet**. Davor: Task 0026 — Entwurf Phase 6a; Task 0025 — Phase 5 als `fb4cc85` committet
 
 > Dieses Dokument soll einer neuen Session in wenigen Minuten vermitteln, wo das Projekt
 > steht.
@@ -56,7 +56,10 @@ Auftraggeber erfolgt nach Phase 6 und ist offen** ([`phase-6a-design.md`](phase-
 **Sicherheitskorrekturen und Abhängigkeitsupdates 2026-10-10 (Tasks 0028–0032): TECHNISCH
 UMGESETZT UND GEPRÜFT** — im selben Checkpoint committet; keine manuelle Abnahme, **keine
 Produktions- oder Echtdatenfreigabe**; Befundstatus [`security.md`](security.md) §19
-**Phase 6a.4–6a.5 — Steigwege: NOT STARTED** · **Phase 6b und übriges Phase 6: NOT STARTED**
+**Phase 6a.4–6a.5 — Steigwege: TECHNISCH UMGESETZT UND GEPRÜFT** — mit dem Checkpoint vom
+2026-10-11 committet (Task 0034); manuelle Gesamtprüfung durch den Auftraggeber nach Phase 6 offen
+([`phase-6a-design.md`](phase-6a-design.md) §10.5, ADR 0025)
+**Phase 6 insgesamt: BEGONNEN, NICHT ABGESCHLOSSEN** · **Phase 6b: NOT STARTED**
 
 > Phase 4a und 4a.1 sind als `887f254`, Phase 4.2 als `66cbff3` committet. Die
 > Entscheidungen **T8** (Wandhöhe und Wandtyp) und **T9** (deckungsgleiche Wände) sind
@@ -66,6 +69,31 @@ Produktions- oder Echtdatenfreigabe**; Befundstatus [`security.md`](security.md)
 ---
 
 ## 2. Zuletzt abgeschlossene Aufgabe
+
+**Task 0033 (2026-10-11) — Checkpoint gepusht, Phase 6a.4–6a.5 Steigwege.** Checkpoint
+`595e8ac` regulär nach `origin/main` gepusht (Fast-Forward `fb4cc85..595e8ac`). Danach
+Steigwege umgesetzt: Core-Zugang `building_context`/`writable_building_context`/
+`building_ids_of_project`, reine Verlaufsfunktion `riser_course.py` mit Spiegel
+`steigweg/verlauf.ts` und gemeinsamer Fixture, Service und API (`/buildings/{id}/risers`,
+`/risers/{id}`), Löschteilnehmer, Ansicht „Steigwege“ mit Grundriss und 3D-Vorschau. Keine
+Migration (Head `0011`). Prüflauf `tasks.ps1 check` gegen PostgreSQL und MinIO: Backend
+1187 bestanden (0 übersprungen, vorher 1131), Frontend 965 bestanden (vorher 935). Browser: Hauptablauf (Ansicht öffnen, Steigweg anlegen, Punkt
+per Mausklick setzen, Geschoss anbinden, Lage übernehmen, Maß eingeben, Teilsumme, Speichern)
+im Entwicklungsstack geprüft; Ziehen, Theme-Sichtprüfung, schmale Breite im Bild und
+Höhenbestätigung über die Oberfläche **nicht** sichtbar prüfbar (Browserbereich ausgeblendet).
+Im synthetischen Projekt „Sichtprüfung 6a (synthetisch)“ liegt der Prüf-Steigweg
+„Pruefschacht synthetisch“. Manuelle Gesamtprüfung nach Phase 6 offen.
+
+**Offene Punkte aus Task 0033:**
+* Sichtprüfung im sichtbaren Browser: Ziehen des Symbols, Hell/Dunkel, schmale Breite,
+  3D-Vorschau als Bild, Bestätigen einer Höhenlage im Strukturtab und Rückkehr.
+* Steigwege erscheinen nicht im Raum-Grundrisseditor und nicht in der geschossbezogenen
+  3D-Ansicht (bewusst eigene Ansicht); eine Einblendung dort wäre eine spätere Entscheidung.
+* Die fachneutrale Core-Meldung beim Löschen eines Gebäudes mit Steigweg spricht von
+  „Planungsdaten an einem Geschoss“ – sachlich ungenau, aber neutral; ggf. später anpassen.
+
+---
+
 
 **Checkpoint 2026-10-11 (Task 0032):** Phase 6a.0–6a.3, Sicherheitskorrekturen und kontrollierte
 Abhängigkeitsupdates gemeinsam committet (nicht gepusht). Grundlage: unabhängig bestätigte 1131
@@ -1195,7 +1223,7 @@ Bezeichnungen, keine automatische Zuordnung, keine Vorlagen.
 gruppiert, nur bei exakt gleichen Endpunkten, keine Migration.
 | T2 | PDF-Erzeugung: WeasyPrint (Empfehlung) oder ReportLab | Phase 10 |
 | T3 | Kleinmaterial: eigenes Material oder prozentualer Zuschlag | Phase 8 |
-| T4 | Mehrgeschossige Steigezonen: **architektonisch beschlossen** (Steigwege, [ADR 0025](decisions/0025-risers-between-floors.md)), Tabellen in `0010`; **nicht implementiert** (6a.4–6a.5 NOT STARTED). Bestätigte Höhenlage als Voraussetzung umgesetzt | 6a.4 |
+| ~~T4~~ | Mehrgeschossige Steigezonen: **entschieden und umgesetzt** (Steigwege, [ADR 0025](decisions/0025-risers-between-floors.md); 6a.0 Höhenlage, 6a.4–6a.5 Steigwege) – manuelle Gesamtprüfung nach Phase 6 offen | erledigt |
 | T5 | Reservierungsstrategie bei mehreren Lagerorten | Phase 12 |
 | F1 | Verschnittzuschläge je Materialgruppe, reale Ringgrößen | Phase 7 |
 | F2 | 20–30 reale ServiceTemplates mit Zeiten | Phase 8 |
@@ -1285,7 +1313,8 @@ Keine Implementierung, keine Migration begonnen. Befund dabei: `floors.elevation
 bestätigte Höhenlage als Core-Spalte, definierter Steigwegverlauf, Reichweite des Paarmodells;
 verbliebene Entscheidungen D1–D12 (Entwurf §7.5).
 
-**Nach Phase 5 (Stand 2026-10-04):** Phase 5 ist abgeschlossen, vom Auftraggeber manuell
+**Nach Phase 5 (Stand 2026-10-04, historisch – überholt: Phase 6 ist inzwischen begonnen,
+T10 und T4 sind entschieden und umgesetzt):** Phase 5 ist abgeschlossen, vom Auftraggeber manuell
 abgenommen und mit diesem Checkpoint committet (nicht gepusht). Nach dem Aktualisieren anderer
 Umgebungen: Migration `0008`, dann **zwingend** Seed (Gerätekatalog). Phase 6 ist **nicht
 begonnen** und erst nach ausdrücklicher Freigabe; davor zu klären: T10 (physische
