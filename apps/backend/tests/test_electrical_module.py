@@ -36,7 +36,7 @@ from app.core.module_registry.registry import ModuleRegistry
 from app.model_registry import metadata
 from app.modules import REGISTERED_MODULES
 from app.modules.electrical import DESCRIPTOR
-from app.modules.electrical.permissions import PLAN_READ, PLAN_WRITE
+from app.modules.electrical.permissions import CIRCUIT_WRITE, PLAN_READ, PLAN_WRITE
 from tests.routes import all_routes
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -230,6 +230,7 @@ def test_oeffentlicher_einstiegspunkt_exportiert_nur_den_descriptor() -> None:
         "catalog",
         "device_rules",
         "devices",
+        "distribution",
         "events",
         "floor_height",
         "geometry",
@@ -274,10 +275,14 @@ def test_tabellen_tragen_das_modulpraefix(registry: ModuleRegistry) -> None:
         "electrical_openings",
         "electrical_device_types",
         "electrical_devices",
-        # Phase 6a: Wandkopplungen; Steigwege nur als Schema-Vorbereitung.
+        # Phase 6a: Wandkopplungen und Steigwege.
         "electrical_wall_links",
         "electrical_risers",
         "electrical_riser_stops",
+        # Phase 6b.0: Verteilungen, Stromkreise, Geraetezuordnung.
+        "electrical_distribution_boards",
+        "electrical_circuits",
+        "electrical_circuit_devices",
     }
     for name in eigene:
         assert name.startswith(DESCRIPTOR.table_prefix)
@@ -300,7 +305,7 @@ def test_verweis_auf_floors_ist_mandantensicher() -> None:
 
 
 def test_permissions_liegen_im_eigenen_namensraum() -> None:
-    assert DESCRIPTOR.permission_keys == (PLAN_READ, PLAN_WRITE)
+    assert DESCRIPTOR.permission_keys == (PLAN_READ, PLAN_WRITE, CIRCUIT_WRITE)
     for key in DESCRIPTOR.permission_keys:
         assert key.startswith("electrical.")
 

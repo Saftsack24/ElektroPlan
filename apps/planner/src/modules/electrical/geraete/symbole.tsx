@@ -121,6 +121,19 @@ const ZEICHNUNGEN: Record<string, () => ReactNode> = {
       <Netzwerkdose cx={17} b={9} />
     </>
   ),
+  // Phase 6b.0: Verteilung als Kasten mit Sammelschiene, Abzweigdose als Dose mit Punkt.
+  distribution_board: () => (
+    <>
+      <rect x={4} y={3} width={16} height={18} rx={1.5} {...LINIE} />
+      <path d="M7 8H17M9 8V16M12 8V16M15 8V16" {...LINIE} strokeWidth={1.3} />
+    </>
+  ),
+  junction_box: () => (
+    <>
+      <circle cx={12} cy={12} r={6.5} {...LINIE} />
+      <circle cx={12} cy={12} r={2} {...FLAECHE} />
+    </>
+  ),
 };
 
 /** Rückfall je Kategorie für einen unbekannten Symbolschlüssel. */
@@ -129,6 +142,8 @@ const KATEGORIE_ZEICHNUNG: Record<Geraetekategorie, string> = {
   switch: "switch_single",
   light: "light_ceiling",
   data: "data_single",
+  distribution: "distribution_board",
+  junction: "junction_box",
 };
 
 function zeichnung(symbolKey: string, kategorie: Geraetekategorie | undefined): ReactNode {

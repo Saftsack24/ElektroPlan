@@ -19,11 +19,31 @@ const KATALOG = [
   "light_outdoor",
   "data_single",
   "data_double",
+  // Phase 6b.0/6b.1 (ADR 0026)
+  "distribution_board",
+  "junction_box",
 ];
 
 describe("Planungssymbole (T1)", () => {
   it("jeder ausgelieferte Gerätetyp hat ein eigenes Symbol", () => {
     expect(KATALOG.filter((k) => !SYMBOLSCHLUESSEL.includes(k))).toEqual([]);
+  });
+
+  it("Verteilung und Abzweigdose: eigene Symbole, nur in Textfarbe (hell/dunkel über das Theme)", () => {
+    for (const [symbol_key, category] of [
+      ["distribution_board", "distribution"],
+      ["junction_box", "junction"],
+    ] as const) {
+      const { container, unmount } = render(<Geraetesymbol typ={{ symbol_key, category }} />);
+      const html = container.innerHTML;
+      expect(container.querySelector("svg *")).not.toBeNull();
+      expect(html).toContain("currentColor");
+      expect(html).not.toMatch(/#[0-9a-f]{3,6}|rgb\(/i);
+      unmount();
+    }
+    // Rückfall je neuer Kategorie.
+    const { container } = render(<Geraetesymbol typ={{ symbol_key: "unbekannt", category: "junction" }} />);
+    expect(container.querySelector("svg circle")).not.toBeNull();
   });
 
   it("unbekannter Schlüssel fällt auf das Symbol der Kategorie zurück, nichts von außen", () => {

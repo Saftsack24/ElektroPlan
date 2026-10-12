@@ -19,6 +19,13 @@ import { geraetebefunde } from "../geraete/geraetepruefung";
 import type { PruefGeraet, PruefRaum } from "../geraete/geraetepruefung";
 import { geraetEntfernen, pruefmass } from "../geraete/geraeteentwurf";
 import { geraetName, katalogAbfrage, typenNachSchluessel } from "../geraete/katalog";
+import {
+  kreisBezeichnung,
+  stromkreiseAbfrage,
+  stromkreiseSchluessel,
+  verteilungenAbfrage,
+  zuordnungNachGeraet,
+} from "../stromkreise/daten";
 import { STANDARD_RASTER_MM } from "./fang";
 import { konturbericht, oeffnungsBefunde, oeffnungsHoehenBefunde, streckenlaenge } from "./geometrie";
 import type { Punkt } from "./geometrie";
@@ -119,6 +126,7 @@ function ruhend(raum: RaumImPlan): Raumdarstellung {
  */
 export function GrundrissEditor({
   floorId,
+  buildingId,
   geschossLabel,
   standardhoehe_mm,
   darfSchreiben,
@@ -130,6 +138,8 @@ export function GrundrissEditor({
   onZurueck3d,
 }: {
   floorId: string;
+  /** Gebäude des Geschosses (Phase 6b.1) - für die Rückfrage zu zugeordneten Geräten. */
+  buildingId?: string | undefined;
   geschossLabel: string;
   standardhoehe_mm: number;
   darfSchreiben: boolean;
@@ -166,6 +176,9 @@ export function GrundrissEditor({
 
   const plan = useQuery(planAbfrage(api, floorId));
   const katalog = useQuery(katalogAbfrage(api));
+  // Stromkreiszuordnung der Geräte (Phase 6b.1) - nur gelesen, für die Rückfrage beim Speichern.
+  const stromkreise = useQuery({ ...stromkreiseAbfrage(api, buildingId ?? ""), enabled: buildingId !== undefined });
+  const verteilungen = useQuery({ ...verteilungenAbfrage(api, buildingId ?? ""), enabled: buildingId !== undefined });
   const typen = useMemo(() => typenNachSchluessel(katalog.data), [katalog.data]);
   const raeume: readonly RaumImPlan[] = useMemo(
     () => (Array.isArray(plan.data?.rooms) ? plan.data.rooms : []),
@@ -505,31 +518,68 @@ export function GrundrissEditor({
     const verbleibend = new Set(entwurf.walls.map((w) => w.id));
     const entfallend = new Set(basis.entwurf.walls.map((w) => w.id).filter((id) => !verbleibend.has(id)));
     const betroffen = kopplungenDerWaende(planKopplungen, entfallend);
-    if (betroffen.length > 0) {
+    // Entfernte Geräte mit Stromkreiszuordnung (Phase 6b.1): Die Zuordnung geht beim Speichern verloren.
+    const zuordnung = zuordnungNachGeraet(stromkreise.data?.circuits ?? []);
+    const zugeordnet = entwurf.entfernteGeraete.flatMap((id) => {
+      const kreis = zuordnung.get(id);
+      const geraet = basis.entwurf.geraete.find((g) => g.id === id);
+      return kreis === undefined ? [] : [{ id, kreis, geraet }];
+    });
+    if (betroffen.length > 0 || zugeordnet.length > 0) {
+      const titel =
+        betroffen.length > 0 && zugeordnet.length > 0
+          ? "Wandzuordnung und Stromkreiszuordnung mit entfernen?"
+          : betroffen.length > 0
+            ? betroffen.length === 1
+              ? "Wandzuordnung mit lösen?"
+              : `${betroffen.length} Wandzuordnungen mit lösen?`
+            : zugeordnet.length === 1
+              ? "Stromkreiszuordnung mit entfernen?"
+              : `${zugeordnet.length} Stromkreiszuordnungen mit entfernen?`;
       const antwort = await fragen({
-        titel: betroffen.length === 1 ? "Wandzuordnung mit lösen?" : `${betroffen.length} Wandzuordnungen mit lösen?`,
+        titel,
         text: (
           <>
-            <p>
-              Mindestens eine Wand, die entfernt wird, ist einer Wand eines Nachbarraums zugeordnet
-              (gemeinsame Bauwand oder getrennte Wände). Beim Speichern wird diese Zuordnung gelöst; der Nachbarraum
-              bleibt unverändert.
-            </p>
-            <ul>
-              {betroffen.map((k) => {
-                const andere = entfallend.has(k.wall_a_id) ? k.wall_b_id : k.wall_a_id;
-                const raum = raeume.find((r) => r.walls.some((w) => w.id === andere));
-                return (
-                  <li key={k.id}>
-                    {k.relation === "shared" ? "Gemeinsame Bauwand" : "Getrennte Wände"} mit „
-                    {raum === undefined ? "einem anderen Raum" : raumName(raum.id)}“
-                  </li>
-                );
-              })}
-            </ul>
+            {zugeordnet.length > 0 && (
+              <>
+                <p>
+                  {zugeordnet.length === 1 ? "Ein entferntes Gerät ist" : "Entfernte Geräte sind"} einem Stromkreis
+                  zugeordnet. Beim Speichern geht diese Zuordnung verloren; der Stromkreis selbst bleibt.
+                </p>
+                <ul>
+                  {zugeordnet.map(({ id, kreis, geraet }) => (
+                    <li key={id}>
+                      {geraet === undefined ? "Gerät" : geraetName(typen.get(geraet.device_type_key), geraet.label, geraet.device_type_key)}{" "}
+                      – Stromkreis {kreisBezeichnung(kreis, verteilungen.data?.boards ?? [])}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+            {betroffen.length > 0 && (
+              <>
+                <p>
+                  Mindestens eine Wand, die entfernt wird, ist einer Wand eines Nachbarraums zugeordnet
+                  (gemeinsame Bauwand oder getrennte Wände). Beim Speichern wird diese Zuordnung gelöst; der Nachbarraum
+                  bleibt unverändert.
+                </p>
+                <ul>
+                  {betroffen.map((k) => {
+                    const andere = entfallend.has(k.wall_a_id) ? k.wall_b_id : k.wall_a_id;
+                    const raum = raeume.find((r) => r.walls.some((w) => w.id === andere));
+                    return (
+                      <li key={k.id}>
+                        {k.relation === "shared" ? "Gemeinsame Bauwand" : "Getrennte Wände"} mit „
+                        {raum === undefined ? "einem anderen Raum" : raumName(raum.id)}“
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            )}
           </>
         ),
-        bestaetigenLabel: "Speichern und Zuordnung lösen",
+        bestaetigenLabel: betroffen.length > 0 ? "Speichern und Zuordnung lösen" : "Speichern und Zuordnung entfernen",
         abbrechenLabel: "Nicht speichern",
       });
       if (antwort !== "bestaetigt") return false;
@@ -547,6 +597,8 @@ export function GrundrissEditor({
       );
       // Kopplungsstatus und Versionen der Partnerräume kann das Speichern ändern.
       await queryClient.invalidateQueries({ queryKey: planSchluessel(floorId) });
+      // Entfernte Geräte verlieren ihre Stromkreiszuordnung (CASCADE).
+      if (buildingId !== undefined) await queryClient.invalidateQueries({ queryKey: stromkreiseSchluessel(buildingId) });
       await nachSchreiben(gespeichert.id);
       return true;
     } catch (error: unknown) {

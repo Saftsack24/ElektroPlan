@@ -32,6 +32,10 @@ from app.core.seed import seed_initial_data
 from app.core.users.models import User
 from app.db.mixins import utcnow
 from app.modules.electrical.models import (
+    ElectricalCircuit,
+    ElectricalCircuitDevice,
+    ElectricalDevice,
+    ElectricalDistributionBoard,
     ElectricalOpening,
     ElectricalRiser,
     ElectricalRiserStop,
@@ -68,6 +72,11 @@ class Tenant:
     #: Steigweg (Phase 6a.4) mit einem Uebergabepunkt auf ``floor_id``.
     riser_id: uuid.UUID
     riser_stop_id: uuid.UUID
+    #: Verteilung mit Lagegeraet, Stromkreis und einer Zuordnung (Phase 6b.0).
+    board_id: uuid.UUID
+    board_device_id: uuid.UUID
+    circuit_id: uuid.UUID
+    socket_id: uuid.UUID
     #: Benutzerverwaltung (Phase 4.2): ein weiteres Mitglied und eine offene
     #: Einladung je Betrieb.
     member_id: uuid.UUID
@@ -193,6 +202,50 @@ def two_tenants(
                 y_mm=3_400,
             )
             session.add(halt)
+            lagegeraet = ElectricalDevice(
+                organization_id=result.organization_id,
+                room_id=raum.id,
+                device_type_key="distribution_board",
+                mounting_surface="wall_interior",
+                wall_id=wand.id,
+                center_offset_mm=3_500,
+                center_height_mm=1_400,
+            )
+            steckdose = ElectricalDevice(
+                organization_id=result.organization_id,
+                room_id=raum.id,
+                device_type_key="socket_single",
+                mounting_surface="wall_interior",
+                wall_id=wand.id,
+                center_offset_mm=4_500,
+                center_height_mm=300,
+            )
+            session.add_all([lagegeraet, steckdose])
+            session.flush()
+            verteilung = ElectricalDistributionBoard(
+                organization_id=result.organization_id,
+                building_id=gebaeude.id,
+                code="UV1",
+                name="Unterverteilung Flur",
+                placement_device_id=lagegeraet.id,
+            )
+            session.add(verteilung)
+            session.flush()
+            stromkreis = ElectricalCircuit(
+                organization_id=result.organization_id,
+                board_id=verteilung.id,
+                designation="F1",
+                name="Steckdosen",
+            )
+            session.add(stromkreis)
+            session.flush()
+            session.add(
+                ElectricalCircuitDevice(
+                    organization_id=result.organization_id,
+                    device_id=steckdose.id,
+                    circuit_id=stromkreis.id,
+                )
+            )
             datei = FileRecord(
                 organization_id=result.organization_id,
                 project_id=projekt.id,
@@ -247,6 +300,10 @@ def two_tenants(
                     neighbour_wall_id=nachbarwand.id,
                     riser_id=steigweg.id,
                     riser_stop_id=halt.id,
+                    board_id=verteilung.id,
+                    board_device_id=lagegeraet.id,
+                    circuit_id=stromkreis.id,
+                    socket_id=steckdose.id,
                     member_id=mitglied.id,
                     invitation_id=einladung.id,
                 )
@@ -352,6 +409,8 @@ def fremde_ids(tenant: Tenant) -> dict[str, str]:
         "opening_id": str(tenant.opening_id),
         "link_id": str(tenant.link_id),
         "riser_id": str(tenant.riser_id),
+        "board_id": str(tenant.board_id),
+        "circuit_id": str(tenant.circuit_id),
         "member_id": str(tenant.member_id),
         "invitation_id": str(tenant.invitation_id),
     }
@@ -1076,3 +1135,124 @@ def test_datenbank_verhindert_steigweg_ueber_mandantengrenzen(
     finally:
         session.rollback()
         session.close()
+
+
+# ------------------------------------- Verteilungen und Stromkreise (6b.0)
+
+
+def test_fremde_verteilung_und_stromkreis_sind_unsichtbar_und_unveraenderlich(
+    api: TestClient, two_tenants: tuple[Tenant, Tenant]
+) -> None:
+    scholz, mueller = two_tenants
+    token = login(api, mueller.admin_email)
+    basis = "/api/v1/modules/electrical"
+    mit_version = {**auth_headers(token), "If-Match": "1"}
+
+    antworten = [
+        api.get(
+            f"{basis}/buildings/{scholz.building_id}/distribution-boards",
+            headers=auth_headers(token),
+        ),
+        api.get(f"{basis}/buildings/{scholz.building_id}/circuits", headers=auth_headers(token)),
+        api.post(
+            f"{basis}/buildings/{scholz.building_id}/distribution-boards",
+            headers=auth_headers(token),
+            json={"code": "X", "name": "X"},
+        ),
+        api.patch(
+            f"{basis}/distribution-boards/{scholz.board_id}",
+            headers=mit_version,
+            json={"name": "X"},
+        ),
+        api.delete(f"{basis}/distribution-boards/{scholz.board_id}", headers=mit_version),
+        api.post(
+            f"{basis}/distribution-boards/{scholz.board_id}/circuits",
+            headers=auth_headers(token),
+            json={"designation": "F9", "name": "X"},
+        ),
+        api.patch(f"{basis}/circuits/{scholz.circuit_id}", headers=mit_version, json={"name": "X"}),
+        api.put(
+            f"{basis}/circuits/{scholz.circuit_id}/devices",
+            headers=mit_version,
+            json={"device_ids": []},
+        ),
+        api.delete(f"{basis}/circuits/{scholz.circuit_id}", headers=mit_version),
+    ]
+    assert [r.status_code for r in antworten] == [404] * 9
+
+    # Fremde Geraete im eigenen Koerper: 422 ohne Existenzauskunft.
+    fremde_lage = api.patch(
+        f"{basis}/distribution-boards/{mueller.board_id}",
+        headers=mit_version,
+        json={"placement_device_id": str(scholz.board_device_id)},
+    )
+    assert fremde_lage.status_code == 422
+    assert {e["code"] for e in fremde_lage.json()["errors"]} == {"board-placement-not-in-building"}
+    fremdes_geraet = api.put(
+        f"{basis}/circuits/{mueller.circuit_id}/devices",
+        headers=mit_version,
+        json={"device_ids": [str(mueller.socket_id), str(scholz.socket_id)]},
+    )
+    assert fremdes_geraet.status_code == 422
+    assert {e["code"] for e in fremdes_geraet.json()["errors"]} == {
+        "circuit-device-not-in-building"
+    }
+
+    eigene = api.get(
+        f"{basis}/buildings/{mueller.building_id}/circuits", headers=auth_headers(token)
+    )
+    assert [c["id"] for c in eigene.json()["circuits"]] == [str(mueller.circuit_id)]
+    assert eigene.json()["circuits"][0]["device_ids"] == [str(mueller.socket_id)]
+    bretter = api.get(
+        f"{basis}/buildings/{mueller.building_id}/distribution-boards", headers=auth_headers(token)
+    )
+    assert [b["id"] for b in bretter.json()["boards"]] == [str(mueller.board_id)]
+    # Scholz' Daten sind unveraendert.
+    scholz_token = login(api, scholz.admin_email)
+    scholz_kreise = api.get(
+        f"{basis}/buildings/{scholz.building_id}/circuits", headers=auth_headers(scholz_token)
+    ).json()["circuits"]
+    assert [(c["name"], c["version"], c["device_ids"]) for c in scholz_kreise] == [
+        ("Steckdosen", 1, [str(scholz.socket_id)])
+    ]
+
+
+def test_datenbank_verhindert_verteilung_und_zuordnung_ueber_mandantengrenzen(
+    engine: Engine, two_tenants: tuple[Tenant, Tenant]
+) -> None:
+    scholz, mueller = two_tenants
+    versuche = [
+        ElectricalDistributionBoard(
+            organization_id=mueller.organization_id,
+            building_id=scholz.building_id,
+            code="X1",
+            name="fremdes Gebaeude",
+        ),
+        ElectricalDistributionBoard(
+            organization_id=mueller.organization_id,
+            building_id=mueller.building_id,
+            code="X2",
+            name="fremdes Lagegeraet",
+            placement_device_id=scholz.board_device_id,
+        ),
+        ElectricalCircuit(
+            organization_id=mueller.organization_id,
+            board_id=scholz.board_id,
+            designation="X3",
+            name="fremde Verteilung",
+        ),
+        ElectricalCircuitDevice(
+            organization_id=mueller.organization_id,
+            device_id=scholz.socket_id,
+            circuit_id=mueller.circuit_id,
+        ),
+    ]
+    for versuch in versuche:
+        session = sessionmaker(bind=engine)()
+        try:
+            session.add(versuch)
+            with pytest.raises(IntegrityError):
+                session.flush()
+        finally:
+            session.rollback()
+            session.close()

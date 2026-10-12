@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -63,7 +64,7 @@ WallLinkCandidateReasonValue = Literal[
 ]
 #: Tatsaechliche Montageflaeche eines Geraets (``catalog.MountingSurface``).
 MountingSurfaceValue = Literal["wall_interior", "wall_exterior", "ceiling"]
-DeviceCategoryValue = Literal["socket", "switch", "light", "data"]
+DeviceCategoryValue = Literal["socket", "switch", "light", "data", "distribution", "junction"]
 
 
 def _coordinate(*, required: bool) -> Any:
@@ -694,3 +695,175 @@ class RiserListOut(BaseModel):
 
     building_id: uuid.UUID
     risers: list[RiserOut]
+
+
+# ------------------------------------------ Verteilungen und Stromkreise (6b.0)
+
+#: Querschnitt in mm² als Dezimalstring (ADR 0005): bis vier Vorkomma-, bis
+#: zwei Nachkommastellen, Punkt als Trenner. Kein Fliesskomma auf der Leitung.
+CROSS_SECTION_PATTERN = r"^[0-9]{1,4}(\.[0-9]{1,2})?$"
+PhaseCountValue = Literal[1, 2, 3]
+#: Obergrenze der Geraete je Stromkreis in einer Zuordnungsliste.
+MAX_CIRCUIT_DEVICES = 300
+
+
+def _trimmed(value: str | None) -> str | None:
+    """Leerraum entfernen; ein leerer optionaler Text wird ``None``."""
+    if value is None:
+        return None
+    value = value.strip()
+    return value or None
+
+
+def _required_text(value: str | None) -> str | None:
+    """Pflichttext: getrimmt und nicht leer (``None`` bleibt fuer PATCH erhalten)."""
+    if value is None:
+        return None
+    value = value.strip()
+    if not value:
+        msg = "Dieses Feld darf nicht leer sein."
+        raise ValueError(msg)
+    return value
+
+
+class DistributionBoardCreate(_Strict):
+    """Neue Verteilung eines Gebaeudes (ADR 0026).
+
+    ``placement_device_id`` ist optional: ein Geraet des Typs
+    ``distribution_board`` in diesem Gebaeude, das noch keine andere Verteilung
+    platziert. Ohne Lage ist die Verteilung zulaessig.
+    """
+
+    code: str = Field(min_length=1, max_length=16)
+    name: str = Field(min_length=1, max_length=120)
+    note: str | None = Field(default=None, max_length=500)
+    placement_device_id: uuid.UUID | None = None
+
+    _required = field_validator("code", "name")(_required_text)
+    _optional = field_validator("note")(_trimmed)
+
+
+class DistributionBoardUpdate(_Strict):
+    """Teilaenderung (``If-Match``). ``note`` und ``placement_device_id`` sind leerbar."""
+
+    code: str | None = Field(default=None, min_length=1, max_length=16)
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    note: str | None = Field(default=None, max_length=500)
+    placement_device_id: uuid.UUID | None = None
+
+    _not_nullable = field_validator("code", "name")(reject_explicit_null)
+    _required = field_validator("code", "name")(_required_text)
+    _optional = field_validator("note")(_trimmed)
+
+
+class DistributionBoardOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    building_id: uuid.UUID
+    code: str
+    name: str
+    note: str | None
+    #: Geraet ``distribution_board`` mit der raeumlichen Lage, sonst ``null``.
+    placement_device_id: uuid.UUID | None
+    version: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class DistributionBoardListOut(BaseModel):
+    """Alle Verteilungen eines Gebaeudes, nach Code sortiert."""
+
+    building_id: uuid.UUID
+    boards: list[DistributionBoardOut]
+
+
+class _CircuitFields(_Strict):
+    """Gemeinsame Felder eines Stromkreises.
+
+    ``proposed_*`` sind **Vorschlaege fuer neue Leitungen** - sie gelten nicht
+    automatisch fuer bereits geplante Leitungen und werden nicht geprueft.
+    Alle Angaben sind manuelle Planungsangaben ohne Dimensionierung oder
+    Normpruefung (docs/security.md, Abschnitt 17).
+    """
+
+    sort_order: int | None = Field(default=None, ge=0, le=10_000)
+    proposed_cable_type: str | None = Field(default=None, max_length=40)
+    proposed_conductor_count: int | None = Field(default=None, ge=1, le=100)
+    proposed_cross_section_mm2: str | None = Field(
+        default=None, pattern=CROSS_SECTION_PATTERN, examples=["1.5", "2.50"]
+    )
+    protective_device: str | None = Field(default=None, max_length=40)
+    rcd_group: str | None = Field(default=None, max_length=40)
+    phase_count: PhaseCountValue | None = None
+    note: str | None = Field(default=None, max_length=500)
+
+    _optional = field_validator("proposed_cable_type", "protective_device", "rcd_group", "note")(
+        _trimmed
+    )
+
+    @field_validator("proposed_cross_section_mm2")
+    @classmethod
+    def _positive(cls, value: str | None) -> str | None:
+        if value is not None and Decimal(value) == 0:
+            msg = "Der Querschnitt muss groesser als 0 sein."
+            raise ValueError(msg)
+        return value
+
+
+class CircuitCreate(_CircuitFields):
+    """Neuer Stromkreis an einer Verteilung."""
+
+    designation: str = Field(min_length=1, max_length=16)
+    name: str = Field(min_length=1, max_length=120)
+
+    _required = field_validator("designation", "name")(_required_text)
+
+
+class CircuitUpdate(_CircuitFields):
+    """Teilaenderung (``If-Match``). Optionale Angaben sind mit ``null`` leerbar.
+
+    Eine Aenderung der Vorschlaege aendert **keine** bestehende Leitung.
+    """
+
+    designation: str | None = Field(default=None, min_length=1, max_length=16)
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+
+    _not_nullable = field_validator("designation", "name", "sort_order")(reject_explicit_null)
+    _required = field_validator("designation", "name")(_required_text)
+
+
+class CircuitDevicesUpdate(_Strict):
+    """Vollstaendige Geraeteliste eines Stromkreises (``If-Match`` der Stromkreisversion)."""
+
+    device_ids: list[uuid.UUID] = Field(default_factory=list, max_length=MAX_CIRCUIT_DEVICES)
+
+
+class CircuitOut(BaseModel):
+    """Stromkreis samt zugeordneten Geraeten (nach ID sortiert)."""
+
+    id: uuid.UUID
+    board_id: uuid.UUID
+    designation: str
+    name: str
+    sort_order: int
+    #: Vorschlag fuer neue Leitungen - ungeprueft, keine Vorgabe.
+    proposed_cable_type: str | None
+    proposed_conductor_count: int | None
+    #: Dezimalstring mit zwei Nachkommastellen (ADR 0005), etwa ``"1.50"``.
+    proposed_cross_section_mm2: str | None
+    protective_device: str | None
+    rcd_group: str | None
+    phase_count: int | None
+    note: str | None
+    device_ids: list[uuid.UUID]
+    version: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class CircuitListOut(BaseModel):
+    """Alle Stromkreise eines Gebaeudes, nach Verteilung, Reihenfolge und Bezeichnung."""
+
+    building_id: uuid.UUID
+    circuits: list[CircuitOut]

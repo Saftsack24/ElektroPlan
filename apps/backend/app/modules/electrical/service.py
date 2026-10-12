@@ -25,7 +25,7 @@ Drei Regeln bestimmen den Aufbau dieser Datei:
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -46,13 +46,18 @@ from app.errors import (
     VersionConflictError,
 )
 from app.modules.electrical import geometry
-from app.modules.electrical.catalog import WALL_SURFACES
+from app.modules.electrical.catalog import (
+    ASSIGNABLE_CATEGORIES,
+    DISTRIBUTION_BOARD_TYPE,
+    WALL_SURFACES,
+)
 from app.modules.electrical.device_rules import (
     DeviceBaseline,
     FloorDeviceCheck,
     links_of_walls,
     load_device_types,
 )
+from app.modules.electrical.distribution import boards_placed_on, circuits_of_devices
 from app.modules.electrical.geometry import (
     ContourReport,
     GeometryProblem,
@@ -377,6 +382,31 @@ class ElectricalRoomService:
         """
         room, context = self._locked_room(room_id)
         check_version(room, expected_version)
+        # Ein Geraet, das eine Verteilung platziert, verschwindet nicht nebenbei
+        # (Phase 6b.0, ADR 0026) - sonst hinge die Verteilung ohne Lage.
+        room_device_ids = list(
+            self.session.execute(
+                select(ElectricalDevice.id).where(
+                    ElectricalDevice.organization_id == self.organization_id,
+                    ElectricalDevice.room_id == room.id,
+                )
+            ).scalars()
+        )
+        placements = boards_placed_on(self.session, self.organization_id, room_device_ids)
+        if placements:
+            raise ConflictError(
+                "In diesem Raum liegt die Lage einer Verteilung ("
+                + ", ".join(sorted(board.code for board in placements.values()))
+                + "). Bitte zuerst die Lage der Verteilung loesen. Es wurde nichts geloescht.",
+                errors=[
+                    ProblemFieldError(
+                        field="room",
+                        code="room-has-distribution-board",
+                        message="Der Raum enthaelt die Lage einer Verteilung.",
+                        keys=[str(board.id) for board in placements.values()],
+                    )
+                ],
+            )
         # Kopplungen verschwinden mit den Waenden (CASCADE). Die Partnerraeume
         # zaehlen ihre Version weiter: Ein dort offener Entwurf soll die
         # Zuordnung nicht als bestehend voraussetzen.
@@ -871,6 +901,11 @@ class ElectricalRoomService:
                         keys=(key,),
                     )
                 )
+        problems.extend(
+            self._distribution_problems(
+                device_ids, devices_in, current_devices, removed_device_ids, types
+            )
+        )
         _raise_geometry(
             problems,
             detail=(
@@ -889,6 +924,72 @@ class ElectricalRoomService:
         return _DevicePlan(
             target=list(zip(device_ids, devices_in, strict=True)), removed=list(removed_device_ids)
         )
+
+    def _distribution_problems(
+        self,
+        device_ids: list[uuid.UUID],
+        devices_in: list[ContourDeviceIn],
+        current_devices: dict[uuid.UUID, ElectricalDevice],
+        removed_device_ids: list[uuid.UUID],
+        types: Mapping[str, ElectricalDeviceType],
+    ) -> list[GeometryProblem]:
+        """Verteilungslage und Stromkreiszuordnung bleiben gueltig (Phase 6b.0, ADR 0026).
+
+        * Ein Geraet, das eine Verteilung platziert, wird nicht entfernt
+          (``409 device-is-distribution-board``) und wechselt nicht den Typ.
+        * Ein zugeordnetes Geraet wechselt nicht in eine nicht zuordenbare
+          Kategorie (etwa Datendose) - die Zuordnung wuerde still ungueltig.
+        """
+        placements = boards_placed_on(self.session, self.organization_id, current_devices)
+        removed_placements = [item for item in removed_device_ids if item in placements]
+        if removed_placements:
+            raise ConflictError(
+                "Ein Geraet, das entfernt werden soll, ist die Lage einer Verteilung ("
+                + ", ".join(sorted(placements[item].code for item in removed_placements))
+                + "). Bitte zuerst die Lage der Verteilung loesen. Es wurde nichts gespeichert.",
+                errors=[
+                    ProblemFieldError(
+                        field="devices",
+                        code="device-is-distribution-board",
+                        message="Das Geraet ist die Lage einer Verteilung.",
+                        keys=[str(item) for item in removed_placements],
+                    )
+                ],
+            )
+        assigned = circuits_of_devices(self.session, self.organization_id, current_devices)
+        problems: list[GeometryProblem] = []
+        for device_id, device_in in zip(device_ids, devices_in, strict=True):
+            existing = current_devices.get(device_id)
+            if existing is None or existing.device_type_key == device_in.device_type_key:
+                continue
+            if device_id in placements and device_in.device_type_key != DISTRIBUTION_BOARD_TYPE:
+                problems.append(
+                    GeometryProblem(
+                        code="distribution-board-type-changed",
+                        message=(
+                            "Das Geraet ist die Lage einer Verteilung und bleibt vom Typ "
+                            "„Verteilung“."
+                        ),
+                        keys=(str(device_id),),
+                    )
+                )
+            kind = types.get(device_in.device_type_key)
+            if (
+                device_id in assigned
+                and kind is not None
+                and kind.category not in ASSIGNABLE_CATEGORIES
+            ):
+                problems.append(
+                    GeometryProblem(
+                        code="assigned-device-not-assignable",
+                        message=(
+                            "Das Geraet ist einem Stromkreis zugeordnet; dieser Typ laesst sich "
+                            "keinem Stromkreis zuordnen. Bitte zuerst die Zuordnung entfernen."
+                        ),
+                        keys=(str(device_id),),
+                    )
+                )
+        return problems
 
     def _removed_links(
         self,

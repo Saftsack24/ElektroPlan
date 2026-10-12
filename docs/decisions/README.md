@@ -32,7 +32,8 @@ Format: Context · Problem · Considered Options · Decision · Consequences
 | [0022](0022-wall-and-ceiling-view.md) | Wand- und Deckenansicht: Blickrichtung, Maßbezug, Einrasten, gemeinsamer Entwurf; `completed` schreibgeschützt; Teilnehmer-Prüfung der Geschoss-Standardhöhe | accepted | 2026-10-02 |
 | [0023](0023-electrical-devices-symbols-room-types.md) | Elektrogeräte: Montagefläche und Gerätemitte, Gerätekatalog per Seed (`ReferenceDataSeeder`), exakte Geräteprüfung inkl. Nachbarräume, gemeinsamer Raumentwurf; T1 eigene Symbole, T7 Raumtyp | accepted | 2026-10-04 |
 | [0024](0024-wall-links-physical-wall-assignment.md) | Physische Wandzuordnung als Wandkopplung zweier Raumwände (T10), Zustände unentschieden/shared/separate, Geometrie bleibt abgeleitet; bewusst begrenztes Paarmodell | accepted (umgesetzt in 6a.1–6a.3) | 2026-10-06 |
-| [0025](0025-risers-between-floors.md) | Bestätigte Höhenlage im Core (umgesetzt, 6a.0); Steigwege mit definiertem Verlauf (T4) – beschlossen, **nicht implementiert** (6a.4–6a.5 NOT STARTED) | accepted (teilweise umgesetzt) | 2026-10-06 |
+| [0025](0025-risers-between-floors.md) | Bestätigte Höhenlage im Core (6a.0); Steigwege mit definiertem Verlauf (T4, 6a.4–6a.5) | accepted (umgesetzt) | 2026-10-06 |
+| [0026](0026-circuits-cables-and-cable-paths.md) | Verteilungen, Stromkreise (Kabelangaben als Vorschlag), Leitungen mit eigenen Kabelangaben und Wegpunkten (Wand, Decke, Fußboden), abgeleitete Trassen, Durchführungen, Steigwegnutzung, Leitungslängen (Phase 6b) | accepted (6b.0–6b.1 umgesetzt, 6b.2–6b.6 offen) | 2026-10-11 |
 
 ## Wann ein ADR nötig ist
 

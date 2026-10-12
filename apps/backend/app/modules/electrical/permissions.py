@@ -6,9 +6,10 @@ haette keinen Nutzen: Wer die Kontur eines Raums erfassen darf, darf auch die
 Oeffnungen darin erfassen - und seit Phase 5 auch die Geraete: Sie werden im
 selben atomaren Raumentwurf gespeichert (ADR 0023); ein eigener
 ``electrical.device.write`` wuerde einen Speichervorgang in Teilrechte
-zerlegen. Die weiteren Schluessel des Moduls
-(``electrical.device.write``, ``electrical.circuit.write``, ...) entstehen mit
-den Phasen, die sie brauchen (docs/modules/electrical.md, Abschnitt 7).
+zerlegen. Seit Phase 6b.0 gibt es ``electrical.circuit.write`` fuer
+Verteilungen, Stromkreise und Geraetezuordnung (ADR 0026); weitere Schluessel
+(``electrical.route.write`` ab 6b.3) entstehen mit den Phasen, die sie brauchen
+(docs/modules/electrical.md, Abschnitt 7).
 
 ``default_roles`` nennt die ausgelieferten Systemrollen, die den Schluessel
 beim Seed erhalten. Der Administrator erhaelt ohnehin jede registrierte
@@ -21,6 +22,8 @@ from app.core.module_registry.descriptor import PermissionDef
 
 PLAN_READ = "electrical.plan.read"
 PLAN_WRITE = "electrical.plan.write"
+#: Verteilungen, Stromkreise und Geraetezuordnung (Phase 6b.0, ADR 0026).
+CIRCUIT_WRITE = "electrical.circuit.write"
 
 ELECTRICAL_PERMISSIONS: tuple[PermissionDef, ...] = (
     PermissionDef(
@@ -31,6 +34,11 @@ ELECTRICAL_PERMISSIONS: tuple[PermissionDef, ...] = (
     PermissionDef(
         PLAN_WRITE,
         "Elektroplanung bearbeiten (Raeume, Waende, Oeffnungen, Geraete)",
+        default_roles=("planer",),
+    ),
+    PermissionDef(
+        CIRCUIT_WRITE,
+        "Verteilungen und Stromkreise bearbeiten, Geraete Stromkreisen zuordnen",
         default_roles=("planer",),
     ),
 )

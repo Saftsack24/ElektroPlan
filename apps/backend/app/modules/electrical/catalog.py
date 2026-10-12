@@ -85,9 +85,29 @@ class DeviceCategory(StrEnum):
     SWITCH = "switch"
     LIGHT = "light"
     DATA = "data"
+    #: Lage einer Verteilung (Phase 6b.0, ADR 0026) - kein Verbraucher.
+    DISTRIBUTION = "distribution"
+    #: Abzweigdose (Phase 6b.0) - Verzweigungspunkt kuenftiger Leitungen, kein Verbraucher.
+    JUNCTION = "junction"
 
 
 DEVICE_CATEGORIES: tuple[str, ...] = tuple(item.value for item in DeviceCategory)
+
+#: Kategorien, deren Geraete einem Stromkreis zugeordnet werden koennen
+#: (ADR 0026): Verbraucher (Steckdose, Schalter, Leuchte) und Abzweigdosen
+#: (Verzweigungspunkt eines Stromkreises, ab 6b.3 Leitungsendpunkt). Nicht
+#: zuordenbar: Datendosen (kein Stromkreis) und das Lagegeraet einer Verteilung
+#: (``distribution``) - es ist der Bezugspunkt der Verteilung selbst.
+ASSIGNABLE_CATEGORIES: frozenset[str] = frozenset(
+    {
+        DeviceCategory.SOCKET.value,
+        DeviceCategory.SWITCH.value,
+        DeviceCategory.LIGHT.value,
+        DeviceCategory.JUNCTION.value,
+    }
+)
+#: Katalogtyp, dessen Geraet die Lage einer Verteilung ist (D1, ADR 0026).
+DISTRIBUTION_BOARD_TYPE = "distribution_board"
 
 #: Grenzen des Planungsmasses - plausibel fuer Dosen, Rahmen und Auslaesse.
 MIN_DEVICE_SIZE_MM = 20
@@ -192,4 +212,28 @@ DEVICE_TYPE_CATALOG: tuple[DeviceTypeDef, ...] = (
     ),
     _wall("data_single", "Netzwerkdose einfach", _D, height=300, order=120),
     _wall("data_double", "Netzwerkdose zweifach", _D, height=300, order=130),
+    # Phase 6b.0 (ADR 0026): Lage einer Verteilung und Abzweigdose. Planungsmass
+    # und Standardhoehe sind Startwerte, keine Herstellerangabe und keine Norm.
+    _wall(
+        DISTRIBUTION_BOARD_TYPE,
+        "Verteilung",
+        DeviceCategory.DISTRIBUTION,
+        height=1_400,
+        width=550,
+        depth=700,
+        order=140,
+    ),
+    DeviceTypeDef(
+        key="junction_box",
+        label="Abzweigdose",
+        category=DeviceCategory.JUNCTION,
+        symbol_key="junction_box",
+        allows_wall_interior=True,
+        allows_wall_exterior=False,
+        allows_ceiling=True,
+        default_center_height_mm=2_200,
+        width_mm=80,
+        height_mm=80,
+        sort_order=150,
+    ),
 )

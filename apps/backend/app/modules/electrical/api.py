@@ -28,15 +28,30 @@ from app.core.preconditions import require_if_match
 from app.core.projects.planning import FloorPlanningAccess
 from app.db.session import get_session
 from app.errors import ProblemDetail
+from app.modules.electrical.distribution import (
+    CircuitView,
+    DistributionService,
+    DistributionWriteResult,
+    cross_section_out,
+)
 from app.modules.electrical.events import PlanChangeKind, plan_updated
 from app.modules.electrical.geometry import GeometryProblem, Point, segment_length_mm
 from app.modules.electrical.link_rules import LinkCandidate
 from app.modules.electrical.models import ElectricalOpening
-from app.modules.electrical.permissions import PLAN_READ, PLAN_WRITE
+from app.modules.electrical.permissions import CIRCUIT_WRITE, PLAN_READ, PLAN_WRITE
 from app.modules.electrical.risers import RiserService, RiserView, RiserWriteResult
 from app.modules.electrical.schemas import (
+    CircuitCreate,
+    CircuitDevicesUpdate,
+    CircuitListOut,
+    CircuitOut,
+    CircuitUpdate,
     DeviceOut,
     DeviceTypeOut,
+    DistributionBoardCreate,
+    DistributionBoardListOut,
+    DistributionBoardOut,
+    DistributionBoardUpdate,
     FloorPlanOut,
     GeometryProblemOut,
     OpeningCreate,
@@ -1009,3 +1024,241 @@ def delete_riser(
         riser_id, expected_version=expected_version
     )
     _commit_riser(session=session, current_user=current_user, result=result)
+
+
+# ------------------------------------- Verteilungen und Stromkreise (6b.0)
+
+
+def _circuit_out(view: CircuitView) -> CircuitOut:
+    circuit = view.circuit
+    return CircuitOut(
+        id=circuit.id,
+        board_id=circuit.board_id,
+        designation=circuit.designation,
+        name=circuit.name,
+        sort_order=circuit.sort_order,
+        proposed_cable_type=circuit.proposed_cable_type,
+        proposed_conductor_count=circuit.proposed_conductor_count,
+        proposed_cross_section_mm2=cross_section_out(circuit.proposed_cross_section_mm2),
+        protective_device=circuit.protective_device,
+        rcd_group=circuit.rcd_group,
+        phase_count=circuit.phase_count,
+        note=circuit.note,
+        device_ids=list(view.device_ids),
+        version=circuit.version,
+        created_at=circuit.created_at,
+        updated_at=circuit.updated_at,
+    )
+
+
+def _commit_distribution(
+    *, session: Session, current_user: CurrentUser, result: DistributionWriteResult
+) -> None:
+    """Schliesst die Transaktion. Kein Event (ADR 0026, D8)."""
+    if result.changed:
+        FloorPlanningAccess(session, current_user.organization_id).record_project_change(
+            result.context.project_id, actor_user_id=current_user.user_id
+        )
+    session.commit()
+
+
+@router.get(
+    "/buildings/{building_id}/distribution-boards",
+    response_model=DistributionBoardListOut,
+    operation_id="listElectricalDistributionBoards",
+    summary="Verteilungen eines Gebaeudes",
+    responses=_READ_RESPONSES,
+)
+def list_distribution_boards(
+    building_id: uuid.UUID,
+    current_user: CurrentUser = Depends(require_permission(PLAN_READ)),
+    session: Session = Depends(get_session),
+) -> DistributionBoardListOut:
+    """Verteilungen mit Code, Name und optionaler Lage (Geraet ``distribution_board``)."""
+    _, boards = DistributionService(session, current_user.organization_id).list_boards(building_id)
+    return DistributionBoardListOut(
+        building_id=building_id,
+        boards=[DistributionBoardOut.model_validate(board) for board in boards],
+    )
+
+
+@router.post(
+    "/buildings/{building_id}/distribution-boards",
+    response_model=DistributionBoardOut,
+    status_code=status.HTTP_201_CREATED,
+    operation_id="createElectricalDistributionBoard",
+    summary="Verteilung anlegen",
+    responses={
+        **_CREATE_RESPONSES,
+        409: {
+            "model": ProblemDetail,
+            "description": "Projekt schreibgeschuetzt oder Geraet platziert schon eine Verteilung",
+        },
+    },
+)
+def create_distribution_board(
+    building_id: uuid.UUID,
+    payload: DistributionBoardCreate,
+    current_user: CurrentUser = Depends(require_permission(CIRCUIT_WRITE)),
+    session: Session = Depends(get_session),
+) -> DistributionBoardOut:
+    """Legt eine Verteilung an; mehrere je Gebaeude, Code je Gebaeude eindeutig."""
+    board, result = DistributionService(session, current_user.organization_id).create_board(
+        building_id, payload
+    )
+    _commit_distribution(session=session, current_user=current_user, result=result)
+    return DistributionBoardOut.model_validate(board)
+
+
+@router.patch(
+    "/distribution-boards/{board_id}",
+    response_model=DistributionBoardOut,
+    operation_id="updateElectricalDistributionBoard",
+    summary="Verteilung aendern",
+    responses=_WRITE_RESPONSES,
+)
+def update_distribution_board(
+    board_id: uuid.UUID,
+    payload: DistributionBoardUpdate,
+    current_user: CurrentUser = Depends(require_permission(CIRCUIT_WRITE)),
+    session: Session = Depends(get_session),
+    expected_version: int = Depends(require_if_match),
+) -> DistributionBoardOut:
+    """Aendert Code, Name, Notiz oder Lage; ``If-Match`` traegt die Verteilungsversion."""
+    board, result = DistributionService(session, current_user.organization_id).update_board(
+        board_id, payload, expected_version=expected_version
+    )
+    _commit_distribution(session=session, current_user=current_user, result=result)
+    return DistributionBoardOut.model_validate(board)
+
+
+@router.delete(
+    "/distribution-boards/{board_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="deleteElectricalDistributionBoard",
+    summary="Verteilung entfernen",
+    responses=_WRITE_RESPONSES,
+)
+def delete_distribution_board(
+    board_id: uuid.UUID,
+    current_user: CurrentUser = Depends(require_permission(CIRCUIT_WRITE)),
+    session: Session = Depends(get_session),
+    expected_version: int = Depends(require_if_match),
+) -> None:
+    """Nur ohne Stromkreise (sonst ``409 board-has-circuits``); das Lagegeraet bleibt."""
+    result = DistributionService(session, current_user.organization_id).delete_board(
+        board_id, expected_version=expected_version
+    )
+    _commit_distribution(session=session, current_user=current_user, result=result)
+
+
+@router.get(
+    "/buildings/{building_id}/circuits",
+    response_model=CircuitListOut,
+    operation_id="listElectricalCircuits",
+    summary="Stromkreise eines Gebaeudes",
+    responses=_READ_RESPONSES,
+)
+def list_circuits(
+    building_id: uuid.UUID,
+    current_user: CurrentUser = Depends(require_permission(PLAN_READ)),
+    session: Session = Depends(get_session),
+) -> CircuitListOut:
+    """Stromkreise aller Verteilungen samt zugeordneten Geraeten.
+
+    ``proposed_*`` sind Vorschlaege fuer neue Leitungen, ungeprueft (ADR 0026).
+    """
+    _, views = DistributionService(session, current_user.organization_id).list_circuits(building_id)
+    return CircuitListOut(building_id=building_id, circuits=[_circuit_out(view) for view in views])
+
+
+@router.post(
+    "/distribution-boards/{board_id}/circuits",
+    response_model=CircuitOut,
+    status_code=status.HTTP_201_CREATED,
+    operation_id="createElectricalCircuit",
+    summary="Stromkreis anlegen",
+    responses=_CREATE_RESPONSES,
+)
+def create_circuit(
+    board_id: uuid.UUID,
+    payload: CircuitCreate,
+    current_user: CurrentUser = Depends(require_permission(CIRCUIT_WRITE)),
+    session: Session = Depends(get_session),
+) -> CircuitOut:
+    """Legt einen Stromkreis an; Bezeichnung je Verteilung eindeutig."""
+    view, result = DistributionService(session, current_user.organization_id).create_circuit(
+        board_id, payload
+    )
+    _commit_distribution(session=session, current_user=current_user, result=result)
+    return _circuit_out(view)
+
+
+@router.patch(
+    "/circuits/{circuit_id}",
+    response_model=CircuitOut,
+    operation_id="updateElectricalCircuit",
+    summary="Stromkreis aendern",
+    responses=_WRITE_RESPONSES,
+)
+def update_circuit(
+    circuit_id: uuid.UUID,
+    payload: CircuitUpdate,
+    current_user: CurrentUser = Depends(require_permission(CIRCUIT_WRITE)),
+    session: Session = Depends(get_session),
+    expected_version: int = Depends(require_if_match),
+) -> CircuitOut:
+    """Aendert Angaben; eine Vorschlagsaenderung aendert keine bestehende Leitung."""
+    view, result = DistributionService(session, current_user.organization_id).update_circuit(
+        circuit_id, payload, expected_version=expected_version
+    )
+    _commit_distribution(session=session, current_user=current_user, result=result)
+    return _circuit_out(view)
+
+
+@router.delete(
+    "/circuits/{circuit_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="deleteElectricalCircuit",
+    summary="Stromkreis entfernen",
+    responses=_WRITE_RESPONSES,
+)
+def delete_circuit(
+    circuit_id: uuid.UUID,
+    current_user: CurrentUser = Depends(require_permission(CIRCUIT_WRITE)),
+    session: Session = Depends(get_session),
+    expected_version: int = Depends(require_if_match),
+) -> None:
+    """Entfernt den Stromkreis samt Geraetezuordnungen; die Geraete bleiben."""
+    result = DistributionService(session, current_user.organization_id).delete_circuit(
+        circuit_id, expected_version=expected_version
+    )
+    _commit_distribution(session=session, current_user=current_user, result=result)
+
+
+@router.put(
+    "/circuits/{circuit_id}/devices",
+    response_model=CircuitOut,
+    operation_id="replaceElectricalCircuitDevices",
+    summary="Geraetezuordnung eines Stromkreises ersetzen",
+    responses=_WRITE_RESPONSES,
+)
+def replace_circuit_devices(
+    circuit_id: uuid.UUID,
+    payload: CircuitDevicesUpdate,
+    current_user: CurrentUser = Depends(require_permission(CIRCUIT_WRITE)),
+    session: Session = Depends(get_session),
+    expected_version: int = Depends(require_if_match),
+) -> CircuitOut:
+    """Ersetzt die Geraeteliste (``If-Match`` der Stromkreisversion).
+
+    Nur Steckdosen, Schalter, Leuchten und Abzweigdosen desselben Gebaeudes (keine
+    Datendosen, nicht das Lagegeraet einer Verteilung); ein Geraet eines
+    anderen Stromkreises liefert ``409 device-assigned-elsewhere`` - es wird nie
+    still umgehaengt.
+    """
+    view, result = DistributionService(session, current_user.organization_id).replace_devices(
+        circuit_id, payload, expected_version=expected_version
+    )
+    _commit_distribution(session=session, current_user=current_user, result=result)
+    return _circuit_out(view)

@@ -20,6 +20,16 @@ import { RaumDetail } from "./RaumDetail";
 import { RaumDialog } from "./RaumDialog";
 import { Steigwege } from "./steigweg/Steigwege";
 import { STEIGWEG_MELDUNG } from "./steigweg/texte";
+import { Stromkreise } from "./stromkreise/Stromkreise";
+import {
+  kreisBezeichnung,
+  stromkreiseAbfrage,
+  stromkreiseSchluessel,
+  verteilungenAbfrage,
+  zuordnungNachGeraet,
+} from "./stromkreise/daten";
+import { geraetName, katalogAbfrage, typenNachSchluessel } from "./geraete/katalog";
+import { ZUORDNUNG_MELDUNG } from "./stromkreise/texte";
 import type { Raumwerte } from "./RaumDialog";
 import { KONTURZUSTAND_LABEL, RAUMTYP_LABEL, flaecheAnzeigen, raumtypAusWert } from "./texte";
 import { AKTION } from "../../core/ui/aktionssymbole";
@@ -38,13 +48,14 @@ type Geschosswahl = {
   default_ceiling_height_mm: number;
 };
 
-type Ansicht = "editor" | "3d" | "tabelle" | "steigwege";
+type Ansicht = "editor" | "3d" | "tabelle" | "steigwege" | "stromkreise";
 
 const ANSICHTEN: readonly { wert: Ansicht; label: string }[] = [
   { wert: "editor", label: "2D-Editor" },
   { wert: "3d", label: "3D-Ansicht" },
   { wert: "tabelle", label: "Tabellen & Details" },
   { wert: "steigwege", label: "Steigwege" },
+  { wert: "stromkreise", label: "Stromkreise" },
 ];
 
 /** Zuletzt gewählte Ansicht - eine reine Bequemlichkeit je Browser. */
@@ -71,9 +82,14 @@ function ansichtMerken(ansicht: Ansicht) {
 const EDITOR_MELDUNG =
   "Im Grundrisseditor gibt es ungespeicherte Änderungen. Wenn Sie fortfahren, gehen sie verloren.";
 
-/** Ansichten mit eigenem, ungespeichertem Entwurf (2D-Editor, Steigwegverwaltung). */
+/** Ansichten mit eigenem, ungespeichertem Entwurf (2D-Editor, Steigwege, Gerätezuordnung). */
 function hatEntwurf(ansicht: Ansicht): boolean {
-  return ansicht === "editor" || ansicht === "steigwege";
+  return ansicht === "editor" || ansicht === "steigwege" || ansicht === "stromkreise";
+}
+
+/** Gebäudebezogene Ansichten: Ein Geschosswechsel im selben Gebäude behält ihren Entwurf. */
+function gebaeudebezogen(ansicht: Ansicht): boolean {
+  return ansicht === "steigwege" || ansicht === "stromkreise";
 }
 
 /**
@@ -103,6 +119,8 @@ export default function RoomsTab() {
   const { api } = useAuth();
   const queryClient = useQueryClient();
   const darfSchreibenGrundsaetzlich = usePermission("electrical.plan.write");
+  // Verteilungen, Stromkreise und Zuordnung (Phase 6b.1) - eigenes Recht.
+  const darfStromkreiseGrundsaetzlich = usePermission("electrical.circuit.write");
   const masse = useMasse();
   const fragen = useRueckfrage();
 
@@ -176,6 +194,14 @@ export default function RoomsTab() {
   const archiviert = projektstatus === "archived" || projektstatus === "completed";
   const darfSchreiben = darfSchreibenGrundsaetzlich && !archiviert;
 
+  /**
+   * Nach Schreibvorgängen in Steigwegen und Stromkreisen vermerkt der Server Bearbeiter und
+   * Zeitpunkt am Projekt - gezielt nur diese Projektabfrage im Sitzungs-Cache nachladen.
+   */
+  const projektAktualisieren = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: ["project", projectId], exact: true });
+  }, [queryClient, projectId]);
+
   const raeumeNeuLaden = async () => {
     await queryClient.invalidateQueries({
       queryKey: ["electrical", "rooms", aktivesGeschoss?.id],
@@ -203,7 +229,8 @@ export default function RoomsTab() {
    */
   const editorVerlassen = async (titel: string, situation: string): Promise<boolean> => {
     if (!editorOffen.current) return true;
-    const meldung = ansicht === "steigwege" ? STEIGWEG_MELDUNG : EDITOR_MELDUNG;
+    const meldung =
+      ansicht === "steigwege" ? STEIGWEG_MELDUNG : ansicht === "stromkreise" ? ZUORDNUNG_MELDUNG : EDITOR_MELDUNG;
     const antwort = await fragen(verwerfenOptionen(titel, situation, meldung));
     if (antwort !== "bestaetigt") return false;
     editorOffen.current = false;
@@ -264,6 +291,8 @@ export default function RoomsTab() {
       setFehler(null);
       if (offenerRaum === raum.id) setOffenerRaum(null);
       await raeumeNeuLaden();
+      const haus = auswahl.find((e) => e.id === raum.floor_id)?.building_id;
+      if (haus !== undefined) await queryClient.invalidateQueries({ queryKey: stromkreiseSchluessel(haus) });
     },
     onError: (error: unknown) =>
       setFehler(
@@ -277,22 +306,57 @@ export default function RoomsTab() {
    */
   const raumEntfernen = async (raum: RoomOut) => {
     let anzahl = 0;
+    let zugeordnet: { geraet: string; kreis: string }[] = [];
     try {
       const plan = await queryClient.fetchQuery(planAbfrage(api, raum.floor_id));
-      const waende = new Set(plan.rooms.find((r) => r.id === raum.id)?.walls.map((w) => w.id) ?? []);
+      const eintrag = plan.rooms.find((r) => r.id === raum.id);
+      const waende = new Set(eintrag?.walls.map((w) => w.id) ?? []);
       anzahl = (plan.wall_links ?? []).filter((k) => waende.has(k.wall_a_id) || waende.has(k.wall_b_id)).length;
+      // Phase 6b.1: Geräte des Raums, die einem Stromkreis zugeordnet sind, verlieren die Zuordnung.
+      const haus = auswahl.find((e) => e.id === raum.floor_id)?.building_id;
+      if (haus !== undefined && eintrag !== undefined && eintrag.devices.length > 0) {
+        const kreise = await queryClient.fetchQuery(stromkreiseAbfrage(api, haus));
+        const boards = await queryClient.fetchQuery(verteilungenAbfrage(api, haus));
+        const zuordnung = zuordnungNachGeraet(kreise.circuits);
+        const typen = typenNachSchluessel(await queryClient.fetchQuery(katalogAbfrage(api)));
+        zugeordnet = eintrag.devices.flatMap((g) => {
+          const kreis = zuordnung.get(g.id);
+          return kreis === undefined
+            ? []
+            : [{ geraet: geraetName(typen.get(g.device_type_key), g.label, g.device_type_key), kreis: kreisBezeichnung(kreis, boards.boards) }];
+        });
+      }
     } catch {
       // Ohne Planungsstand keine Zusatzfrage; der Server entscheidet ohnehin.
     }
-    if (anzahl > 0) {
+    if (anzahl > 0 || zugeordnet.length > 0) {
       const antwort = await fragen({
-        titel: "Raum mit Wandzuordnungen entfernen?",
+        titel: anzahl > 0 ? "Raum mit Wandzuordnungen entfernen?" : "Raum mit zugeordneten Geräten entfernen?",
         text: (
-          <p>
-            Der Raum „{raum.name}“ ist über {anzahl === 1 ? "eine Wandzuordnung" : `${anzahl} Wandzuordnungen`} mit
-            Nachbarräumen verbunden (gemeinsame Bauwand oder getrennte Wände). Sie werden mit dem Raum entfernt; die
-            Nachbarräume selbst bleiben unverändert.
-          </p>
+          <>
+            {anzahl > 0 && (
+              <p>
+                Der Raum „{raum.name}“ ist über {anzahl === 1 ? "eine Wandzuordnung" : `${anzahl} Wandzuordnungen`} mit
+                Nachbarräumen verbunden (gemeinsame Bauwand oder getrennte Wände). Sie werden mit dem Raum entfernt; die
+                Nachbarräume selbst bleiben unverändert.
+              </p>
+            )}
+            {zugeordnet.length > 0 && (
+              <>
+                <p>
+                  Geräte dieses Raums sind Stromkreisen zugeordnet. Mit dem Raum geht diese Zuordnung verloren; die
+                  Stromkreise bleiben.
+                </p>
+                <ul>
+                  {zugeordnet.map((z, i) => (
+                    <li key={i}>
+                      {z.geraet} – Stromkreis {z.kreis}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </>
         ),
         bestaetigenLabel: "Raum entfernen",
         abbrechenLabel: "Abbrechen",
@@ -362,7 +426,7 @@ export default function RoomsTab() {
             const ziel = zielEintrag?.label ?? "";
             // In der Steigwegverwaltung bleibt der Entwurf beim Wechsel innerhalb
             // desselben Gebäudes erhalten - nur das Grundrissgeschoss wechselt.
-            if (ansicht === "steigwege" && zielEintrag?.building_id === aktivesGeschoss?.building_id) {
+            if (gebaeudebezogen(ansicht) && zielEintrag?.building_id === aktivesGeschoss?.building_id) {
               setGeschossId(id);
               return;
             }
@@ -482,6 +546,7 @@ export default function RoomsTab() {
           <GrundrissEditor
             key={aktivesGeschoss.id}
             floorId={aktivesGeschoss.id}
+            buildingId={aktivesGeschoss.building_id}
             geschossLabel={aktivesGeschoss.label}
             standardhoehe_mm={aktivesGeschoss.default_ceiling_height_mm}
             darfSchreiben={darfSchreiben}
@@ -530,6 +595,7 @@ export default function RoomsTab() {
             onGeschoss={setGeschossId}
             darfSchreiben={darfSchreiben}
             onUngespeichert={ungespeichertMelden}
+            onGeschrieben={projektAktualisieren}
             zurueck={
               vorherigeAnsicht === null || vorherigeAnsicht === "steigwege"
                 ? undefined
@@ -538,6 +604,21 @@ export default function RoomsTab() {
                     onClick: () => void ansichtWechseln(vorherigeAnsicht),
                   }
             }
+          />
+        </section>
+      )}
+
+      {ansicht === "stromkreise" && aktivesGeschoss !== undefined && (
+        <section className={karte("kompakt")}>
+          <Stromkreise
+            key={aktivesGeschoss.building_id}
+            buildingId={aktivesGeschoss.building_id}
+            buildingName={aktivesGeschoss.building_name}
+            aktivesGeschossId={aktivesGeschoss.id}
+            onGeschoss={setGeschossId}
+            darfSchreiben={darfStromkreiseGrundsaetzlich && !archiviert}
+            onUngespeichert={ungespeichertMelden}
+            onGeschrieben={projektAktualisieren}
           />
         </section>
       )}

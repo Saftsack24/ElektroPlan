@@ -3296,7 +3296,7 @@ Höhenbestätigung über die Oberfläche. Prüfdaten: „Pruefschacht synthetisc
 
 ## Task 0034 – Checkpoint Phase 6a.4–6a.5 (Steigwege)
 
-**Datum:** 2026-10-11 · **Status:** committet; manuelle Gesamtprüfung nach Phase 6 offen; keine
+**Datum:** 2026-10-11 · **Status:** committet als `686316c`, gepusht (`595e8ac..686316c`); manuelle Gesamtprüfung nach Phase 6 offen; keine
 Produktions- oder Echtdatenfreigabe.
 
 * **Vorabprüfung:** alle Änderungen gehören zu 6a.4–6a.5 (Task 0033); keine `.env`, `.claude/`,
@@ -3311,3 +3311,135 @@ Produktions- oder Echtdatenfreigabe.
   korrigiert; `phase-6a-design.md` §10 als historischer Stand markiert; Phase 6 als begonnen,
   nicht abgeschlossen. Die historische Docstring der Migration `0010` bleibt unverändert.
 * **Nicht stattgefunden:** Sichtprüfung im sichtbaren Browser (siehe Task 0033).
+
+---
+
+## Task 0035 – Entwurf Phase 6b (Verteilungen, Stromkreise, Leitungen)
+
+**Datum:** 2026-10-11 · **Status:** Entwurf zur Prüfung, **nicht umgesetzt, nicht committet**.
+
+* `docs/phase-6b-design.md` (Befund, Begriffe, Datenmodell, Bezugssysteme, Weg- und Längenregeln,
+  Steigwegnutzung, Durchführungen, Änderungsregeln, Architektur/Transaktionen/Rechte, Bedienung,
+  Sicherheit, 19 Abnahmekriterien, Schritte 6b.0–6b.6, Entscheidungen D1–D10).
+* `docs/decisions/0026-circuits-cables-and-cable-paths.md` (**proposed**).
+* Glossar um die 6b-Begriffe ergänzt (als „Entwurf 6b“ gekennzeichnet); ADR-Index (0025 jetzt
+  „umgesetzt“, 0026 proposed), Status und Roadmap.
+* Geprüft: Das Längenbeispiel aus `electrical.md` §5 passt nicht zum heutigen Modell (Weg durch den
+  Raum, kein Raumwechsel, „Rohdecke“, stille Zugaben); präzisiert mit Diele/Küche, Durchführung,
+  gleichen Zahlen (8 500 geometrisch, 9 200 mit ausdrücklichen Zugaben).
+* Keine Code-, Schema- oder Teständerung; kein Testlauf nötig.
+
+---
+
+## Task 0036 – Entwurf Phase 6b, 2. Fassung
+
+**Datum:** 2026-10-11 · **Status:** Entwurf zur Prüfung, **nicht umgesetzt, nicht committet**.
+
+* Ausgangsstand geprüft: `686316c` ist auf `origin/main` (0/0) – kein weiterer Push nötig.
+* Bestätigt vom Auftraggeber: D1 (Lage der Verteilung als Gerät), D2 (gebäudebezogen, mehrere
+  Verteilungen je Gebäude; gebäudeübergreifend/außen später), D4 (Bruch nur nach Bestätigung,
+  danach Konflikt ohne Länge und bestätigte Menge; Durchführungen hart geschützt), D5 (Zugaben nur
+  je Leitung).
+* Geändert: D6 – tatsächliche Kabelangaben je Leitung, Stromkreis nur Vorschlag, Übernahme nur
+  ausdrücklich (`apply-proposal`), Mengen nach tatsächlichen Angaben, „unvollständig spezifiziert“
+  eigens, Beispiel mit fünf Leitungen. D7 – vereinfachte Fußbodenfläche (FFB, Kontur, Übergänge,
+  Bodenübergang, Grundriss mit Ebenenwahl, Modellgrenzen, Mehraufwand begründet).
+* Korrigiert: Gegenseite einer Durchführung nicht `L − offset`, sondern exakte
+  Abschnittstransformation (`_local`/`_back`, Frontend `lokalerBereich`/`wandbereich`); Beispiele
+  und Testfälle (entgegengesetzt, gleich gerichtet mit Versatz, verschiedene Längen,
+  Teilüberlappung, außerhalb, schräg irrational, Hin- und Rücktransformation).
+* Neu offen: D11 – Raumwechsel im Fußboden nur über Durchführung oder Bodenübergang an
+  Tür/Durchgang (Empfehlung), kein Unterqueren geschlossener Wände.
+* ADR 0026 bleibt **proposed**. Keine Code-, Schema- oder Teständerung.
+
+---
+
+## Task 0037 – Freigabe 6b-Entwurf, Umsetzung 6b.0 (Verteilungen, Stromkreise, Zuordnung)
+
+**Datum:** 2026-10-11 · **Status:** umgesetzt und automatisiert geprüft, committet mit Task 0039;
+keine manuelle Abnahme.
+
+* **Entwurf:** D11 bestätigt; Bodenübergang präzisiert (Bedingungen, Verhalten bei Verschieben,
+  Entfernen, Typwechsel der Öffnung und geänderter Wandzuordnung – nie unbemerkt gültig);
+  Entwurf freigegeben, ADR 0026 **accepted**.
+* **Backend:** Migration `0012_boards_and_circuits` (drei Tabellen, Kategorie-CHECK
+  erweitert; Downgrade bricht bei Geräten der neuen Typen ab), Modelle, Katalogtypen
+  `distribution_board` und `junction_box`, Recht `electrical.circuit.write`, Service
+  `distribution.py` (Projekt zuerst, Zeile `FOR UPDATE`, `If-Match`, frisches Lesen),
+  neun Endpunkte, Löschteilnehmer (Stromkreise → Verteilungen → Steigwege → Räume),
+  Schutz im Raumentwurf und bei der Raumlöschung.
+* **Präzisierung:** Stromkreis → Verteilung `RESTRICT` (Entwurf hatte `CASCADE` skizziert,
+  §7 aber `409` verlangt).
+* **Frontend:** nur Typverträglichkeit des erweiterten Kategorietyps (Namen, Symbole,
+  Kategorienliste); keine Verwaltung (6b.1).
+* **Tests:** neu `test_electrical_circuits.py`, `test_circuit_concurrency.py`; erweitert
+  `test_tenant_isolation.py`, `test_archive_concurrency.py` (Schreibweg `stromkreis-anlegen`),
+  Inventartests (Submodul, Tabellen 31 → 34, Recht, Kategorien). `tasks.ps1 check` gegen
+  PostgreSQL und MinIO grün: Backend 1214 (vorher 1187), Frontend 965, ein Head `0012`, API-Drift,
+  Lockfile, Modulgrenzen, Typecheck, ESLint, Build.
+* **Hinweis:** Die Entwicklungsdatenbank wurde **nicht** migriert; vor einer Sichtprüfung
+  `migrate` und `seed` ausführen.
+
+---
+
+## Task 0038 – 6b.1: Oberfläche Verteilungen, Stromkreise, Gerätezuordnung
+
+**Datum:** 2026-10-11 · **Status:** umgesetzt und automatisiert geprüft, committet mit Task 0039;
+keine manuelle Abnahme.
+
+* **Korrektur 6b.0:** Abzweigdosen waren nicht zuordenbar, obwohl der Entwurf sie als
+  Verzweigungspunkte vorsieht. `ASSIGNABLE_CATEGORIES` um `junction` ergänzt; gleiche Regeln
+  (Betrieb, Gebäude, ein Stromkreis, kein stilles Umhängen, `If-Match`, Projektsperre, keine
+  Umtypisierung in nicht zuordenbare Art). Datendosen und Lagegerät bleiben ausgeschlossen.
+  Drei neue Regressionstests.
+* **Entwicklungsdatenbank:** Stand `0011` geprüft, regulär auf `0012` migriert und Seed
+  ausgeführt (im Backend-Container; 1 neues Recht, 2 Katalogtypen). Keine Volumes oder Daten
+  gelöscht. Der Planner-Container wurde einmal neu gestartet, weil Vite über den Windows-Mount
+  keine Dateiänderungen bemerkte (alte Module ausgeliefert).
+* **Oberfläche (`stromkreise/`):** Ansicht „Stromkreise“ im Tab „Räume & Grundriss“;
+  Verteilungen und Stromkreise per Dialog; Lage nur über freie Geräte „Verteilung“; Kabelangaben
+  als Vorschlag; eigener Zuordnungsentwurf mit Liste und Grundrissauswahl; Konflikt mit bewusstem
+  Neuladen; Navigationsschutz; Rechte `electrical.circuit.write` und Schreibschutz.
+* **Rückfragen:** bestehende Speicher-Rückfrage des Raumentwurfs und Raumlöschung nennen verlorene
+  Stromkreiszuordnungen (eine Rückfrage, zusammen mit Wandzuordnungen).
+* **Entwurf:** Speicherstrategie für einen Bodenübergang mit entfernter Öffnung festgelegt
+  (§5.6: eigene Lage am Wegpunkt, `opening_id` nur Bezug, bestätigtes Nullsetzen, Konflikt).
+* **Tests:** Frontend 979 bestanden (vorher 965; neu `stromkreise/daten.test.ts`,
+  `stromkreise/Stromkreise.test.tsx`, `editor/GrundrissStromkreis.test.tsx`, Ergänzungen in
+  `RoomsTab.test.tsx`, `ansichten.test.tsx`, `geraete/symbole.test.tsx`); Typecheck, ESLint,
+  Modulgrenzen, Build, API-Drift grün; Backend gezielt 184 bestanden (Stromkreise, Parallelität,
+  Geräte, Mandantentrennung, Modul/Architektur, Migration, API-Vertrag), Ruff, mypy,
+  import-linter grün. In einem von acht vollständigen Frontendläufen schlug ein Test fehl,
+  der in sieben Wiederholungen nicht auftrat und nicht identifiziert werden konnte.
+* **Browser (Entwicklungsstack):** Ansicht geöffnet, Verteilung angelegt („Noch nicht im Plan
+  platziert“), Stromkreis mit Vorschlag 1,5 angelegt, doppelte Bezeichnung verständlich gemeldet,
+  Entfernen einer Verteilung mit Stromkreis verweigert, Zuordnungsbereich geöffnet, Stromkreis
+  und Verteilung über die Rückfragen entfernt (Prüfdaten damit wieder weg). **Nicht** sichtbar
+  geprüft: Zuordnen und Speichern im Browser (das Gebäude hat keine gespeicherten Geräte),
+  Lagegerät-Auswahl, Löschrückfrage im Editor, Hell/Dunkel, schmale Breite; keine
+  Bildschirmfotos (Browserbereich ausgeblendet).
+
+---
+
+## Task 0039 – Nacharbeiten 6b.1 und Checkpoint 6b.0/6b.1
+
+**Datum:** 2026-10-12 · **Status:** committet (nicht gepusht); manuelle Gesamtprüfung nach Phase 6
+offen; keine Produktions- oder Echtdatenfreigabe.
+
+* **Projektkopf:** `Steigwege` und `Stromkreise` erhalten `onGeschrieben`; die Räume-Seite lädt
+  danach gezielt `["project", projectId]` (exakt) im sitzungsgebundenen Query-Client nach – nur nach
+  erfolgreichen Schreibvorgängen. Tests: Räume-Tab (Projektabruf nach Anlegen einer Verteilung),
+  `Stromkreise`/`Steigwege` (kein Nachladen nach Fehlschlag), `sitzungsraum.test.ts` (verspätete
+  Projektantwort nach Sitzungsende landet nicht im Cache).
+* **Unbekannter Fehlschlag (Task 0038):** **nicht identifiziert.** Die Ausgabe des Laufs war nur
+  auf die Zusammenfassung gefiltert und ist nicht mehr vorhanden; nichts „behoben“. Neu: Vitest
+  schreibt zusätzlich JUnit-XML (Testname, Fehlermeldung) nach `apps/planner/test-results/`,
+  `tasks.ps1` legt den Exit-Code daneben ab (`Invoke-FrontendTests`); `test-results/` ist
+  ignoriert. Keine Wiederholungen, keine Timeout-Erhöhung.
+* **Checkpoint-Prüfung:** nur Quellen, Tests, Migration `0012`, OpenAPI/Client und Dokumentation von
+  6b.0/6b.1; keine `.env`, Secrets, Logs, Bildschirmfotos, Caches oder Scratchpad-Dateien;
+  Migrationen `0001`–`0011` unverändert; geänderte Testzeilen nur die drei bewusst ergänzten
+  Inventarprüfungen; `git diff --check` sauber.
+* **Prüfung:** Frontend 983 bestanden, Typecheck, ESLint, Modulgrenzen, Build, API-Drift grün;
+  Ruff, mypy, import-linter grün. Kein erneuter Backend-Gesamtlauf (nur Frontend-Nacharbeit);
+  Grundlage Task 0038 (gezielte Backendläufe) und Task 0037 (1214 Backendtests).

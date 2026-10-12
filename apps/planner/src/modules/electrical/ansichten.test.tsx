@@ -77,7 +77,7 @@ function zeigen() {
 const knopf = (name: string) => screen.getByRole("button", { name });
 
 describe("Ansichtswahl", () => {
-  it("bietet vier Ansichten; ohne gemerkte Wahl startet der 2D-Editor", async () => {
+  it("bietet fünf Ansichten; ohne gemerkte Wahl startet der 2D-Editor", async () => {
     zeigen();
     await screen.findByRole("application", { name: /Grundriss/ });
     const wahl = screen.getByRole("group", { name: "Ansicht" });
@@ -86,6 +86,7 @@ describe("Ansichtswahl", () => {
       "3D-Ansicht",
       "Tabellen & Details",
       "Steigwege",
+      "Stromkreise",
     ]);
     expect(knopf("2D-Editor")).toHaveAttribute("aria-pressed", "true");
     // Three.js wird für den Editor nicht geladen.

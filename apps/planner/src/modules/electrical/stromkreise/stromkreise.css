@@ -1,0 +1,20 @@
+/*
+ * Grafische Gerätezuordnung (Phase 6b.1). Farben nur aus Tokens; der Zustand
+ * ist nie nur Farbe: gewählt = gefüllter Ring, anderer Stromkreis =
+ * gestrichelter Ring, frei = dünner Ring, nicht zuordenbar = blass ohne Ring.
+ */
+
+@layer components {
+  .zuordnung__svg { display: block; width: 100%; aspect-ratio: 4 / 3; max-height: 60vh; background: var(--ep-canvas); user-select: none; }
+  .zuordnung__wand { fill: none; stroke: var(--ep-plan-wall); stroke-width: 2px; vector-effect: non-scaling-stroke; stroke-linecap: square; }
+  .zuordnung__geraet { color: var(--ep-plan-device); }
+  .zuordnung__ring { fill: var(--ep-canvas); stroke: var(--ep-text-muted); stroke-width: 1px; vector-effect: non-scaling-stroke; }
+  .zuordnung__geraet--waehlbar { cursor: pointer; }
+  .zuordnung__geraet--waehlbar:focus-visible { outline: none; }
+  .zuordnung__geraet--waehlbar:focus-visible .zuordnung__ring { stroke: var(--ep-selected); stroke-width: 3px; }
+  .zuordnung__geraet--dieser .zuordnung__ring { fill: var(--ep-accent); fill-opacity: 0.18; stroke: var(--ep-selected); stroke-width: 2.5px; }
+  .zuordnung__geraet--anderer .zuordnung__ring { stroke-dasharray: 3 2; }
+  .zuordnung__geraet--anderer { opacity: 0.7; }
+  .zuordnung__geraet--nicht-zuordenbar { opacity: 0.35; }
+  .zuordnung__geraet--nicht-zuordenbar .zuordnung__ring { stroke: none; fill: none; }
+}

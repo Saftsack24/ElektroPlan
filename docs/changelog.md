@@ -5,6 +5,50 @@ Einträge entstehen nach relevanten Änderungen, nicht nach jedem Commit.
 
 ---
 
+## 2026-10-11 — Phase 6b.1: Oberfläche Verteilungen und Stromkreise (Checkpoint 2026-10-12)
+
+### Added
+
+- Ansicht „Stromkreise“ im Tab „Räume & Grundriss“: Verteilungen (mehrere je Gebäude, Lage über
+  ein Gerät „Verteilung“), Stromkreise mit Kabelangaben als Vorschlag, Gerätezuordnung als eigener
+  Entwurf (Liste und Grundriss) mit Speichern/Verwerfen und Konfliktbehandlung.
+
+### Changed
+
+- Abzweigdosen lassen sich einem Stromkreis zuordnen (Backend und Oberfläche).
+- Die Speicher-Rückfrage des Raumentwurfs und die Raumlöschung nennen verlorene
+  Stromkreiszuordnungen.
+- Der Projektkopf zeigt Bearbeiter und Zeitpunkt nach Änderungen an Steigwegen, Verteilungen,
+  Stromkreisen und Zuordnungen ohne Neuladen.
+
+### Betrieb
+
+- Frontend-Tests schreiben Testnamen und Fehlermeldungen als JUnit-XML nach
+  `apps/planner/test-results/`; `tasks.ps1` legt den Exit-Code daneben ab (von Git ignoriert).
+
+---
+
+## 2026-10-11 — Phase 6b.0: Verteilungen, Stromkreise, Gerätezuordnung (Checkpoint 2026-10-12)
+
+**Migration `0012_boards_and_circuits`, danach Seed ausführen** (neue Katalogtypen, neues Recht).
+[ADR 0026](decisions/0026-circuits-cables-and-cable-paths.md) accepted.
+
+### Added
+
+- API `…/buildings/{id}/distribution-boards`, `…/distribution-boards/{id}`,
+  `…/buildings/{id}/circuits`, `…/distribution-boards/{id}/circuits`, `…/circuits/{id}`,
+  `…/circuits/{id}/devices` (If-Match). Kein Event.
+- Katalogtypen „Verteilung“ (`distribution_board`) und „Abzweigdose“ (`junction_box`),
+  Kategorien `distribution`, `junction`.
+- Recht `electrical.circuit.write` (Planer).
+
+### Changed
+
+- Raumentwurf: Lagegerät einer Verteilung nicht entfernbar/umtypbar, Raum mit Lagegerät nicht
+  löschbar; zugeordnete Geräte nicht in nicht zuordenbare Arten umtypbar.
+
+---
+
 ## 2026-10-11 — Phase 6a.4–6a.5: Steigwege (technisch geprüft, committet)
 
 Keine Migration (Tabellen aus `0010`), kein Seed nötig. [ADR 0025](decisions/0025-risers-between-floors.md)

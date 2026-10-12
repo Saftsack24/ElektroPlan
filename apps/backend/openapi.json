@@ -6219,6 +6219,722 @@
         }
       }
     },
+    "/api/v1/modules/electrical/buildings/{building_id}/distribution-boards": {
+      "get": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Verteilungen eines Gebaeudes",
+        "description": "Verteilungen mit Code, Name und optionaler Lage (Geraet ``distribution_board``).",
+        "operationId": "listElectricalDistributionBoards",
+        "parameters": [
+          {
+            "name": "building_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Building Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DistributionBoardListOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Verteilung anlegen",
+        "description": "Legt eine Verteilung an; mehrere je Gebaeude, Code je Gebaeude eindeutig.",
+        "operationId": "createElectricalDistributionBoard",
+        "parameters": [
+          {
+            "name": "building_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Building Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DistributionBoardCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DistributionBoardOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Projekt schreibgeschuetzt oder Geraet platziert schon eine Verteilung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules/electrical/distribution-boards/{board_id}": {
+      "patch": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Verteilung aendern",
+        "description": "Aendert Code, Name, Notiz oder Lage; ``If-Match`` traegt die Verteilungsversion.",
+        "operationId": "updateElectricalDistributionBoard",
+        "parameters": [
+          {
+            "name": "board_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Board Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DistributionBoardUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DistributionBoardOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Verteilung entfernen",
+        "description": "Nur ohne Stromkreise (sonst ``409 board-has-circuits``); das Lagegeraet bleibt.",
+        "operationId": "deleteElectricalDistributionBoard",
+        "parameters": [
+          {
+            "name": "board_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Board Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules/electrical/buildings/{building_id}/circuits": {
+      "get": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Stromkreise eines Gebaeudes",
+        "description": "Stromkreise aller Verteilungen samt zugeordneten Geraeten.\n\n``proposed_*`` sind Vorschlaege fuer neue Leitungen, ungeprueft (ADR 0026).",
+        "operationId": "listElectricalCircuits",
+        "parameters": [
+          {
+            "name": "building_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Building Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CircuitListOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules/electrical/distribution-boards/{board_id}/circuits": {
+      "post": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Stromkreis anlegen",
+        "description": "Legt einen Stromkreis an; Bezeichnung je Verteilung eindeutig.",
+        "operationId": "createElectricalCircuit",
+        "parameters": [
+          {
+            "name": "board_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Board Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CircuitCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CircuitOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Projekt ist archiviert oder abgeschlossen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules/electrical/circuits/{circuit_id}": {
+      "patch": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Stromkreis aendern",
+        "description": "Aendert Angaben; eine Vorschlagsaenderung aendert keine bestehende Leitung.",
+        "operationId": "updateElectricalCircuit",
+        "parameters": [
+          {
+            "name": "circuit_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Circuit Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CircuitUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CircuitOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Stromkreis entfernen",
+        "description": "Entfernt den Stromkreis samt Geraetezuordnungen; die Geraete bleiben.",
+        "operationId": "deleteElectricalCircuit",
+        "parameters": [
+          {
+            "name": "circuit_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Circuit Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules/electrical/circuits/{circuit_id}/devices": {
+      "put": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Geraetezuordnung eines Stromkreises ersetzen",
+        "description": "Ersetzt die Geraeteliste (``If-Match`` der Stromkreisversion).\n\nNur Steckdosen, Schalter, Leuchten und Abzweigdosen desselben Gebaeudes (keine\nDatendosen, nicht das Lagegeraet einer Verteilung); ein Geraet eines\nanderen Stromkreises liefert ``409 device-assigned-elsewhere`` - es wird nie\nstill umgehaengt.",
+        "operationId": "replaceElectricalCircuitDevices",
+        "parameters": [
+          {
+            "name": "circuit_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Circuit Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CircuitDevicesUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CircuitOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health/live": {
       "get": {
         "tags": [
@@ -6533,6 +7249,462 @@
         "additionalProperties": false,
         "type": "object",
         "title": "BuildingUpdate"
+      },
+      "CircuitCreate": {
+        "properties": {
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 10000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
+          },
+          "proposed_cable_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed Cable Type"
+          },
+          "proposed_conductor_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed Conductor Count"
+          },
+          "proposed_cross_section_mm2": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{1,4}(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed Cross Section Mm2",
+            "examples": [
+              "1.5",
+              "2.50"
+            ]
+          },
+          "protective_device": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protective Device"
+          },
+          "rcd_group": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rcd Group"
+          },
+          "phase_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "enum": [
+                  1,
+                  2,
+                  3
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Count"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "designation": {
+            "type": "string",
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Designation"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "designation",
+          "name"
+        ],
+        "title": "CircuitCreate",
+        "description": "Neuer Stromkreis an einer Verteilung."
+      },
+      "CircuitDevicesUpdate": {
+        "properties": {
+          "device_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 300,
+            "title": "Device Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CircuitDevicesUpdate",
+        "description": "Vollstaendige Geraeteliste eines Stromkreises (``If-Match`` der Stromkreisversion)."
+      },
+      "CircuitListOut": {
+        "properties": {
+          "building_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Building Id"
+          },
+          "circuits": {
+            "items": {
+              "$ref": "#/components/schemas/CircuitOut"
+            },
+            "type": "array",
+            "title": "Circuits"
+          }
+        },
+        "type": "object",
+        "required": [
+          "building_id",
+          "circuits"
+        ],
+        "title": "CircuitListOut",
+        "description": "Alle Stromkreise eines Gebaeudes, nach Verteilung, Reihenfolge und Bezeichnung."
+      },
+      "CircuitOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "board_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Board Id"
+          },
+          "designation": {
+            "type": "string",
+            "title": "Designation"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          },
+          "proposed_cable_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed Cable Type"
+          },
+          "proposed_conductor_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed Conductor Count"
+          },
+          "proposed_cross_section_mm2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed Cross Section Mm2"
+          },
+          "protective_device": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protective Device"
+          },
+          "rcd_group": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rcd Group"
+          },
+          "phase_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Count"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "device_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Device Ids"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "board_id",
+          "designation",
+          "name",
+          "sort_order",
+          "proposed_cable_type",
+          "proposed_conductor_count",
+          "proposed_cross_section_mm2",
+          "protective_device",
+          "rcd_group",
+          "phase_count",
+          "note",
+          "device_ids",
+          "version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CircuitOut",
+        "description": "Stromkreis samt zugeordneten Geraeten (nach ID sortiert)."
+      },
+      "CircuitUpdate": {
+        "properties": {
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 10000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
+          },
+          "proposed_cable_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed Cable Type"
+          },
+          "proposed_conductor_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed Conductor Count"
+          },
+          "proposed_cross_section_mm2": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{1,4}(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed Cross Section Mm2",
+            "examples": [
+              "1.5",
+              "2.50"
+            ]
+          },
+          "protective_device": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protective Device"
+          },
+          "rcd_group": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rcd Group"
+          },
+          "phase_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "enum": [
+                  1,
+                  2,
+                  3
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phase Count"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "designation": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 16,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Designation"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CircuitUpdate",
+        "description": "Teilaenderung (``If-Match``). Optionale Angaben sind mit ``null`` leerbar.\n\nEine Aenderung der Vorschlaege aendert **keine** bestehende Leitung."
       },
       "ContourDeviceIn": {
         "properties": {
@@ -7273,7 +8445,9 @@
               "socket",
               "switch",
               "light",
-              "data"
+              "data",
+              "distribution",
+              "junction"
             ],
             "title": "Category"
           },
@@ -7453,6 +8627,207 @@
         ],
         "title": "DirectoryEntryOut",
         "description": "Eintrag der Benutzerliste: Mitgliedschaft **oder** offene Einladung.\n\n``kind`` unterscheidet beides. ``id`` ist je nach Art die ID der\nMitgliedschaft oder der Einladung. Ein entferntes Konto (``removed``)\nerscheint nur mit ``status=removed`` und **ohne** Name und E-Mail."
+      },
+      "DistributionBoardCreate": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "placement_device_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Placement Device Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "DistributionBoardCreate",
+        "description": "Neue Verteilung eines Gebaeudes (ADR 0026).\n\n``placement_device_id`` ist optional: ein Geraet des Typs\n``distribution_board`` in diesem Gebaeude, das noch keine andere Verteilung\nplatziert. Ohne Lage ist die Verteilung zulaessig."
+      },
+      "DistributionBoardListOut": {
+        "properties": {
+          "building_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Building Id"
+          },
+          "boards": {
+            "items": {
+              "$ref": "#/components/schemas/DistributionBoardOut"
+            },
+            "type": "array",
+            "title": "Boards"
+          }
+        },
+        "type": "object",
+        "required": [
+          "building_id",
+          "boards"
+        ],
+        "title": "DistributionBoardListOut",
+        "description": "Alle Verteilungen eines Gebaeudes, nach Code sortiert."
+      },
+      "DistributionBoardOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "building_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Building Id"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "placement_device_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Placement Device Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "building_id",
+          "code",
+          "name",
+          "note",
+          "placement_device_id",
+          "version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DistributionBoardOut"
+      },
+      "DistributionBoardUpdate": {
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 16,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "placement_device_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Placement Device Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "DistributionBoardUpdate",
+        "description": "Teilaenderung (``If-Match``). ``note`` und ``placement_device_id`` sind leerbar."
       },
       "EffectivePermissionOut": {
         "properties": {

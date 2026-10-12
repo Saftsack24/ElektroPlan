@@ -90,6 +90,7 @@ export function Steigwege({
   darfSchreiben,
   onUngespeichert,
   zurueck,
+  onGeschrieben,
 }: {
   buildingId: string;
   buildingName: string;
@@ -98,6 +99,8 @@ export function Steigwege({
   darfSchreiben: boolean;
   onUngespeichert: (offen: boolean) => void;
   zurueck?: { label: string; onClick: () => void } | undefined;
+  /** Nach einem erfolgreichen Schreibvorgang - die Seite lädt die Projektabfrage gezielt nach. */
+  onGeschrieben?: (() => Promise<void>) | undefined;
 }) {
   const { api } = useAuth();
   const queryClient = useQueryClient();
@@ -247,6 +250,7 @@ export function Steigwege({
             });
       const neu = ausServer(antwort);
       await queryClient.invalidateQueries({ queryKey: steigwegSchluessel(buildingId) });
+      await onGeschrieben?.();
       setAuswahl(antwort.id);
       setEntwurf(neu);
       setBasis(neu);
@@ -289,6 +293,7 @@ export function Steigwege({
       setEntwurf(null);
       setBasis(null);
       await queryClient.invalidateQueries({ queryKey: steigwegSchluessel(buildingId) });
+      await onGeschrieben?.();
     } catch (error: unknown) {
       if (error instanceof ApiError && error.errorType === "version-conflict") setKonflikt(true);
       setFehler(error instanceof ApiError ? error.userMessage : "Der Steigweg konnte nicht entfernt werden.");

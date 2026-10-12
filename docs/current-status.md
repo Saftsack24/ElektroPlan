@@ -1,7 +1,7 @@
 # Aktueller Projektstand
 
 **Letzte Aktualisierung:** 2026-10-11
-**Aktualisiert nach:** Task 0034 — Checkpoint-Commit Phase 6a.4–6a.5 (Steigwege). Davor: Task 0033 — Checkpoint `595e8ac` gepusht; Phase 6a.4–6a.5 umgesetzt und automatisiert geprüft. Davor: Checkpoint-Commit Phase 6a.0–6a.3 mit Sicherheitskorrekturen und Abhängigkeitsupdates (Tasks 0027–0032; technisch umgesetzt und geprüft, manuelle Gesamtprüfung nach Phase 6 offen). Davor: Task 0031 — eigener lokaler JWT-Schlüssel aktiv (Entwicklungsersatz nicht mehr verwendet). Davor: Task 0030 — geprüften Stand im Docker-Entwicklungsstack aktiviert (Images neu gebaut, Updates aktiv). Davor: Task 0029 — Review-Restbefunde (Refresh-Limiter, Sicherheitsupdates, `127.0.0.1`), nicht committet. Davor: Task 0028 — Sicherheitsauftrag (sechs Befunde, getrennt von Phase 6a), umgesetzt und automatisiert geprüft, **nicht committet, keine manuelle Abnahme**. Davor: Task 0027 — Phase 6a.0–6a.3 (bestätigte Höhenlage, Wandkopplungen, Darstellung und Bedienung, Backfill-Befehl) umgesetzt, **wartet auf Abnahme, nicht committet**. Davor: Task 0026 — Entwurf Phase 6a; Task 0025 — Phase 5 als `fb4cc85` committet
+**Aktualisiert nach:** Task 0039 — Nacharbeiten 6b.1 (Projektkopf, Fehleraufzeichnung) und gemeinsamer Checkpoint-Commit 6b.0/6b.1 (2026-10-12; technisch umgesetzt und geprüft, manuelle Gesamtprüfung nach Phase 6 offen, keine Produktions- oder Echtdatenfreigabe). Davor: Task 0038 — **6b.1 umgesetzt** (Oberfläche Verteilungen/Stromkreise/Gerätezuordnung, Abzweigdosen zuordenbar, Entwicklungsdatenbank auf `0012` migriert und Seed ausgeführt), automatisiert geprüft, **nicht committet**. Davor: Task 0037 — Phase-6b-Entwurf freigegeben (D11 bestätigt, ADR 0026 accepted); **6b.0 umgesetzt** (Verteilungen, Stromkreise, Gerätezuordnung, Migration `0012`), automatisiert geprüft, **nicht committet**. Davor: Task 0036 — Entwurf Phase 6b, 2. Fassung (D1, D2, D4, D5 bestätigt; Fußboden, Kabelangaben je Leitung, Durchführungs-Gegenlage; D11 offen; nicht committet). Davor: Task 0035 — Entwurf Phase 6b ([`phase-6b-design.md`](phase-6b-design.md), ADR 0026 proposed; nur Entwurf, nicht umgesetzt, nicht committet). Davor: Task 0034 — Checkpoint-Commit `686316c` Phase 6a.4–6a.5 (Steigwege), gepusht. Davor: Task 0033 — Checkpoint `595e8ac` gepusht; Phase 6a.4–6a.5 umgesetzt und automatisiert geprüft. Davor: Checkpoint-Commit Phase 6a.0–6a.3 mit Sicherheitskorrekturen und Abhängigkeitsupdates (Tasks 0027–0032; technisch umgesetzt und geprüft, manuelle Gesamtprüfung nach Phase 6 offen). Davor: Task 0031 — eigener lokaler JWT-Schlüssel aktiv (Entwicklungsersatz nicht mehr verwendet). Davor: Task 0030 — geprüften Stand im Docker-Entwicklungsstack aktiviert (Images neu gebaut, Updates aktiv). Davor: Task 0029 — Review-Restbefunde (Refresh-Limiter, Sicherheitsupdates, `127.0.0.1`), nicht committet. Davor: Task 0028 — Sicherheitsauftrag (sechs Befunde, getrennt von Phase 6a), umgesetzt und automatisiert geprüft, **nicht committet, keine manuelle Abnahme**. Davor: Task 0027 — Phase 6a.0–6a.3 (bestätigte Höhenlage, Wandkopplungen, Darstellung und Bedienung, Backfill-Befehl) umgesetzt, **wartet auf Abnahme, nicht committet**. Davor: Task 0026 — Entwurf Phase 6a; Task 0025 — Phase 5 als `fb4cc85` committet
 
 > Dieses Dokument soll einer neuen Session in wenigen Minuten vermitteln, wo das Projekt
 > steht.
@@ -59,7 +59,12 @@ Produktions- oder Echtdatenfreigabe**; Befundstatus [`security.md`](security.md)
 **Phase 6a.4–6a.5 — Steigwege: TECHNISCH UMGESETZT UND GEPRÜFT** — mit dem Checkpoint vom
 2026-10-11 committet (Task 0034); manuelle Gesamtprüfung durch den Auftraggeber nach Phase 6 offen
 ([`phase-6a-design.md`](phase-6a-design.md) §10.5, ADR 0025)
-**Phase 6 insgesamt: BEGONNEN, NICHT ABGESCHLOSSEN** · **Phase 6b: NOT STARTED**
+**Phase 6 insgesamt: BEGONNEN, NICHT ABGESCHLOSSEN** · **Phase 6b: Entwurf freigegeben**
+([`phase-6b-design.md`](phase-6b-design.md), [ADR 0026](decisions/0026-circuits-cables-and-cable-paths.md)
+**accepted**) · **6b.0 — Verteilungen, Stromkreise, Gerätezuordnung (Backend): TECHNISCH
+UMGESETZT UND GEPRÜFT** (Task 0037, Entwurf §15) · **6b.1 — Oberfläche: TECHNISCH UMGESETZT UND
+GEPRÜFT** (Tasks 0038/0039, Entwurf §16) – beide mit dem Checkpoint vom 2026-10-12 committet;
+manuelle Gesamtprüfung nach Phase 6 offen · 6b.2–6b.6 NOT STARTED
 
 > Phase 4a und 4a.1 sind als `887f254`, Phase 4.2 als `66cbff3` committet. Die
 > Entscheidungen **T8** (Wandhöhe und Wandtyp) und **T9** (deckungsgleiche Wände) sind
@@ -69,6 +74,57 @@ Produktions- oder Echtdatenfreigabe**; Befundstatus [`security.md`](security.md)
 ---
 
 ## 2. Zuletzt abgeschlossene Aufgabe
+
+**Task 0039 (2026-10-12) — Nacharbeiten 6b.1 und Checkpoint 6b.0/6b.1.** Projektkopf: nach
+erfolgreichen Schreibvorgängen in Steigwegen und Stromkreisen wird gezielt die Projektabfrage
+nachgeladen. Der einzelne Frontend-Fehlschlag aus Task 0038 ist **nicht identifiziert** (die
+Ausgabe des Laufs war nicht mehr vorhanden); künftige Läufe schreiben Testnamen und Meldungen
+als JUnit-XML nach `apps/planner/test-results/` und `tasks.ps1` den Exit-Code daneben (ignoriert).
+Gemeinsamer Checkpoint-Commit für 6b.0/6b.1, nicht gepusht.
+
+
+**Task 0038 (2026-10-11) — 6b.1 Verteilungen, Stromkreise, Gerätezuordnung (Oberfläche).**
+Korrektur aus 6b.0: Abzweigdosen sind einem Stromkreis zuordenbar (Datendosen und Lagegerät
+nicht). Entwicklungsdatenbank regulär von `0011` auf `0012` migriert, Seed ausgeführt (1 neues
+Recht, 2 Katalogtypen). Neue Ansicht „Stromkreise“ mit Verteilungen, Stromkreisen und eigenem
+Zuordnungsentwurf (Liste und Grundriss); bestehende Speicher- und Raumlösch-Rückfrage nennen
+verlorene Stromkreiszuordnungen. Bodenübergang-Speicherstrategie festgelegt (Entwurf §5.6).
+Nicht committet; manuelle Gesamtprüfung nach Phase 6 offen.
+
+
+**Task 0037 (2026-10-11) — Freigabe 6b-Entwurf, Umsetzung 6b.0.** D11 bestätigt, Bodenübergang
+präzisiert (Entwurf §5.6), Entwurf freigegeben, ADR 0026 accepted. Umgesetzt: Migration
+`0012_boards_and_circuits`, Verteilungen (mehrere je Gebäude, Lage über Gerät
+`distribution_board`), Stromkreise mit Vorschlagsfeldern (Querschnitt als Dezimalstring),
+Gerätezuordnung (ein Stromkreis je Gerät, nur Steckdosen/Schalter/Leuchten, nur gleiches
+Gebäude, nie still umgehängt), Katalogtypen `distribution_board`/`junction_box` per Seed, Recht
+`electrical.circuit.write`, Löschteilnehmer, Schutz von Lagegerät und Zuordnung im Raumentwurf,
+API, Tests. Frontend nur Typverträglichkeit (Kategorienamen, zwei Symbole). **Nach dem
+Aktualisieren einer Umgebung: `migrate`, dann zwingend `seed`.** Nicht committet; keine
+Oberfläche aus 6b.1.
+
+
+**Task 0036 (2026-10-11) — Entwurf Phase 6b, 2. Fassung.** D1, D2 (mehrere Verteilungen je
+Gebäude), D4 und D5 bestätigt. Geändert: vereinfachte **Fußbodenführung** in 6b (FFB-Ebene,
+Grundriss mit Ebenenwahl, Raumwechsel nur über Durchführung oder Bodenübergang an
+Tür/Durchgang – **D11 offen**); **tatsächliche Kabelangaben je Leitung**, Stromkreis nur
+Vorschlag, keine stille Nachführung, Mengen nach tatsächlichen Angaben mit Zeile
+„unvollständig spezifiziert“; **Gegenseite einer Durchführung** über die exakte
+Abschnittstransformation statt `L − offset`, mit Testfällen. ADR 0026 bleibt **proposed**.
+Keine Implementierung, nicht committet.
+
+
+**Task 0035 (2026-10-11) — Entwurf Phase 6b.** [`phase-6b-design.md`](phase-6b-design.md) und
+[ADR 0026](decisions/0026-circuits-cables-and-cable-paths.md) (**proposed**): Verteilung als
+Bezugspunkt mit Lage über ein Gerät, Stromkreise mit manuellen Angaben, Gerätezuordnung,
+Leitungen mit eigener Wegpunktliste, abgeleitete Trassen, Durchführungen nur in aktiven
+`shared`-Abschnitten, Steigwegnutzung ohne Geometriekopie, reine Längenfunktion mit präzisiertem
+Beispiel (8 500 / 9 200 mm), Änderungsregeln, Schritte 6b.0–6b.6, Entscheidungen D1–D10.
+**Keine** Implementierung, keine Migration, nicht committet. Wartet auf Prüfung und Freigabe.
+
+**Task 0034 (2026-10-11) — Checkpoint 6a.4–6a.5.** Commit `686316c`, regulär nach `origin/main`
+gepusht (`595e8ac..686316c`). Grundlage: Lauf mit 1187 Backend- und 965 Frontendtests.
+
 
 **Task 0033 (2026-10-11) — Checkpoint gepusht, Phase 6a.4–6a.5 Steigwege.** Checkpoint
 `595e8ac` regulär nach `origin/main` gepusht (Fast-Forward `fb4cc85..595e8ac`). Danach

@@ -201,7 +201,7 @@ def test_katalog_ist_klein_eindeutig_und_vollstaendig() -> None:
     keys = [definition.key for definition in DEVICE_TYPE_CATALOG]
     assert len(keys) == len(set(keys))
     kategorien = {definition.category.value for definition in DEVICE_TYPE_CATALOG}
-    assert kategorien == {"socket", "switch", "light", "data"}
+    assert kategorien == {"socket", "switch", "light", "data", "distribution", "junction"}
     # Mindestens ein ausdruecklich aussen geeigneter Leuchtentyp.
     assert any(
         definition.category.value == "light" and definition.allows_wall_exterior

@@ -29,5 +29,10 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test-setup.ts"],
+    // Schlanke Fehleraufzeichnung (Task 0039): Neben der Konsole schreibt jeder Lauf
+    // Testnamen und Fehlermeldungen als JUnit-XML nach test-results/ (von Git ignoriert).
+    // Den Exit-Code legt tasks.ps1 daneben ab. Ein vereinzelter Fehlschlag bleibt so
+    // nachvollziehbar, ohne Wiederholungen oder längere Timeouts.
+    reporters: ["default", ["junit", { outputFile: "test-results/vitest-junit.xml" }]],
   },
 });

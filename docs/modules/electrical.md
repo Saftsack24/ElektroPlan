@@ -3,7 +3,8 @@
 Art: Fachmodul · Präfix: `electrical_` · Status: **Raummodell umgesetzt (Phase 3)**,
 **grafischer 2D-Editor umgesetzt (Phase 4a)**, **abgeleitete 3D-Ansicht umgesetzt
 (Phase 4b)**, **Wand- und Deckenansicht umgesetzt (Phase 4f)**, **Geräte umgesetzt (Phase 5)**,
-Stromkreise/Leitungswege geplant (Phase 6)
+**Wandkopplungen und Steigwege (Phase 6a)**, **Verteilungen, Stromkreise, Gerätezuordnung
+(Phase 6b.0 Backend, 6b.1 Oberfläche)**; Leitungen und Leitungswege geplant (6b.2+, ADR 0026)
 Abhängig von: **Phasen 3–6 nur `core`** · ab Phase 7 zusätzlich `materials`
 
 > Die Module Registry verweigert den Start bei einer Abhängigkeit auf ein nicht
@@ -227,17 +228,37 @@ Längen werden nie gespeichert, sondern aus Halten und Höhenlagen abgeleitet
 (`riser_course.py`). Löschung über die Projektlöschung; Geschoss bzw. Gebäude mit Steigweg
 lassen sich nicht löschen (`409`).
 
-### `electrical_distribution_boards`
-Verteilungen mit Code (`HV`, `UV1`, …), Standort und Hauptabsicherung.
+### `electrical_distribution_boards` — umgesetzt (Phase 6b.0, ADR 0026)
+Verteilung eines **Gebäudes** (mehrere je Gebäude): `code` (je Gebäude eindeutig, z. B. `HV`,
+`UV1`), `name`, `note`, versioniert. Die **Lage** ist kein eigenes Feld, sondern ein Gerät des
+Katalogtyps `distribution_board` (`placement_device_id`, optional): im selben Gebäude, vom Typ
+Verteilung, höchstens eine Verteilung je Gerät. Schutz: Das Lagegerät lässt sich im Raumentwurf
+weder entfernen (`409 device-is-distribution-board`) noch umtypen
+(`422 distribution-board-type-changed`); ein Raum mit Lagegerät lässt sich nicht löschen
+(`409 room-has-distribution-board`); eine Verteilung mit Stromkreisen nicht
+(`409 board-has-circuits`); ein Gebäude mit Verteilung nicht (Fremdschlüssel, `409`).
 
-### `electrical_circuits`
-Stromkreis: Nummer, Bezeichnung, Verteilung, Leitungstyp, Querschnitt, Schutzorgantyp und
--nennstrom, RCD-Gruppe, Phasenzahl. **Werte werden erfasst, nicht berechnet.**
+### `electrical_circuits` — umgesetzt (Phase 6b.0)
+Stromkreis an einer Verteilung: `designation` (je Verteilung eindeutig, z. B. `F3`), `name`,
+`sort_order`, **Vorschläge für neue Leitungen** `proposed_cable_type`,
+`proposed_conductor_count`, `proposed_cross_section_mm2` (`numeric(6,2)`, API-String mit zwei
+Nachkommastellen), dazu `protective_device`, `rcd_group`, `phase_count` (1–3), `note`.
+**Alle Werte werden erfasst, nicht berechnet oder geprüft** (`security.md` §17). Eine Änderung
+der Vorschläge ändert später keine bestehende Leitung (6b.3).
 
-### `electrical_cable_routes` und `electrical_cable_route_points`
-Leitungsweg zwischen zwei Punkten (Verteilung ↔ Gerät, Gerät ↔ Gerät) mit Zone,
-Verlegeart und normalisierter Punktliste. Gespeichert werden `computed_length_mm`
-(Geometrie) und `allowance_mm` (Zugaben) getrennt.
+### `electrical_circuit_devices` — umgesetzt (Phase 6b.0)
+Zuordnung Gerät → Stromkreis, Primärschlüssel `(organization_id, device_id)`: höchstens ein
+Stromkreis je Gerät. Nur Kategorien `socket`, `switch`, `light` und `junction` (Abzweigdose als
+Verzweigungspunkt, seit 6b.1); nicht `data` und nicht das Lagegerät einer Verteilung
+(`distribution`). Nur Geräte des Gebäudes der Verteilung. Ein anderweitig zugeordnetes Gerät liefert `409 device-assigned-elsewhere` – nie
+still umgehängt. Gerät oder Stromkreis weg → Zuordnung weg (`CASCADE`); ein zugeordnetes Gerät
+wechselt im Raumentwurf nicht in eine nicht zuordenbare Art (`422 assigned-device-not-assignable`).
+
+### Leitungen, Wegpunkte, Durchführungen — geplant (6b.3, ADR 0026)
+Siehe [`phase-6b-design.md`](../phase-6b-design.md) §3.2–§5. Die Phase-0-Planung
+(`electrical_cable_routes` mit gespeicherter Länge und Standardzugaben) ist durch ADR 0026
+ersetzt: Kabelangaben je Leitung, Wegpunkte auf Wand/Decke/Fußboden, keine gespeicherten Längen,
+Zugaben nur ausdrücklich.
 
 ---
 
@@ -327,8 +348,8 @@ Meter × Minuten-pro-Meter des Verlegeart-Schlüssels.
 | `electrical.plan.read` | Planung ansehen | **registriert (Phase 3)** |
 | `electrical.plan.write` | Räume, Wände, Öffnungen bearbeiten | **registriert (Phase 3)** |
 | `electrical.device.write` | ~~Elektroelemente bearbeiten~~ | **nicht angelegt (Phase 5):** Geräte gehören zum atomaren Raumentwurf und fallen unter `electrical.plan.write` (ADR 0023) |
-| `electrical.circuit.write` | Stromkreise und Verteilungen bearbeiten | ab Phase 6 |
-| `electrical.route.write` | Leitungswege bearbeiten | ab Phase 6 |
+| `electrical.circuit.write` | Verteilungen, Stromkreise, Gerätezuordnung bearbeiten | **registriert (Phase 6b.0)**, Rolle Planer |
+| `electrical.route.write` | Leitungen, Wegpunkte, Durchführungen bearbeiten | ab 6b.3 |
 | `electrical.settings.write` | Gerätetypen und Zonen-Standardwerte pflegen | offen – der Gerätekatalog ist in Phase 5 ein Systemkatalog aus dem Seed |
 
 Phase 3 registriert bewusst nur **zwei** Schlüssel: ansehen und bearbeiten. Wer die
@@ -504,6 +525,27 @@ Teilsumme. Codes: `422` `riser-stop-floor-unknown`, `riser-stop-floor-duplicate`
 `riser-stop-unknown`, `riser-stop-id-duplicate`, `riser-stop-floor-changed`,
 `riser-name-taken`; `409` `version-conflict`, `project-completed`, `project-archived`. Kein
 Event. Rechte: `electrical.plan.read`/`.write`. Details: `docs/phase-6a-design.md` §10.5.
+
+### Ergänzt in Phase 6b.0 (ADR 0026)
+
+```
+GET    /buildings/{building_id}/distribution-boards
+POST   /buildings/{building_id}/distribution-boards   {code, name, note?, placement_device_id?}
+PATCH  /distribution-boards/{board_id}                If-Match
+DELETE /distribution-boards/{board_id}                If-Match
+GET    /buildings/{building_id}/circuits              inkl. device_ids
+POST   /distribution-boards/{board_id}/circuits       {designation, name, proposed_*, …}
+PATCH  /circuits/{circuit_id}                         If-Match
+DELETE /circuits/{circuit_id}                         If-Match (Zuordnungen mit)
+PUT    /circuits/{circuit_id}/devices                 {device_ids[]}, If-Match (Stromkreisversion)
+```
+
+Codes: `422` `board-code-taken`, `board-placement-not-in-building`,
+`board-placement-wrong-type`, `circuit-designation-taken`, `circuit-device-duplicate`,
+`circuit-device-not-in-building`, `circuit-device-not-assignable`; `409`
+`board-placement-taken`, `board-has-circuits`, `device-assigned-elsewhere`, `version-conflict`,
+`project-completed`, `project-archived`. Lesen `electrical.plan.read`, Schreiben
+`electrical.circuit.write` (neu, Rolle Planer; nach der Migration Seed ausführen). Kein Event.
 
 ### Geplant (Phase 6)
 
@@ -951,6 +993,20 @@ Abschnittstabelle mit Status und Summe bzw. ausdrücklicher Teilsumme, Grundriss
 Vorläufig (Höhenlage nicht bestätigt) = gestrichelt, widersprüchlich = strichpunktiert.
 Verlauf und Längen im Browser aus `steigweg/verlauf.ts` (Spiegel von `riser_course.py`,
 Fixture `steigweg.v1.json`). Eigener Entwurf mit Navigationsschutz – getrennt vom Raumentwurf.
+
+### Verteilungen und Stromkreise (Phase 6b.1) — umgesetzt
+
+Ansicht „Stromkreise“ im Tab „Räume & Grundriss“ für das Gebäude des gewählten Geschosses
+(`stromkreise/`). Verteilungen und Stromkreise per Dialog (sofort gespeichert): Code,
+Bezeichnung, Notiz, optionale Lage über ein freies Gerät „Verteilung“ desselben Gebäudes
+(„Noch nicht im Plan platziert“); Stromkreise mit Bezeichnung, Name und Kabelangaben als
+**Vorschlag für neue Leitungen** (ausdrücklich ohne Prüfung oder Dimensionierung). Die
+Gerätezuordnung ist ein **eigener Entwurf**: Liste und grafische Auswahl im Grundriss, Geräte
+anderer Stromkreise gesperrt mit deren Bezeichnung, „Zuordnung speichern“/„Verwerfen“,
+Versionskonflikt mit bewusstem Neuladen, Navigationsschutz. Nur gespeicherte Geräte sind
+Zuordnungsziele. Beim Entfernen zugeordneter Geräte nennt die bestehende Speicher-Rückfrage des
+Raumentwurfs (bzw. die Raumlöschung) Gerät, Stromkreis und den Verlust der Zuordnung. Schreiben
+nur mit `electrical.circuit.write` und nicht bei abgeschlossenen/archivierten Projekten.
 
 ### Ausdrücklich nicht in Phase 4a
 

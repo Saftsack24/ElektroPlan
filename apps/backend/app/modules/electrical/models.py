@@ -24,6 +24,7 @@ Alle geometrischen Werte sind ganzzahlige Millimeter mit Suffix ``_mm``
 from __future__ import annotations
 
 import uuid
+from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
@@ -32,6 +33,9 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    Numeric,
+    PrimaryKeyConstraint,
+    SmallInteger,
     String,
     UniqueConstraint,
     text,
@@ -84,6 +88,14 @@ RISER_OFFSET_MODES: tuple[str, ...] = ("orthogonal", "direct")
 RISER_NAME_CONSTRAINT = "uq_electrical_risers_organization_id_building_id_name"
 #: Hoechstens ein Halt je Steigweg und Geschoss (Migration ``0010``).
 RISER_STOP_FLOOR_CONSTRAINT = "uq_electrical_riser_stops_organization_id_riser_id_floor_id"
+#: Code einer Verteilung ist je Gebaeude eindeutig (Phase 6b.0, Migration ``0012``).
+BOARD_CODE_CONSTRAINT = "uq_el_boards_building_code"
+#: Ein Geraet ist die Lage hoechstens einer Verteilung.
+BOARD_PLACEMENT_CONSTRAINT = "uq_el_boards_placement_device"
+#: Bezeichnung eines Stromkreises ist je Verteilung eindeutig.
+CIRCUIT_DESIGNATION_CONSTRAINT = "uq_electrical_circuits_organization_id_board_id_designation"
+#: Ein Geraet haengt an hoechstens einem Stromkreis (Primaerschluessel der Zuordnung).
+CIRCUIT_DEVICE_PK = "pk_electrical_circuit_devices"
 
 
 def _value_list(values: tuple[str, ...]) -> str:
@@ -465,3 +477,125 @@ class ElectricalRiserStop(UUIDPrimaryKey, TenantScoped, Timestamped, Base):
     floor_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     x_mm: Mapped[int] = mapped_column(Integer, nullable=False)
     y_mm: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+# --------------------------------------------- Verteilungen, Stromkreise (6b.0)
+
+
+class ElectricalDistributionBoard(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, Base):
+    """Verteilung eines Gebaeudes (Phase 6b.0, ADR 0026) - elektrischer Bezugspunkt.
+
+    Mehrere Verteilungen je Gebaeude; ``code`` (etwa ``UV1``) je Gebaeude
+    eindeutig. Die **raeumliche Lage** ist kein eigenes Feld, sondern ein Geraet
+    des Katalogtyps ``distribution_board`` (``placement_device_id``, optional,
+    hoechstens eine Verteilung je Geraet). Das Geraet laesst sich nicht
+    entfernen, solange es eine Verteilung platziert (``RESTRICT``; der Service
+    antwortet vorher mit ``409``).
+    """
+
+    __tablename__ = "electrical_distribution_boards"
+    __table_args__ = (
+        tenant_identity(),
+        tenant_fk("building_id", "buildings", ondelete="RESTRICT"),
+        ForeignKeyConstraint(
+            ["organization_id", "placement_device_id"],
+            ["electrical_devices.organization_id", "electrical_devices.id"],
+            name="fk_el_boards_placement_device",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint("organization_id", "building_id", "code", name=BOARD_CODE_CONSTRAINT),
+        UniqueConstraint("organization_id", "placement_device_id", name=BOARD_PLACEMENT_CONSTRAINT),
+    )
+
+    building_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    code: Mapped[str] = mapped_column(String(16), nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
+    placement_device_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, default=None)
+
+
+class ElectricalCircuit(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, Base):
+    """Stromkreis an einer Verteilung (Phase 6b.0, ADR 0026).
+
+    ``proposed_*`` sind **Vorschlaege** fuer neue Leitungen (6b.3) - keine
+    Vorgabe, keine Vererbung, keine Pruefung. Schutzorgan, RCD-Gruppe und
+    Phasenzahl sind manuelle Planungsangaben (docs/security.md, Abschnitt 17).
+    Querschnitt als ``numeric(6,2)``, ueber die API als String (ADR 0005).
+    Verteilung ``RESTRICT``: eine Verteilung mit Stromkreisen laesst sich nicht
+    loeschen.
+    """
+
+    __tablename__ = "electrical_circuits"
+    __table_args__ = (
+        tenant_identity(),
+        ForeignKeyConstraint(
+            ["organization_id", "board_id"],
+            [
+                "electrical_distribution_boards.organization_id",
+                "electrical_distribution_boards.id",
+            ],
+            name="fk_electrical_circuits_board",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "organization_id", "board_id", "designation", name=CIRCUIT_DESIGNATION_CONSTRAINT
+        ),
+        CheckConstraint(
+            "proposed_conductor_count IS NULL OR proposed_conductor_count BETWEEN 1 AND 100",
+            name="conductor_count_plausible",
+        ),
+        CheckConstraint(
+            "proposed_cross_section_mm2 IS NULL OR proposed_cross_section_mm2 > 0",
+            name="cross_section_positive",
+        ),
+        CheckConstraint(
+            "phase_count IS NULL OR phase_count IN (1, 2, 3)", name="phase_count_known"
+        ),
+    )
+
+    board_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    designation: Mapped[str] = mapped_column(String(16), nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    proposed_cable_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    proposed_conductor_count: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    proposed_cross_section_mm2: Mapped[Decimal | None] = mapped_column(Numeric(6, 2), nullable=True)
+    protective_device: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    rcd_group: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    phase_count: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
+
+
+class ElectricalCircuitDevice(TenantScoped, Timestamped, Base):
+    """Zuordnung eines Geraets zu einem Stromkreis (Phase 6b.0, ADR 0026).
+
+    Primaerschluessel ``(organization_id, device_id)``: ein Geraet haengt an
+    hoechstens einem Stromkreis. Keine eigene Version - die Zuordnungsliste
+    steht unter der Stromkreisversion. Geraet und Stromkreis ``CASCADE``: Die
+    Zuordnung ist ein reiner Verweis ohne eigene Bedeutung.
+    """
+
+    __tablename__ = "electrical_circuit_devices"
+    __table_args__ = (
+        PrimaryKeyConstraint("organization_id", "device_id", name=CIRCUIT_DEVICE_PK),
+        ForeignKeyConstraint(
+            ["organization_id", "device_id"],
+            ["electrical_devices.organization_id", "electrical_devices.id"],
+            name="fk_electrical_circuit_devices_device",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "circuit_id"],
+            ["electrical_circuits.organization_id", "electrical_circuits.id"],
+            name="fk_electrical_circuit_devices_circuit",
+            ondelete="CASCADE",
+        ),
+        Index(
+            "ix_electrical_circuit_devices_organization_id_circuit_id",
+            "organization_id",
+            "circuit_id",
+        ),
+    )
+
+    device_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    circuit_id: Mapped[uuid.UUID] = mapped_column(nullable=False)

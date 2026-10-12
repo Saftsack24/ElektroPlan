@@ -452,7 +452,17 @@ Frontendtests bestanden. **Vom Auftraggeber manuell abgenommen und committet.**
 
 Manuelle Gesamtprüfung aller 6a-Schritte durch den Auftraggeber: nach Abschluss von Phase 6.
 
-**Phase 6b:** NOT STARTED.
+**Phase 6b** ([`docs/phase-6b-design.md`](phase-6b-design.md), ADR 0026 **accepted**): Entwurf freigegeben.
+
+| Schritt | Inhalt | Status |
+|---|---|---|
+| 6b.0 | Verteilungen, Stromkreise, Gerätezuordnung (Backend, Migration `0012`) | **technisch umgesetzt, committet** |
+| 6b.1 | Oberfläche Verteilungen/Stromkreise/Zuordnung (+ Abzweigdosen zuordenbar) | **technisch umgesetzt, committet** |
+| 6b.2 | reine Längenfunktion + Fixture | NOT STARTED |
+| 6b.3 | Leitungen, Wegpunkte, Durchführungen (Backend, Migration `0013`) | NOT STARTED |
+| 6b.4 | Leitungen in Wand-/Deckenansicht | NOT STARTED |
+| 6b.5 | Grundriss mit Fußboden, Bodenübergang, Steigweg, 3D | NOT STARTED |
+| 6b.6 | Mengenübersicht, Gesamtprüfung Phase 6 | NOT STARTED |
 
 Verteilungen, Stromkreise, Zuordnung von Geräten, Leitungswege mit Installationszonen,
 Längenberechnung, Mengenübersicht.

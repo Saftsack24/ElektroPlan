@@ -21,6 +21,8 @@ node_modules/
 dist/
 .vite/
 *.tsbuildinfo
+# Testaufzeichnung (JUnit-XML, Exit-Code) - Artefakt, nicht versioniert
+test-results/
 
 # package-lock.json wird BEWUSST versioniert (npm ci).
 !package-lock.json

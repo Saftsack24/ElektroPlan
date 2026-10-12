@@ -58,6 +58,19 @@ Dokumentation und Oberfläche auf Deutsch, Code und API auf Englisch.
 | Vorschlag (Kandidat) | `wall_link_candidate` | ungekoppeltes, exakt überlappendes Wandpaar mit Einordnung `suggested`, `decision-needed` oder `not-linkable`; wird nie automatisch gekoppelt |
 | Bestandsübernahme (Backfill) | `wall-links-backfill`, `origin = backfill` | Befehl, der eindeutige Bestandsfälle als gemeinsame Bauwand anlegt; Standard Probelauf |
 | Steigweg / Übergabepunkt | `riser` / `riser_stop` | ausdrücklich angelegter Geschossübergang je Gebäude bzw. sein Punkt je Geschoss auf Fertigfußbodenhöhe (ADR 0025); seit 6a.4–6a.5 |
+| Verteilung | `distribution_board` | elektrischer Bezugspunkt eines Gebäudes (Code, Name), mehrere je Gebäude; Lage über ein Gerät des Typs `distribution_board` – seit 6b.0 (ADR 0026) |
+| Stromkreis | `circuit` | Einheit an einer Verteilung; ihre Kabelangaben (`proposed_*`) sind **Vorschläge** für neue Leitungen, manuell und ungeprüft – seit 6b.0 |
+| Gerätezuordnung | `circuit_device` | Gerät hängt an einem Stromkreis (höchstens einem); Steckdosen, Schalter, Leuchten und Abzweigdosen – nicht Datendosen und nicht das Lagegerät einer Verteilung – seit 6b.0/6b.1 |
+| Abzweigdose | `junction_box` | Gerätetyp als Verzweigungspunkt künftiger Leitungen; kein Verbraucher – seit 6b.0 |
+| Leitung | `cable` | physisches Kabel eines Stromkreises zwischen zwei Geräten mit eigenen tatsächlichen Kabelangaben – **Entwurf 6b** |
+| Kabelangaben | `cable_type`, `conductor_count`, `cross_section_mm2` | Leitungstyp, Leiteranzahl, Querschnitt je Leitung; fehlt eine, ist die Leitung „unvollständig spezifiziert“ – **Entwurf 6b** |
+| Planungsfläche | – | Wand (Innenseite), Decke (lichte Raumhöhe), Fußboden (FFB-Ebene) eines Raums, auf der Wegpunkte liegen – **Entwurf 6b** |
+| Bodenübergang | `opening_crossing` | Fußbodenweg unter einer Tür oder einem Durchgang in den Nachbarraum; kein Weg unter geschlossenen Wänden – **Entwurf 6b** |
+| Leitungsweg / Wegpunkt | `cable_waypoint` | Führung einer Leitung über verankerte Punkte an Wand, Decke, Fußboden, Durchführung, Bodenübergang, Steigweg – **Entwurf 6b** |
+| Trasse | – (abgeleitet) | Strecke mit mindestens einer Leitung; exakt aufeinanderliegende Wege bilden eine Trasse, nie gespeichert – **Entwurf 6b** |
+| Durchführung | `wall_penetration` | Durchquerung einer bestätigten gemeinsamen Bauwand, einmal an der Eigentümerwand gespeichert – **Entwurf 6b** |
+| Anschlussstrecke | – (abgeleitet) | Strecke vom letzten Wegpunkt zur Gerätemitte – **Entwurf 6b** |
+| Anschlusszugabe / Reserve | `start_allowance_mm`, `end_allowance_mm`, `reserve_mm` | ausdrücklich je Leitung eingetragene Zusatzlänge, nie still – **Entwurf 6b** |
 | Standard-Geschosshöhe | `default_ceiling_height_mm` | lichte Höhe in Millimetern |
 | Protokolleintrag | `audit_entry` | |
 | Statusgruppe | `status_group`: `current`, `closed` | Listenfilter: laufend (Entwurf + in Bearbeitung) bzw. abgeschlossen + archiviert |

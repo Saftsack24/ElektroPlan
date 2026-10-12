@@ -112,11 +112,13 @@ function zeigen({
   aktiv = "eg",
   onGeschoss = vi.fn(),
   onUngespeichert = vi.fn(),
+  onGeschrieben = vi.fn(() => Promise.resolve()),
 }: {
   darfSchreiben?: boolean;
   aktiv?: string;
   onGeschoss?: (id: string) => void;
   onUngespeichert?: (offen: boolean) => void;
+  onGeschrieben?: () => Promise<void>;
 } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const ansicht = (geschossId: string) => (
@@ -129,6 +131,7 @@ function zeigen({
           onGeschoss={onGeschoss}
           darfSchreiben={darfSchreiben}
           onUngespeichert={onUngespeichert}
+          onGeschrieben={onGeschrieben}
         />
       </RueckfrageProvider>
     </QueryClientProvider>
@@ -340,5 +343,24 @@ describe("Steigwegverwaltung", () => {
     const zeile = (await screen.findByRole("cell", { name: "Obergeschoss" })).closest("tr");
     fireEvent.click(within(zeile as HTMLElement).getByRole("button", { name: "Im Grundriss zeigen" }));
     expect(onGeschoss).toHaveBeenCalledWith("og");
+  });
+});
+
+describe("Projektkopf", () => {
+  it("meldet erfolgreiche Schreibvorgänge zum Nachladen des Projekts, Fehlschläge nicht", async () => {
+    const onGeschrieben = vi.fn(() => Promise.resolve());
+    api.put.mockRejectedValueOnce(new Error("Netz"));
+    api.put.mockImplementation((_p: string, { body }: { body: { stops: unknown[] } }) =>
+      Promise.resolve({ ...SCHACHT, stops: body.stops, version: 4 }),
+    );
+    zeigen({ onGeschrieben });
+    await geladen();
+    fireEvent.click(screen.getByRole("button", { name: "Steigweg Installationsschacht Flur bearbeiten" }));
+    fireEvent.change(await screen.findByLabelText("Name *"), { target: { value: "Neu" } });
+    fireEvent.click(screen.getByRole("button", { name: "Speichern" }));
+    await screen.findByText("Der Steigweg konnte nicht gespeichert werden.");
+    expect(onGeschrieben).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(onGeschrieben).toHaveBeenCalledTimes(1));
   });
 });

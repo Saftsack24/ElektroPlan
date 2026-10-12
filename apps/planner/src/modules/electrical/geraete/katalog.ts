@@ -42,9 +42,12 @@ export const KATEGORIE_LABEL: Record<Geraetekategorie, string> = {
   switch: "Schalter",
   light: "Leuchten",
   data: "Netzwerk",
+  // Phase 6b.0 (ADR 0026): Lage einer Verteilung und Abzweigdose - Geräte wie alle anderen.
+  distribution: "Verteilungen",
+  junction: "Abzweigdosen",
 };
 
-export const KATEGORIEN: readonly Geraetekategorie[] = ["socket", "switch", "light", "data"];
+export const KATEGORIEN: readonly Geraetekategorie[] = ["socket", "switch", "light", "data", "distribution", "junction"];
 
 export function erlaubt(typ: Geraetetyp, flaeche: Montageflaeche): boolean {
   return flaeche === "ceiling" ? typ.allows_ceiling : flaeche === "wall_exterior" ? typ.allows_wall_exterior : typ.allows_wall_interior;

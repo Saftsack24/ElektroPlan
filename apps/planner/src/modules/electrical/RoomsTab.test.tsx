@@ -792,3 +792,124 @@ describe("Steigwege-Ansicht", () => {
     await waitFor(() => expect(screen.getByLabelText("Name *")).toHaveValue("Schacht"));
   });
 });
+
+// ------------------------------------------------- Stromkreise (Phase 6b.1)
+
+describe("Stromkreise-Ansicht", () => {
+  beforeEach(() => {
+    const standard = api.get.getMockImplementation();
+    api.get.mockImplementation((pfad: string, optionen?: { path?: Record<string, string> }) => {
+      if (pfad.endsWith("/distribution-boards")) {
+        return Promise.resolve({
+          building_id: "gebaeude-1",
+          boards: [{ id: "uv1", building_id: "gebaeude-1", code: "UV1", name: "UV Flur", note: null, placement_device_id: null, version: 1 }],
+        });
+      }
+      if (pfad.endsWith("/circuits")) {
+        return Promise.resolve({
+          building_id: "gebaeude-1",
+          circuits: [
+            {
+              id: "f1",
+              board_id: "uv1",
+              designation: "F1",
+              name: "Steckdosen",
+              sort_order: 0,
+              proposed_cable_type: null,
+              proposed_conductor_count: null,
+              proposed_cross_section_mm2: null,
+              protective_device: null,
+              rcd_group: null,
+              phase_count: null,
+              note: null,
+              device_ids: [],
+              version: 1,
+            },
+          ],
+        });
+      }
+      if (pfad.endsWith("/plan")) {
+        return Promise.resolve({
+          floor_id: optionen?.path?.floor_id,
+          project_id: "projekt-1",
+          rooms: [
+            {
+              id: "raum-1",
+              name: "Wohnzimmer",
+              walls: [{ id: "w1", x1_mm: 0, y1_mm: 0, x2_mm: 5000, y2_mm: 0 }],
+              devices: [
+                {
+                  id: "dose-1",
+                  device_type_key: "socket_single",
+                  mounting_surface: "wall_interior",
+                  wall_id: "w1",
+                  center_offset_mm: 1000,
+                  center_height_mm: 300,
+                  x_mm: null,
+                  y_mm: null,
+                  label: null,
+                },
+              ],
+            },
+          ],
+          wall_links: [],
+          wall_link_candidates: [],
+        });
+      }
+      if (pfad.endsWith("/device-types")) {
+        return Promise.resolve([
+          {
+            key: "socket_single",
+            label: "Steckdose",
+            category: "socket",
+            symbol_key: "socket_single",
+            allows_wall_interior: true,
+            allows_wall_exterior: false,
+            allows_ceiling: false,
+            default_center_height_mm: 300,
+            width_mm: 80,
+            height_mm: 80,
+            sort_order: 1,
+            is_active: true,
+          },
+        ]);
+      }
+      return standard?.(pfad, optionen) as Promise<unknown>;
+    });
+  });
+
+  it("lädt nach dem Anlegen einer Verteilung gezielt das Projekt nach (Projektkopf aktuell)", async () => {
+    zeigen();
+    await screen.findByText("Wohnzimmer");
+    klicken("Stromkreise");
+    await screen.findByText("Verteilungen & Stromkreise · Gebäude „Hauptgebäude“");
+    const projektabrufe = () => api.get.mock.calls.filter(([p]) => p === "/api/v1/projects/{project_id}").length;
+    const vorher = projektabrufe();
+    api.post.mockResolvedValueOnce({ id: "uv2" });
+    klicken("Verteilung anlegen");
+    tippen(/^Code/, "UV2");
+    tippen(/^Bezeichnung/, "Garage");
+    klicken("Speichern");
+    await waitFor(() => expect(projektabrufe()).toBeGreaterThan(vorher));
+  });
+  it("schützt die ungespeicherte Zuordnung beim Ansichtswechsel und reicht ein Abbruchsignal weiter", async () => {
+    zeigen();
+    await screen.findByText("Wohnzimmer");
+    klicken("Stromkreise");
+    expect(await screen.findByText("Verteilungen & Stromkreise · Gebäude „Hauptgebäude“")).toBeInTheDocument();
+    const aufrufe = api.get.mock.calls.filter(([p]) => String(p).endsWith("/circuits") || String(p).endsWith("/distribution-boards"));
+    expect(aufrufe.every(([, o]) => (o as { signal?: unknown }).signal instanceof AbortSignal)).toBe(true);
+
+    klicken("Geräte von F1 zuordnen");
+    fireEvent.click(await screen.findByLabelText(/Steckdose · Erdgeschoss · Wohnzimmer/));
+    expect(screen.getByText("Ungespeicherte Zuordnung")).toBeInTheDocument();
+
+    klicken("Tabellen & Details");
+    expect(await screen.findByText(/ungespeicherte Gerätezuordnung/)).toBeInTheDocument();
+    klicken("Änderungen behalten");
+    await waitFor(() => expect(screen.getByText("Ungespeicherte Zuordnung")).toBeInTheDocument());
+    // Nichts wurde nebenbei gespeichert.
+    expect(api.post).not.toHaveBeenCalled();
+    expect(api.patch).not.toHaveBeenCalled();
+  });
+});

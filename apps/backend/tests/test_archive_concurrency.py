@@ -52,8 +52,11 @@ from app.core.projects.schemas import (
 from app.core.projects.service import ProjectService
 from app.core.users.models import User
 from app.errors import ProjectArchivedError
+from app.modules.electrical.distribution import DistributionService
 from app.modules.electrical.models import (
+    ElectricalCircuit,
     ElectricalDevice,
+    ElectricalDistributionBoard,
     ElectricalOpening,
     ElectricalRiser,
     ElectricalRoom,
@@ -62,9 +65,11 @@ from app.modules.electrical.models import (
 from app.modules.electrical.reference_data import ElectricalReferenceData
 from app.modules.electrical.risers import RiserService
 from app.modules.electrical.schemas import (
+    CircuitCreate,
     ContourDeviceIn,
     ContourOpeningIn,
     ContourWallIn,
+    DistributionBoardCreate,
     OpeningCreate,
     RiserCreate,
     RiserStopIn,
@@ -260,6 +265,15 @@ def steigweg_anlegen(session: Session, welt: Welt) -> None:
     )
 
 
+def stromkreis_anlegen(session: Session, welt: Welt) -> None:
+    """Phase 6b.0: Verteilung und Stromkreis im selben Schreibvorgang."""
+    service = DistributionService(session, welt.organization_id)
+    board, _ = service.create_board(
+        welt.building_id, DistributionBoardCreate(code="UV1", name="UV")
+    )
+    service.create_circuit(board.id, CircuitCreate(designation="F1", name="Steckdosen"))
+
+
 def gebaeude_anlegen(session: Session, welt: Welt) -> None:
     ProjectService(session, welt.organization_id).create_building(
         welt.project_id, BuildingCreate(name="Garage"), actor_user_id=ACTOR
@@ -316,6 +330,7 @@ SCHREIBWEGE: tuple[tuple[str, Fachaenderung], ...] = (
     ("geraete-speichern", geraete_speichern),
     ("kopplung-anlegen", kopplung_anlegen),
     ("steigweg-anlegen", steigweg_anlegen),
+    ("stromkreis-anlegen", stromkreis_anlegen),
     ("gebaeude-anlegen", gebaeude_anlegen),
     ("geschoss-anlegen", geschoss_anlegen),
     ("projekt-aendern", projekt_aendern),
@@ -378,6 +393,8 @@ def _bestand(factory: sessionmaker[Session], welt: Welt) -> dict[str, int]:
             ),
             "kopplungen": zaehlen(select(func.count()).select_from(ElectricalWallLink)),
             "steigwege": zaehlen(select(func.count()).select_from(ElectricalRiser)),
+            "verteilungen": zaehlen(select(func.count()).select_from(ElectricalDistributionBoard)),
+            "stromkreise": zaehlen(select(func.count()).select_from(ElectricalCircuit)),
         }
     finally:
         session.close()

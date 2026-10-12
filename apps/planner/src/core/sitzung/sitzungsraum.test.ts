@@ -103,3 +103,31 @@ describe("API-Client mit Sitzungssignal", () => {
     expect(abruf).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("Projektabfrage nach Benutzer- oder Betriebswechsel", () => {
+  it("eine verspätete Projektantwort kommt nach dem Ende der Sitzung nicht in den Cache", async () => {
+    let freigeben: () => void = () => undefined;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      await new Promise<void>((weiter) => (freigeben = weiter));
+      return new Response(JSON.stringify({ id: "p", updated_by: "Benutzer A" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    const raum = sitzungsraumErzeugen("a:o:m", null);
+    const api = createApiClient({ baseUrl: "http://localhost", getAccessToken: () => "t", signal: raum.signal });
+    // Wie nach einem Schreibvorgang: gezielt nur die Projektabfrage neu laden.
+    const laden = raum.queryClient.fetchQuery({
+      queryKey: ["project", "p"],
+      queryFn: ({ signal }) => api.get("/api/v1/projects/{project_id}", { path: { project_id: "p" }, signal }),
+    });
+    await Promise.resolve();
+    raum.beenden();
+    freigeben();
+    // Das Sitzungsende bricht die Abfrage ab (CancelledError bzw. AbortError) - keine Daten.
+    await expect(laden).rejects.toBeInstanceOf(Error);
+    await Promise.resolve();
+    expect(raum.queryClient.getQueryData(["project", "p"])).toBeUndefined();
+    expect(raum.queryClient.getQueryCache().getAll()).toHaveLength(0);
+  });
+});

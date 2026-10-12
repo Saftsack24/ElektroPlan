@@ -1499,6 +1499,145 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/modules/electrical/buildings/{building_id}/distribution-boards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Verteilungen eines Gebaeudes
+         * @description Verteilungen mit Code, Name und optionaler Lage (Geraet ``distribution_board``).
+         */
+        get: operations["listElectricalDistributionBoards"];
+        put?: never;
+        /**
+         * Verteilung anlegen
+         * @description Legt eine Verteilung an; mehrere je Gebaeude, Code je Gebaeude eindeutig.
+         */
+        post: operations["createElectricalDistributionBoard"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/modules/electrical/distribution-boards/{board_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Verteilung entfernen
+         * @description Nur ohne Stromkreise (sonst ``409 board-has-circuits``); das Lagegeraet bleibt.
+         */
+        delete: operations["deleteElectricalDistributionBoard"];
+        options?: never;
+        head?: never;
+        /**
+         * Verteilung aendern
+         * @description Aendert Code, Name, Notiz oder Lage; ``If-Match`` traegt die Verteilungsversion.
+         */
+        patch: operations["updateElectricalDistributionBoard"];
+        trace?: never;
+    };
+    "/api/v1/modules/electrical/buildings/{building_id}/circuits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stromkreise eines Gebaeudes
+         * @description Stromkreise aller Verteilungen samt zugeordneten Geraeten.
+         *
+         *     ``proposed_*`` sind Vorschlaege fuer neue Leitungen, ungeprueft (ADR 0026).
+         */
+        get: operations["listElectricalCircuits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/modules/electrical/distribution-boards/{board_id}/circuits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stromkreis anlegen
+         * @description Legt einen Stromkreis an; Bezeichnung je Verteilung eindeutig.
+         */
+        post: operations["createElectricalCircuit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/modules/electrical/circuits/{circuit_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Stromkreis entfernen
+         * @description Entfernt den Stromkreis samt Geraetezuordnungen; die Geraete bleiben.
+         */
+        delete: operations["deleteElectricalCircuit"];
+        options?: never;
+        head?: never;
+        /**
+         * Stromkreis aendern
+         * @description Aendert Angaben; eine Vorschlagsaenderung aendert keine bestehende Leitung.
+         */
+        patch: operations["updateElectricalCircuit"];
+        trace?: never;
+    };
+    "/api/v1/modules/electrical/circuits/{circuit_id}/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Geraetezuordnung eines Stromkreises ersetzen
+         * @description Ersetzt die Geraeteliste (``If-Match`` der Stromkreisversion).
+         *
+         *     Nur Steckdosen, Schalter, Leuchten und Abzweigdosen desselben Gebaeudes (keine
+         *     Datendosen, nicht das Lagegeraet einer Verteilung); ein Geraet eines
+         *     anderen Stromkreises liefert ``409 device-assigned-elsewhere`` - es wird nie
+         *     still umgehaengt.
+         */
+        put: operations["replaceElectricalCircuitDevices"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health/live": {
         parameters: {
             query?: never;
@@ -1647,6 +1786,139 @@ export interface components {
             name?: string | null;
             /** Sort Order */
             sort_order?: number | null;
+        };
+        /**
+         * CircuitCreate
+         * @description Neuer Stromkreis an einer Verteilung.
+         */
+        CircuitCreate: {
+            /** Sort Order */
+            sort_order?: number | null;
+            /** Proposed Cable Type */
+            proposed_cable_type?: string | null;
+            /** Proposed Conductor Count */
+            proposed_conductor_count?: number | null;
+            /**
+             * Proposed Cross Section Mm2
+             * @example 1.5
+             * @example 2.50
+             */
+            proposed_cross_section_mm2?: string | null;
+            /** Protective Device */
+            protective_device?: string | null;
+            /** Rcd Group */
+            rcd_group?: string | null;
+            /** Phase Count */
+            phase_count?: (1 | 2 | 3) | null;
+            /** Note */
+            note?: string | null;
+            /** Designation */
+            designation: string;
+            /** Name */
+            name: string;
+        };
+        /**
+         * CircuitDevicesUpdate
+         * @description Vollstaendige Geraeteliste eines Stromkreises (``If-Match`` der Stromkreisversion).
+         */
+        CircuitDevicesUpdate: {
+            /** Device Ids */
+            device_ids?: string[];
+        };
+        /**
+         * CircuitListOut
+         * @description Alle Stromkreise eines Gebaeudes, nach Verteilung, Reihenfolge und Bezeichnung.
+         */
+        CircuitListOut: {
+            /**
+             * Building Id
+             * Format: uuid
+             */
+            building_id: string;
+            /** Circuits */
+            circuits: components["schemas"]["CircuitOut"][];
+        };
+        /**
+         * CircuitOut
+         * @description Stromkreis samt zugeordneten Geraeten (nach ID sortiert).
+         */
+        CircuitOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Board Id
+             * Format: uuid
+             */
+            board_id: string;
+            /** Designation */
+            designation: string;
+            /** Name */
+            name: string;
+            /** Sort Order */
+            sort_order: number;
+            /** Proposed Cable Type */
+            proposed_cable_type: string | null;
+            /** Proposed Conductor Count */
+            proposed_conductor_count: number | null;
+            /** Proposed Cross Section Mm2 */
+            proposed_cross_section_mm2: string | null;
+            /** Protective Device */
+            protective_device: string | null;
+            /** Rcd Group */
+            rcd_group: string | null;
+            /** Phase Count */
+            phase_count: number | null;
+            /** Note */
+            note: string | null;
+            /** Device Ids */
+            device_ids: string[];
+            /** Version */
+            version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * CircuitUpdate
+         * @description Teilaenderung (``If-Match``). Optionale Angaben sind mit ``null`` leerbar.
+         *
+         *     Eine Aenderung der Vorschlaege aendert **keine** bestehende Leitung.
+         */
+        CircuitUpdate: {
+            /** Sort Order */
+            sort_order?: number | null;
+            /** Proposed Cable Type */
+            proposed_cable_type?: string | null;
+            /** Proposed Conductor Count */
+            proposed_conductor_count?: number | null;
+            /**
+             * Proposed Cross Section Mm2
+             * @example 1.5
+             * @example 2.50
+             */
+            proposed_cross_section_mm2?: string | null;
+            /** Protective Device */
+            protective_device?: string | null;
+            /** Rcd Group */
+            rcd_group?: string | null;
+            /** Phase Count */
+            phase_count?: (1 | 2 | 3) | null;
+            /** Note */
+            note?: string | null;
+            /** Designation */
+            designation?: string | null;
+            /** Name */
+            name?: string | null;
         };
         /**
          * ContourDeviceIn
@@ -1911,7 +2183,7 @@ export interface components {
              * Category
              * @enum {string}
              */
-            category: "socket" | "switch" | "light" | "data";
+            category: "socket" | "switch" | "light" | "data" | "distribution" | "junction";
             /** Symbol Key */
             symbol_key: string;
             /** Allows Wall Interior */
@@ -1979,6 +2251,84 @@ export interface components {
             updated_at: string;
             /** Version */
             version: number;
+        };
+        /**
+         * DistributionBoardCreate
+         * @description Neue Verteilung eines Gebaeudes (ADR 0026).
+         *
+         *     ``placement_device_id`` ist optional: ein Geraet des Typs
+         *     ``distribution_board`` in diesem Gebaeude, das noch keine andere Verteilung
+         *     platziert. Ohne Lage ist die Verteilung zulaessig.
+         */
+        DistributionBoardCreate: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /** Note */
+            note?: string | null;
+            /** Placement Device Id */
+            placement_device_id?: string | null;
+        };
+        /**
+         * DistributionBoardListOut
+         * @description Alle Verteilungen eines Gebaeudes, nach Code sortiert.
+         */
+        DistributionBoardListOut: {
+            /**
+             * Building Id
+             * Format: uuid
+             */
+            building_id: string;
+            /** Boards */
+            boards: components["schemas"]["DistributionBoardOut"][];
+        };
+        /** DistributionBoardOut */
+        DistributionBoardOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Building Id
+             * Format: uuid
+             */
+            building_id: string;
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /** Note */
+            note: string | null;
+            /** Placement Device Id */
+            placement_device_id: string | null;
+            /** Version */
+            version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * DistributionBoardUpdate
+         * @description Teilaenderung (``If-Match``). ``note`` und ``placement_device_id`` sind leerbar.
+         */
+        DistributionBoardUpdate: {
+            /** Code */
+            code?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Note */
+            note?: string | null;
+            /** Placement Device Id */
+            placement_device_id?: string | null;
         };
         /** EffectivePermissionOut */
         EffectivePermissionOut: {
@@ -7940,6 +8290,500 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    listElectricalDistributionBoards: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                building_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DistributionBoardListOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    createElectricalDistributionBoard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                building_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DistributionBoardCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DistributionBoardOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Projekt schreibgeschuetzt oder Geraet platziert schon eine Verteilung */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    deleteElectricalDistributionBoard: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                board_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    updateElectricalDistributionBoard: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                board_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DistributionBoardUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DistributionBoardOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    listElectricalCircuits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                building_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CircuitListOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    createElectricalCircuit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                board_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CircuitCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CircuitOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Projekt ist archiviert oder abgeschlossen */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    deleteElectricalCircuit: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                circuit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    updateElectricalCircuit: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                circuit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CircuitUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CircuitOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    replaceElectricalCircuitDevices: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                circuit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CircuitDevicesUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CircuitOut"];
+                };
             };
             /** @description Nicht gefunden */
             404: {

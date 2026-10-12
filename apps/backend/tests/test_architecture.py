@@ -152,10 +152,11 @@ def test_tabellenbestand_ist_vollstaendig_erfasst() -> None:
     Storage-Aufraeum-Warteschlange (Phase 4d), Reset-Links und persoenliche
     Einstellungen (Phase 4e) plus die drei des Fachmoduls ``electrical`` aus
     Phase 3, seit Phase 5 Geraetekatalog und Geraete und seit Phase 6a
-    Wandkopplungen sowie die (noch ungenutzten) Steigweg-Tabellen. Dazu die
-    Refresh-Token-Familien (Sicherheitsauftrag 2026-10-10, Migration 0011).
+    Wandkopplungen sowie die Steigweg-Tabellen. Dazu die Refresh-Token-Familien
+    (Sicherheitsauftrag 2026-10-10, Migration 0011) und seit Phase 6b.0
+    Verteilungen, Stromkreise und Geraetezuordnung (Migration 0012).
     """
-    assert len(metadata.sorted_tables) == 31, (
+    assert len(metadata.sorted_tables) == 34, (
         "Anzahl der Tabellen hat sich geaendert - test_architecture.py und "
         "docs/database.md pruefen."
     )

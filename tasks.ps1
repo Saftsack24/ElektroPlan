@@ -25,6 +25,17 @@ $env:UV_CACHE_DIR = Join-Path $backend '.uv-cache'
 $python = Join-Path $backend '.venv/Scripts/python.exe'
 $linter = Join-Path $backend '.venv/Scripts/lint-imports.exe'
 
+# Frontend-Tests mit schlanker Fehleraufzeichnung: Testnamen und Meldungen schreibt
+# Vitest als JUnit-XML nach apps/planner/test-results/ (siehe vite.config.ts), den
+# Exit-Code legt diese Funktion daneben ab. Beides ist von Git ignoriert.
+function Invoke-FrontendTests {
+    npm run test --workspaces --if-present
+    $code = $LASTEXITCODE
+    $ziel = Join-Path $PSScriptRoot 'apps/planner/test-results'
+    New-Item -ItemType Directory -Force $ziel | Out-Null
+    Set-Content -Encoding utf8 (Join-Path $ziel 'exit-code.txt') "$code $(Get-Date -Format o)"
+    $global:LASTEXITCODE = $code
+}
 function Invoke-Step {
     param([string]$Name, [scriptblock]$Action)
     Write-Host ""
@@ -98,7 +109,7 @@ Datenbanktests brauchen PostgreSQL:
     'test' {
         Assert-Venv
         Invoke-Step 'Backend-Tests' { Push-Location $backend; & $python -m pytest; Pop-Location }
-        Invoke-Step 'Frontend-Tests' { npm run test --workspaces --if-present }
+        Invoke-Step 'Frontend-Tests' { Invoke-FrontendTests }
     }
 
     'lint' {
@@ -214,7 +225,7 @@ Datenbanktests brauchen PostgreSQL:
             if ($LASTEXITCODE -ne 0) { return }
             npm run check:boundaries
             if ($LASTEXITCODE -ne 0) { return }
-            npm run test --workspaces --if-present
+            Invoke-FrontendTests
             if ($LASTEXITCODE -ne 0) { return }
             npm run build
         }
