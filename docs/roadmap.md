@@ -458,8 +458,8 @@ Manuelle Gesamtprüfung aller 6a-Schritte durch den Auftraggeber: nach Abschluss
 |---|---|---|
 | 6b.0 | Verteilungen, Stromkreise, Gerätezuordnung (Backend, Migration `0012`) | **technisch umgesetzt, committet** |
 | 6b.1 | Oberfläche Verteilungen/Stromkreise/Zuordnung (+ Abzweigdosen zuordenbar) | **technisch umgesetzt, committet** |
-| 6b.2 | reine Längenfunktion + Fixture | NOT STARTED |
-| 6b.3 | Leitungen, Wegpunkte, Durchführungen (Backend, Migration `0013`) | NOT STARTED |
+| 6b.2 | reine Längenfunktion + Fixture (Backend-Referenz, Frontend-Spiegel, Trassen) | **technisch umgesetzt und geprüft** (Checkpoint vom 2026-10-13) |
+| 6b.3 | Leitungen, Wegpunkte, Durchführungen (Backend, Migration `0013`) | **technisch umgesetzt und geprüft** (Checkpoint vom 2026-10-13; manuelle Gesamtprüfung offen) |
 | 6b.4 | Leitungen in Wand-/Deckenansicht | NOT STARTED |
 | 6b.5 | Grundriss mit Fußboden, Bodenübergang, Steigweg, 3D | NOT STARTED |
 | 6b.6 | Mengenübersicht, Gesamtprüfung Phase 6 | NOT STARTED |

@@ -1,0 +1,1109 @@
+{
+  "version": 1,
+  "beschreibung": "Leitungsweg, Laenge, Status und Trassen (Phase 6b.2, ADR 0026, Entwurf §5/§6). Backend (cable_length.py, cable_traces.py) und Frontend (leitung/laenge.ts, leitung/trassen.ts) pruefen dieselben Faelle. Synthetische Werte, ganze Millimeter. Plaene koennen einen Basisplan uebernehmen: 'ersetzen' tauscht Listeneintraege gleicher id (oder haengt sie an), 'entfernen' nimmt ids heraus. Wegpunkte: [wand, wandId, abstand, hoehe] | [decke|boden, raumId, x, y] | [durchfuehrung, id] | [uebergang, wandId, abstand, oeffnungId|null] | [steigweg, id, vonHalt, vonHoehe, nachHalt, nachHoehe]. Strecken: [art, ort, laenge|null, bekannt]. Befunde: [code, art, ort]. Trassen: [flaeche, besitzer, richtung, trassenmeter, leitungsmeter, vollstaendig, [[stuecklaenge, leitungen], ...]].",
+  "plaene": {
+    "diele-kueche": {
+      "geschosse": [{ "id": "eg", "ebene": 0, "hoehe": 0, "bestaetigt": true, "decke": 2500 }],
+      "raeume": [
+        {
+          "id": "diele", "geschoss": "eg", "hoehe": 2500,
+          "waende": [
+            { "id": "diele.sued", "von": [0, 0], "bis": [4200, 0],
+              "oeffnungen": [{ "id": "t1", "art": "door", "abstand": 2000, "breite": 900, "bruestung": 0, "hoehe": 2000 }] },
+            { "id": "diele.ost", "von": [4200, 0], "bis": [4200, 3000] },
+            { "id": "diele.nord", "von": [4200, 3000], "bis": [0, 3000] },
+            { "id": "diele.west", "von": [0, 3000], "bis": [0, 0] }
+          ]
+        },
+        {
+          "id": "kueche", "geschoss": "eg", "hoehe": 2500,
+          "waende": [
+            { "id": "kueche.sued", "von": [4200, 0], "bis": [8000, 0] },
+            { "id": "kueche.ost", "von": [8000, 0], "bis": [8000, 3000] },
+            { "id": "kueche.nord", "von": [8000, 3000], "bis": [4200, 3000] },
+            { "id": "kueche.west", "von": [4200, 3000], "bis": [4200, 0] }
+          ]
+        }
+      ],
+      "kopplungen": [{ "id": "k1", "a": "diele.ost", "b": "kueche.west", "beziehung": "shared" }],
+      "geraete": [
+        { "id": "uv1", "raum": "diele", "flaeche": "wall_interior", "wand": "diele.sued", "abstand": 500, "hoehe": 1400 },
+        { "id": "sd1", "raum": "kueche", "flaeche": "wall_interior", "wand": "kueche.west", "abstand": 900, "hoehe": 300 },
+        { "id": "lampe", "raum": "diele", "flaeche": "ceiling", "x": 2100, "y": 1500 },
+        { "id": "aussen", "raum": "diele", "flaeche": "wall_exterior", "wand": "diele.west", "abstand": 1500, "hoehe": 1400 },
+        { "id": "sd-sued", "raum": "diele", "flaeche": "wall_interior", "wand": "diele.sued", "abstand": 3500, "hoehe": 300 }
+      ],
+      "durchfuehrungen": [
+        { "id": "d1", "kopplung": "k1", "abstand": 2100, "hoehe": 2200 },
+        { "id": "d-hoch", "kopplung": "k1", "abstand": 1000, "hoehe": 2500 }
+      ],
+      "steigwege": []
+    },
+    "diele-kueche-getrennt": {
+      "basis": "diele-kueche",
+      "ersetzen": { "kopplungen": [{ "id": "k1", "a": "diele.ost", "b": "kueche.west", "beziehung": "separate" }] }
+    },
+    "diele-kueche-mehrdeutig": {
+      "basis": "diele-kueche",
+      "ersetzen": {
+        "raeume": [
+          {
+            "id": "nische", "geschoss": "eg", "hoehe": 2500,
+            "waende": [
+              { "id": "nische.west", "von": [4200, 2000], "bis": [4200, 1000] },
+              { "id": "nische.sued", "von": [4200, 1000], "bis": [4400, 1000] },
+              { "id": "nische.ost", "von": [4400, 1000], "bis": [4400, 2000] },
+              { "id": "nische.nord", "von": [4400, 2000], "bis": [4200, 2000] }
+            ]
+          }
+        ]
+      }
+    },
+    "diele-kueche-unterbrochen": {
+      "basis": "diele-kueche",
+      "ersetzen": {
+        "raeume": [
+          {
+            "id": "kueche", "geschoss": "eg", "hoehe": 2500,
+            "waende": [
+              { "id": "kueche.sued", "von": [4300, 0], "bis": [8000, 0] },
+              { "id": "kueche.ost", "von": [8000, 0], "bis": [8000, 3000] },
+              { "id": "kueche.nord", "von": [8000, 3000], "bis": [4300, 3000] },
+              { "id": "kueche.west", "von": [4300, 3000], "bis": [4300, 0] }
+            ]
+          }
+        ]
+      }
+    },
+    "bodenuebergang": {
+      "geschosse": [{ "id": "eg", "ebene": 0, "hoehe": 0, "bestaetigt": true, "decke": 2500 }],
+      "raeume": [
+        {
+          "id": "diele", "geschoss": "eg", "hoehe": 2500,
+          "waende": [
+            { "id": "diele.sued", "von": [0, 0], "bis": [4200, 0] },
+            { "id": "diele.ost", "von": [4200, 0], "bis": [4200, 3000],
+              "oeffnungen": [
+                { "id": "tuer", "art": "door", "abstand": 1000, "breite": 900, "bruestung": 0, "hoehe": 2000 },
+                { "id": "fenster", "art": "window", "abstand": 2200, "breite": 600, "bruestung": 900, "hoehe": 1200 }
+              ] },
+            { "id": "diele.nord", "von": [4200, 3000], "bis": [0, 3000] },
+            { "id": "diele.west", "von": [0, 3000], "bis": [0, 0] }
+          ]
+        },
+        {
+          "id": "kueche", "geschoss": "eg", "hoehe": 2500,
+          "waende": [
+            { "id": "kueche.sued", "von": [4200, 0], "bis": [8000, 0] },
+            { "id": "kueche.ost", "von": [8000, 0], "bis": [8000, 3000] },
+            { "id": "kueche.nord", "von": [8000, 3000], "bis": [4200, 3000] },
+            { "id": "kueche.west", "von": [4200, 3000], "bis": [4200, 0] }
+          ]
+        }
+      ],
+      "kopplungen": [{ "id": "k1", "a": "diele.ost", "b": "kueche.west", "beziehung": "shared" }],
+      "geraete": [
+        { "id": "sd-diele", "raum": "diele", "flaeche": "wall_interior", "wand": "diele.sued", "abstand": 3800, "hoehe": 300 },
+        { "id": "sd-kueche", "raum": "kueche", "flaeche": "wall_interior", "wand": "kueche.sued", "abstand": 500, "hoehe": 300 }
+      ],
+      "durchfuehrungen": [],
+      "steigwege": []
+    },
+    "bodenuebergang-verschoben": {
+      "basis": "bodenuebergang",
+      "ersetzen": {
+        "raeume": [
+          {
+            "id": "diele", "geschoss": "eg", "hoehe": 2500,
+            "waende": [
+              { "id": "diele.sued", "von": [0, 0], "bis": [4200, 0] },
+              { "id": "diele.ost", "von": [4200, 0], "bis": [4200, 3000],
+                "oeffnungen": [{ "id": "tuer", "art": "door", "abstand": 2000, "breite": 900, "bruestung": 0, "hoehe": 2000 }] },
+              { "id": "diele.nord", "von": [4200, 3000], "bis": [0, 3000] },
+              { "id": "diele.west", "von": [0, 3000], "bis": [0, 0] }
+            ]
+          }
+        ]
+      }
+    },
+    "bodenuebergang-getrennt": {
+      "basis": "bodenuebergang",
+      "ersetzen": { "kopplungen": [{ "id": "k1", "a": "diele.ost", "b": "kueche.west", "beziehung": "separate" }] }
+    },
+    "bodenuebergang-ungekoppelt": {
+      "basis": "bodenuebergang",
+      "entfernen": { "kopplungen": ["k1"] }
+    },
+    "bodenuebergang-abgeleitet": {
+      "basis": "bodenuebergang",
+      "ersetzen": {
+        "raeume": [
+          {
+            "id": "diele", "geschoss": "eg", "hoehe": 2500,
+            "waende": [
+              { "id": "diele.sued", "von": [0, 0], "bis": [4200, 0] },
+              { "id": "diele.ost", "von": [4200, 0], "bis": [4200, 3000] },
+              { "id": "diele.nord", "von": [4200, 3000], "bis": [0, 3000] },
+              { "id": "diele.west", "von": [0, 3000], "bis": [0, 0] }
+            ]
+          },
+          {
+            "id": "kueche", "geschoss": "eg", "hoehe": 2500,
+            "waende": [
+              { "id": "kueche.sued", "von": [4200, 0], "bis": [8000, 0] },
+              { "id": "kueche.ost", "von": [8000, 0], "bis": [8000, 3000] },
+              { "id": "kueche.nord", "von": [8000, 3000], "bis": [4200, 3000] },
+              { "id": "kueche.west", "von": [4200, 3000], "bis": [4200, 0],
+                "oeffnungen": [{ "id": "tuer-k", "art": "door", "abstand": 1100, "breite": 900, "bruestung": 0, "hoehe": 2000 }] }
+            ]
+          }
+        ]
+      }
+    },
+    "flur": {
+      "geschosse": [{ "id": "eg", "ebene": 0, "hoehe": 0, "bestaetigt": true, "decke": 2500 }],
+      "raeume": [
+        {
+          "id": "flur", "geschoss": "eg", "hoehe": 2500,
+          "waende": [
+            { "id": "flur.sued", "von": [0, 0], "bis": [8000, 0] },
+            { "id": "flur.ost", "von": [8000, 0], "bis": [8000, 2000] },
+            { "id": "flur.nord", "von": [8000, 2000], "bis": [0, 2000] },
+            { "id": "flur.west", "von": [0, 2000], "bis": [0, 0] }
+          ]
+        }
+      ],
+      "kopplungen": [],
+      "geraete": [
+        { "id": "uv", "raum": "flur", "flaeche": "wall_interior", "wand": "flur.west", "abstand": 500, "hoehe": 1400 },
+        { "id": "j1", "raum": "flur", "flaeche": "wall_interior", "wand": "flur.west", "abstand": 1500, "hoehe": 2200 },
+        { "id": "s1", "raum": "flur", "flaeche": "wall_interior", "wand": "flur.sued", "abstand": 4000, "hoehe": 300 },
+        { "id": "sw2", "raum": "flur", "flaeche": "wall_interior", "wand": "flur.sued", "abstand": 4000, "hoehe": 1100 },
+        { "id": "j2", "raum": "flur", "flaeche": "wall_interior", "wand": "flur.sued", "abstand": 1000, "hoehe": 1500 },
+        { "id": "s3", "raum": "flur", "flaeche": "wall_interior", "wand": "flur.sued", "abstand": 3000, "hoehe": 300 },
+        { "id": "lampe", "raum": "flur", "flaeche": "ceiling", "x": 6000, "y": 1000 }
+      ],
+      "durchfuehrungen": [],
+      "steigwege": []
+    },
+    "steigweg": {
+      "geschosse": [
+        { "id": "kg", "ebene": -1, "hoehe": -2800, "bestaetigt": true, "decke": 2500 },
+        { "id": "eg", "ebene": 0, "hoehe": 0, "bestaetigt": true, "decke": 2500 },
+        { "id": "og", "ebene": 1, "hoehe": 2900, "bestaetigt": true, "decke": 2500 }
+      ],
+      "raeume": [
+        {
+          "id": "keller", "geschoss": "kg", "hoehe": 2500,
+          "waende": [
+            { "id": "kg.sued", "von": [0, 0], "bis": [4000, 0] },
+            { "id": "kg.ost", "von": [4000, 0], "bis": [4000, 3400] },
+            { "id": "kg.nord", "von": [4000, 3400], "bis": [0, 3400] },
+            { "id": "kg.west", "von": [0, 3400], "bis": [0, 0] }
+          ]
+        },
+        {
+          "id": "hwr", "geschoss": "eg", "hoehe": 2500,
+          "waende": [
+            { "id": "eg.sued", "von": [0, 0], "bis": [4000, 0] },
+            { "id": "eg.ost", "von": [4000, 0], "bis": [4000, 3400] },
+            { "id": "eg.nord", "von": [4000, 3400], "bis": [0, 3400] },
+            { "id": "eg.west", "von": [0, 3400], "bis": [0, 0] }
+          ]
+        },
+        {
+          "id": "bad", "geschoss": "og", "hoehe": 2500,
+          "waende": [
+            { "id": "og.sued", "von": [0, 0], "bis": [4000, 0] },
+            { "id": "og.ost", "von": [4000, 0], "bis": [4000, 4000] },
+            { "id": "og.nord", "von": [4000, 4000], "bis": [0, 4000] },
+            { "id": "og.west", "von": [0, 4000], "bis": [0, 0] }
+          ]
+        }
+      ],
+      "kopplungen": [],
+      "geraete": [
+        { "id": "uv-eg", "raum": "hwr", "flaeche": "wall_interior", "wand": "eg.nord", "abstand": 2000, "hoehe": 1400 },
+        { "id": "sd-eg", "raum": "hwr", "flaeche": "wall_interior", "wand": "eg.nord", "abstand": 3200, "hoehe": 1100 },
+        { "id": "uv-kg", "raum": "keller", "flaeche": "wall_interior", "wand": "kg.nord", "abstand": 2000, "hoehe": 1400 },
+        { "id": "sd-og", "raum": "bad", "flaeche": "wall_interior", "wand": "og.nord", "abstand": 2350, "hoehe": 300 }
+      ],
+      "durchfuehrungen": [],
+      "steigwege": [
+        {
+          "id": "s1", "versatz": "orthogonal",
+          "halte": [
+            { "id": "h-kg", "geschoss": "kg", "x": 1200, "y": 3400 },
+            { "id": "h-eg", "geschoss": "eg", "x": 1200, "y": 3400 },
+            { "id": "h-og", "geschoss": "og", "x": 1650, "y": 3700 }
+          ]
+        }
+      ]
+    },
+    "steigweg-unbestaetigt": {
+      "basis": "steigweg",
+      "ersetzen": { "geschosse": [{ "id": "og", "ebene": 1, "hoehe": 2900, "bestaetigt": false, "decke": 2500 }] }
+    },
+    "steigweg-widerspruch": {
+      "basis": "steigweg",
+      "ersetzen": { "geschosse": [{ "id": "og", "ebene": 1, "hoehe": -100, "bestaetigt": true, "decke": 2500 }] }
+    },
+    "steigweg-niedrig": {
+      "basis": "steigweg",
+      "ersetzen": { "geschosse": [{ "id": "og", "ebene": 1, "hoehe": 2400, "bestaetigt": true, "decke": 2500 }] }
+    },
+    "l-raum": {
+      "geschosse": [{ "id": "eg", "ebene": 0, "hoehe": 0, "bestaetigt": true, "decke": 2500 }],
+      "raeume": [
+        {
+          "id": "l", "geschoss": "eg", "hoehe": 2500,
+          "waende": [
+            { "id": "l.sued", "von": [0, 0], "bis": [6000, 0] },
+            { "id": "l.ost", "von": [6000, 0], "bis": [6000, 3000] },
+            { "id": "l.innen-nord", "von": [6000, 3000], "bis": [3000, 3000] },
+            { "id": "l.innen-ost", "von": [3000, 3000], "bis": [3000, 6000] },
+            { "id": "l.nord", "von": [3000, 6000], "bis": [0, 6000] },
+            { "id": "l.west", "von": [0, 6000], "bis": [0, 0] }
+          ]
+        }
+      ],
+      "kopplungen": [],
+      "geraete": [
+        { "id": "lampe1", "raum": "l", "flaeche": "ceiling", "x": 1000, "y": 5000 },
+        { "id": "lampe2", "raum": "l", "flaeche": "ceiling", "x": 5000, "y": 1000 },
+        { "id": "lampe3", "raum": "l", "flaeche": "ceiling", "x": 5000, "y": 2000 },
+        { "id": "lampe4", "raum": "l", "flaeche": "ceiling", "x": 1007, "y": 1004 },
+        { "id": "lampe5", "raum": "l", "flaeche": "ceiling", "x": 1000, "y": 1000 },
+        { "id": "sd-s", "raum": "l", "flaeche": "wall_interior", "wand": "l.sued", "abstand": 1000, "hoehe": 300 },
+        { "id": "sd-w", "raum": "l", "flaeche": "wall_interior", "wand": "l.west", "abstand": 1000, "hoehe": 300 }
+      ],
+      "durchfuehrungen": [],
+      "steigwege": []
+    }
+  },
+  "faelle": [
+    {
+      "name": "§6.4 Diele -> Kueche durch Durchfuehrung: 8 500 geometrisch, 9 200 mit Zugaben; Rueckweg gleich lang, Durchfuehrung einmal gezaehlt",
+      "plan": "diele-kueche",
+      "leitungen": [
+        {
+          "id": "L1", "start": "uv1", "ende": "sd1", "zugaben": [500, 200, 0], "kabel": ["NYM-J", 3, "1.5"],
+          "wegpunkte": [["wand", "diele.sued", 500, 2200], ["wand", "diele.sued", 4200, 2200], ["wand", "diele.ost", 0, 2200], ["durchfuehrung", "d1"]]
+        },
+        {
+          "id": "L1-rueck", "start": "sd1", "ende": "uv1", "kabel": ["NYM-J", 3, null],
+          "wegpunkte": [["durchfuehrung", "d1"], ["wand", "diele.ost", 0, 2200], ["wand", "diele.sued", 4200, 2200], ["wand", "diele.sued", 500, 2200]]
+        }
+      ],
+      "erwartet": {
+        "leitungen": {
+          "L1": {
+            "status": "confirmed", "geometrisch": 8500, "zugaben": 700, "laenge": 9200, "bekannt": 9200, "spezifiziert": true,
+            "strecken": [
+              ["connection", "start", 800, 800], ["wall", "w0-w1", 3700, 3700], ["corner", "w1-w2", 0, 0],
+              ["wall", "w2-w3", 2100, 2100], ["penetration", "w3", 0, 0], ["connection", "end", 1900, 1900]
+            ],
+            "befunde": [], "durchfuehrungen": ["d1"], "bodenuebergaenge": 0
+          },
+          "L1-rueck": {
+            "status": "confirmed", "geometrisch": 8500, "zugaben": 0, "laenge": 8500, "bekannt": 8500, "spezifiziert": false,
+            "strecken": [
+              ["connection", "start", 1900, 1900], ["penetration", "w0", 0, 0], ["wall", "w0-w1", 2100, 2100],
+              ["corner", "w1-w2", 0, 0], ["wall", "w2-w3", 3700, 3700], ["connection", "end", 800, 800]
+            ],
+            "befunde": [], "durchfuehrungen": ["d1"], "bodenuebergaenge": 0
+          }
+        },
+        "trassen": {
+          "flaechen": { "wall": 8500, "ceiling": 0, "floor": 0, "riser": 0, "shaft": 0 },
+          "leitungsmeter": { "wall": 17000, "ceiling": 0, "floor": 0, "riser": 0, "shaft": 0 },
+          "durchfuehrungen": ["d1"], "bodenuebergaenge": 0,
+          "liste": [
+            ["wall", "diele.ost", "horizontal", 2100, 4200, true, [[2100, 2]]],
+            ["wall", "diele.sued", "horizontal", 3700, 7400, true, [[3700, 2]]],
+            ["wall", "diele.sued", "vertical", 800, 1600, true, [[800, 2]]],
+            ["wall", "kueche.west", "vertical", 1900, 3800, true, [[1900, 2]]]
+          ]
+        }
+      }
+    },
+    {
+      "name": "Ungueltige Wandwege: schraeg, Wandwechsel ohne Ecke, Raumwechsel ohne Durchfuehrung - nie eine gueltige Null",
+      "plan": "diele-kueche",
+      "leitungen": [
+        { "id": "schraeg", "start": "uv1", "ende": "sd1", "wegpunkte": [["wand", "diele.sued", 500, 2200], ["wand", "diele.sued", 1000, 1000]] },
+        { "id": "ohne-ecke", "start": "uv1", "ende": "sd1", "wegpunkte": [["wand", "diele.sued", 500, 2200], ["wand", "diele.sued", 4200, 2200], ["wand", "diele.nord", 0, 2200]] },
+        { "id": "raumwechsel", "start": "uv1", "ende": "sd1",
+          "wegpunkte": [["wand", "diele.sued", 500, 2200], ["wand", "diele.sued", 4200, 2200], ["wand", "diele.ost", 0, 2200], ["wand", "diele.ost", 2100, 2200], ["wand", "kueche.west", 900, 2200]] }
+      ],
+      "erwartet": {
+        "leitungen": {
+          "schraeg": {
+            "status": "conflict", "geometrisch": 800, "zugaben": 0, "laenge": null, "bekannt": 800, "spezifiziert": false,
+            "strecken": [["connection", "start", 800, 800]],
+            "befunde": [["wall-diagonal", "conflict", "w0-w1"], ["route-not-reaching-end", "missing", "end"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          },
+          "ohne-ecke": {
+            "status": "conflict", "geometrisch": 4500, "zugaben": 0, "laenge": null, "bekannt": 4500, "spezifiziert": false,
+            "strecken": [["connection", "start", 800, 800], ["wall", "w0-w1", 3700, 3700]],
+            "befunde": [["wall-change-without-corner", "conflict", "w1-w2"], ["route-not-reaching-end", "missing", "end"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          },
+          "raumwechsel": {
+            "status": "conflict", "geometrisch": 8500, "zugaben": 0, "laenge": null, "bekannt": 8500, "spezifiziert": false,
+            "strecken": [
+              ["connection", "start", 800, 800], ["wall", "w0-w1", 3700, 3700], ["corner", "w1-w2", 0, 0],
+              ["wall", "w2-w3", 2100, 2100], ["connection", "end", 1900, 1900]
+            ],
+            "befunde": [["room-change-without-crossing", "conflict", "w3-w4"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "Oeffnung im Wandweg: ueber der Tuer zulaessig, durch die Tuer und an ihrer Unterkante nicht",
+      "plan": "diele-kueche",
+      "leitungen": [
+        { "id": "durch-tuer", "start": "uv1", "ende": "sd1",
+          "wegpunkte": [["wand", "diele.sued", 500, 1000], ["wand", "diele.sued", 4200, 1000], ["wand", "diele.ost", 0, 1000], ["wand", "diele.ost", 2100, 1000], ["durchfuehrung", "d1"]] },
+        { "id": "schwelle", "start": "uv1", "ende": "sd1", "wegpunkte": [["wand", "diele.sued", 1500, 0], ["wand", "diele.sued", 3500, 0]] },
+        { "id": "in-tuer", "start": "uv1", "ende": "sd1", "wegpunkte": [["wand", "diele.sued", 2400, 1000]] }
+      ],
+      "erwartet": {
+        "leitungen": {
+          "durch-tuer": {
+            "status": "conflict", "geometrisch": 5600, "zugaben": 0, "laenge": null, "bekannt": 5600, "spezifiziert": false,
+            "strecken": [
+              ["connection", "start", 400, 400], ["corner", "w1-w2", 0, 0], ["wall", "w2-w3", 2100, 2100],
+              ["wall", "w3-w4", 1200, 1200], ["penetration", "w4", 0, 0], ["connection", "end", 1900, 1900]
+            ],
+            "befunde": [["wall-through-opening", "conflict", "w0-w1"]],
+            "durchfuehrungen": ["d1"], "bodenuebergaenge": 0
+          },
+          "schwelle": {
+            "status": "conflict", "geometrisch": 2400, "zugaben": 0, "laenge": null, "bekannt": 2400, "spezifiziert": false,
+            "strecken": [["connection", "start", 2400, 2400]],
+            "befunde": [["wall-through-opening", "conflict", "w0-w1"], ["route-not-reaching-end", "missing", "end"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          },
+          "in-tuer": {
+            "status": "conflict", "geometrisch": 0, "zugaben": 0, "laenge": null, "bekannt": 0, "spezifiziert": false,
+            "strecken": [],
+            "befunde": [["waypoint-in-opening", "conflict", "w0"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "Endpunkte und unvollstaendige Wege: nicht platziert, leer, aussen, unbekannt, nicht erreicht",
+      "plan": "diele-kueche",
+      "leitungen": [
+        { "id": "ohne-start", "start": null, "ende": "sd1", "zugaben": [0, 200, 300], "wegpunkte": [["wand", "kueche.west", 900, 2200]] },
+        { "id": "leer", "start": "uv1", "ende": "sd1", "wegpunkte": [] },
+        { "id": "aussen", "start": "aussen", "ende": "sd1", "wegpunkte": [["wand", "kueche.west", 900, 2200]] },
+        { "id": "unbekannt", "start": "uv1", "ende": "gibt-es-nicht", "wegpunkte": [["wand", "diele.sued", 500, 2200]] },
+        { "id": "nicht-erreicht", "start": "uv1", "ende": "sd1", "wegpunkte": [["wand", "diele.nord", 1000, 2200]] }
+      ],
+      "erwartet": {
+        "leitungen": {
+          "ohne-start": {
+            "status": "incomplete", "geometrisch": 1900, "zugaben": 500, "laenge": null, "bekannt": 2400, "spezifiziert": false,
+            "strecken": [["connection", "end", 1900, 1900]],
+            "befunde": [["start-not-placed", "missing", "start"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          },
+          "leer": {
+            "status": "incomplete", "geometrisch": 0, "zugaben": 0, "laenge": null, "bekannt": 0, "spezifiziert": false,
+            "strecken": [],
+            "befunde": [["route-empty", "missing", "route"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          },
+          "aussen": {
+            "status": "conflict", "geometrisch": 1900, "zugaben": 0, "laenge": null, "bekannt": 1900, "spezifiziert": false,
+            "strecken": [["connection", "end", 1900, 1900]],
+            "befunde": [["endpoint-exterior", "conflict", "start"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          },
+          "unbekannt": {
+            "status": "conflict", "geometrisch": 800, "zugaben": 0, "laenge": null, "bekannt": 800, "spezifiziert": false,
+            "strecken": [["connection", "start", 800, 800]],
+            "befunde": [["endpoint-unknown", "conflict", "end"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          },
+          "nicht-erreicht": {
+            "status": "incomplete", "geometrisch": 0, "zugaben": 0, "laenge": null, "bekannt": 0, "spezifiziert": false,
+            "strecken": [],
+            "befunde": [["route-not-reaching-start", "missing", "start"], ["route-not-reaching-end", "missing", "end"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "Anschluss: fehlt (letzter Wegpunkt an der Nachbarwand) -> unvollstaendig; vorhanden, aber durch die Tuer -> Konflikt",
+      "plan": "diele-kueche",
+      "leitungen": [
+        { "id": "fehlt", "start": "uv1", "ende": "sd-sued",
+          "wegpunkte": [["wand", "diele.sued", 500, 2200], ["wand", "diele.sued", 4200, 2200], ["wand", "diele.ost", 0, 2200]] },
+        { "id": "durch-tuer", "start": "uv1", "ende": "sd-sued", "wegpunkte": [["wand", "diele.sued", 1500, 1000]] }
+      ],
+      "erwartet": {
+        "leitungen": {
+          "fehlt": {
+            "status": "incomplete", "geometrisch": 4500, "zugaben": 0, "laenge": null, "bekannt": 4500, "spezifiziert": false,
+            "strecken": [["connection", "start", 800, 800], ["wall", "w0-w1", 3700, 3700], ["corner", "w1-w2", 0, 0]],
+            "befunde": [["route-not-reaching-end", "missing", "end"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          },
+          "durch-tuer": {
+            "status": "conflict", "geometrisch": 1400, "zugaben": 0, "laenge": null, "bekannt": 1400, "spezifiziert": false,
+            "strecken": [["connection", "start", 1400, 1400]],
+            "befunde": [["connection-through-opening", "conflict", "end"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "Anschluss an der Decke vorhanden, aber ueber die Aussparung des L-Raums -> Konflikt",
+      "plan": "l-raum",
+      "leitungen": [
+        { "id": "decke-aussen", "start": "lampe1", "ende": "lampe3", "wegpunkte": [["decke", "l", 1000, 5000]] }
+      ],
+      "erwartet": {
+        "leitungen": {
+          "decke-aussen": {
+            "status": "conflict", "geometrisch": 0, "zugaben": 0, "laenge": null, "bekannt": 0, "spezifiziert": false,
+            "strecken": [["connection", "start", 0, 0]],
+            "befunde": [["area-outside-contour", "conflict", "end"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "Wand <-> Decke an der Oberkante, Anschluss eines Deckengeraets einmal gerundet; falsche Hoehe ungueltig",
+      "plan": "diele-kueche",
+      "leitungen": [
+        { "id": "decke", "start": "uv1", "ende": "lampe", "wegpunkte": [["wand", "diele.sued", 500, 2500], ["decke", "diele", 500, 0]] },
+        { "id": "decke-falsch", "start": "uv1", "ende": "lampe", "wegpunkte": [["wand", "diele.sued", 500, 2400], ["decke", "diele", 500, 0]] }
+      ],
+      "erwartet": {
+        "leitungen": {
+          "decke": {
+            "status": "confirmed", "geometrisch": 3293, "zugaben": 0, "laenge": 3293, "bekannt": 3293, "spezifiziert": false,
+            "strecken": [["connection", "start", 1100, 1100], ["wall-ceiling", "w0-w1", 0, 0], ["connection", "end", 2193, 2193]],
+            "befunde": [], "durchfuehrungen": [], "bodenuebergaenge": 0
+          },
+          "decke-falsch": {
+            "status": "conflict", "geometrisch": 3193, "zugaben": 0, "laenge": null, "bekannt": 3193, "spezifiziert": false,
+            "strecken": [["connection", "start", 1000, 1000], ["connection", "end", 2193, 2193]],
+            "befunde": [["wall-ceiling-transition", "conflict", "w0-w1"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "Durchfuehrung nur im aktiven shared-Abschnitt: getrennt -> ungueltig",
+      "plan": "diele-kueche-getrennt",
+      "leitungen": [
+        { "id": "L1", "start": "uv1", "ende": "sd1",
+          "wegpunkte": [["wand", "diele.sued", 500, 2200], ["wand", "diele.sued", 4200, 2200], ["wand", "diele.ost", 0, 2200], ["durchfuehrung", "d1"]] }
+      ],
+      "erwartet": {
+        "leitungen": {
+          "L1": {
+            "status": "conflict", "geometrisch": 4500, "zugaben": 0, "laenge": null, "bekannt": 4500, "spezifiziert": false,
+            "strecken": [["connection", "start", 800, 800], ["wall", "w0-w1", 3700, 3700], ["corner", "w1-w2", 0, 0]],
+            "befunde": [["penetration-outside-shared-section", "conflict", "w3"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "Durchfuehrung: Kopplung mehrdeutig (dritte Wand) -> nicht aktiv",
+      "plan": "diele-kueche-mehrdeutig",
+      "leitungen": [
+        { "id": "L1", "start": "uv1", "ende": "sd1",
+          "wegpunkte": [["wand", "diele.sued", 500, 2200], ["wand", "diele.sued", 4200, 2200], ["wand", "diele.ost", 0, 2200], ["durchfuehrung", "d1"]] }
+      ],
+      "erwartet": {
+        "leitungen": {
+          "L1": {
+            "status": "conflict", "geometrisch": 4500, "zugaben": 0, "laenge": null, "bekannt": 4500, "spezifiziert": false,
+            "strecken": [["connection", "start", 800, 800], ["wall", "w0-w1", 3700, 3700], ["corner", "w1-w2", 0, 0]],
+            "befunde": [["penetration-link-not-active", "conflict", "w3"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "Durchfuehrung: Kopplung unterbrochen (Kueche um 100 mm verschoben) -> nicht aktiv; zu hohe Durchfuehrung ungueltig",
+      "plan": "diele-kueche-unterbrochen",
+      "leitungen": [
+        { "id": "L1", "start": "uv1", "ende": "sd1",
+          "wegpunkte": [["wand", "diele.sued", 500, 2200], ["wand", "diele.sued", 4200, 2200], ["wand", "diele.ost", 0, 2200], ["durchfuehrung", "d1"]] }
+      ],
+      "erwartet": {
+        "leitungen": {
+          "L1": {
+            "status": "conflict", "geometrisch": 4500, "zugaben": 0, "laenge": null, "bekannt": 4500, "spezifiziert": false,
+            "strecken": [["connection", "start", 800, 800], ["wall", "w0-w1", 3700, 3700], ["corner", "w1-w2", 0, 0]],
+            "befunde": [["penetration-link-not-active", "conflict", "w3"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "Durchfuehrung auf Raumhoehe liegt nicht unter beiden Raumhoehen",
+      "plan": "diele-kueche",
+      "leitungen": [
+        { "id": "hoch", "start": "uv1", "ende": "sd1", "wegpunkte": [["wand", "diele.ost", 1000, 2500], ["durchfuehrung", "d-hoch"]] }
+      ],
+      "erwartet": {
+        "leitungen": {
+          "hoch": {
+            "status": "conflict", "geometrisch": 0, "zugaben": 0, "laenge": null, "bekannt": 0, "spezifiziert": false,
+            "strecken": [],
+            "befunde": [["penetration-height", "conflict", "w1"], ["route-not-reaching-start", "missing", "start"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "Bodenuebergang an der Tuer: Fussboden Diele -> Tuer -> Fussboden Kueche, 4 500 mm",
+      "plan": "bodenuebergang",
+      "leitungen": [
+        { "id": "LB", "start": "sd-diele", "ende": "sd-kueche",
+          "wegpunkte": [["wand", "diele.sued", 3800, 0], ["boden", "diele", 3800, 0], ["boden", "diele", 3800, 1500], ["uebergang", "diele.ost", 1500, "tuer"], ["boden", "kueche", 4700, 1500], ["boden", "kueche", 4700, 0], ["wand", "kueche.sued", 500, 0]] },
+        { "id": "fenster", "start": "sd-diele", "ende": "sd-kueche",
+          "wegpunkte": [["wand", "diele.sued", 3800, 0], ["boden", "diele", 3800, 0], ["boden", "diele", 3800, 2500], ["uebergang", "diele.ost", 2500, "fenster"], ["boden", "kueche", 4700, 2500], ["boden", "kueche", 4700, 0], ["wand", "kueche.sued", 500, 0]] },
+        { "id": "entfernt", "start": "sd-diele", "ende": "sd-kueche",
+          "wegpunkte": [["wand", "diele.sued", 3800, 0], ["boden", "diele", 3800, 0], ["boden", "diele", 3800, 1500], ["uebergang", "diele.ost", 1500, null], ["boden", "kueche", 4700, 1500], ["boden", "kueche", 4700, 0], ["wand", "kueche.sued", 500, 0]] },
+        { "id": "unter-wand", "start": "sd-diele", "ende": "sd-kueche",
+          "wegpunkte": [["wand", "diele.sued", 3800, 0], ["boden", "diele", 3800, 0], ["boden", "diele", 3800, 1500], ["boden", "kueche", 4700, 1500], ["boden", "kueche", 4700, 0], ["wand", "kueche.sued", 500, 0]] },
+        { "id": "reihenfolge", "start": "sd-diele", "ende": "sd-kueche",
+          "wegpunkte": [["wand", "diele.sued", 3800, 0], ["uebergang", "diele.ost", 1500, "tuer"], ["boden", "kueche", 4700, 1500], ["boden", "kueche", 4700, 0], ["wand", "kueche.sued", 500, 0]] }
+      ],
+      "erwartet": {
+        "leitungen": {
+          "LB": {
+            "status": "confirmed", "geometrisch": 4500, "zugaben": 0, "laenge": 4500, "bekannt": 4500, "spezifiziert": false,
+            "strecken": [
+              ["connection", "start", 300, 300], ["wall-floor", "w0-w1", 0, 0], ["floor", "w1-w2", 1500, 1500],
+              ["floor", "w2-w3", 400, 400], ["opening-crossing", "w3", 0, 0], ["floor", "w3-w4", 500, 500],
+              ["floor", "w4-w5", 1500, 1500], ["wall-floor", "w5-w6", 0, 0], ["connection", "end", 300, 300]
+            ],
+            "befunde": [], "durchfuehrungen": [], "bodenuebergaenge": 1
+          },
+          "fenster": {
+            "status": "conflict", "geometrisch": 5600, "zugaben": 0, "laenge": null, "bekannt": 5600, "spezifiziert": false,
+            "strecken": [
+              ["connection", "start", 300, 300], ["wall-floor", "w0-w1", 0, 0], ["floor", "w1-w2", 2500, 2500],
+              ["floor", "w4-w5", 2500, 2500], ["wall-floor", "w5-w6", 0, 0], ["connection", "end", 300, 300]
+            ],
+            "befunde": [["opening-crossing-window", "conflict", "w3"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          },
+          "entfernt": {
+            "status": "conflict", "geometrisch": 3600, "zugaben": 0, "laenge": null, "bekannt": 3600, "spezifiziert": false,
+            "strecken": [
+              ["connection", "start", 300, 300], ["wall-floor", "w0-w1", 0, 0], ["floor", "w1-w2", 1500, 1500],
+              ["floor", "w4-w5", 1500, 1500], ["wall-floor", "w5-w6", 0, 0], ["connection", "end", 300, 300]
+            ],
+            "befunde": [["opening-crossing-opening-removed", "conflict", "w3"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          },
+          "unter-wand": {
+            "status": "conflict", "geometrisch": 3600, "zugaben": 0, "laenge": null, "bekannt": 3600, "spezifiziert": false,
+            "strecken": [
+              ["connection", "start", 300, 300], ["wall-floor", "w0-w1", 0, 0], ["floor", "w1-w2", 1500, 1500],
+              ["floor", "w3-w4", 1500, 1500], ["wall-floor", "w4-w5", 0, 0], ["connection", "end", 300, 300]
+            ],
+            "befunde": [["room-change-without-crossing", "conflict", "w2-w3"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          },
+          "reihenfolge": {
+            "status": "conflict", "geometrisch": 2100, "zugaben": 0, "laenge": null, "bekannt": 2100, "spezifiziert": false,
+            "strecken": [
+              ["connection", "start", 300, 300], ["floor", "w2-w3", 1500, 1500], ["wall-floor", "w3-w4", 0, 0],
+              ["connection", "end", 300, 300]
+            ],
+            "befunde": [["opening-crossing-sequence", "conflict", "w1"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "Bodenuebergang: Tuer verschoben -> ausserhalb der Oeffnung",
+      "plan": "bodenuebergang-verschoben",
+      "leitungen": [
+        { "id": "LB", "start": "sd-diele", "ende": "sd-kueche",
+          "wegpunkte": [["wand", "diele.sued", 3800, 0], ["boden", "diele", 3800, 0], ["boden", "diele", 3800, 1500], ["uebergang", "diele.ost", 1500, "tuer"], ["boden", "kueche", 4700, 1500], ["boden", "kueche", 4700, 0], ["wand", "kueche.sued", 500, 0]] }
+      ],
+      "erwartet": {
+        "leitungen": {
+          "LB": {
+            "status": "conflict", "geometrisch": 3600, "zugaben": 0, "laenge": null, "bekannt": 3600, "spezifiziert": false,
+            "strecken": [
+              ["connection", "start", 300, 300], ["wall-floor", "w0-w1", 0, 0], ["floor", "w1-w2", 1500, 1500],
+              ["floor", "w4-w5", 1500, 1500], ["wall-floor", "w5-w6", 0, 0], ["connection", "end", 300, 300]
+            ],
+            "befunde": [["opening-crossing-outside", "conflict", "w3"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "Bodenuebergang: Abschnitt separate -> Oeffnung gilt nur einseitig",
+      "plan": "bodenuebergang-getrennt",
+      "leitungen": [
+        { "id": "LB", "start": "sd-diele", "ende": "sd-kueche",
+          "wegpunkte": [["wand", "diele.sued", 3800, 0], ["boden", "diele", 3800, 0], ["boden", "diele", 3800, 1500], ["uebergang", "diele.ost", 1500, "tuer"], ["boden", "kueche", 4700, 1500], ["boden", "kueche", 4700, 0], ["wand", "kueche.sued", 500, 0]] }
+      ],
+      "erwartet": {
+        "leitungen": {
+          "LB": {
+            "status": "conflict", "geometrisch": 3600, "zugaben": 0, "laenge": null, "bekannt": 3600, "spezifiziert": false,
+            "strecken": [
+              ["connection", "start", 300, 300], ["wall-floor", "w0-w1", 0, 0], ["floor", "w1-w2", 1500, 1500],
+              ["floor", "w4-w5", 1500, 1500], ["wall-floor", "w5-w6", 0, 0], ["connection", "end", 300, 300]
+            ],
+            "befunde": [["opening-crossing-not-connecting", "conflict", "w3"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "Bodenuebergang: Kopplung geloest (undecided) -> weiterhin gueltig",
+      "plan": "bodenuebergang-ungekoppelt",
+      "leitungen": [
+        { "id": "LB", "start": "sd-diele", "ende": "sd-kueche",
+          "wegpunkte": [["wand", "diele.sued", 3800, 0], ["boden", "diele", 3800, 0], ["boden", "diele", 3800, 1500], ["uebergang", "diele.ost", 1500, "tuer"], ["boden", "kueche", 4700, 1500], ["boden", "kueche", 4700, 0], ["wand", "kueche.sued", 500, 0]] }
+      ],
+      "erwartet": {
+        "leitungen": {
+          "LB": {
+            "status": "confirmed", "geometrisch": 4500, "zugaben": 0, "laenge": 4500, "bekannt": 4500, "spezifiziert": false,
+            "strecken": [
+              ["connection", "start", 300, 300], ["wall-floor", "w0-w1", 0, 0], ["floor", "w1-w2", 1500, 1500],
+              ["floor", "w2-w3", 400, 400], ["opening-crossing", "w3", 0, 0], ["floor", "w3-w4", 500, 500],
+              ["floor", "w4-w5", 1500, 1500], ["wall-floor", "w5-w6", 0, 0], ["connection", "end", 300, 300]
+            ],
+            "befunde": [], "durchfuehrungen": [], "bodenuebergaenge": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "Bodenuebergang an einer Tuer, die der Nachbarraum gespeichert hat (abgeleitete Oeffnung)",
+      "plan": "bodenuebergang-abgeleitet",
+      "leitungen": [
+        { "id": "LB", "start": "sd-diele", "ende": "sd-kueche",
+          "wegpunkte": [["wand", "diele.sued", 3800, 0], ["boden", "diele", 3800, 0], ["boden", "diele", 3800, 1500], ["uebergang", "kueche.west", 1500, "tuer-k"], ["boden", "kueche", 4700, 1500], ["boden", "kueche", 4700, 0], ["wand", "kueche.sued", 500, 0]] }
+      ],
+      "erwartet": {
+        "leitungen": {
+          "LB": {
+            "status": "confirmed", "geometrisch": 4500, "zugaben": 0, "laenge": 4500, "bekannt": 4500, "spezifiziert": false,
+            "strecken": [
+              ["connection", "start", 300, 300], ["wall-floor", "w0-w1", 0, 0], ["floor", "w1-w2", 1500, 1500],
+              ["floor", "w2-w3", 400, 400], ["opening-crossing", "w3", 0, 0], ["floor", "w3-w4", 500, 500],
+              ["floor", "w4-w5", 1500, 1500], ["wall-floor", "w5-w6", 0, 0], ["connection", "end", 300, 300]
+            ],
+            "befunde": [], "durchfuehrungen": [], "bodenuebergaenge": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "§5.4 Trasse: L1, L2 ueber 0-4 000, L3 ueber 1 000-3 000 -> 4 000 Trasse, 10 000 Leitung, Belegung 2/3/2; Verzweigung an Abzweigdose j1",
+      "plan": "flur",
+      "leitungen": [
+        { "id": "L0", "start": "uv", "ende": "j1", "wegpunkte": [["wand", "flur.west", 500, 2200], ["wand", "flur.west", 1500, 2200]] },
+        { "id": "L1", "start": "j1", "ende": "s1", "wegpunkte": [["wand", "flur.west", 2000, 2200], ["wand", "flur.sued", 0, 2200], ["wand", "flur.sued", 4000, 2200]] },
+        { "id": "L2", "start": "j1", "ende": "sw2", "wegpunkte": [["wand", "flur.west", 2000, 2200], ["wand", "flur.sued", 0, 2200], ["wand", "flur.sued", 4000, 2200]] },
+        { "id": "L3", "start": "j2", "ende": "s3", "wegpunkte": [["wand", "flur.sued", 1000, 2200], ["wand", "flur.sued", 3000, 2200]] }
+      ],
+      "erwartet": {
+        "leitungen": {
+          "L0": {
+            "status": "confirmed", "geometrisch": 1800, "zugaben": 0, "laenge": 1800, "bekannt": 1800, "spezifiziert": false,
+            "strecken": [["connection", "start", 800, 800], ["wall", "w0-w1", 1000, 1000], ["connection", "end", 0, 0]],
+            "befunde": [], "durchfuehrungen": [], "bodenuebergaenge": 0
+          },
+          "L1": {
+            "status": "confirmed", "geometrisch": 6400, "zugaben": 0, "laenge": 6400, "bekannt": 6400, "spezifiziert": false,
+            "strecken": [["connection", "start", 500, 500], ["corner", "w0-w1", 0, 0], ["wall", "w1-w2", 4000, 4000], ["connection", "end", 1900, 1900]],
+            "befunde": [], "durchfuehrungen": [], "bodenuebergaenge": 0
+          },
+          "L2": {
+            "status": "confirmed", "geometrisch": 5600, "zugaben": 0, "laenge": 5600, "bekannt": 5600, "spezifiziert": false,
+            "strecken": [["connection", "start", 500, 500], ["corner", "w0-w1", 0, 0], ["wall", "w1-w2", 4000, 4000], ["connection", "end", 1100, 1100]],
+            "befunde": [], "durchfuehrungen": [], "bodenuebergaenge": 0
+          },
+          "L3": {
+            "status": "confirmed", "geometrisch": 4600, "zugaben": 0, "laenge": 4600, "bekannt": 4600, "spezifiziert": false,
+            "strecken": [["connection", "start", 700, 700], ["wall", "w0-w1", 2000, 2000], ["connection", "end", 1900, 1900]],
+            "befunde": [], "durchfuehrungen": [], "bodenuebergaenge": 0
+          }
+        },
+        "trassen": {
+          "flaechen": { "wall": 10800, "ceiling": 0, "floor": 0, "riser": 0, "shaft": 0 },
+          "leitungsmeter": { "wall": 18400, "ceiling": 0, "floor": 0, "riser": 0, "shaft": 0 },
+          "durchfuehrungen": [], "bodenuebergaenge": 0,
+          "liste": [
+            ["wall", "flur.sued", "horizontal", 4000, 10000, true, [[1000, 2], [2000, 3], [1000, 2]]],
+            ["wall", "flur.west", "horizontal", 1500, 2000, true, [[1000, 1], [500, 2]]],
+            ["wall", "flur.sued", "vertical", 700, 700, true, [[700, 1]]],
+            ["wall", "flur.sued", "vertical", 1900, 1900, true, [[1900, 1]]],
+            ["wall", "flur.sued", "vertical", 1900, 3000, true, [[800, 1], [1100, 2]]],
+            ["wall", "flur.west", "vertical", 800, 800, true, [[800, 1]]]
+          ]
+        }
+      }
+    },
+    {
+      "name": "Decke und Fussboden mit gleichem Grundriss sind getrennte Trassen; getrennte Stuecke einer Wandsenkrechten zwei Trassen",
+      "plan": "flur",
+      "leitungen": [
+        { "id": "LD", "start": "sw2", "ende": "lampe", "wegpunkte": [["wand", "flur.sued", 4000, 2500], ["decke", "flur", 4000, 0], ["decke", "flur", 4000, 1000]] },
+        { "id": "LF", "start": "s1", "ende": "s3",
+          "wegpunkte": [["wand", "flur.sued", 4000, 0], ["boden", "flur", 4000, 0], ["boden", "flur", 4000, 1000], ["boden", "flur", 3000, 1000], ["boden", "flur", 3000, 0], ["wand", "flur.sued", 3000, 0]] }
+      ],
+      "erwartet": {
+        "leitungen": {
+          "LD": {
+            "status": "confirmed", "geometrisch": 4400, "zugaben": 0, "laenge": 4400, "bekannt": 4400, "spezifiziert": false,
+            "strecken": [["connection", "start", 1400, 1400], ["wall-ceiling", "w0-w1", 0, 0], ["ceiling", "w1-w2", 1000, 1000], ["connection", "end", 2000, 2000]],
+            "befunde": [], "durchfuehrungen": [], "bodenuebergaenge": 0
+          },
+          "LF": {
+            "status": "confirmed", "geometrisch": 3600, "zugaben": 0, "laenge": 3600, "bekannt": 3600, "spezifiziert": false,
+            "strecken": [
+              ["connection", "start", 300, 300], ["wall-floor", "w0-w1", 0, 0], ["floor", "w1-w2", 1000, 1000], ["floor", "w2-w3", 1000, 1000],
+              ["floor", "w3-w4", 1000, 1000], ["wall-floor", "w4-w5", 0, 0], ["connection", "end", 300, 300]
+            ],
+            "befunde": [], "durchfuehrungen": [], "bodenuebergaenge": 0
+          }
+        },
+        "trassen": {
+          "flaechen": { "wall": 2000, "ceiling": 3000, "floor": 3000, "riser": 0, "shaft": 0 },
+          "leitungsmeter": { "wall": 2000, "ceiling": 3000, "floor": 3000, "riser": 0, "shaft": 0 },
+          "durchfuehrungen": [], "bodenuebergaenge": 0,
+          "liste": [
+            ["wall", "flur.sued", "vertical", 300, 300, true, [[300, 1]]],
+            ["wall", "flur.sued", "vertical", 300, 300, true, [[300, 1]]],
+            ["wall", "flur.sued", "vertical", 1400, 1400, true, [[1400, 1]]],
+            ["ceiling", "flur", "straight", 1000, 1000, true, [[1000, 1]]],
+            ["ceiling", "flur", "straight", 2000, 2000, true, [[2000, 1]]],
+            ["floor", "flur", "straight", 1000, 1000, true, [[1000, 1]]],
+            ["floor", "flur", "straight", 1000, 1000, true, [[1000, 1]]],
+            ["floor", "flur", "straight", 1000, 1000, true, [[1000, 1]]]
+          ]
+        }
+      }
+    },
+    {
+      "name": "Steigweg EG -> OG: Einstieg bei h = 2 200, 700 + 750 = 1 450 ohne Doppelzaehlung; KG -> OG durch den Zwischenhalt; Trassen je Abschnitt",
+      "plan": "steigweg",
+      "leitungen": [
+        { "id": "LS", "start": "uv-eg", "ende": "sd-og",
+          "wegpunkte": [["wand", "eg.nord", 2000, 2200], ["wand", "eg.nord", 2800, 2200], ["steigweg", "s1", "h-eg", 2200, "h-og", 0], ["boden", "bad", 1650, 3700], ["boden", "bad", 1650, 4000], ["wand", "og.nord", 2350, 0]] },
+        { "id": "LS-kg", "start": "uv-kg", "ende": "sd-og",
+          "wegpunkte": [["wand", "kg.nord", 2000, 2200], ["wand", "kg.nord", 2800, 2200], ["steigweg", "s1", "h-kg", 2200, "h-og", 0], ["boden", "bad", 1650, 3700], ["boden", "bad", 1650, 4000], ["wand", "og.nord", 2350, 0]] }
+      ],
+      "erwartet": {
+        "leitungen": {
+          "LS": {
+            "status": "confirmed", "geometrisch": 3650, "zugaben": 0, "laenge": 3650, "bekannt": 3650, "spezifiziert": false,
+            "strecken": [
+              ["connection", "start", 800, 800], ["wall", "w0-w1", 800, 800], ["riser", "w2", 1450, 1450],
+              ["floor", "w3-w4", 300, 300], ["wall-floor", "w4-w5", 0, 0], ["connection", "end", 300, 300]
+            ],
+            "verlauf": [[[1200, 3400, 2200], [1200, 3400, 2900], [1650, 3400, 2900], [1650, 3700, 2900]]],
+            "befunde": [], "durchfuehrungen": [], "bodenuebergaenge": 0
+          },
+          "LS-kg": {
+            "status": "confirmed", "geometrisch": 6450, "zugaben": 0, "laenge": 6450, "bekannt": 6450, "spezifiziert": false,
+            "strecken": [
+              ["connection", "start", 800, 800], ["wall", "w0-w1", 800, 800], ["riser", "w2", 4250, 4250],
+              ["floor", "w3-w4", 300, 300], ["wall-floor", "w4-w5", 0, 0], ["connection", "end", 300, 300]
+            ],
+            "verlauf": [
+              [[1200, 3400, -600], [1200, 3400, 0]],
+              [[1200, 3400, 0], [1200, 3400, 2900], [1650, 3400, 2900], [1650, 3700, 2900]]
+            ],
+            "befunde": [], "durchfuehrungen": [], "bodenuebergaenge": 0
+          }
+        },
+        "trassen": {
+          "flaechen": { "wall": 3500, "ceiling": 0, "floor": 300, "riser": 4250, "shaft": 0 },
+          "leitungsmeter": { "wall": 3800, "ceiling": 0, "floor": 600, "riser": 5700, "shaft": 0 },
+          "durchfuehrungen": [], "bodenuebergaenge": 0,
+          "liste": [
+            ["wall", "eg.nord", "horizontal", 800, 800, true, [[800, 1]]],
+            ["wall", "kg.nord", "horizontal", 800, 800, true, [[800, 1]]],
+            ["wall", "eg.nord", "vertical", 800, 800, true, [[800, 1]]],
+            ["wall", "kg.nord", "vertical", 800, 800, true, [[800, 1]]],
+            ["wall", "og.nord", "vertical", 300, 600, true, [[300, 2]]],
+            ["floor", "bad", "straight", 300, 600, true, [[300, 2]]],
+            ["riser", "s1", "riser", 600, 600, true, []],
+            ["riser", "s1", "riser", 3650, 5100, true, []]
+          ]
+        }
+      }
+    },
+    {
+      "name": "Steigweg rueckwaerts OG -> EG gleich lang; Teilnutzung KG -> EG mit Schachtfortsetzung; Wegpunkt neben dem Halt ungueltig",
+      "plan": "steigweg",
+      "leitungen": [
+        { "id": "LS-rueck", "start": "sd-og", "ende": "uv-eg",
+          "wegpunkte": [["wand", "og.nord", 2350, 0], ["boden", "bad", 1650, 4000], ["boden", "bad", 1650, 3700], ["steigweg", "s1", "h-og", 0, "h-eg", 2200], ["wand", "eg.nord", 2800, 2200], ["wand", "eg.nord", 2000, 2200]] },
+        { "id": "LS-teil", "start": "uv-kg", "ende": "sd-eg",
+          "wegpunkte": [["wand", "kg.nord", 2000, 2200], ["wand", "kg.nord", 2800, 2200], ["steigweg", "s1", "h-kg", 2200, "h-eg", 1100], ["wand", "eg.nord", 2800, 1100]] },
+        { "id": "LS-daneben", "start": "uv-eg", "ende": "sd-og",
+          "wegpunkte": [["wand", "eg.nord", 2000, 2200], ["wand", "eg.nord", 2700, 2200], ["steigweg", "s1", "h-eg", 2200, "h-og", 0], ["boden", "bad", 1650, 3700], ["boden", "bad", 1650, 4000], ["wand", "og.nord", 2350, 0]] }
+      ],
+      "erwartet": {
+        "leitungen": {
+          "LS-rueck": {
+            "status": "confirmed", "geometrisch": 3650, "zugaben": 0, "laenge": 3650, "bekannt": 3650, "spezifiziert": false,
+            "strecken": [
+              ["connection", "start", 300, 300], ["wall-floor", "w0-w1", 0, 0], ["floor", "w1-w2", 300, 300],
+              ["riser", "w3", 1450, 1450], ["wall", "w4-w5", 800, 800], ["connection", "end", 800, 800]
+            ],
+            "verlauf": [[[1650, 3700, 2900], [1650, 3400, 2900], [1200, 3400, 2900], [1200, 3400, 2200]]],
+            "befunde": [], "durchfuehrungen": [], "bodenuebergaenge": 0
+          },
+          "LS-teil": {
+            "status": "confirmed", "geometrisch": 3700, "zugaben": 0, "laenge": 3700, "bekannt": 3700, "spezifiziert": false,
+            "strecken": [
+              ["connection", "start", 800, 800], ["wall", "w0-w1", 800, 800], ["riser", "w2", 600, 600],
+              ["shaft", "w2", 1100, 1100], ["connection", "end", 400, 400]
+            ],
+            "verlauf": [[[1200, 3400, -600], [1200, 3400, 0]]],
+            "befunde": [], "durchfuehrungen": [], "bodenuebergaenge": 0
+          },
+          "LS-daneben": {
+            "status": "conflict", "geometrisch": 3550, "zugaben": 0, "laenge": null, "bekannt": 3550, "spezifiziert": false,
+            "strecken": [
+              ["connection", "start", 800, 800], ["wall", "w0-w1", 700, 700], ["riser", "w2", 1450, 1450],
+              ["floor", "w3-w4", 300, 300], ["wall-floor", "w4-w5", 0, 0], ["connection", "end", 300, 300]
+            ],
+            "befunde": [["riser-transfer", "conflict", "w1-w2"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "Steigweg mit unbestaetigter Hoehenlage: Leitung unvollstaendig, nur der waagerechte Teil bekannt; Leitung im Geschoss bleibt bestaetigt",
+      "plan": "steigweg-unbestaetigt",
+      "leitungen": [
+        { "id": "LS", "start": "uv-eg", "ende": "sd-og",
+          "wegpunkte": [["wand", "eg.nord", 2000, 2200], ["wand", "eg.nord", 2800, 2200], ["steigweg", "s1", "h-eg", 2200, "h-og", 0], ["boden", "bad", 1650, 3700], ["boden", "bad", 1650, 4000], ["wand", "og.nord", 2350, 0]] },
+        { "id": "LS-eg", "start": "uv-eg", "ende": "sd-eg", "wegpunkte": [["wand", "eg.nord", 2000, 2200], ["wand", "eg.nord", 3200, 2200]] }
+      ],
+      "erwartet": {
+        "leitungen": {
+          "LS": {
+            "status": "incomplete", "geometrisch": 2950, "zugaben": 0, "laenge": null, "bekannt": 2950, "spezifiziert": false,
+            "strecken": [
+              ["connection", "start", 800, 800], ["wall", "w0-w1", 800, 800], ["riser", "w2", null, 750],
+              ["floor", "w3-w4", 300, 300], ["wall-floor", "w4-w5", 0, 0], ["connection", "end", 300, 300]
+            ],
+            "befunde": [["riser-elevation-unconfirmed", "missing", "w2"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          },
+          "LS-eg": {
+            "status": "confirmed", "geometrisch": 3100, "zugaben": 0, "laenge": 3100, "bekannt": 3100, "spezifiziert": false,
+            "strecken": [["connection", "start", 800, 800], ["wall", "w0-w1", 1200, 1200], ["connection", "end", 1100, 1100]],
+            "befunde": [], "durchfuehrungen": [], "bodenuebergaenge": 0
+          }
+        },
+        "trassen": {
+          "flaechen": { "wall": 3400, "ceiling": 0, "floor": 300, "riser": 750, "shaft": 0 },
+          "leitungsmeter": { "wall": 5000, "ceiling": 0, "floor": 300, "riser": 750, "shaft": 0 },
+          "durchfuehrungen": [], "bodenuebergaenge": 0,
+          "liste": [
+            ["wall", "eg.nord", "horizontal", 1200, 2000, true, [[800, 2], [400, 1]]],
+            ["wall", "eg.nord", "vertical", 800, 1600, true, [[800, 2]]],
+            ["wall", "eg.nord", "vertical", 1100, 1100, true, [[1100, 1]]],
+            ["wall", "og.nord", "vertical", 300, 300, true, [[300, 1]]],
+            ["floor", "bad", "straight", 300, 300, true, [[300, 1]]],
+            ["riser", "s1", "riser", 750, 750, false, []]
+          ]
+        }
+      }
+    },
+    {
+      "name": "Steigweg mit widerspruechlicher Hoehenlage: Konflikt, Teilsumme ohne Steigweg",
+      "plan": "steigweg-widerspruch",
+      "leitungen": [
+        { "id": "LS", "start": "uv-eg", "ende": "sd-og",
+          "wegpunkte": [["wand", "eg.nord", 2000, 2200], ["wand", "eg.nord", 2800, 2200], ["steigweg", "s1", "h-eg", 2200, "h-og", 0], ["boden", "bad", 1650, 3700], ["boden", "bad", 1650, 4000], ["wand", "og.nord", 2350, 0]] }
+      ],
+      "erwartet": {
+        "leitungen": {
+          "LS": {
+            "status": "conflict", "geometrisch": 2200, "zugaben": 0, "laenge": null, "bekannt": 2200, "spezifiziert": false,
+            "strecken": [
+              ["connection", "start", 800, 800], ["wall", "w0-w1", 800, 800],
+              ["floor", "w3-w4", 300, 300], ["wall-floor", "w4-w5", 0, 0], ["connection", "end", 300, 300]
+            ],
+            "befunde": [["riser-elevation-inconsistent", "conflict", "w2"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "Steigweg: Einstieg an der Decke (2 500) liegt nicht unter dem naechsten Geschoss (2 400)",
+      "plan": "steigweg-niedrig",
+      "leitungen": [
+        { "id": "LS", "start": "uv-eg", "ende": "sd-og",
+          "wegpunkte": [["wand", "eg.nord", 2000, 2500], ["wand", "eg.nord", 2800, 2500], ["steigweg", "s1", "h-eg", 2500, "h-og", 0], ["boden", "bad", 1650, 3700], ["boden", "bad", 1650, 4000], ["wand", "og.nord", 2350, 0]] }
+      ],
+      "erwartet": {
+        "leitungen": {
+          "LS": {
+            "status": "conflict", "geometrisch": 2500, "zugaben": 0, "laenge": null, "bekannt": 2500, "spezifiziert": false,
+            "strecken": [
+              ["connection", "start", 1100, 1100], ["wall", "w0-w1", 800, 800],
+              ["floor", "w3-w4", 300, 300], ["wall-floor", "w4-w5", 0, 0], ["connection", "end", 300, 300]
+            ],
+            "befunde": [["riser-entry-height", "conflict", "w2"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          }
+        }
+      }
+    },
+    {
+      "name": "L-Raum: Diagonale durch die Innenecke bleibt in der Kontur, Abkuerzung ueber die Aussparung nicht; Fussboden entlang der Kontur; Rundung je Strecke",
+      "plan": "l-raum",
+      "leitungen": [
+        { "id": "diagonal", "start": "lampe1", "ende": "lampe2", "wegpunkte": [["decke", "l", 1000, 5000], ["decke", "l", 5000, 1000]] },
+        { "id": "abkuerzung", "start": "lampe1", "ende": "lampe3", "wegpunkte": [["decke", "l", 1000, 5000], ["decke", "l", 5000, 2000]] },
+        { "id": "boden", "start": "sd-s", "ende": "sd-w",
+          "wegpunkte": [["wand", "l.sued", 1000, 0], ["boden", "l", 1000, 0], ["boden", "l", 1000, 5000], ["boden", "l", 0, 5000], ["wand", "l.west", 1000, 0]] },
+        { "id": "boden-aussparung", "start": "sd-s", "ende": "sd-w",
+          "wegpunkte": [["wand", "l.sued", 5000, 0], ["boden", "l", 5000, 0], ["boden", "l", 5000, 2000], ["boden", "l", 1000, 5000], ["boden", "l", 0, 5000], ["wand", "l.west", 1000, 0]] },
+        { "id": "rundung", "start": "lampe5", "ende": "lampe4", "wegpunkte": [["decke", "l", 1000, 1000], ["decke", "l", 1000, 1000], ["decke", "l", 1003, 1002], ["decke", "l", 1007, 1004]] }
+      ],
+      "erwartet": {
+        "leitungen": {
+          "diagonal": {
+            "status": "confirmed", "geometrisch": 5657, "zugaben": 0, "laenge": 5657, "bekannt": 5657, "spezifiziert": false,
+            "strecken": [["connection", "start", 0, 0], ["ceiling", "w0-w1", 5657, 5657], ["connection", "end", 0, 0]],
+            "befunde": [], "durchfuehrungen": [], "bodenuebergaenge": 0
+          },
+          "abkuerzung": {
+            "status": "conflict", "geometrisch": 0, "zugaben": 0, "laenge": null, "bekannt": 0, "spezifiziert": false,
+            "strecken": [["connection", "start", 0, 0], ["connection", "end", 0, 0]],
+            "befunde": [["area-outside-contour", "conflict", "w0-w1"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          },
+          "boden": {
+            "status": "confirmed", "geometrisch": 6600, "zugaben": 0, "laenge": 6600, "bekannt": 6600, "spezifiziert": false,
+            "strecken": [
+              ["connection", "start", 300, 300], ["wall-floor", "w0-w1", 0, 0], ["floor", "w1-w2", 5000, 5000],
+              ["floor", "w2-w3", 1000, 1000], ["wall-floor", "w3-w4", 0, 0], ["connection", "end", 300, 300]
+            ],
+            "befunde": [], "durchfuehrungen": [], "bodenuebergaenge": 0
+          },
+          "boden-aussparung": {
+            "status": "conflict", "geometrisch": 7600, "zugaben": 0, "laenge": null, "bekannt": 7600, "spezifiziert": false,
+            "strecken": [
+              ["connection", "start", 4300, 4300], ["wall-floor", "w0-w1", 0, 0], ["floor", "w1-w2", 2000, 2000],
+              ["floor", "w3-w4", 1000, 1000], ["wall-floor", "w4-w5", 0, 0], ["connection", "end", 300, 300]
+            ],
+            "befunde": [["area-outside-contour", "conflict", "w2-w3"]],
+            "durchfuehrungen": [], "bodenuebergaenge": 0
+          },
+          "rundung": {
+            "status": "confirmed", "geometrisch": 8, "zugaben": 0, "laenge": 8, "bekannt": 8, "spezifiziert": false,
+            "strecken": [
+              ["connection", "start", 0, 0], ["ceiling", "w0-w1", 0, 0], ["ceiling", "w1-w2", 4, 4],
+              ["ceiling", "w2-w3", 4, 4], ["connection", "end", 0, 0]
+            ],
+            "befunde": [], "durchfuehrungen": [], "bodenuebergaenge": 0
+          }
+        }
+      }
+    }
+  ],
+  "gegenlagen": [
+    {
+      "name": "entgegengesetzt, gleich lang: 2 100 -> 900",
+      "waende": [
+        { "id": "a", "raum": "r1", "von": [4200, 0], "bis": [4200, 3000] },
+        { "id": "b", "raum": "r2", "von": [4200, 3000], "bis": [4200, 0] }
+      ],
+      "abstand": 2100, "erwartet": { "lage": [900, 0], "gerundet": 900 }
+    },
+    {
+      "name": "gleich gerichtet, versetzter Anfang: 4 000 -> 1 000",
+      "waende": [
+        { "id": "a", "raum": "r1", "von": [0, 3000], "bis": [9000, 3000] },
+        { "id": "b", "raum": "r2", "von": [3000, 3000], "bis": [6000, 3000] }
+      ],
+      "abstand": 4000, "erwartet": { "lage": [1000, 0], "gerundet": 1000 }
+    },
+    {
+      "name": "entgegengesetzt, verschieden lang, teilweise Ueberlappung: 4 000 -> 4 000",
+      "waende": [
+        { "id": "a", "raum": "r1", "von": [0, 3000], "bis": [5000, 3000] },
+        { "id": "b", "raum": "r2", "von": [8000, 3000], "bis": [3000, 3000] }
+      ],
+      "abstand": 4000, "erwartet": { "lage": [4000, 0], "gerundet": 4000 }
+    },
+    {
+      "name": "ausserhalb des gemeinsamen Abschnitts: 1 000 -> keine Gegenlage",
+      "waende": [
+        { "id": "a", "raum": "r1", "von": [0, 3000], "bis": [5000, 3000] },
+        { "id": "b", "raum": "r2", "von": [8000, 3000], "bis": [3000, 3000] }
+      ],
+      "abstand": 1000, "erwartet": null
+    },
+    {
+      "name": "Kante des gemeinsamen Abschnitts zaehlt dazu: 3 000 -> 5 000",
+      "waende": [
+        { "id": "a", "raum": "r1", "von": [0, 3000], "bis": [5000, 3000] },
+        { "id": "b", "raum": "r2", "von": [8000, 3000], "bis": [3000, 3000] }
+      ],
+      "abstand": 3000, "erwartet": { "lage": [5000, 0], "gerundet": 5000 }
+    },
+    {
+      "name": "schraege Wand, irrationale Gegenlage: 1 000 -> 1 846 + 100*sqrt(10) = 2 162,28 -> 2 162",
+      "waende": [
+        { "id": "a", "raum": "r1", "von": [0, 0], "bis": [3000, 1000] },
+        { "id": "b", "raum": "r2", "von": [3000, 1000], "bis": [300, 100] }
+      ],
+      "abstand": 1000, "erwartet": { "lage": [1846, 100], "gerundet": 2162 }
+    }
+  ],
+  "rundung": [
+    { "lage": [1000, -100], "m": 10, "erwartet": 684 },
+    { "lage": [1846, 100], "m": 10, "erwartet": 2162 },
+    { "lage": [0, 1], "m": 2, "erwartet": 1 },
+    { "lage": [0, 1], "m": 3, "erwartet": 2 },
+    { "lage": [-1, 1], "m": 2, "erwartet": 0 },
+    { "lage": [1, -1], "m": 2, "erwartet": 0 },
+    { "lage": [0, -1], "m": 3, "erwartet": -2 },
+    { "lage": [5, 0], "m": 7, "erwartet": 5 },
+    { "lage": [0, 3], "m": 25, "erwartet": 15 },
+    { "lage": [0, 1000000], "m": 2, "erwartet": 1414214 }
+  ]
+}

@@ -43,6 +43,10 @@ from app.errors import (
     VersionConflictError,
 )
 from app.modules.electrical import geometry
+from app.modules.electrical.cable_rules import (
+    CableGuard,
+    require_links_without_penetrations,
+)
 from app.modules.electrical.device_rules import (
     DeviceBaseline,
     FloorDeviceCheck,
@@ -177,6 +181,8 @@ class WallLinkService:
         self.rooms = _RoomRepository(session, organization_id)
         self.device_check = FloorDeviceCheck(session, organization_id)
         self.structure = FloorPlanningAccess(session, organization_id)
+        #: Durchfuehrungen und Bodenuebergaenge vorher/nachher (Phase 6b.3).
+        self.cable_guard = CableGuard(session, organization_id)
 
     # ------------------------------------------------------------------ Lesen
 
@@ -292,6 +298,7 @@ class WallLinkService:
             raise _exists_error(existing)
 
         baseline = self._baseline(context)
+        cables_before = self.cable_guard.snapshot(context.building_id)
         link = ElectricalWallLink(
             id=uuid.uuid4(),
             organization_id=self.organization_id,
@@ -314,6 +321,11 @@ class WallLinkService:
         ):
             flush(self.session)
         self._require_devices_fit(context, baseline)
+        self.cable_guard.require_unbroken(
+            cables_before,
+            acknowledged=payload.acknowledged_cable_ids,
+            acknowledgement_supported=True,
+        )
         return self._view(floor_id, link), LinkWriteResult(
             context=context, room_ids=tuple(room.id for room in rooms)
         )
@@ -328,11 +340,19 @@ class WallLinkService:
                 context=context, room_ids=tuple(room.id for room in rooms), changed=False
             )
         baseline = self._baseline(context)
+        cables_before = self.cable_guard.snapshot(context.building_id)
         link.relation = payload.relation
         for room in rooms:
             _touch(room)
         flush(self.session)
         self._require_devices_fit(context, baseline)
+        # ``shared -> separate`` mit Durchfuehrung: 422 (hart); ein Bodenuebergang wird
+        # einseitig: nur mit Bestaetigung (Entwurf §5.6, §7).
+        self.cable_guard.require_unbroken(
+            cables_before,
+            acknowledged=payload.acknowledged_cable_ids,
+            acknowledgement_supported=True,
+        )
         return self._view(context.floor_id, link), LinkWriteResult(
             context=context, room_ids=tuple(room.id for room in rooms)
         )
@@ -340,12 +360,15 @@ class WallLinkService:
     def delete(self, link_id: uuid.UUID, *, expected_version: int) -> LinkWriteResult:
         """Loest die Kopplung. Der Abschnitt ist danach unentschieden (konservativ)."""
         link, context, rooms = self._locked_link(link_id, expected_version)
+        require_links_without_penetrations(self.session, self.organization_id, [link.id])
         baseline = self._baseline(context)
+        cables_before = self.cable_guard.snapshot(context.building_id)
         self.session.delete(link)
         for room in rooms:
             _touch(room)
         flush(self.session)
         self._require_devices_fit(context, baseline)
+        self.cable_guard.require_unbroken(cables_before)
         return LinkWriteResult(context=context, room_ids=tuple(room.id for room in rooms))
 
     # ---------------------------------------------------------------- Helfer

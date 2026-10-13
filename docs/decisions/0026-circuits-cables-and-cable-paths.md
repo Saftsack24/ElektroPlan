@@ -2,7 +2,7 @@
 
 Status: **accepted** (2026-10-11) – Gesamtentwurf (2. Fassung) vom Auftraggeber als
 Umsetzungsgrundlage freigegeben; D1, D2, D4, D5, D11 bestätigt, D6 und D7 auf seine Vorgabe
-geändert. Umsetzung schrittweise: **6b.0 und 6b.1 umgesetzt** (Checkpoint vom 2026-10-12), 6b.2–6b.6 offen.
+geändert. Umsetzung schrittweise: **6b.0 und 6b.1 umgesetzt** (Checkpoint `541bae9` vom 2026-10-12), **6b.2 und 6b.3 technisch umgesetzt und geprüft** (reine Längenfunktion, Persistenz und API; Checkpoint vom 2026-10-13; Entwurf §17/§18), 6b.4–6b.6 offen.
 Präzisierung 6b.1: Abzweigdosen sind einem Stromkreis zuordenbar (Verzweigungspunkt); das
 Lagegerät einer Verteilung und Datendosen nicht.
 Betrifft: Phase 6b

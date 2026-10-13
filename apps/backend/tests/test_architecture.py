@@ -154,9 +154,10 @@ def test_tabellenbestand_ist_vollstaendig_erfasst() -> None:
     Phase 3, seit Phase 5 Geraetekatalog und Geraete und seit Phase 6a
     Wandkopplungen sowie die Steigweg-Tabellen. Dazu die Refresh-Token-Familien
     (Sicherheitsauftrag 2026-10-10, Migration 0011) und seit Phase 6b.0
-    Verteilungen, Stromkreise und Geraetezuordnung (Migration 0012).
+    Verteilungen, Stromkreise und Geraetezuordnung (Migration 0012), seit Phase 6b.3
+    Leitungen, Wegpunkte und Durchfuehrungen (Migration 0013).
     """
-    assert len(metadata.sorted_tables) == 34, (
+    assert len(metadata.sorted_tables) == 37, (
         "Anzahl der Tabellen hat sich geaendert - test_architecture.py und "
         "docs/database.md pruefen."
     )

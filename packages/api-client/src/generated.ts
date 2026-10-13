@@ -1173,6 +1173,9 @@ export interface paths {
         /**
          * Raum bearbeiten
          * @description Aendert Name, Raumnummer oder Raumhoehe.
+         *
+         *     Wegpunkte oder Durchfuehrungen ueber einer abgesenkten Hoehe: ``422``. Unterbricht die
+         *     Aenderung eine Leitung (etwa Uebergang zur Decke), braucht es ``acknowledged_cable_ids``.
          */
         patch: operations["updateElectricalRoom"];
         trace?: never;
@@ -1209,6 +1212,11 @@ export interface paths {
          *     (``walls_changed``).
          *
          *     Der ``GET`` auf derselben Adresse liefert den Pruefbericht dieser Kontur.
+         *
+         *     **Leitungen (6b.3):** Endgeraete und Waende mit Leitungsbezug werden nicht entfernt
+         *     (``409``); eine Oeffnung ueber einer Wandstrecke ist ``422``. Jede andere
+         *     Unterbrechung braucht ``acknowledged_cable_ids`` mit **genau** den betroffenen
+         *     Leitungen (sonst ``409 cables-would-break``; verlangt ``electrical.route.write``).
          */
         put: operations["replaceElectricalRoomContour"];
         post?: never;
@@ -1412,6 +1420,8 @@ export interface paths {
          *     ``shared`` = eine Bauwand, ``separate`` = zwei Bauwaende auf derselben Achse.
          *     Die Raumversion beider Raeume zaehlt weiter. Wuerde ein vorhandenes Geraet
          *     dadurch unzulaessig, antwortet der Server ``422`` und speichert nichts.
+         *     Unterbricht sie eine Leitung (Bodenuebergang bei ``separate``), braucht es
+         *     ``acknowledged_cable_ids``.
          */
         post: operations["createElectricalWallLink"];
         delete?: never;
@@ -1440,6 +1450,9 @@ export interface paths {
         /**
          * Wandkopplung aendern
          * @description Aendert ``shared`` <-> ``separate``; ``If-Match`` traegt die Kopplungsversion.
+         *
+         *     Mit Durchfuehrung ist ``separate`` nicht moeglich (``422``); ein Bodenuebergang wird
+         *     dann einseitig - nur mit ``acknowledged_cable_ids``.
          */
         patch: operations["updateElectricalWallLink"];
         trace?: never;
@@ -1485,7 +1498,8 @@ export interface paths {
          * @description Ersetzt Stammdaten und die ganze Halteliste; ``If-Match`` traegt die Steigwegversion.
          *
          *     Halte mit ``id`` behalten ihre ID, fehlende werden entfernt, Halte ohne
-         *     ``id`` neu angelegt.
+         *     ``id`` neu angelegt. Genutzte Halte entfallen nicht (``409 riser-stop-in-use``);
+         *     unterbricht ein verschobener Halt eine Leitung, braucht es ``acknowledged_cable_ids``.
          */
         put: operations["replaceElectricalRiser"];
         post?: never;
@@ -1638,6 +1652,150 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/modules/electrical/buildings/{building_id}/cables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Leitungen eines Gebaeudes
+         * @description Leitungen mit Wegpunkten, Teilstrecken, Status, Laenge oder Teilsumme und Befunden.
+         *
+         *     Nichts davon ist gespeichert: Weg und Laenge berechnet die reine Funktion bei jedem
+         *     Lesen. ``length_mm`` nur bei ``confirmed``. Keine Bemessung, keine Normaussage.
+         */
+        get: operations["listElectricalCables"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/modules/electrical/circuits/{circuit_id}/cables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Leitung anlegen
+         * @description Legt eine Leitung samt Wegpunkten an; neue Durchfuehrungen entstehen atomar mit ihr.
+         *
+         *     Endgeraete: das Lagegeraet der Verteilung oder Geraete dieses Stromkreises, im
+         *     Gebaeude, nicht aussen montiert. Unvollstaendige Wege werden gespeichert
+         *     (``incomplete``), unzulaessige Strecken nicht (``422 cable-route-invalid``).
+         */
+        post: operations["createElectricalCable"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/modules/electrical/cables/{cable_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Leitung ersetzen
+         * @description Ersetzt die ganze Leitung samt Wegpunkten (``If-Match`` der Leitungsversion).
+         *
+         *     Bleiben Weg und Endgeraete unveraendert, blockiert ein bestehender Konflikt das
+         *     Aendern der Kabelangaben nicht; ein **neuer** Konflikt wird abgelehnt.
+         */
+        put: operations["replaceElectricalCable"];
+        post?: never;
+        /**
+         * Leitung entfernen
+         * @description Entfernt die Leitung samt Wegpunkten; Durchfuehrungen bleiben sichtbar bestehen.
+         */
+        delete: operations["deleteElectricalCable"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/modules/electrical/cables/{cable_id}/apply-proposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stromkreisvorschlag auf eine Leitung uebertragen
+         * @description Uebertraegt Typ, Leiterzahl und Querschnitt des Stromkreisvorschlags auf die Leitung.
+         *
+         *     ``If-Match``: Version der Leitung. ``expected_circuit_version``: Version des
+         *     Stromkreises, dessen Vorschlag gesehen wurde. Beide werden unter der Projektsperre
+         *     geprueft; bei Abweichung ``409`` (``version-conflict`` bzw.
+         *     ``circuit-proposal-changed``) ohne jede Aenderung. Weg, Endgeraete, Zugaben und
+         *     Bezeichnung bleiben unveraendert.
+         */
+        post: operations["applyElectricalCircuitProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/modules/electrical/floors/{floor_id}/penetrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Durchfuehrungen eines Geschosses
+         * @description Durchfuehrungen mit abgeleiteter Gegenlage, Gueltigkeit und nutzenden Leitungen.
+         */
+        get: operations["listElectricalPenetrations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/modules/electrical/penetrations/{penetration_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Durchfuehrung entfernen
+         * @description Nur ungenutzt (sonst ``409 penetration-in-use``).
+         */
+        delete: operations["deleteElectricalPenetration"];
+        options?: never;
+        head?: never;
+        /**
+         * Durchfuehrung aendern
+         * @description Aendert Lage, Hoehe oder Notiz; die neue Lage muss gueltig sein (``422``).
+         */
+        patch: operations["updateElectricalPenetration"];
+        trace?: never;
+    };
     "/health/live": {
         parameters: {
             query?: never;
@@ -1714,6 +1872,40 @@ export interface components {
             /** Enabled */
             enabled: boolean;
         };
+        /**
+         * ApplyProposalIn
+         * @description Ausdrueckliche Uebernahme des Stromkreisvorschlags auf **eine** Leitung.
+         *
+         *     ``If-Match`` traegt die Version der Leitung; ``expected_circuit_version`` die
+         *     Version des Stromkreises, dessen Vorschlag der Anwender gesehen hat. Weicht eine
+         *     von beiden ab: ``409``, nichts geaendert. Uebernommen werden genau
+         *     ``cable_type``, ``conductor_count`` und ``cross_section_mm2`` - so, wie sie im
+         *     Vorschlag stehen, auch leer. Weg, Endgeraete, Zugaben und Bezeichnung bleiben.
+         */
+        ApplyProposalIn: {
+            /** Expected Circuit Version */
+            expected_circuit_version: number;
+        };
+        /**
+         * AreaWaypointIn
+         * @description Punkt in der Decke (Raumhoehe) oder im Fussboden (FFB) eines Raums, Geschoss-x/y.
+         */
+        AreaWaypointIn: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "ceiling" | "floor";
+            /**
+             * Room Id
+             * Format: uuid
+             */
+            room_id: string;
+            /** X Mm */
+            x_mm: number;
+            /** Y Mm */
+            y_mm: number;
+        };
         /** AuditEntryOut */
         AuditEntryOut: {
             /**
@@ -1786,6 +1978,231 @@ export interface components {
             name?: string | null;
             /** Sort Order */
             sort_order?: number | null;
+        };
+        /**
+         * CableIn
+         * @description Leitung als Ganzes - anlegen (``POST /circuits/{id}/cables``) oder ersetzen (``PUT``).
+         *
+         *     Die Kabelangaben stehen an der Leitung; der Stromkreisvorschlag wird nicht
+         *     ergaenzt. ``start_device_id`` ist leer nur bei einer Verteilung ohne Lage.
+         *     Zugaben und Reserve nur ausdruecklich (D5). ``waypoints`` ist die
+         *     vollstaendige Liste in Leitungsrichtung.
+         */
+        CableIn: {
+            /** Label */
+            label?: string | null;
+            /** Start Device Id */
+            start_device_id?: string | null;
+            /**
+             * End Device Id
+             * Format: uuid
+             */
+            end_device_id: string;
+            /** Cable Type */
+            cable_type?: string | null;
+            /** Conductor Count */
+            conductor_count?: number | null;
+            /**
+             * Cross Section Mm2
+             * @example 1.5
+             * @example 2.50
+             */
+            cross_section_mm2?: string | null;
+            /**
+             * Start Allowance Mm
+             * @default 0
+             */
+            start_allowance_mm: number;
+            /**
+             * End Allowance Mm
+             * @default 0
+             */
+            end_allowance_mm: number;
+            /**
+             * Reserve Mm
+             * @default 0
+             */
+            reserve_mm: number;
+            /** Waypoints */
+            waypoints?: (components["schemas"]["WallWaypointIn"] | components["schemas"]["AreaWaypointIn"] | components["schemas"]["PenetrationWaypointIn"] | components["schemas"]["OpeningCrossingWaypointIn"] | components["schemas"]["RiserWaypointIn"])[];
+            /** New Penetrations */
+            new_penetrations?: components["schemas"]["NewPenetrationIn"][];
+        };
+        /**
+         * CableListOut
+         * @description Leitungen eines Gebaeudes (oder einer Uebernahme), nach Stromkreis und Bezeichnung.
+         */
+        CableListOut: {
+            /**
+             * Building Id
+             * Format: uuid
+             */
+            building_id: string;
+            /** Cables */
+            cables: components["schemas"]["CableOut"][];
+        };
+        /**
+         * CableOut
+         * @description Leitung samt Kabelangaben, Wegpunkten und berechnetem Weg (nie gespeichert).
+         *
+         *     ``length_mm`` nur bei ``status = confirmed``; sonst ist ``known_mm`` ausdruecklich
+         *     eine **Teilsumme** der gueltigen Teile plus Zugaben. ``deviates_from_proposal``:
+         *     die Kabelangaben weichen vom aktuellen Stromkreisvorschlag ab.
+         */
+        CableOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Circuit Id
+             * Format: uuid
+             */
+            circuit_id: string;
+            /** Label */
+            label: string | null;
+            /** Start Device Id */
+            start_device_id: string | null;
+            /**
+             * End Device Id
+             * Format: uuid
+             */
+            end_device_id: string;
+            /** Cable Type */
+            cable_type: string | null;
+            /** Conductor Count */
+            conductor_count: number | null;
+            /** Cross Section Mm2 */
+            cross_section_mm2: string | null;
+            /** Start Allowance Mm */
+            start_allowance_mm: number;
+            /** End Allowance Mm */
+            end_allowance_mm: number;
+            /** Reserve Mm */
+            reserve_mm: number;
+            /** Waypoints */
+            waypoints: components["schemas"]["CableWaypointOut"][];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "confirmed" | "incomplete" | "conflict";
+            /** Geometric Mm */
+            geometric_mm: number;
+            /** Allowance Mm */
+            allowance_mm: number;
+            /** Length Mm */
+            length_mm: number | null;
+            /** Known Mm */
+            known_mm: number;
+            /** Spec Complete */
+            spec_complete: boolean;
+            /** Deviates From Proposal */
+            deviates_from_proposal: boolean;
+            /** Problems */
+            problems: components["schemas"]["CableProblemOut"][];
+            /** Segments */
+            segments: components["schemas"]["CableSegmentOut"][];
+            /** Penetration Ids */
+            penetration_ids: string[];
+            /** Opening Crossings */
+            opening_crossings: number;
+            /** Version */
+            version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * CableProblemOut
+         * @description Befund: ``conflict`` (ungueltig) oder ``missing`` (fehlt noch), mit Ort und Text.
+         *
+         *     ``ref``: ``start``/``end`` (Anschluss), ``route`` (Weg), ``w3`` (Wegpunkt) oder
+         *     ``w2-w3`` (Strecke zwischen zwei Wegpunkten).
+         */
+        CableProblemOut: {
+            /** Code */
+            code: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "conflict" | "missing";
+            /** Ref */
+            ref: string;
+            /** Message */
+            message: string;
+        };
+        /**
+         * CableSegmentOut
+         * @description Teilstrecke - Laenge aus der reinen Funktion, Punkte nur fuer die Darstellung.
+         *
+         *     ``points``: Geschoss-x/y und absolute Hoehe ``z`` (gespeicherte Hoehenlage des
+         *     Geschosses + lokale Hoehe), ganze mm. ``floor_id`` fehlt bei Steigweg und Schacht.
+         */
+        CableSegmentOut: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "connection" | "wall" | "corner" | "wall-ceiling" | "wall-floor" | "ceiling" | "floor" | "penetration" | "opening-crossing" | "riser" | "shaft";
+            /** Ref */
+            ref: string;
+            /** Owner Id */
+            owner_id: string;
+            /** Floor Id */
+            floor_id: string | null;
+            /** Length Mm */
+            length_mm: number | null;
+            /** Known Mm */
+            known_mm: number;
+            /** Points */
+            points: components["schemas"]["RiserCoursePointOut"][];
+        };
+        /**
+         * CableWaypointOut
+         * @description Gespeicherter Wegpunkt - je Art nur die zugehoerigen Felder gesetzt.
+         */
+        CableWaypointOut: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "wall" | "ceiling" | "floor" | "penetration" | "opening_crossing" | "riser";
+            /** Wall Id */
+            wall_id?: string | null;
+            /** Offset Mm */
+            offset_mm?: number | null;
+            /** Height Mm */
+            height_mm?: number | null;
+            /** Room Id */
+            room_id?: string | null;
+            /** X Mm */
+            x_mm?: number | null;
+            /** Y Mm */
+            y_mm?: number | null;
+            /** Penetration Id */
+            penetration_id?: string | null;
+            /** Opening Id */
+            opening_id?: string | null;
+            /** Riser Id */
+            riser_id?: string | null;
+            /** From Stop Id */
+            from_stop_id?: string | null;
+            /** From Height Mm */
+            from_height_mm?: number | null;
+            /** To Stop Id */
+            to_stop_id?: string | null;
+            /** To Height Mm */
+            to_height_mm?: number | null;
         };
         /**
          * CircuitCreate
@@ -2775,6 +3192,28 @@ export interface components {
             /** Permissions */
             permissions: string[];
         };
+        /**
+         * NewPenetrationIn
+         * @description Neue Durchfuehrung, die mit dieser Leitung entsteht (atomar, Entwurf §8.2).
+         *
+         *     Lage an ``wall_a`` der Kopplung (ab deren Wandanfang); ``key`` verbindet sie
+         *     mit dem Wegpunkt ``new_penetration_key``.
+         */
+        NewPenetrationIn: {
+            /** Key */
+            key: string;
+            /**
+             * Wall Link Id
+             * Format: uuid
+             */
+            wall_link_id: string;
+            /** Offset Mm */
+            offset_mm: number;
+            /** Height Mm */
+            height_mm: number;
+            /** Note */
+            note?: string | null;
+        };
         /** NumberedPage[CustomerOut] */
         NumberedPage_CustomerOut_: {
             /** Items */
@@ -2840,6 +3279,29 @@ export interface components {
              * @default 0
              */
             sill_height_mm: number;
+        };
+        /**
+         * OpeningCrossingWaypointIn
+         * @description Bodenuebergang: Lage auf der Achse der Wand, an der die Oeffnung gespeichert ist.
+         *
+         *     ``opening_id`` ist der fachliche Bezug; ``null`` nur bei einer Leitung, deren
+         *     Oeffnung bestaetigt entfernt wurde (Konflikt, Entwurf §5.6).
+         */
+        OpeningCrossingWaypointIn: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "opening_crossing";
+            /**
+             * Wall Id
+             * Format: uuid
+             */
+            wall_id: string;
+            /** Offset Mm */
+            offset_mm: number;
+            /** Opening Id */
+            opening_id: string | null;
         };
         /**
          * OpeningOut
@@ -2993,6 +3455,106 @@ export interface components {
             /** Token */
             token: string;
         };
+        /** PenetrationListOut */
+        PenetrationListOut: {
+            /**
+             * Floor Id
+             * Format: uuid
+             */
+            floor_id: string;
+            /** Penetrations */
+            penetrations: components["schemas"]["PenetrationOut"][];
+        };
+        /**
+         * PenetrationOut
+         * @description Durchfuehrung an ``wall_a`` der Kopplung samt abgeleiteter Gegenlage an ``wall_b``.
+         *
+         *     ``problem_code`` ist ``null``, wenn die Durchfuehrung gueltig ist.
+         *     ``cable_ids``: Leitungen, die sie nutzen - gezaehlt wird sie einmal.
+         */
+        PenetrationOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Wall Link Id
+             * Format: uuid
+             */
+            wall_link_id: string;
+            /**
+             * Wall A Id
+             * Format: uuid
+             */
+            wall_a_id: string;
+            /**
+             * Wall B Id
+             * Format: uuid
+             */
+            wall_b_id: string;
+            /**
+             * Floor Id
+             * Format: uuid
+             */
+            floor_id: string;
+            /** Offset Mm */
+            offset_mm: number;
+            /** Height Mm */
+            height_mm: number;
+            /** Note */
+            note: string | null;
+            opposite_offset: components["schemas"]["PositionOut"] | null;
+            /** Problem Code */
+            problem_code: string | null;
+            /** Cable Ids */
+            cable_ids: string[];
+            /** Version */
+            version: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * PenetrationUpdate
+         * @description Lage, Hoehe oder Notiz einer Durchfuehrung aendern (``If-Match``).
+         *
+         *     Die neue Lage muss gueltig sein (``422``). Wuerde eine Leitung dadurch
+         *     unterbrochen, braucht es ``acknowledged_cable_ids`` mit genau diesen Leitungen.
+         */
+        PenetrationUpdate: {
+            /** Offset Mm */
+            offset_mm?: number | null;
+            /** Height Mm */
+            height_mm?: number | null;
+            /** Note */
+            note?: string | null;
+            /** Acknowledged Cable Ids */
+            acknowledged_cable_ids?: string[];
+        };
+        /**
+         * PenetrationWaypointIn
+         * @description Durchfuehrung: vorhandene (``penetration_id``) oder neu im selben Vorgang angelegte
+         *     (``new_penetration_key`` aus ``new_penetrations``) - genau eins von beiden.
+         */
+        PenetrationWaypointIn: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "penetration";
+            /** Penetration Id */
+            penetration_id?: string | null;
+            /** New Penetration Key */
+            new_penetration_key?: string | null;
+        };
         /** PermissionInfo */
         PermissionInfo: {
             /** Key */
@@ -3001,6 +3563,18 @@ export interface components {
             description: string;
             /** Area */
             area: string;
+        };
+        /**
+         * PositionOut
+         * @description Exakte Lage ``whole + steps * sqrt(m)`` ab Wandanfang und ihr gerundeter Wert.
+         */
+        PositionOut: {
+            /** Whole */
+            whole: number;
+            /** Steps */
+            steps: number;
+            /** Rounded Mm */
+            rounded_mm: number;
         };
         /**
          * PreferencesIn
@@ -3472,7 +4046,9 @@ export interface components {
          * @description Steigweg vollstaendig ersetzen (``If-Match`` der Steigwegversion).
          *
          *     Halte, die in ``stops`` fehlen, werden entfernt; Halte mit ``id`` behalten
-         *     sie.
+         *     sie. Ein von einer Leitung genutzter Halt laesst sich nicht entfernen
+         *     (``409 riser-stop-in-use``); verschiebt sich ein genutzter Halt so, dass
+         *     eine Leitung unterbrochen wuerde, braucht es ``acknowledged_cable_ids``.
          */
         RiserUpdate: {
             /** Name */
@@ -3486,6 +4062,38 @@ export interface components {
             offset_mode: "orthogonal" | "direct";
             /** Stops */
             stops?: components["schemas"]["RiserStopIn"][];
+            /** Acknowledged Cable Ids */
+            acknowledged_cable_ids?: string[];
+        };
+        /**
+         * RiserWaypointIn
+         * @description Steigwegnutzung in Leitungsrichtung; Hoehen lokal ueber dem FFB des jeweiligen Halts.
+         */
+        RiserWaypointIn: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "riser";
+            /**
+             * Riser Id
+             * Format: uuid
+             */
+            riser_id: string;
+            /**
+             * From Stop Id
+             * Format: uuid
+             */
+            from_stop_id: string;
+            /** From Height Mm */
+            from_height_mm: number;
+            /**
+             * To Stop Id
+             * Format: uuid
+             */
+            to_stop_id: string;
+            /** To Height Mm */
+            to_height_mm: number;
         };
         /**
          * RoleRef
@@ -3562,6 +4170,8 @@ export interface components {
             removed_device_ids?: string[];
             /** Removed Wall Link Ids */
             removed_wall_link_ids?: string[];
+            /** Acknowledged Cable Ids */
+            acknowledged_cable_ids?: string[];
         };
         /**
          * RoomCreate
@@ -3720,6 +4330,8 @@ export interface components {
             height_mm?: number | null;
             /** Room Type */
             room_type?: ("living_room" | "bedroom" | "children_room" | "kitchen" | "bathroom" | "hallway" | "office" | "utility_room" | "technical_room" | "basement" | "garage" | "other") | null;
+            /** Acknowledged Cable Ids */
+            acknowledged_cable_ids?: string[];
         };
         /** SwitchOrganizationRequest */
         SwitchOrganizationRequest: {
@@ -3873,6 +4485,8 @@ export interface components {
              * @enum {string}
              */
             relation: "shared" | "separate";
+            /** Acknowledged Cable Ids */
+            acknowledged_cable_ids?: string[];
         };
         /**
          * WallLinkOut
@@ -3954,6 +4568,8 @@ export interface components {
              * @enum {string}
              */
             relation: "shared" | "separate";
+            /** Acknowledged Cable Ids */
+            acknowledged_cable_ids?: string[];
         };
         /**
          * WallOrder
@@ -4072,6 +4688,26 @@ export interface components {
             y2_mm?: number | null;
             /** Thickness Mm */
             thickness_mm?: number | null;
+        };
+        /**
+         * WallWaypointIn
+         * @description Punkt auf der Achse einer Raumwand: Abstand ab Wandanfang, Hoehe ueber FFB.
+         */
+        WallWaypointIn: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "wall";
+            /**
+             * Wall Id
+             * Format: uuid
+             */
+            wall_id: string;
+            /** Offset Mm */
+            offset_mm: number;
+            /** Height Mm */
+            height_mm: number;
         };
     };
     responses: never;
@@ -8795,6 +9431,447 @@ export interface operations {
                 };
             };
             /** @description Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    listElectricalCables: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                building_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CableListOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    createElectricalCable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                circuit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CableIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CableOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Projekt ist archiviert oder abgeschlossen */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    replaceElectricalCable: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                cable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CableIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CableOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, Projekt schreibgeschuetzt, Bezug in Gebrauch oder Leitung wuerde unterbrochen (cables-would-break) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    deleteElectricalCable: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                cable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    applyElectricalCircuitProposal: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                cable_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyProposalIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CableOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, Projekt schreibgeschuetzt, Bezug in Gebrauch oder Leitung wuerde unterbrochen (cables-would-break) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    listElectricalPenetrations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                floor_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PenetrationListOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    deleteElectricalPenetration: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                penetration_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, Projekt schreibgeschuetzt, Bezug in Gebrauch oder Leitung wuerde unterbrochen (cables-would-break) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    updateElectricalPenetration: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                penetration_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PenetrationUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PenetrationOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, Projekt schreibgeschuetzt, Bezug in Gebrauch oder Leitung wuerde unterbrochen (cables-would-break) */
             409: {
                 headers: {
                     [name: string]: unknown;

@@ -5,6 +5,40 @@ Einträge entstehen nach relevanten Änderungen, nicht nach jedem Commit.
 
 ---
 
+## 2026-10-12 — Phase 6b.3: Leitungen, Wegpunkte, Durchführungen (technisch geprüft, Checkpoint vom 2026-10-13)
+
+**Migration `0013_cables_and_penetrations`, danach Seed ausführen** (neues Recht).
+
+### Added
+
+- Tabellen `electrical_cables`, `electrical_cable_waypoints`, `electrical_wall_penetrations`;
+  Eindeutigkeit `(organization_id, riser_id, id)` auf `electrical_riser_stops`.
+- API: `GET /buildings/{id}/cables`, `POST /circuits/{id}/cables`, `PUT`/`DELETE /cables/{id}`,
+  `POST /cables/{id}/apply-proposal` (If-Match der Leitung, `expected_circuit_version`),
+  `GET /floors/{id}/penetrations`,
+  `PATCH`/`DELETE /penetrations/{id}`. Recht `electrical.route.write` (Planer).
+- `acknowledged_cable_ids` an Raumentwurf, Raumänderung, Wandkopplung und Steigweg.
+
+### Changed
+
+- Raum-, Wand-, Öffnungs-, Kopplungs-, Steigweg-, Zuordnungs- und Verteilungs-Schreibwege sowie
+  die Geschoss-Standardhöhe prüfen Leitungen und Durchführungen vorher/nachher; nichts wird still
+  verschoben oder gelöscht (`409 cables-would-break`, `wall-has-cables`, `device-has-cables` u. a.).
+- Steigweghalte gleicher Ebene sortieren Backend und Frontend nach Halt-ID.
+
+## 2026-10-12 — Phase 6b.2: Leitungslänge als reine Funktion (Checkpoint vom 2026-10-13)
+
+### Added
+
+- Reine, deterministische Berechnung von Leitungsweg, Teilstrecken, Länge, Status und Befunden
+  (`electrical/cable_length.py`) und der daraus abgeleiteten Trassen mit Belegung
+  (`electrical/cable_traces.py`); Frontend-Spiegel `leitung/laenge.ts`, `leitung/trassen.ts`.
+- Gemeinsame Fixture `testdata/geometry/leitung.v1.json` für Backend und Frontend.
+- Punkt-Gegenlage über die vorhandene Abschnittstransformation (`topology.transfer`,
+  `lageUebertragen`).
+
+Noch ohne Tabellen, API und Oberfläche (6b.3–6b.5); keine Migration, keine gespeicherten Längen.
+
 ## 2026-10-11 — Phase 6b.1: Oberfläche Verteilungen und Stromkreise (Checkpoint 2026-10-12)
 
 ### Added

@@ -70,6 +70,9 @@ Dokumentation und Oberfläche auf Deutsch, Code und API auf Englisch.
 | Trasse | – (abgeleitet) | Strecke mit mindestens einer Leitung; exakt aufeinanderliegende Wege bilden eine Trasse, nie gespeichert – **Entwurf 6b** |
 | Durchführung | `wall_penetration` | Durchquerung einer bestätigten gemeinsamen Bauwand, einmal an der Eigentümerwand gespeichert – **Entwurf 6b** |
 | Anschlussstrecke | – (abgeleitet) | Strecke vom letzten Wegpunkt zur Gerätemitte – **Entwurf 6b** |
+| Schachtfortsetzung | `shaft` (abgeleitet) | senkrechte Strecke über einem Steigweghalt bis zu einem Wand- oder Deckenpunkt genau darüber – seit 6b.2 |
+| Trassenmeter / Leitungsmeter | – (abgeleitet) | Länge einer Trasse einmal gezählt bzw. Summe der Leitungslängen auf ihr je Leitung – seit 6b.2 |
+| Teilsumme | `known_mm` | Summe der gültigen, bekannten Teile einer nicht bestätigten Leitung – nie eine Leitungslänge – seit 6b.2 |
 | Anschlusszugabe / Reserve | `start_allowance_mm`, `end_allowance_mm`, `reserve_mm` | ausdrücklich je Leitung eingetragene Zusatzlänge, nie still – **Entwurf 6b** |
 | Standard-Geschosshöhe | `default_ceiling_height_mm` | lichte Höhe in Millimetern |
 | Protokolleintrag | `audit_entry` | |

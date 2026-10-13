@@ -4472,7 +4472,7 @@
           "electrical"
         ],
         "summary": "Raum bearbeiten",
-        "description": "Aendert Name, Raumnummer oder Raumhoehe.",
+        "description": "Aendert Name, Raumnummer oder Raumhoehe.\n\nWegpunkte oder Durchfuehrungen ueber einer abgesenkten Hoehe: ``422``. Unterbricht die\nAenderung eine Leitung (etwa Uebergang zur Decke), braucht es ``acknowledged_cable_ids``.",
         "operationId": "updateElectricalRoom",
         "parameters": [
           {
@@ -4705,7 +4705,7 @@
           "electrical"
         ],
         "summary": "Raumkontur als Ganzes speichern",
-        "description": "Ersetzt Waende und Oeffnungen eines Raums **atomar** durch den Zielzustand.\n\n``If-Match`` traegt die Version des **Raums** - sie ist die Version der\ngesamten Raumgeometrie. Die Reihenfolge der Waende ist die Reihenfolge in\nder Liste. Bekannte IDs werden geaendert, neue angelegt, fehlende Waende\nentfernt. Oeffnungen verschwinden nur, wenn sie in\n``removed_opening_ids`` stehen; Wandkopplungen entfallender Waende nur,\nwenn sie in ``removed_wall_link_ids`` stehen (sonst ``409 wall-has-links``).\nJeder Fehler laesst den Raum\nunveraendert; bei Erfolg entsteht genau ein ``electrical.plan.updated``\n(``walls_changed``).\n\nDer ``GET`` auf derselben Adresse liefert den Pruefbericht dieser Kontur.",
+        "description": "Ersetzt Waende und Oeffnungen eines Raums **atomar** durch den Zielzustand.\n\n``If-Match`` traegt die Version des **Raums** - sie ist die Version der\ngesamten Raumgeometrie. Die Reihenfolge der Waende ist die Reihenfolge in\nder Liste. Bekannte IDs werden geaendert, neue angelegt, fehlende Waende\nentfernt. Oeffnungen verschwinden nur, wenn sie in\n``removed_opening_ids`` stehen; Wandkopplungen entfallender Waende nur,\nwenn sie in ``removed_wall_link_ids`` stehen (sonst ``409 wall-has-links``).\nJeder Fehler laesst den Raum\nunveraendert; bei Erfolg entsteht genau ein ``electrical.plan.updated``\n(``walls_changed``).\n\nDer ``GET`` auf derselben Adresse liefert den Pruefbericht dieser Kontur.\n\n**Leitungen (6b.3):** Endgeraete und Waende mit Leitungsbezug werden nicht entfernt\n(``409``); eine Oeffnung ueber einer Wandstrecke ist ``422``. Jede andere\nUnterbrechung braucht ``acknowledged_cable_ids`` mit **genau** den betroffenen\nLeitungen (sonst ``409 cables-would-break``; verlangt ``electrical.route.write``).",
         "operationId": "replaceElectricalRoomContour",
         "parameters": [
           {
@@ -5663,7 +5663,7 @@
           "electrical"
         ],
         "summary": "Wandkopplung anlegen",
-        "description": "Ordnet zwei exakt ueberlappende Raumwaende verschiedener Raeume einander zu.\n\n``shared`` = eine Bauwand, ``separate`` = zwei Bauwaende auf derselben Achse.\nDie Raumversion beider Raeume zaehlt weiter. Wuerde ein vorhandenes Geraet\ndadurch unzulaessig, antwortet der Server ``422`` und speichert nichts.",
+        "description": "Ordnet zwei exakt ueberlappende Raumwaende verschiedener Raeume einander zu.\n\n``shared`` = eine Bauwand, ``separate`` = zwei Bauwaende auf derselben Achse.\nDie Raumversion beider Raeume zaehlt weiter. Wuerde ein vorhandenes Geraet\ndadurch unzulaessig, antwortet der Server ``422`` und speichert nichts.\nUnterbricht sie eine Leitung (Bodenuebergang bei ``separate``), braucht es\n``acknowledged_cable_ids``.",
         "operationId": "createElectricalWallLink",
         "parameters": [
           {
@@ -5737,7 +5737,7 @@
           "electrical"
         ],
         "summary": "Wandkopplung aendern",
-        "description": "Aendert ``shared`` <-> ``separate``; ``If-Match`` traegt die Kopplungsversion.",
+        "description": "Aendert ``shared`` <-> ``separate``; ``If-Match`` traegt die Kopplungsversion.\n\nMit Durchfuehrung ist ``separate`` nicht moeglich (``422``); ein Bodenuebergang wird\ndann einseitig - nur mit ``acknowledged_cable_ids``.",
         "operationId": "updateElectricalWallLink",
         "parameters": [
           {
@@ -6044,7 +6044,7 @@
           "electrical"
         ],
         "summary": "Steigweg ersetzen",
-        "description": "Ersetzt Stammdaten und die ganze Halteliste; ``If-Match`` traegt die Steigwegversion.\n\nHalte mit ``id`` behalten ihre ID, fehlende werden entfernt, Halte ohne\n``id`` neu angelegt.",
+        "description": "Ersetzt Stammdaten und die ganze Halteliste; ``If-Match`` traegt die Steigwegversion.\n\nHalte mit ``id`` behalten ihre ID, fehlende werden entfernt, Halte ohne\n``id`` neu angelegt. Genutzte Halte entfallen nicht (``409 riser-stop-in-use``);\nunterbricht ein verschobener Halt eine Leitung, braucht es ``acknowledged_cable_ids``.",
         "operationId": "replaceElectricalRiser",
         "parameters": [
           {
@@ -6935,6 +6935,650 @@
         }
       }
     },
+    "/api/v1/modules/electrical/buildings/{building_id}/cables": {
+      "get": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Leitungen eines Gebaeudes",
+        "description": "Leitungen mit Wegpunkten, Teilstrecken, Status, Laenge oder Teilsumme und Befunden.\n\nNichts davon ist gespeichert: Weg und Laenge berechnet die reine Funktion bei jedem\nLesen. ``length_mm`` nur bei ``confirmed``. Keine Bemessung, keine Normaussage.",
+        "operationId": "listElectricalCables",
+        "parameters": [
+          {
+            "name": "building_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Building Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CableListOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules/electrical/circuits/{circuit_id}/cables": {
+      "post": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Leitung anlegen",
+        "description": "Legt eine Leitung samt Wegpunkten an; neue Durchfuehrungen entstehen atomar mit ihr.\n\nEndgeraete: das Lagegeraet der Verteilung oder Geraete dieses Stromkreises, im\nGebaeude, nicht aussen montiert. Unvollstaendige Wege werden gespeichert\n(``incomplete``), unzulaessige Strecken nicht (``422 cable-route-invalid``).",
+        "operationId": "createElectricalCable",
+        "parameters": [
+          {
+            "name": "circuit_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Circuit Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CableIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CableOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Projekt ist archiviert oder abgeschlossen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules/electrical/cables/{cable_id}": {
+      "put": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Leitung ersetzen",
+        "description": "Ersetzt die ganze Leitung samt Wegpunkten (``If-Match`` der Leitungsversion).\n\nBleiben Weg und Endgeraete unveraendert, blockiert ein bestehender Konflikt das\nAendern der Kabelangaben nicht; ein **neuer** Konflikt wird abgelehnt.",
+        "operationId": "replaceElectricalCable",
+        "parameters": [
+          {
+            "name": "cable_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Cable Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CableIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CableOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, Projekt schreibgeschuetzt, Bezug in Gebrauch oder Leitung wuerde unterbrochen (cables-would-break)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Leitung entfernen",
+        "description": "Entfernt die Leitung samt Wegpunkten; Durchfuehrungen bleiben sichtbar bestehen.",
+        "operationId": "deleteElectricalCable",
+        "parameters": [
+          {
+            "name": "cable_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Cable Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules/electrical/cables/{cable_id}/apply-proposal": {
+      "post": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Stromkreisvorschlag auf eine Leitung uebertragen",
+        "description": "Uebertraegt Typ, Leiterzahl und Querschnitt des Stromkreisvorschlags auf die Leitung.\n\n``If-Match``: Version der Leitung. ``expected_circuit_version``: Version des\nStromkreises, dessen Vorschlag gesehen wurde. Beide werden unter der Projektsperre\ngeprueft; bei Abweichung ``409`` (``version-conflict`` bzw.\n``circuit-proposal-changed``) ohne jede Aenderung. Weg, Endgeraete, Zugaben und\nBezeichnung bleiben unveraendert.",
+        "operationId": "applyElectricalCircuitProposal",
+        "parameters": [
+          {
+            "name": "cable_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Cable Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyProposalIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CableOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, Projekt schreibgeschuetzt, Bezug in Gebrauch oder Leitung wuerde unterbrochen (cables-would-break)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules/electrical/floors/{floor_id}/penetrations": {
+      "get": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Durchfuehrungen eines Geschosses",
+        "description": "Durchfuehrungen mit abgeleiteter Gegenlage, Gueltigkeit und nutzenden Leitungen.",
+        "operationId": "listElectricalPenetrations",
+        "parameters": [
+          {
+            "name": "floor_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Floor Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PenetrationListOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules/electrical/penetrations/{penetration_id}": {
+      "patch": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Durchfuehrung aendern",
+        "description": "Aendert Lage, Hoehe oder Notiz; die neue Lage muss gueltig sein (``422``).",
+        "operationId": "updateElectricalPenetration",
+        "parameters": [
+          {
+            "name": "penetration_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Penetration Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PenetrationUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PenetrationOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, Projekt schreibgeschuetzt, Bezug in Gebrauch oder Leitung wuerde unterbrochen (cables-would-break)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Durchfuehrung entfernen",
+        "description": "Nur ungenutzt (sonst ``409 penetration-in-use``).",
+        "operationId": "deleteElectricalPenetration",
+        "parameters": [
+          {
+            "name": "penetration_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Penetration Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, Projekt schreibgeschuetzt, Bezug in Gebrauch oder Leitung wuerde unterbrochen (cables-would-break)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health/live": {
       "get": {
         "tags": [
@@ -7068,6 +7712,61 @@
         ],
         "title": "ActiveModuleInfo",
         "description": "Modul im Kontext der aktuellen Organisation und des Benutzers."
+      },
+      "ApplyProposalIn": {
+        "properties": {
+          "expected_circuit_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Circuit Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_circuit_version"
+        ],
+        "title": "ApplyProposalIn",
+        "description": "Ausdrueckliche Uebernahme des Stromkreisvorschlags auf **eine** Leitung.\n\n``If-Match`` traegt die Version der Leitung; ``expected_circuit_version`` die\nVersion des Stromkreises, dessen Vorschlag der Anwender gesehen hat. Weicht eine\nvon beiden ab: ``409``, nichts geaendert. Uebernommen werden genau\n``cable_type``, ``conductor_count`` und ``cross_section_mm2`` - so, wie sie im\nVorschlag stehen, auch leer. Weg, Endgeraete, Zugaben und Bezeichnung bleiben."
+      },
+      "AreaWaypointIn": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "ceiling",
+              "floor"
+            ],
+            "title": "Kind"
+          },
+          "room_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Room Id"
+          },
+          "x_mm": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": -1000000.0,
+            "title": "X Mm"
+          },
+          "y_mm": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": -1000000.0,
+            "title": "Y Mm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "room_id",
+          "x_mm",
+          "y_mm"
+        ],
+        "title": "AreaWaypointIn",
+        "description": "Punkt in der Decke (Raumhoehe) oder im Fussboden (FFB) eines Raums, Geschoss-x/y."
       },
       "AuditEntryOut": {
         "properties": {
@@ -7249,6 +7948,659 @@
         "additionalProperties": false,
         "type": "object",
         "title": "BuildingUpdate"
+      },
+      "CableIn": {
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 60
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "start_device_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Device Id"
+          },
+          "end_device_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "End Device Id"
+          },
+          "cable_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cable Type"
+          },
+          "conductor_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conductor Count"
+          },
+          "cross_section_mm2": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{1,4}(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cross Section Mm2",
+            "examples": [
+              "1.5",
+              "2.50"
+            ]
+          },
+          "start_allowance_mm": {
+            "type": "integer",
+            "maximum": 20000.0,
+            "minimum": 0.0,
+            "title": "Start Allowance Mm",
+            "default": 0
+          },
+          "end_allowance_mm": {
+            "type": "integer",
+            "maximum": 20000.0,
+            "minimum": 0.0,
+            "title": "End Allowance Mm",
+            "default": 0
+          },
+          "reserve_mm": {
+            "type": "integer",
+            "maximum": 20000.0,
+            "minimum": 0.0,
+            "title": "Reserve Mm",
+            "default": 0
+          },
+          "waypoints": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/WallWaypointIn"
+                },
+                {
+                  "$ref": "#/components/schemas/AreaWaypointIn"
+                },
+                {
+                  "$ref": "#/components/schemas/PenetrationWaypointIn"
+                },
+                {
+                  "$ref": "#/components/schemas/OpeningCrossingWaypointIn"
+                },
+                {
+                  "$ref": "#/components/schemas/RiserWaypointIn"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "kind",
+                "mapping": {
+                  "ceiling": "#/components/schemas/AreaWaypointIn",
+                  "floor": "#/components/schemas/AreaWaypointIn",
+                  "opening_crossing": "#/components/schemas/OpeningCrossingWaypointIn",
+                  "penetration": "#/components/schemas/PenetrationWaypointIn",
+                  "riser": "#/components/schemas/RiserWaypointIn",
+                  "wall": "#/components/schemas/WallWaypointIn"
+                }
+              }
+            },
+            "type": "array",
+            "maxItems": 500,
+            "title": "Waypoints"
+          },
+          "new_penetrations": {
+            "items": {
+              "$ref": "#/components/schemas/NewPenetrationIn"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "title": "New Penetrations"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "end_device_id"
+        ],
+        "title": "CableIn",
+        "description": "Leitung als Ganzes - anlegen (``POST /circuits/{id}/cables``) oder ersetzen (``PUT``).\n\nDie Kabelangaben stehen an der Leitung; der Stromkreisvorschlag wird nicht\nergaenzt. ``start_device_id`` ist leer nur bei einer Verteilung ohne Lage.\nZugaben und Reserve nur ausdruecklich (D5). ``waypoints`` ist die\nvollstaendige Liste in Leitungsrichtung."
+      },
+      "CableListOut": {
+        "properties": {
+          "building_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Building Id"
+          },
+          "cables": {
+            "items": {
+              "$ref": "#/components/schemas/CableOut"
+            },
+            "type": "array",
+            "title": "Cables"
+          }
+        },
+        "type": "object",
+        "required": [
+          "building_id",
+          "cables"
+        ],
+        "title": "CableListOut",
+        "description": "Leitungen eines Gebaeudes (oder einer Uebernahme), nach Stromkreis und Bezeichnung."
+      },
+      "CableOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "circuit_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Circuit Id"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "start_device_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Device Id"
+          },
+          "end_device_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "End Device Id"
+          },
+          "cable_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cable Type"
+          },
+          "conductor_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conductor Count"
+          },
+          "cross_section_mm2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cross Section Mm2"
+          },
+          "start_allowance_mm": {
+            "type": "integer",
+            "title": "Start Allowance Mm"
+          },
+          "end_allowance_mm": {
+            "type": "integer",
+            "title": "End Allowance Mm"
+          },
+          "reserve_mm": {
+            "type": "integer",
+            "title": "Reserve Mm"
+          },
+          "waypoints": {
+            "items": {
+              "$ref": "#/components/schemas/CableWaypointOut"
+            },
+            "type": "array",
+            "title": "Waypoints"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "incomplete",
+              "conflict"
+            ],
+            "title": "Status"
+          },
+          "geometric_mm": {
+            "type": "integer",
+            "title": "Geometric Mm"
+          },
+          "allowance_mm": {
+            "type": "integer",
+            "title": "Allowance Mm"
+          },
+          "length_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Length Mm"
+          },
+          "known_mm": {
+            "type": "integer",
+            "title": "Known Mm"
+          },
+          "spec_complete": {
+            "type": "boolean",
+            "title": "Spec Complete"
+          },
+          "deviates_from_proposal": {
+            "type": "boolean",
+            "title": "Deviates From Proposal"
+          },
+          "problems": {
+            "items": {
+              "$ref": "#/components/schemas/CableProblemOut"
+            },
+            "type": "array",
+            "title": "Problems"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/CableSegmentOut"
+            },
+            "type": "array",
+            "title": "Segments"
+          },
+          "penetration_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Penetration Ids"
+          },
+          "opening_crossings": {
+            "type": "integer",
+            "title": "Opening Crossings"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "circuit_id",
+          "label",
+          "start_device_id",
+          "end_device_id",
+          "cable_type",
+          "conductor_count",
+          "cross_section_mm2",
+          "start_allowance_mm",
+          "end_allowance_mm",
+          "reserve_mm",
+          "waypoints",
+          "status",
+          "geometric_mm",
+          "allowance_mm",
+          "length_mm",
+          "known_mm",
+          "spec_complete",
+          "deviates_from_proposal",
+          "problems",
+          "segments",
+          "penetration_ids",
+          "opening_crossings",
+          "version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CableOut",
+        "description": "Leitung samt Kabelangaben, Wegpunkten und berechnetem Weg (nie gespeichert).\n\n``length_mm`` nur bei ``status = confirmed``; sonst ist ``known_mm`` ausdruecklich\neine **Teilsumme** der gueltigen Teile plus Zugaben. ``deviates_from_proposal``:\ndie Kabelangaben weichen vom aktuellen Stromkreisvorschlag ab."
+      },
+      "CableProblemOut": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "conflict",
+              "missing"
+            ],
+            "title": "Kind"
+          },
+          "ref": {
+            "type": "string",
+            "title": "Ref"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "kind",
+          "ref",
+          "message"
+        ],
+        "title": "CableProblemOut",
+        "description": "Befund: ``conflict`` (ungueltig) oder ``missing`` (fehlt noch), mit Ort und Text.\n\n``ref``: ``start``/``end`` (Anschluss), ``route`` (Weg), ``w3`` (Wegpunkt) oder\n``w2-w3`` (Strecke zwischen zwei Wegpunkten)."
+      },
+      "CableSegmentOut": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "connection",
+              "wall",
+              "corner",
+              "wall-ceiling",
+              "wall-floor",
+              "ceiling",
+              "floor",
+              "penetration",
+              "opening-crossing",
+              "riser",
+              "shaft"
+            ],
+            "title": "Kind"
+          },
+          "ref": {
+            "type": "string",
+            "title": "Ref"
+          },
+          "owner_id": {
+            "type": "string",
+            "title": "Owner Id"
+          },
+          "floor_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Floor Id"
+          },
+          "length_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Length Mm"
+          },
+          "known_mm": {
+            "type": "integer",
+            "title": "Known Mm"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/RiserCoursePointOut"
+            },
+            "type": "array",
+            "title": "Points"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "ref",
+          "owner_id",
+          "floor_id",
+          "length_mm",
+          "known_mm",
+          "points"
+        ],
+        "title": "CableSegmentOut",
+        "description": "Teilstrecke - Laenge aus der reinen Funktion, Punkte nur fuer die Darstellung.\n\n``points``: Geschoss-x/y und absolute Hoehe ``z`` (gespeicherte Hoehenlage des\nGeschosses + lokale Hoehe), ganze mm. ``floor_id`` fehlt bei Steigweg und Schacht."
+      },
+      "CableWaypointOut": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "wall",
+              "ceiling",
+              "floor",
+              "penetration",
+              "opening_crossing",
+              "riser"
+            ],
+            "title": "Kind"
+          },
+          "wall_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wall Id"
+          },
+          "offset_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Offset Mm"
+          },
+          "height_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height Mm"
+          },
+          "room_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room Id"
+          },
+          "x_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X Mm"
+          },
+          "y_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y Mm"
+          },
+          "penetration_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Penetration Id"
+          },
+          "opening_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opening Id"
+          },
+          "riser_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Riser Id"
+          },
+          "from_stop_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Stop Id"
+          },
+          "from_height_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Height Mm"
+          },
+          "to_stop_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Stop Id"
+          },
+          "to_height_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Height Mm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "CableWaypointOut",
+        "description": "Gespeicherter Wegpunkt - je Art nur die zugehoerigen Felder gesetzt."
       },
       "CircuitCreate": {
         "properties": {
@@ -9851,6 +11203,55 @@
         "title": "ModuleInfo",
         "description": "Beschreibung eines registrierten Moduls."
       },
+      "NewPenetrationIn": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Key"
+          },
+          "wall_link_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Wall Link Id"
+          },
+          "offset_mm": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Offset Mm"
+          },
+          "height_mm": {
+            "type": "integer",
+            "maximum": 6000.0,
+            "minimum": 0.0,
+            "title": "Height Mm"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "wall_link_id",
+          "offset_mm",
+          "height_mm"
+        ],
+        "title": "NewPenetrationIn",
+        "description": "Neue Durchfuehrung, die mit dieser Leitung entsteht (atomar, Entwurf §8.2).\n\nLage an ``wall_a`` der Kopplung (ab deren Wandanfang); ``key`` verbindet sie\nmit dem Wegpunkt ``new_penetration_key``."
+      },
       "NumberedPage_CustomerOut_": {
         "properties": {
           "items": {
@@ -9976,6 +11377,48 @@
         ],
         "title": "OpeningCreate",
         "description": "Neue Oeffnung in einer Wand."
+      },
+      "OpeningCrossingWaypointIn": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "opening_crossing",
+            "title": "Kind"
+          },
+          "wall_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Wall Id"
+          },
+          "offset_mm": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Offset Mm"
+          },
+          "opening_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opening Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "wall_id",
+          "offset_mm",
+          "opening_id"
+        ],
+        "title": "OpeningCrossingWaypointIn",
+        "description": "Bodenuebergang: Lage auf der Achse der Wand, an der die Oeffnung gespeichert ist.\n\n``opening_id`` ist der fachliche Bezug; ``null`` nur bei einer Leitung, deren\nOeffnung bestaetigt entfernt wurde (Konflikt, Entwurf §5.6)."
       },
       "OpeningOut": {
         "properties": {
@@ -10314,6 +11757,234 @@
         ],
         "title": "PasswordResetTokenIn"
       },
+      "PenetrationListOut": {
+        "properties": {
+          "floor_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Floor Id"
+          },
+          "penetrations": {
+            "items": {
+              "$ref": "#/components/schemas/PenetrationOut"
+            },
+            "type": "array",
+            "title": "Penetrations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "floor_id",
+          "penetrations"
+        ],
+        "title": "PenetrationListOut"
+      },
+      "PenetrationOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "wall_link_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Wall Link Id"
+          },
+          "wall_a_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Wall A Id"
+          },
+          "wall_b_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Wall B Id"
+          },
+          "floor_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Floor Id"
+          },
+          "offset_mm": {
+            "type": "integer",
+            "title": "Offset Mm"
+          },
+          "height_mm": {
+            "type": "integer",
+            "title": "Height Mm"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "opposite_offset": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PositionOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "problem_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem Code"
+          },
+          "cable_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Cable Ids"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "wall_link_id",
+          "wall_a_id",
+          "wall_b_id",
+          "floor_id",
+          "offset_mm",
+          "height_mm",
+          "note",
+          "opposite_offset",
+          "problem_code",
+          "cable_ids",
+          "version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PenetrationOut",
+        "description": "Durchfuehrung an ``wall_a`` der Kopplung samt abgeleiteter Gegenlage an ``wall_b``.\n\n``problem_code`` ist ``null``, wenn die Durchfuehrung gueltig ist.\n``cable_ids``: Leitungen, die sie nutzen - gezaehlt wird sie einmal."
+      },
+      "PenetrationUpdate": {
+        "properties": {
+          "offset_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1000000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Offset Mm"
+          },
+          "height_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 6000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height Mm"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "acknowledged_cable_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "title": "Acknowledged Cable Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PenetrationUpdate",
+        "description": "Lage, Hoehe oder Notiz einer Durchfuehrung aendern (``If-Match``).\n\nDie neue Lage muss gueltig sein (``422``). Wuerde eine Leitung dadurch\nunterbrochen, braucht es ``acknowledged_cable_ids`` mit genau diesen Leitungen."
+      },
+      "PenetrationWaypointIn": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "penetration",
+            "title": "Kind"
+          },
+          "penetration_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Penetration Id"
+          },
+          "new_penetration_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Penetration Key"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "PenetrationWaypointIn",
+        "description": "Durchfuehrung: vorhandene (``penetration_id``) oder neu im selben Vorgang angelegte\n(``new_penetration_key`` aus ``new_penetrations``) - genau eins von beiden."
+      },
       "PermissionInfo": {
         "properties": {
           "key": {
@@ -10336,6 +12007,30 @@
           "area"
         ],
         "title": "PermissionInfo"
+      },
+      "PositionOut": {
+        "properties": {
+          "whole": {
+            "type": "integer",
+            "title": "Whole"
+          },
+          "steps": {
+            "type": "integer",
+            "title": "Steps"
+          },
+          "rounded_mm": {
+            "type": "integer",
+            "title": "Rounded Mm"
+          }
+        },
+        "type": "object",
+        "required": [
+          "whole",
+          "steps",
+          "rounded_mm"
+        ],
+        "title": "PositionOut",
+        "description": "Exakte Lage ``whole + steps * sqrt(m)`` ab Wandanfang und ihr gerundeter Wert."
       },
       "PreferencesIn": {
         "properties": {
@@ -11435,6 +13130,15 @@
             "type": "array",
             "maxItems": 100,
             "title": "Stops"
+          },
+          "acknowledged_cable_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "title": "Acknowledged Cable Ids"
           }
         },
         "additionalProperties": false,
@@ -11444,7 +13148,55 @@
           "offset_mode"
         ],
         "title": "RiserUpdate",
-        "description": "Steigweg vollstaendig ersetzen (``If-Match`` der Steigwegversion).\n\nHalte, die in ``stops`` fehlen, werden entfernt; Halte mit ``id`` behalten\nsie."
+        "description": "Steigweg vollstaendig ersetzen (``If-Match`` der Steigwegversion).\n\nHalte, die in ``stops`` fehlen, werden entfernt; Halte mit ``id`` behalten\nsie. Ein von einer Leitung genutzter Halt laesst sich nicht entfernen\n(``409 riser-stop-in-use``); verschiebt sich ein genutzter Halt so, dass\neine Leitung unterbrochen wuerde, braucht es ``acknowledged_cable_ids``."
+      },
+      "RiserWaypointIn": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "riser",
+            "title": "Kind"
+          },
+          "riser_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Riser Id"
+          },
+          "from_stop_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "From Stop Id"
+          },
+          "from_height_mm": {
+            "type": "integer",
+            "maximum": 6000.0,
+            "minimum": 0.0,
+            "title": "From Height Mm"
+          },
+          "to_stop_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "To Stop Id"
+          },
+          "to_height_mm": {
+            "type": "integer",
+            "maximum": 6000.0,
+            "minimum": 0.0,
+            "title": "To Height Mm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "riser_id",
+          "from_stop_id",
+          "from_height_mm",
+          "to_stop_id",
+          "to_height_mm"
+        ],
+        "title": "RiserWaypointIn",
+        "description": "Steigwegnutzung in Leitungsrichtung; Hoehen lokal ueber dem FFB des jeweiligen Halts."
       },
       "RoleRef": {
         "properties": {
@@ -11607,6 +13359,15 @@
             "type": "array",
             "maxItems": 800,
             "title": "Removed Wall Link Ids"
+          },
+          "acknowledged_cable_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "title": "Acknowledged Cable Ids"
           }
         },
         "additionalProperties": false,
@@ -12078,6 +13839,15 @@
               }
             ],
             "title": "Room Type"
+          },
+          "acknowledged_cable_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "title": "Acknowledged Cable Ids"
           }
         },
         "additionalProperties": false,
@@ -12354,6 +14124,15 @@
               "separate"
             ],
             "title": "Relation"
+          },
+          "acknowledged_cable_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "title": "Acknowledged Cable Ids"
           }
         },
         "additionalProperties": false,
@@ -12483,6 +14262,15 @@
               "separate"
             ],
             "title": "Relation"
+          },
+          "acknowledged_cable_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "title": "Acknowledged Cable Ids"
           }
         },
         "additionalProperties": false,
@@ -12749,6 +14537,42 @@
         "type": "object",
         "title": "WallUpdate",
         "description": "Teilaenderung einer Wand. Der Raum bleibt unveraendert."
+      },
+      "WallWaypointIn": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "wall",
+            "title": "Kind"
+          },
+          "wall_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Wall Id"
+          },
+          "offset_mm": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Offset Mm"
+          },
+          "height_mm": {
+            "type": "integer",
+            "maximum": 6000.0,
+            "minimum": 0.0,
+            "title": "Height Mm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "wall_id",
+          "offset_mm",
+          "height_mm"
+        ],
+        "title": "WallWaypointIn",
+        "description": "Punkt auf der Achse einer Raumwand: Abstand ab Wandanfang, Hoehe ueber FFB."
       }
     }
   }

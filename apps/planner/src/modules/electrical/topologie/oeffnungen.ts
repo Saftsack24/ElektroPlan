@@ -103,6 +103,22 @@ export function wandbereich<W extends TopoWand>(
     : { s0: plus(bereich.s0, quelle.von, mass), s1: plus(bereich.s1, quelle.von, mass) };
 }
 
+/**
+ * Eine exakte Lage auf der Quellwand eines Abschnitts als Lage auf einer anderen
+ * seiner Wände - dieselbe Abschnittstransformation wie `lokalerBereich`/`wandbereich`,
+ * für einen Punkt (Gegenlage einer Durchführung, Phase 6b.2). Spiegel von
+ * `topology.transfer`; Hin- und Rücktransformation ergeben die Ausgangslage exakt.
+ */
+export function lageUebertragen<W extends TopoWand>(
+  stelle: Lage,
+  von: Abschnittsquelle<W>,
+  nach: Abschnittsquelle<W>,
+  mass: Linienmass,
+): Lage {
+  const lokal = von.umgekehrt ? minus(von.bis, stelle, mass) : minus(stelle, von.von, mass);
+  return nach.umgekehrt ? minus(nach.bis, lokal, mass) : plus(lokal, nach.von, mass);
+}
+
 /** Echte Überdeckung positiver Länge - Berührung an der Kante zählt nicht. */
 export function bereicheUeberlappen(a: LokalerBereich, b: LokalerBereich, mass: Linienmass): boolean {
   return vergleichen(a.s0, b.s1, mass) < 0 && vergleichen(b.s0, a.s1, mass) < 0;

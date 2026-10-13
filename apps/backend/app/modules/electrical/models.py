@@ -96,6 +96,21 @@ BOARD_PLACEMENT_CONSTRAINT = "uq_el_boards_placement_device"
 CIRCUIT_DESIGNATION_CONSTRAINT = "uq_electrical_circuits_organization_id_board_id_designation"
 #: Ein Geraet haengt an hoechstens einem Stromkreis (Primaerschluessel der Zuordnung).
 CIRCUIT_DEVICE_PK = "pk_electrical_circuit_devices"
+#: Halt und Steigweg gehoeren zusammen (Ziel der Wegpunkt-Fremdschluessel, 6b.3).
+RISER_STOP_OF_RISER_CONSTRAINT = "uq_el_riser_stops_riser_id_id"
+#: Reihenfolge der Wegpunkte einer Leitung ist eindeutig (6b.3).
+CABLE_WAYPOINT_SEQ_CONSTRAINT = "uq_el_cable_waypoints_seq"
+#: Wegpunktarten (Entwurf §3.3) - dieselben Schluessel wie die API.
+CABLE_WAYPOINT_KINDS: tuple[str, ...] = (
+    "wall",
+    "ceiling",
+    "floor",
+    "penetration",
+    "opening_crossing",
+    "riser",
+)
+#: Obergrenze je Zugabe und Reserve in Millimetern (Entwurf §3.2).
+MAX_CABLE_ALLOWANCE_MM = 20_000
 
 
 def _value_list(values: tuple[str, ...]) -> str:
@@ -469,6 +484,9 @@ class ElectricalRiserStop(UUIDPrimaryKey, TenantScoped, Timestamped, Base):
         tenant_fk("riser_id", "electrical_risers", ondelete="CASCADE"),
         tenant_fk("floor_id", "floors", ondelete="RESTRICT"),
         UniqueConstraint("organization_id", "riser_id", "floor_id"),
+        # Ziel des Fremdschluessels der Leitungswegpunkte (6b.3, Migration 0013):
+        # Ein Halt gehoert genau dem genannten Steigweg - auch auf Datenbankebene.
+        UniqueConstraint("organization_id", "riser_id", "id", name=RISER_STOP_OF_RISER_CONSTRAINT),
         CheckConstraint(_coordinates_in_range("x_mm", "y_mm"), name="coordinates_in_range"),
         Index("ix_electrical_riser_stops_organization_id_floor_id", "organization_id", "floor_id"),
     )
@@ -599,3 +617,275 @@ class ElectricalCircuitDevice(TenantScoped, Timestamped, Base):
 
     device_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     circuit_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+
+
+# ------------------------------------- Leitungen, Wegpunkte, Durchfuehrungen (6b.3)
+
+#: Spalten einer Wegpunktart; alle uebrigen sind ``NULL`` (CHECK ``columns_match_kind``).
+_WAYPOINT_COLUMNS: dict[str, tuple[str, ...]] = {
+    "wall": ("wall_id", "offset_mm", "height_mm"),
+    "area": ("room_id", "x_mm", "y_mm"),
+    "penetration": ("penetration_id",),
+    # ``opening_id`` ist nur der fachliche Bezug und darf nach bestaetigtem
+    # Entfernen der Oeffnung ``NULL`` sein (Entwurf §5.6).
+    "opening_crossing": ("wall_id", "offset_mm"),
+    "riser": ("riser_id", "from_stop_id", "from_height_mm", "to_stop_id", "to_height_mm"),
+}
+_WAYPOINT_ALL = (
+    "wall_id",
+    "offset_mm",
+    "height_mm",
+    "room_id",
+    "x_mm",
+    "y_mm",
+    "penetration_id",
+    "opening_id",
+    "riser_id",
+    "from_stop_id",
+    "from_height_mm",
+    "to_stop_id",
+    "to_height_mm",
+)
+
+
+def _waypoint_shape(kinds: str, group: str) -> str:
+    present = _WAYPOINT_COLUMNS[group]
+    optional = ("opening_id",) if group == "opening_crossing" else ()
+    parts = [f"kind IN ({kinds})"]
+    parts += [f"{column} IS NOT NULL" for column in present]
+    parts += [
+        f"{column} IS NULL"
+        for column in _WAYPOINT_ALL
+        if column not in present and column not in optional
+    ]
+    return "(" + " AND ".join(parts) + ")"
+
+
+_WAYPOINT_SHAPES = " OR ".join(
+    [
+        _waypoint_shape("'wall'", "wall"),
+        _waypoint_shape("'ceiling', 'floor'", "area"),
+        _waypoint_shape("'penetration'", "penetration"),
+        _waypoint_shape("'opening_crossing'", "opening_crossing"),
+        _waypoint_shape("'riser'", "riser"),
+    ]
+)
+
+
+class ElectricalWallPenetration(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, Base):
+    """Durchfuehrung durch eine bestaetigte gemeinsame Bauwand (Phase 6b.3, ADR 0026).
+
+    Einmal gespeichert an ``wall_a`` der Kopplung: ``offset_mm`` ab deren
+    Wandanfang auf der Achse, ``height_mm`` ueber FFB. Die Gegenseite wird nie
+    gespeichert, sondern ueber die exakte Abschnittstransformation abgeleitet
+    (``cable_length.shared_sources`` + ``topology.transfer``). Kopplung
+    ``RESTRICT``: eine Kopplung mit Durchfuehrung wird nicht still geloest
+    (``409 wall-link-has-penetrations``). Gueltigkeit (aktives ``shared``,
+    Hoehe, Oeffnungen) prueft der Service unter der Projektsperre.
+    """
+
+    __tablename__ = "electrical_wall_penetrations"
+    __table_args__ = (
+        tenant_identity(),
+        # Ausdruecklicher Name: Nach der Konvention waere er laenger als 63 Zeichen.
+        ForeignKeyConstraint(
+            ["organization_id", "wall_link_id"],
+            ["electrical_wall_links.organization_id", "electrical_wall_links.id"],
+            name="fk_el_penetrations_wall_link",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(f"offset_mm BETWEEN 0 AND {MAX_COORDINATE_MM}", name="offset_plausible"),
+        CheckConstraint(f"height_mm BETWEEN 0 AND {MAX_ROOM_HEIGHT_MM}", name="height_plausible"),
+        Index(
+            "ix_electrical_wall_penetrations_organization_id_wall_link_id",
+            "organization_id",
+            "wall_link_id",
+        ),
+    )
+
+    wall_link_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    offset_mm: Mapped[int] = mapped_column(Integer, nullable=False)
+    height_mm: Mapped[int] = mapped_column(Integer, nullable=False)
+    note: Mapped[str | None] = mapped_column(String(200), nullable=True, default=None)
+
+
+class ElectricalCable(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, Base):
+    """Leitung eines Stromkreises mit ihren tatsaechlichen Kabelangaben (Phase 6b.3).
+
+    Die Kabelangaben stehen **an der Leitung**; der Stromkreisvorschlag wird nie
+    zur Laufzeit geerbt (Entwurf §3.2). ``start_device_id`` ist leer, solange die
+    Verteilung des Stromkreises nicht platziert ist - die Leitung hat dann keinen
+    Startpunkt und keine Laenge. **Keine gespeicherte Laenge**: Weg, Laenge und
+    Status berechnet ``cable_length.analyse_cable`` bei jedem Lesen.
+
+    Stromkreis ``CASCADE`` (Loeschen eines Stromkreises nimmt seine Leitungen
+    mit), Endgeraete ``RESTRICT`` (``409 device-has-cables``).
+    """
+
+    __tablename__ = "electrical_cables"
+    __table_args__ = (
+        tenant_identity(),
+        ForeignKeyConstraint(
+            ["organization_id", "circuit_id"],
+            ["electrical_circuits.organization_id", "electrical_circuits.id"],
+            name="fk_electrical_cables_circuit",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "start_device_id"],
+            ["electrical_devices.organization_id", "electrical_devices.id"],
+            name="fk_electrical_cables_start_device",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "end_device_id"],
+            ["electrical_devices.organization_id", "electrical_devices.id"],
+            name="fk_electrical_cables_end_device",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "start_device_id IS NULL OR start_device_id <> end_device_id",
+            name="endpoints_differ",
+        ),
+        CheckConstraint(
+            "conductor_count IS NULL OR conductor_count BETWEEN 1 AND 100",
+            name="conductor_count_plausible",
+        ),
+        CheckConstraint(
+            "cross_section_mm2 IS NULL OR cross_section_mm2 > 0", name="cross_section_positive"
+        ),
+        CheckConstraint(
+            f"start_allowance_mm BETWEEN 0 AND {MAX_CABLE_ALLOWANCE_MM} "
+            f"AND end_allowance_mm BETWEEN 0 AND {MAX_CABLE_ALLOWANCE_MM} "
+            f"AND reserve_mm BETWEEN 0 AND {MAX_CABLE_ALLOWANCE_MM}",
+            name="allowances_plausible",
+        ),
+        Index("ix_electrical_cables_organization_id_circuit_id", "organization_id", "circuit_id"),
+        Index(
+            "ix_electrical_cables_organization_id_start_device_id",
+            "organization_id",
+            "start_device_id",
+        ),
+        Index(
+            "ix_electrical_cables_organization_id_end_device_id",
+            "organization_id",
+            "end_device_id",
+        ),
+    )
+
+    circuit_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    label: Mapped[str | None] = mapped_column(String(60), nullable=True, default=None)
+    start_device_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, default=None)
+    end_device_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    cable_type: Mapped[str | None] = mapped_column(String(40), nullable=True, default=None)
+    conductor_count: Mapped[int | None] = mapped_column(SmallInteger, nullable=True, default=None)
+    cross_section_mm2: Mapped[Decimal | None] = mapped_column(
+        Numeric(6, 2), nullable=True, default=None
+    )
+    start_allowance_mm: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    end_allowance_mm: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    reserve_mm: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+
+
+class ElectricalCableWaypoint(UUIDPrimaryKey, TenantScoped, Timestamped, Base):
+    """Wegpunkt einer Leitung (Phase 6b.3, Entwurf §3.3) - die Liste wird als Ganzes ersetzt.
+
+    Keine eigene Version: Die Wegpunkte stehen unter der Leitungsversion. Je Art
+    genau die zugehoerigen Spalten (CHECK). Alle Bezuege ``RESTRICT``: Wand, Raum,
+    Durchfuehrung, Oeffnung und Steigweg verschwinden nicht unter einer Leitung;
+    der Service antwortet vorher verstaendlich (``409 wall-has-cables`` u. a.).
+    Der Halt eines Steigwegs verweist ueber ``(organization_id, riser_id,
+    stop_id)`` - er gehoert damit auch auf Datenbankebene zum genannten Steigweg.
+    Der Bodenuebergang speichert seine Lage selbst (Quellwand, Abstand);
+    ``opening_id`` ist nur der fachliche Bezug (Speicherstrategie §5.6).
+    """
+
+    __tablename__ = "electrical_cable_waypoints"
+    __table_args__ = (
+        tenant_identity(),
+        tenant_fk("cable_id", "electrical_cables", ondelete="CASCADE"),
+        tenant_fk("wall_id", "electrical_walls", ondelete="RESTRICT"),
+        tenant_fk("room_id", "electrical_rooms", ondelete="RESTRICT"),
+        ForeignKeyConstraint(
+            ["organization_id", "penetration_id"],
+            ["electrical_wall_penetrations.organization_id", "electrical_wall_penetrations.id"],
+            name="fk_el_cable_waypoints_penetration",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "opening_id"],
+            ["electrical_openings.organization_id", "electrical_openings.id"],
+            name="fk_el_cable_waypoints_opening",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "riser_id"],
+            ["electrical_risers.organization_id", "electrical_risers.id"],
+            name="fk_el_cable_waypoints_riser",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "riser_id", "from_stop_id"],
+            [
+                "electrical_riser_stops.organization_id",
+                "electrical_riser_stops.riser_id",
+                "electrical_riser_stops.id",
+            ],
+            name="fk_el_cable_waypoints_from_stop",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "riser_id", "to_stop_id"],
+            [
+                "electrical_riser_stops.organization_id",
+                "electrical_riser_stops.riser_id",
+                "electrical_riser_stops.id",
+            ],
+            name="fk_el_cable_waypoints_to_stop",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint("organization_id", "cable_id", "seq", name=CABLE_WAYPOINT_SEQ_CONSTRAINT),
+        CheckConstraint("seq >= 0", name="seq_not_negative"),
+        CheckConstraint(f"kind IN ({_value_list(CABLE_WAYPOINT_KINDS)})", name="kind_known"),
+        CheckConstraint(_WAYPOINT_SHAPES, name="columns_match_kind"),
+        CheckConstraint(
+            f"(offset_mm IS NULL OR offset_mm BETWEEN 0 AND {MAX_COORDINATE_MM}) "
+            f"AND (height_mm IS NULL OR height_mm BETWEEN 0 AND {MAX_ROOM_HEIGHT_MM}) "
+            f"AND (from_height_mm IS NULL OR from_height_mm BETWEEN 0 AND {MAX_ROOM_HEIGHT_MM}) "
+            f"AND (to_height_mm IS NULL OR to_height_mm BETWEEN 0 AND {MAX_ROOM_HEIGHT_MM})",
+            name="values_plausible",
+        ),
+        CheckConstraint(
+            f"(x_mm IS NULL OR x_mm BETWEEN {MIN_COORDINATE_MM} AND {MAX_COORDINATE_MM}) AND "
+            f"(y_mm IS NULL OR y_mm BETWEEN {MIN_COORDINATE_MM} AND {MAX_COORDINATE_MM})",
+            name="coordinates_in_range",
+        ),
+        Index("ix_el_cable_waypoints_wall", "organization_id", "wall_id"),
+        Index("ix_el_cable_waypoints_room", "organization_id", "room_id"),
+        Index("ix_el_cable_waypoints_penetration", "organization_id", "penetration_id"),
+        Index("ix_el_cable_waypoints_opening", "organization_id", "opening_id"),
+        Index("ix_el_cable_waypoints_riser", "organization_id", "riser_id"),
+    )
+
+    cable_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    wall_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, default=None)
+    offset_mm: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    height_mm: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    room_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, default=None)
+    x_mm: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    y_mm: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    penetration_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, default=None)
+    opening_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, default=None)
+    riser_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, default=None)
+    from_stop_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, default=None)
+    from_height_mm: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    to_stop_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, default=None)
+    to_height_mm: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)

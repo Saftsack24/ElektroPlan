@@ -1,8 +1,10 @@
 # Phase 6b – Entwurf: Verteilungen, Stromkreise, Leitungen und Leitungslängen
 
 **Status:** **2. Fassung, vom Auftraggeber als Umsetzungsgrundlage freigegeben (2026-10-11)** ·
-D1, D2, D4, D5, D11 bestätigt · **6b.0 und 6b.1 umgesetzt** (technisch geprüft, Checkpoint vom 2026-10-12) ·
-6b.2–6b.6 NOT STARTED · Umsetzungsstand: **§15, §16** (vor §14)
+D1, D2, D4, D5, D11 bestätigt · **6b.0 und 6b.1 umgesetzt** (technisch geprüft, Checkpoint `541bae9` vom 2026-10-12) ·
+**6b.2 und 6b.3 technisch umgesetzt und geprüft** (Checkpoint vom 2026-10-13; manuelle Gesamtprüfung nach Phase 6
+offen) · 6b.4–6b.6 NOT STARTED ·
+Umsetzungsstand: **§15–§18** (vor §14)
 **Grundlage:** Checkpoint `686316c` (Phase 6a.0–6a.5, gepusht), [ADR 0024](decisions/0024-wall-links-physical-wall-assignment.md),
 [ADR 0025](decisions/0025-risers-between-floors.md), [`phase-6a-design.md`](phase-6a-design.md)
 **ADR:** [ADR 0026 – Stromkreise, Leitungen und Leitungswege](decisions/0026-circuits-cables-and-cable-paths.md) (**accepted**)
@@ -558,7 +560,7 @@ POST   /distribution-boards/{id}/circuits                     {designation, name
 PATCH  /circuits/{id}                                         If-Match – ändert keine Leitung
 DELETE /circuits/{id}                                         If-Match
 PUT    /circuits/{id}/devices                                 {device_ids[]}, If-Match
-POST   /circuits/{id}/apply-proposal                          {cables: [{cable_id, version}]} – ausdrückliche Übertragung
+POST   /cables/{id}/apply-proposal                            If-Match (Leitung), {expected_circuit_version} – ausdrückliche Übertragung (präzisiert 6b.3)
 
 GET    /floors/{floor_id}/penetrations                        inkl. transformierter Gegenlage, Nutzung
 PATCH  /penetrations/{id}                                     If-Match
@@ -817,6 +819,231 @@ Umgesetzt und automatisiert geprüft, mit dem Checkpoint vom 2026-10-12 committe
 **Bewusste Grenze:** Die grafische Zuordnung liegt in der Stromkreisansicht (Grundriss des
 Geschosses); ein Zuordnungsmodus in Wand- und Deckenansicht folgt mit den Leitungen (6b.4), wo
 diese Ansichten ohnehin die Arbeitsfläche werden.
+
+## 17. Umsetzungsstand 6b.2 (2026-10-12)
+
+Umgesetzt und automatisiert geprüft, **nicht committet**: die reine, deterministische
+Berechnungsgrundlage für Leitungsweg, Länge, Status und Trassen – ohne Migration, ohne
+Leitungstabellen, ohne API und ohne Oberfläche.
+
+| Teil | Backend (Referenz) | Frontend (Spiegel) |
+|---|---|---|
+| Weg, Teilstrecken, Länge, Status | `electrical/cable_length.py` | `leitung/laenge.ts` |
+| Trassen, Belegung, Summen je Fläche | `electrical/cable_traces.py` | `leitung/trassen.ts` |
+| Gegenlage einer Lage (Punkt) | `topology.transfer` (neben `_local`/`_back`) | `lageUebertragen` (neben `lokalerBereich`/`wandbereich`) |
+| Gemeinsame Fixture | `testdata/geometry/leitung.v1.json` (Version 1) | dieselbe Datei |
+
+**Wiederverwendet, nicht kopiert:** Wandteilung und Abschnittszustände (`topology.partition`,
+`wandtopologie`), Kopplungsstatus (`link_status`, `kopplungsstatus`), Fremdöffnungen
+(`foreign_openings`, `fremdeBereiche`), Konturprüfung und Rundung (`contour_report`,
+`rounded_sqrt`, `konturbericht`, `gerundeteWurzel`), Punkt im Polygon (`devices.point_in_polygon`,
+`punktImPolygon`), Steigwegverlauf und -status (`analyse_riser`, `steigwegAuswerten`).
+
+### 17.1 Eingabe und Ausgabe
+
+Eingabe: Planungsstand eines Gebäudes (Geschosse mit Höhenlage, Räume mit Wänden in
+Konturreihenfolge und Öffnungen samt Art, Kopplungen, Geräte, Durchführungen, Steigwege) und je
+Leitung Start-/Endgerät (oder keines), Wegpunkte, Zugaben und Kabelangaben. Wegpunktarten wie
+§3.3: Wand (`wall_id`, Abstand, Höhe), Decke/Fußboden (Raum, x, y), Durchführung, Bodenübergang
+(Quellwand, Abstand, Öffnung oder `null`), Steigweg (Ein- und Ausstiegshalt mit **lokaler** Höhe in
+Leitungsrichtung).
+
+Ausgabe je Leitung wie §6.1: Teilstrecken (Art, Ort, Besitzer, Läufe, Länge, bekannter Teil),
+`geometric_mm`, `allowance_mm`, Status, `length_mm` nur bei `confirmed`, `known_mm` als
+ausdrückliche Teilsumme, `spec_complete`, Befunde (Code, Art `conflict`/`missing`, Ort
+`start`/`end`/`route`/`w3`/`w2-w3`), genutzte Durchführungen und Zahl der Bodenübergänge.
+
+### 17.2 Präzisierungen gegenüber §5/§6 (ohne neue fachliche Entscheidung; vom Auftraggeber bestätigt 2026-10-12)
+
+| Thema | Festlegung in 6b.2 | Begründung |
+|---|---|---|
+| Lage der Teilstrecken | Läufe tragen **flächenlokale, exakte** Koordinaten: **Wand** – Raumwand (`wall_id`), Lage ab Wandanfang der gerichteten Wand auf der Achse (`whole + steps·√m`), Höhe über FFB, Richtung = Leitungsrichtung (`from` → `to`); **Decke/Fußboden** – Raum, Geschoss-x/y; **Steigweg** – die eine `riser_course`-Polylinie mit absoluten Höhen, in Leitungsrichtung; **Schacht** – Halt, lokale Höhe von → bis. Räumliche Punkte leitet `segment_points`/`run_points` daraus ab (je Koordinate einmal kaufmännisch gerundet, Wandenden exakt, `z` = gespeicherte Höhenlage + lokale Höhe); Längen kommen nie aus diesen Punkten | eine Quelle; Darstellung ohne zweite Geometrie |
+| Weg erreicht ein Endgerät nicht | Erster bzw. letzter Wegpunkt nicht auf der Montagefläche des Geräts (andere Wand, anderer Raum): **fehlt** (`incomplete`), keine Luftlinie. Liegt er dort, die abgeleitete Anschlussstrecke ist aber unzulässig (durch eine Öffnung, außerhalb der Kontur): **Konflikt** | „Weg nicht bis zum Ende geplant“ (§6.3) |
+| Leitung ohne Wegpunkte | `route-empty`, `incomplete`, Länge 0 nur als Teilsumme | ein Weg braucht mindestens einen Wegpunkt |
+| Außen montiertes Endgerät | `endpoint-exterior`, `conflict` | Wandwege nur innen, Außenleitungen später (D2) |
+| Unterkante bodentiefer Öffnungen | Eine Wandstrecke auf Höhe 0 durch eine Tür (Brüstung 0) gilt als Strecke durch die Öffnung | dort ist keine Wand; sonst liefe ein Weg „über die Schwelle“ |
+| Kanten von Öffnungen | Berührung der übrigen Kanten (z. B. Strecke genau über dem Sturz) ist zulässig | wie bei Geräten (Phase 5) |
+| Durchführungshöhe | `0 ≤ h < min(Raumhöhen)`; h = 0 erlaubt den Übergang Wand ↔ Fußboden auf beiden Seiten | §5.2/§5.5 |
+| Seite einer Durchführung | Eintrittsseite nach dem Nachbarn davor (Wandpunkt bzw. Startgerät), sonst danach; passt keiner: `penetration-sequence` | Richtung ergibt sich aus dem Weg, gespeichert bleibt nur `wall_a` |
+| Bodenübergang auf schrägen Wänden | Nur wenn der Achspunkt auf ganzen Millimetern liegt (achsparallel immer), sonst `opening-crossing-off-grid` | Fußbodenpunkte sind ganzzahlig (ADR 0007) |
+| Steigwegnutzung | Einstieg am Halt auf lokaler Höhe h (`0 ≤ h < Δz` des ersten genutzten Abschnitts, prüfbar nur bei bestätigter Höhenlage); genutzt ab h, Zwischenhalte durchfahren; Ausstieg am Halt auf FFB; eine Ausstiegshöhe > 0 ist die **Schachtfortsetzung** (eigene Teilstrecke `shaft`, lokal, immer bekannt). Rückwärts (abwärts) gleich lang. Der Wegpunkt davor/danach muss **genau** am Halt liegen (Wandachse, Fußboden h = 0, Decke h = Raumhöhe), sonst `riser-transfer` | §5.3 |
+| Steigweghalte | Reihenfolge nach Ebene, bei gleicher Ebene nach Halt-ID – Backend und Frontend gleich, nie nach Eingabereihenfolge. Gespeicherte Halte haben je Steigweg verschiedene Ebenen (`UNIQUE(riser_id, floor_id)`, `UNIQUE(building_id, level)`); die Regel schützt ungespeicherte Entwürfe und widersprüchliche Geschossdaten, die dadurch nicht scheinbar gültig werden | Parität, Determinismus |
+| Trasse | zusammenhängende Vereinigung je Planungsfläche (Wand: je Raumwand waagerecht je Höhe bzw. senkrecht je Lage; Decke/Fußboden: je Raum und Gerade; Steigweg: je Abschnitt; Schacht: je Halt); auch an einem Punkt anschließende Stücke gehören zu derselben Trasse; die zwei Seiten einer gemeinsamen Wand sind zwei Flächen | §5.4 |
+
+### 17.3 Status- und Befundregeln
+
+* `conflict`: mindestens ein Befund der Art `conflict` – ungültige Strecke (schräg, ohne Ecke,
+  Raumwechsel ohne Übergang, durch eine Öffnung, außerhalb der Kontur, falscher Übergang Wand ↔
+  Decke/Fußboden), ungültige Durchführung (unbekannt, Kopplung nicht `active`, nicht im
+  `shared`-Abschnitt dieser Kopplung, Höhe, in einer Öffnung), ungültiger Bodenübergang (Öffnung
+  entfernt, Fenster, außerhalb, verbindet nicht – auch bei `separate` –, Reihenfolge), widersprüchliche
+  Höhenlage, Einstieg zu hoch, Wegpunkt nicht am Halt, unbekanntes oder außen montiertes Endgerät.
+* `incomplete`: sonst mindestens ein Befund der Art `missing` – Endgerät nicht platziert, kein
+  Weg, Weg erreicht ein Endgerät nicht, Höhenlage im genutzten Steigweg unbestätigt.
+* `confirmed`: keine Befunde. Nur dann `length_mm = geometric_mm + allowance_mm`.
+* Eine ungültige Strecke trägt **nichts** bei – sie ist nie eine gültige Null; ein ungültiger
+  Wegpunkt unterbricht die Kette, die angrenzenden Schritte werden nicht bewertet (kein
+  Folgebefund). `known_mm` ist dann ausdrücklich eine Teilsumme der gültigen Teile.
+* Leitungen innerhalb eines Geschosses hängen **nie** von der Höhenlage ab; nur genutzte
+  Steigweganteile folgen dem Steigwegstatus (senkrechte Länge nur bei bestätigter, konsistenter
+  Höhenlage; waagerechter Versatz immer bekannt).
+* Kopplung `undecided` (gelöst): Bodenübergang bleibt gültig (Öffnung gilt beidseitig);
+  Durchführung braucht eine aktive `shared`-Kopplung.
+
+### 17.4 Rundung
+
+Ganze Millimeter. Achsparallele Wand- und Steigwegstrecken exakt. Gerade Decken-/Fußbodenstrecken
+und Anschlussstrecken an der Decke `rounded_sqrt` je Strecke; Wandstrecken zu einer irrationalen
+Gegenlage (`whole + steps·√m`) **einmal** kaufmännisch gerundet über
+`rounded_position`/`gerundeteLage` (`round(x) = ⌊(2x + 1)/2⌋`, exakt über `isqrt`; ein Halbwert
+kann bei irrationalem x nicht auftreten); danach nur ganzzahlige Summen. Trassen: je
+zusammenhängender Trasse und je Belegungsstück einmal gerundet – die Summe gerundeter Stücke kann
+bei schrägen Strecken um wenige Millimeter von der gerundeten Trassenlänge abweichen
+(dokumentiert, keine Korrektur). Randfälle der Fixture: negative Lagen, kleine Wurzeln
+(√2 → 1, √3 → 2), Werte knapp an ,5 (√13 → 4, √20 → 4), große Werte (10⁶·√2 → 1 414 214).
+
+### 17.5 Modellgrenzen (sichtbar zu machen ab 6b.4)
+
+Messung auf der Wandachse (D10); Fußbodenwege auf FFB-Höhe ohne Aufbau, Estrich, Leerrohre;
+Bodenübergang und Durchführung sind Planungsannahmen ohne Aussage zur Ausführbarkeit;
+keine Wegfindung, keine Bemessung, keine Normaussage; Durchführungen nicht durch `separate`
+(D9 zurückgestellt); Außen- und gebäudeübergreifende Leitungen später (D2); Schachtfortsetzung nur
+senkrecht über dem Halt; ein Wechsel direkt von Steigweg zu Steigweg wird nicht unterstützt
+(`riser-transfer`).
+
+### 17.6 Testabdeckung (Fixture-Fälle → Anforderung)
+
+| Anforderung | Fixture-Fall / Test |
+|---|---|
+| Beispiel §6.4: 8 500 / 9 200, Rückweg, Durchführung einmal gezählt | „§6.4 Diele -> Kueche …“ (inkl. Trassen) |
+| 3 Leitungen: 4 000 Trasse / 10 000 Leitung, Belegung 2/3/2 | „§5.4 Trasse …“ |
+| Verzweigung über Abzweigdose (getrennte Leitungen) | „§5.4 Trasse …“ (L0 → j1, j1 → L1/L2) |
+| Gegenlage: entgegengesetzt, versetzter Anfang, Teilüberlappung, außerhalb, Kante, schräg irrational, Hin-/Rückweg | `gegenlagen` (6 Fälle) |
+| L-Raum Decke/Fußboden verlässt die Kontur; Diagonale durch die Innenecke gültig | „L-Raum …“ + Konturtest (beide Umlaufrichtungen) |
+| Öffnung im Wandweg (durch, Schwelle, Wegpunkt in der Tür, über dem Sturz) | „Oeffnung im Wandweg …“, §6.4-Fall |
+| Unzulässiger Raumwechsel (Wand und Fußboden) | „Ungueltige Wandwege …“, „Bodenuebergang …“ (`unter-wand`) |
+| Bodenübergang fehlt/verschoben/Fenster/Reihenfolge; eigene + abgeleitete Öffnung | „Bodenuebergang …“, „… verschoben“, „… abgeleitete Oeffnung“ |
+| Abschnitt undecided/separate/ambiguous/broken | Bodenübergang ungekoppelt/getrennt; Durchführung getrennt/mehrdeutig/unterbrochen |
+| Steigweg vorwärts/rückwärts, Teilnutzung, Zwischenhalt, Schacht | „Steigweg EG -> OG …“, „Steigweg rueckwaerts …“ |
+| unbestätigte/widersprüchliche Höhenlage; Geschossleitung bleibt bestätigt | „… unbestaetigter Hoehenlage …“, „… widerspruechlicher …“, „… Einstieg an der Decke …“ |
+| keine Doppelzählung am Einstieg (700 + 750 = 1 450) | „Steigweg EG -> OG …“ |
+| Nullstrecken, Rundungsgrenzen | „L-Raum …“ (`rundung`), `rundung` (10 Fälle) |
+| Wand, Decke, Fußboden getrennte Trassen | „Decke und Fussboden …“ |
+| Endpunkte fehlen/außen/unbekannt, Weg leer/nicht erreicht | „Endpunkte und unvollstaendige Wege …“ |
+| Identische Ergebnisse Backend/Frontend | `tests/test_cable_length.py` (42) und `leitung/laenge.test.ts` (41) lesen dieselbe Fixture; Reihenfolgeunabhängigkeit je Seite |
+
+Alle Sollwerte sind von Hand fachlich hergeleitet (Strecke für Strecke, siehe Fallnamen) und
+nicht aus der Implementierung übernommen; eine beim Gegenrechnen gefundene Sollsumme der
+Fixture wurde vor dem ersten Lauf korrigiert.
+
+## 18. Umsetzungsstand 6b.3 (2026-10-12)
+
+**Implementiert und technisch geprüft, im Checkpoint vom 2026-10-13 committet** (Tasks 0042–0044):
+Datenbankabnahme gegen PostgreSQL und MinIO bestanden (neue Datenbanktests, Mandanten-Sweep,
+Fremdschlüsselproben, Migration `0013` mit Downgrade auf Wegwerf-Datenbank, `alembic check`,
+Entwicklungsdatenbank migriert, synthetischer API-Durchlauf im laufenden System). Nach der
+Ursachenbehebung des fremden, lastabhängigen 3D-Frontendtests (Task 0043) lief `tasks.ps1 check`
+vollständig grün (Backend 1 319/1 319, Frontend 1 038/1 038, Build). Manuelle Gesamtprüfung nach
+Phase 6 und Produktions-/Echtdatenfreigabe offen.
+
+### 18.1 Datenmodell (Migration `0013_cables_and_penetrations`)
+
+| Tabelle | Inhalt | Bezüge |
+|---|---|---|
+| `electrical_wall_penetrations` | Lage einmal an `wall_a` der Kopplung (`offset_mm`, `height_mm`), Notiz, Version | Kopplung `RESTRICT` |
+| `electrical_cables` | Stromkreis, Bezeichnung, Start-/Endgerät, **tatsächliche** Kabelangaben (`cable_type`, `conductor_count`, `cross_section_mm2 numeric(6,2)`), Zugaben und Reserve (je 0–20 000), Version – **keine Längenspalte** | Stromkreis `CASCADE`, Geräte `RESTRICT`, `start <> end` |
+| `electrical_cable_waypoints` | Wegpunktliste (`seq` eindeutig je Leitung), `kind` ∈ `wall`, `ceiling`, `floor`, `penetration`, `opening_crossing`, `riser`; CHECK „je Art genau die zugehörigen Spalten“ | alle `RESTRICT`; Leitung `CASCADE` |
+
+Alle Fremdschlüssel zusammengesetzt mit `organization_id`. Halte verweisen über
+`(organization_id, riser_id, stop_id)`; dafür erhält `electrical_riser_stops` die Eindeutigkeit
+`(organization_id, riser_id, id)` – ein Halt gehört auch auf Datenbankebene zum genannten
+Steigweg. Der Bodenübergang speichert seine Lage selbst; `opening_id` ist nullable
+(Speicherstrategie §5.6). Downgrade bricht ab, solange Leitungen oder Durchführungen existieren.
+Neues Recht `electrical.route.write` (Rolle Planer) legt der Seed an.
+
+### 18.2 Speichern einer Leitung
+
+* **Endgeräte:** das Lagegerät der Verteilung des Stromkreises oder ein diesem Stromkreis
+  zugeordnetes Gerät, im Gebäude, nicht gleich; außen montiert `422 cable-endpoint-exterior`
+  (bestehende Geräte bleiben unverändert). `start_device_id` leer nur, solange die Verteilung
+  keine Lage hat (`cable-start-required`); eine spätere Platzierung hängt nichts still an.
+* **Bezüge:** jede Wand, jeder Raum, jede Öffnung, Durchführung und jeder Steigweg liegt im
+  Gebäude, jeder Halt gehört zum genannten Steigweg – sonst `422 cable-reference-unknown`, ohne
+  Existenzauskunft (fremder Betrieb, anderes Gebäude, unbekannte ID gleich).
+* **Unvollständig erlaubt, unzulässig nicht:** Befunde der Art `missing` werden gespeichert
+  (`incomplete`), Befunde der Art `conflict` lehnen ab (`422 cable-route-invalid` mit Code und
+  Ort je Befund). Ausnahme `riser-elevation-inconsistent` (Geschossdaten, nicht der Weg). Bleiben
+  Weg und Endgeräte unverändert, gilt nur „kein **neuer** Konflikt“ – eine bestätigt
+  unterbrochene Leitung lässt sich weiter beschriften, wird aber nie still repariert.
+* **Neue Durchführungen** (`new_penetrations` mit Schlüssel) entstehen in derselben Transaktion
+  wie die Leitung, nur wenn sie gültig sind und genutzt werden (`penetration-unused`); jeder Fehler
+  verwirft beides.
+* **Berechnung** ausschließlich über `analyse_cable`; die API liefert Teilstrecken mit Länge,
+  bekanntem Teil und räumlichen Punkten (`segment_points`, §17.2), Status, Länge nur bei
+  `confirmed`, sonst Teilsumme, Befunde und „weicht vom Vorschlag ab“.
+
+### 18.3 Vorschlag übernehmen (vom Auftraggeber bestätigt 2026-10-12)
+
+`POST /cables/{cable_id}/apply-proposal` (Recht `electrical.circuit.write`, §8.6) – **eine Leitung
+je Aufruf**, zwei getrennt benannte Versionen: **`If-Match`** ist die Version der Zielleitung,
+**`expected_circuit_version`** (Körper) die Version des Stromkreises, dessen Vorschlag der Anwender
+gesehen hat. Beide werden unter der Projektsperre geprüft (Sperrreihenfolge Projekt → Stromkreis →
+Leitung); weicht eine ab, `409` (`version-conflict` bzw. `circuit-proposal-changed`) ohne jede
+Teiländerung. Mehrere Leitungen überträgt die Oberfläche mit je einem Aufruf (jeder für sich
+atomar). Übernommen werden genau `cable_type`, `conductor_count`,
+`cross_section_mm2` – so, wie sie im Vorschlag stehen, auch leer. Weg, Endgeräte, Zugaben und
+Bezeichnung bleiben. Eine spätere Vorschlagsänderung ändert keine Leitung.
+
+### 18.4 Abhängige Planungsdaten (Entwurf §7)
+
+Jeder Schreibweg hält unter der Projektsperre den Leitungsstand des **Gebäudes** vorher fest und
+vergleicht danach (`cable_rules.CableGuard`). Neuer Befund = Code und Ort, die vorher fehlten.
+
+| Schreibweg | Regel |
+|---|---|
+| Raumentwurf (Kontur, Öffnungen, Geräte) | Endgerät entfernen `409 device-has-cables`, Wand mit Bezug entfernen `409 wall-has-cables`, Kopplung mit Durchführung lösen `409 wall-link-has-penetrations`; Wandteilung mit Bezug im neuen Stück `422 wall-split-with-cables`; umgekehrte Wand: Bezüge behalten ihren Ort (`L − x`, Versionen zählen weiter); Öffnung über Wandstrecke/Wegpunkt `422 opening-over-cable` (auch mit Bestätigung); entfernte Öffnung mit Bodenübergang: `opening_id = NULL` an genau diesen Wegpunkten – nur mit Bestätigung; jede andere Unterbrechung nur mit `acknowledged_cable_ids` |
+| Einzelwege Wand, Öffnung, Reihenfolge, Raum anlegen | wie oben, aber **ohne** Bestätigungsfeld: eine Unterbrechung ist `409 cables-would-break` mit Hinweis auf den Raumentwurf; Öffnung mit Bodenübergang einzeln entfernen `409 opening-has-cables` |
+| Raum löschen | `409 room-has-cables` (Wege, Bodenübergänge, Endgeräte, Durchführungen) |
+| Raumhöhe | Wegpunkt oder Durchführung über einer abgesenkten Höhe `422`; Unterbrechung durch Anheben (Übergang zur Decke) mit Bestätigung |
+| Geschoss-Standardhöhe (Core-Teilnehmer) | jede Unterbrechung oder ungültige Durchführung `422` – über den Core-Weg gibt es keine Bestätigung |
+| Wandkopplung | `shared → separate`/dritte Wand mit Durchführung `422`; Bodenübergang einseitig: mit Bestätigung; Kopplung mit Durchführung lösen `409` |
+| Durchführung ändern | neue Lage muss gültig sein (`422`); unterbrochene Leitungen nur mit Bestätigung; entfernen nur ungenutzt (`409 penetration-in-use`) |
+| Steigweg | genutzter Halt entfällt nicht (`409 riser-stop-in-use`), genutzter Steigweg nicht (`409 riser-in-use`); verschobener Halt, an dem ein Übergang nicht mehr liegt: mit Bestätigung |
+| Zuordnung, Verteilungslage | Endgerät einer Leitung bleibt zugeordnet (`409 circuit-device-has-cables`); Lage mit Leitungen nicht ändern (`409 board-placement-has-cables`) |
+| Höhenlage, Bestätigung, Ebene | nur Status/Länge der Steigweganteile, keine Prüfung (§7) |
+| Stromkreis löschen | Leitungen per `CASCADE` (Rückfrage mit Anzahl in der Oberfläche, 6b.4); Durchführungen bleiben |
+| Projekt löschen | Leitungen → Durchführungen → Stromkreise → Verteilungen → Steigwege → Räume |
+
+**Bestätigung** (`acknowledged_cable_ids`, verlangt zusätzlich `electrical.route.write`): muss
+**genau** die betroffenen Leitungen nennen. Fehlt eine: `409 cables-would-break` (je Leitung
+Stromkreis, Bezeichnung, Endgeräte, Grund); nennt sie eine nicht betroffene, fremde oder veraltete
+ID: `409` mit `cable-not-affected` je ID; doppelt: `422 acknowledged-cable-duplicate`. Durchführungen
+bleiben hart geschützt; eine Bestätigung umgeht das nie. Ein veralteter Raumentwurf mit gleicher
+Raumversion (Leitungen zählen keine Raumversion) trifft beim Speichern auf diese Prüfung.
+
+**Auslegung ohne neue fachliche Entscheidung:** Für „Durchführung verschieben“ nennt §7 keine
+eigene Zeile; §8.5 („Leitungsbefunde vorher/nachher“) und D4 legen dieselbe Regel wie beim
+Verschieben einer Wand fest – gültige Lage Pflicht, Unterbrechung nur mit Bestätigung; die
+betroffenen Leitungen bleiben als Konflikt sichtbar, harte Schutzregeln gelten weiter (vom
+Auftraggeber bestätigt 2026-10-12). Für den Halt gilt §7 wörtlich.
+
+### 18.5 Grenzen
+
+Keine Oberfläche: Die einfache Leitungsliste und alle grafischen Werkzeuge folgen mit 6b.4/6b.5;
+in der Oberfläche gibt es noch keine Bestätigungsrückfrage (der Raumentwurf zeigt eine `409`
+`cables-would-break` als Fehlermeldung). Keine Mengenübersicht (6b.6), keine Materialintegration,
+keine Events, keine Bemessung oder Normaussage.
+
+### 18.6 Tests
+
+| Datei | Inhalt | Stand |
+|---|---|---|
+| `test_cable_length.py`, `leitung/laenge.test.ts` | Fixture inkl. Anschluss fehlt/unzulässig, Raumpunkte | grün |
+| `test_riser_course.py`, `steigweg/verlauf.test.ts` | gleiche Ebene, Eingabereihenfolge | grün |
+| `test_electrical_cables.py` | Beispiel 8 500/9 200, Atomarität, unvollständig/unzulässig, Endgeräte und gebäudefremde Bezüge, Versionen, getrennte Rechte, Schreibschutz, Vorschlag (beide Versionen), Löschschutz, Projektlöschung, Bodenübergang mit entfernter Tür (genaue/falsche/doppelte Bestätigung), veralteter Entwurf, Öffnung über Wandstrecke, Kopplung/Höhe/Durchführung, Steigweghalt | bestanden (PostgreSQL) |
+| `test_cable_concurrency.py` | parallele Ersetzung, Anlegen gegen Gerät entfernen, Ersetzen gegen Wand verkürzen, archiviert/abgeschlossen je Schreibweg, Schreibweg vor Archivierung | bestanden |
+| `test_tenant_isolation.py` | Sweep um die neuen Routen, fremde Bezüge, DB-Fremdschlüssel | bestanden |
+| `test_migration_cables.py` | Wegwerf-Datenbank: Bestand 0012 → 0013 unverändert, Modellabgleich, Wegpunktform und Bezüge in der Datenbank, Downgrade bricht mit Leitungen ab und gelingt ohne | bestanden |
 
 ## 14. Ausdrücklich nicht in 6b
 

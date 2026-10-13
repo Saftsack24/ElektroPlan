@@ -3423,7 +3423,7 @@ keine manuelle Abnahme.
 
 ## Task 0039 – Nacharbeiten 6b.1 und Checkpoint 6b.0/6b.1
 
-**Datum:** 2026-10-12 · **Status:** committet (nicht gepusht); manuelle Gesamtprüfung nach Phase 6
+**Datum:** 2026-10-12 · **Status:** committet als `541bae9` (nicht gepusht); manuelle Gesamtprüfung nach Phase 6
 offen; keine Produktions- oder Echtdatenfreigabe.
 
 * **Projektkopf:** `Steigwege` und `Stromkreise` erhalten `onGeschrieben`; die Räume-Seite lädt
@@ -3443,3 +3443,166 @@ offen; keine Produktions- oder Echtdatenfreigabe.
 * **Prüfung:** Frontend 983 bestanden, Typecheck, ESLint, Modulgrenzen, Build, API-Drift grün;
   Ruff, mypy, import-linter grün. Kein erneuter Backend-Gesamtlauf (nur Frontend-Nacharbeit);
   Grundlage Task 0038 (gezielte Backendläufe) und Task 0037 (1214 Backendtests).
+
+---
+
+## Task 0040 – 6b.2: reine Längenfunktion (Weg, Länge, Status, Trassen)
+
+**Datum:** 2026-10-12 · **Status:** umgesetzt und automatisiert geprüft, **nicht committet**, nicht
+gepusht; manuelle Gesamtprüfung nach Phase 6 offen; keine Produktions- oder Echtdatenfreigabe.
+
+* **Backend (Referenz):** `app/modules/electrical/cable_length.py` – Eingabetypen (Plan, Leitung,
+  Wegpunkte), Auflösung der Wegpunkte, Übergänge, Anschlussstrecken, Durchführung mit Gegenlage,
+  Bodenübergang, Steigwegnutzung mit Schachtfortsetzung, Status und Befunde;
+  `cable_traces.py` – Trassen je Planungsfläche mit Belegung, Trassen- und Leitungsmetern.
+  `topology.transfer` ergänzt (Punkt-Gegenlage über `_minus`/`_plus`, wie `_local`/`_back`).
+* **Frontend (Spiegel):** `modules/electrical/leitung/laenge.ts`, `leitung/trassen.ts`;
+  `topologie/oeffnungen.ts` um `lageUebertragen` ergänzt.
+* **Fixture:** `testdata/geometry/leitung.v1.json` – Pläne mit Basis/Ersetzen/Entfernen, 22 Fälle
+  mit Strecken, Befunden, Summen und (wo relevant) Trassen und Steigwegverlauf, 6 Gegenlagen,
+  10 Rundungsfälle. Sollwerte von Hand hergeleitet; eine Sollsumme beim Gegenrechnen vor dem
+  ersten Lauf korrigiert (Wandtrassen 3 400 statt 3 500, Leitungsmeter 5 000 statt 4 200).
+* **Präzisierungen** (keine neue fachliche Entscheidung): Entwurf §17.2 – u. a. flächenlokale
+  Koordinaten statt Weltpunkten, „Weg erreicht Endgerät nicht“ = unvollständig, Türunterkante zählt
+  zur Öffnung, Schachtfortsetzung als eigene Teilstrecke, Bodenübergang nur auf dem
+  Millimetergitter, Trasse = zusammenhängende Vereinigung je Fläche.
+* **Nicht enthalten:** Migration, Tabellen, API, Oberfläche, Leitungsbefunde bei Wand-/Kopplungs-
+  änderungen (6b.3), Mengenübersicht (6b.6); nichts aus Phase 7.
+* **Prüfung:** Backend `test_cable_length.py` 42 bestanden, zusammen mit Geometrie-, Geräte-,
+  Kopplungs-Paritäts-, Steigweg- und Modulinventartests 232 bestanden (ohne Datenbank; kein
+  DB-Gesamtlauf, da reine Funktion); Ruff (Lint, Format), mypy `--strict` (126 Dateien),
+  import-linter (4 Verträge) grün. Frontend `leitung/laenge.test.ts` 41 bestanden, Gesamtlauf
+  1 024 bestanden (88 Dateien), Typecheck, ESLint, Modulgrenzen, Build grün. Keine API-Änderung
+  (kein Client-Neubau), keine Migration (ein Alembic-Head unverändert). `git diff --check` sauber.
+
+---
+
+## Task 0041 – 6b.2 absichern, 6b.3 Persistenz und Backend-API
+
+**Datum:** 2026-10-12 · **Status:** implementiert, **nicht committet**, nicht gepusht; Prüfung
+gegen PostgreSQL **ausstehend** (Docker); manuelle Gesamtprüfung nach Phase 6 offen; keine
+Produktions- oder Echtdatenfreigabe.
+
+* **6b.2 abgesichert:** Datenbank-Invarianten geprüft (`UNIQUE(riser_id, floor_id)`,
+  `UNIQUE(building_id, level)` – gespeicherte Halte eines Steigwegs haben verschiedene Ebenen);
+  trotzdem sortieren beide Seiten nach `(Ebene, Halt-ID)`, weil Entwürfe und widersprüchliche
+  Geschossdaten sonst je nach Eingabe scheinbar gültig würden (neuer Fixture-Fall „gleiche Ebene“,
+  Permutationstests beidseitig; Backendtest mit reihenfolgetreuen IDs). Räumliche Punkte
+  `run_points`/`segment_points`/`wall_axis_point` aus denselben Läufen (Durchführung beidseitig
+  derselbe Grundrisspunkt, auch schräg); `ShaftRun` mit Richtung; `floor_id` je Teilstrecke.
+  Fixture: fehlender Anschluss → unvollständig, Anschluss durch die Tür bzw. über die Aussparung →
+  Konflikt. §17.2 als bestätigt markiert.
+* **6b.3 Backend:** Modelle und Migration `0013`, `cable_rules.py` (Stand je Gebäude,
+  Vorher/Nachher-Vergleich, genaue Bestätigung, Schutzfunktionen), `cables.py` (Leitungen,
+  Vorschlag übernehmen, Durchführungen), Einbindung in Raum-, Kopplungs-, Steigweg-,
+  Verteilungs-, Geschosshöhen- und Lebenszyklus-Schreibwege, API, Recht `electrical.route.write`,
+  OpenAPI und TS-Client. Einzelheiten und Auslegungen: Entwurf §18.
+* **Tests geschrieben:** `test_electrical_cables.py`, `test_cable_concurrency.py`, Erweiterung
+  `test_tenant_isolation.py`. **Inventarergänzungen ausdrücklich:** `test_architecture.py`
+  Tabellenzahl 34 → 37; `test_electrical_module.py` Tabellen-, Rechte- und Submodulliste
+  (`cables`, `cable_rules`).
+* **Prüfung:** ohne Datenbank grün – Backend 259 Tests (reine Funktionen, Architektur, Inventar,
+  Paritäten), Ruff (Lint, Format), mypy `--strict` (128 Dateien), import-linter, ein Alembic-Head
+  (`0013`), `uv lock --check`; Frontend 1 038 Tests, Typecheck, ESLint, Modulgrenzen, Build,
+  API-Drift. **Nicht gelaufen:** alle Datenbanktests, Migration und Seed der Entwicklungsdatenbank,
+  `alembic check`, API-Ablauf im laufenden System – Docker Desktop meldete beim Start
+  „unexpected error“ (Socket-Datei `sailor-ingest.sock` nicht zugänglich); kein Werksreset, keine
+  Verzeichnisse verschoben.
+
+---
+
+## Task 0042 – Datenbankabnahme 6b.3
+
+**Datum:** 2026-10-12 · **Status:** Datenbankabnahme bestanden; Gesamtlauf nicht grün (fremder,
+lastabhängiger Frontendtest); **nicht committet**, nicht gepusht; manuelle Gesamtprüfung nach Phase 6
+offen; keine Produktions- oder Echtdatenfreigabe.
+
+* **Ausgangslage:** Docker-Engine 29.8.0 nach Windows-Neustart verfügbar; PostgreSQL, MinIO, Backend,
+  Planner healthy. Entwicklungsdatenbank auf `0012`, Testdatenbank `elektroplan_test` vorhanden.
+  Keine Reparaturen an Docker-Verzeichnissen, keine Volumes gelöscht, keine Datenbank neu angelegt
+  (Wegwerf-Datenbanken nur durch die Migrationstests, danach wieder entfernt).
+* **Bestätigte Auslegungen umgesetzt:** Durchführung verschieben nur an gültige Stelle, Unterbrechung
+  nur mit genauer Bestätigung (war bereits so). `apply-proposal` neu: `POST /cables/{id}/apply-proposal`,
+  `If-Match` = Leitungsversion, `expected_circuit_version` = gesehene Stromkreisversion; Prüfung
+  beider unter der Projektsperre (Projekt → Stromkreis → Leitung), bei Abweichung `409`
+  (`version-conflict` bzw. `circuit-proposal-changed`) ohne Teiländerung. OpenAPI/Client neu.
+* **Gefundene und behobene Fehler (6b.3):**
+  1. Leitung ersetzen zählte die Version um 2 hoch (Update vor und nach dem Löschen der Wegpunkte) –
+     jetzt genau ein Update; Regression `test_versionen_und_vorbedingung` (erwartet Version 2).
+  2. Geschoss-Standardhöhe: der neue Leitungsteil des Teilnehmers warf bei einem fremden Mandanten
+     `NotFoundError`; jetzt keine Konflikte und keine Existenzauskunft – Regression ist der vorhandene
+     Test `test_fremder_mandant_sieht_keine_konflikte` (schlug vor der Korrektur fehl).
+  3. Testaufbau (keine Produktänderung): Geschossversion aus der Anlage-/Patch-Antwort statt eines nicht
+     vorhandenen `GET /floors/{id}`; „abgeschlossen“ über „aktiv“ gemäß Statusregeln.
+* **Neu:** `test_migration_cables.py` (Wegwerf-Datenbank: 0012-Bestand → 0013 unverändert, Modellabgleich,
+  Datenbankregeln für Wegpunkte/Bezüge/Halte, Downgrade bricht mit Leitungen ab und gelingt ohne).
+* **Entwicklungsdatenbank:** Sicherung `pg_dump -Fc` nach
+  `C:\Users\arneb\elektroplan-backups\elektroplan-dev-vor-0013-20261012-214127.dump` (lesbar, 35
+  Tabelleninhalte); `alembic upgrade head` → `0013`; Seed: 1 neues Recht (`electrical.route.write`);
+  Zeilenzahlen (Benutzer, Projekte, Räume, Geräte, Kopplungen, Steigwege, Halte, Stromkreise)
+  unverändert; `alembic check` ohne Unterschied.
+* **Synthetischer API-Durchlauf** gegen `127.0.0.1:8000` (Entwicklungskonto aus `docker-compose.yml`,
+  eigenes synthetisches Projekt): Leitung mit neuer Durchführung 8 500/9 200 `confirmed`,
+  Durchführungsliste mit Gegenlage und Nutzung, Vorschlag mit veralteter Stromkreisversion `409`, gültig
+  übernommen (2,50, Version 2), Unterbrechung ohne bzw. mit falscher Bestätigung `409`, mit genauer
+  Bestätigung Konflikt ohne Länge (Teilsumme 6 900), Raum löschen `409 room-has-cables`, genutzte
+  Durchführung `409`, Zuordnung des Endgeräts `409`, Löschprüfung nennt Leitungen/Durchführungen,
+  Projekt und Kunde danach gelöscht. 13/13 Schritte bestanden.
+* **Prüfungen bestanden:** neue Datenbanktests 79 (Leitungs-API, Parallelität, Mandantentrennung inkl.
+  Sweep und DB-Fremdschlüssel, Migration); `tasks.ps1 check` zweimal: Ruff, Format, mypy, Modulgrenzen,
+  ein Alembic-Head, Lockfile, **Backend 1 319 von 1 319** (PostgreSQL, MinIO, 0 übersprungen),
+  API-Drift, Frontend-Modulgrenzen; einzeln Frontend 1 038/1 038, Typecheck, ESLint, Build,
+  `git diff --check`.
+* **Fehlgeschlagen:** in beiden Gesamtläufen derselbe Frontendtest `ansichten.test.tsx` › „Ansichtswahl ›
+  wechselt zur 3D-Ansicht, lädt sie erst dann und merkt sich die Wahl“ (`Unable to find … /7 von 7 Räumen
+  dargestellt/` nach ~1,4 s; `findByText` wartet 1 s auf den Lazy-Chunk der 3D-Ansicht). Einzeln grün.
+  Damit ist der in Task 0038 „nicht identifizierte“ Fehlschlag identifiziert. Nicht Teil von 6b.3 (3D-
+  Ansicht und Ansichtswahl unverändert), nicht abgeschwächt, keine längeren Fristen; Ursachenbehebung
+  als eigene Aufgabe vorgeschlagen.
+* **Nicht ausführbar:** keine.
+
+---
+
+## Task 0043 – Lastabhängigen 3D-Ansichtstest stabilisieren, Gesamtabnahme 6b.3
+
+**Datum:** 2026-10-13 · **Status:** abgeschlossen; 6b.3 technisch geprüft; **nicht committet**, nicht
+gepusht; manuelle Gesamtprüfung nach Phase 6 und Produktions-/Echtdatenfreigabe offen.
+
+* **Befund:** `ansichten.test.tsx` › „Ansichtswahl › wechselt zur 3D-Ansicht, lädt sie erst dann und
+  merkt sich die Wahl“ scheiterte in beiden Gesamtläufen von Task 0042 mit „Unable to find … /7 von 7
+  Räumen dargestellt/“ nach ~1,4 s. Der DOM-Auszug der JUnit-Aufzeichnung zeigte zum Abbruchzeitpunkt
+  den Suspense-Hinweis „3D-Ansicht wird geladen …“, nicht die Fehleranzeige der Lade-Grenze.
+* **Ursache (keine Produktfehler):** Der Test lädt als erster der Datei die 3D-Ansicht. Im Testlauf
+  transformiert Vitest den 3D-Modulgraphen (`Ansicht3d`, `szene` usw.) erst bei diesem Import – gemessen
+  ohne Last 0,46–0,69 s (Three.js selbst ~0,05 s); die folgenden Tests laden warm. Zusammen mit dem
+  Szenenaufbau überschritt das unter Last die Suchfrist von `findByText` (1 s). Im Browser ist der
+  Chunk vorgebaut; das Nachladen schlug nie fehl. Zudem: Der Ansichtswechsel (`ansichtWechseln`) ist
+  asynchron – direkt nach dem Klick ist die Wahl noch nicht wirksam.
+* **Änderung (nur Test):** Der Modul-Mock hält das Nachladen als Promise fest. Der Test prüft vor dem
+  Klick „nicht geladen“, wartet nach dem Klick auf `aria-pressed`, prüft den Ladehinweis, wartet auf
+  das Nachladen selbst und danach mit der üblichen Frist auf die Szene; anschließend Ladehinweis weg,
+  genau ein Laden, eine Zeichenfläche, Wahl gemerkt. Ein gescheitertes Nachladen lässt den Test weiter
+  scheitern. Keine Sleeps, kein Skip, keine Fristerhöhung, kein Produktivcode.
+* **Nachweis:** Mit vorübergehend 1,5 s künstlicher Ladeverzögerung scheiterte die alte Synchronisation
+  genau mit dem Originalfehler, die neue bestand (13/13); Verzögerung danach entfernt. Ohne Verzögerung
+  die Datei dreimal gezielt grün (13/13).
+* **Gesamtlauf** `tasks.ps1 check` gegen PostgreSQL (`elektroplan_test`) und MinIO, ein Lauf: Ruff,
+  Format, mypy (128 Dateien), Modulgrenzen, ein Alembic-Head (`0013`), Lockfile, Backend 1 319 passed
+  (0 übersprungen), API-Client aktuell, Frontend-Modulgrenzen, Typecheck, ESLint, Frontend 1 038/1 038
+  (betroffener Test 1,06 s), Build – Exit 0. Damit ist 6b.3 technisch geprüft.
+
+---
+
+## Task 0044 – Checkpoint-Commit 6b.2/6b.3
+
+**Datum:** 2026-10-13 · **Status:** committet (kein Push); technisch umgesetzt und geprüft; manuelle
+Gesamtprüfung nach Phase 6 offen; keine Produktions- oder Echtdatenfreigabe.
+
+* **Umfang geprüft:** ausschließlich Quellen, Tests, Migration `0013`, OpenAPI/API-Client, Fixtures und
+  Dokumentation zu 6b.2/6b.3 sowie die Testkorrektur aus Task 0043. Keine `.env`, Secrets, Dumps, Logs,
+  Screenshots, Caches, Vorschau- oder Scratchpad-Dateien; keine künstliche Ladeverzögerung, kein
+  `skip`/`only`; ältere Migrationen unverändert, ein Alembic-Head (`0013` → `0012`); in den Testdiffs nur
+  Bestandsanpassungen (37 Tabellen, Recht `electrical.route.write`), keine abgeschwächte Prüfung;
+  `git diff --check` sauber.
+* **Grundlage:** der dokumentierte Gesamtlauf aus Task 0043 (Backend 1 319, Frontend 1 038); für die
+  Statusformulierungen nicht wiederholt.

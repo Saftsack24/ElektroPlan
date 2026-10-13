@@ -7,8 +7,9 @@ Oeffnungen darin erfassen - und seit Phase 5 auch die Geraete: Sie werden im
 selben atomaren Raumentwurf gespeichert (ADR 0023); ein eigener
 ``electrical.device.write`` wuerde einen Speichervorgang in Teilrechte
 zerlegen. Seit Phase 6b.0 gibt es ``electrical.circuit.write`` fuer
-Verteilungen, Stromkreise und Geraetezuordnung (ADR 0026); weitere Schluessel
-(``electrical.route.write`` ab 6b.3) entstehen mit den Phasen, die sie brauchen
+Verteilungen, Stromkreise und Geraetezuordnung (ADR 0026), seit Phase 6b.3
+``electrical.route.write`` fuer Leitungen und Durchfuehrungen; weitere Schluessel
+entstehen mit den Phasen, die sie brauchen
 (docs/modules/electrical.md, Abschnitt 7).
 
 ``default_roles`` nennt die ausgelieferten Systemrollen, die den Schluessel
@@ -24,6 +25,8 @@ PLAN_READ = "electrical.plan.read"
 PLAN_WRITE = "electrical.plan.write"
 #: Verteilungen, Stromkreise und Geraetezuordnung (Phase 6b.0, ADR 0026).
 CIRCUIT_WRITE = "electrical.circuit.write"
+#: Leitungen, Wegpunkte, Kabelangaben und Durchfuehrungen (Phase 6b.3, ADR 0026).
+ROUTE_WRITE = "electrical.route.write"
 
 ELECTRICAL_PERMISSIONS: tuple[PermissionDef, ...] = (
     PermissionDef(
@@ -39,6 +42,11 @@ ELECTRICAL_PERMISSIONS: tuple[PermissionDef, ...] = (
     PermissionDef(
         CIRCUIT_WRITE,
         "Verteilungen und Stromkreise bearbeiten, Geraete Stromkreisen zuordnen",
+        default_roles=("planer",),
+    ),
+    PermissionDef(
+        ROUTE_WRITE,
+        "Leitungen, Leitungswege und Durchfuehrungen bearbeiten, Unterbrechungen bestaetigen",
         default_roles=("planer",),
     ),
 )

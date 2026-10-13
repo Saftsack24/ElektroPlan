@@ -4,7 +4,8 @@ Art: Fachmodul · Präfix: `electrical_` · Status: **Raummodell umgesetzt (Phas
 **grafischer 2D-Editor umgesetzt (Phase 4a)**, **abgeleitete 3D-Ansicht umgesetzt
 (Phase 4b)**, **Wand- und Deckenansicht umgesetzt (Phase 4f)**, **Geräte umgesetzt (Phase 5)**,
 **Wandkopplungen und Steigwege (Phase 6a)**, **Verteilungen, Stromkreise, Gerätezuordnung
-(Phase 6b.0 Backend, 6b.1 Oberfläche)**; Leitungen und Leitungswege geplant (6b.2+, ADR 0026)
+(Phase 6b.0 Backend, 6b.1 Oberfläche)**, **reine Leitungslängenfunktion (6b.2)**; Leitungen und
+Leitungswege als Daten geplant (6b.3+, ADR 0026)
 Abhängig von: **Phasen 3–6 nur `core`** · ab Phase 7 zusätzlich `materials`
 
 > Die Module Registry verweigert den Start bei einer Abhängigkeit auf ein nicht
@@ -255,7 +256,10 @@ still umgehängt. Gerät oder Stromkreis weg → Zuordnung weg (`CASCADE`); ein 
 wechselt im Raumentwurf nicht in eine nicht zuordenbare Art (`422 assigned-device-not-assignable`).
 
 ### Leitungen, Wegpunkte, Durchführungen — geplant (6b.3, ADR 0026)
-Siehe [`phase-6b-design.md`](../phase-6b-design.md) §3.2–§5. Die Phase-0-Planung
+Siehe [`phase-6b-design.md`](../phase-6b-design.md) §3.2–§5. Die Längen-, Status- und
+Trassenberechnung steht seit 6b.2 als reine Funktion bereit (`cable_length.py`,
+`cable_traces.py`, Spiegel `leitung/laenge.ts`, `leitung/trassen.ts`, Fixture
+`testdata/geometry/leitung.v1.json`; Entwurf §17). Die Phase-0-Planung
 (`electrical_cable_routes` mit gespeicherter Länge und Standardzugaben) ist durch ADR 0026
 ersetzt: Kabelangaben je Leitung, Wegpunkte auf Wand/Decke/Fußboden, keine gespeicherten Längen,
 Zugaben nur ausdrücklich.
@@ -349,7 +353,7 @@ Meter × Minuten-pro-Meter des Verlegeart-Schlüssels.
 | `electrical.plan.write` | Räume, Wände, Öffnungen bearbeiten | **registriert (Phase 3)** |
 | `electrical.device.write` | ~~Elektroelemente bearbeiten~~ | **nicht angelegt (Phase 5):** Geräte gehören zum atomaren Raumentwurf und fallen unter `electrical.plan.write` (ADR 0023) |
 | `electrical.circuit.write` | Verteilungen, Stromkreise, Gerätezuordnung bearbeiten | **registriert (Phase 6b.0)**, Rolle Planer |
-| `electrical.route.write` | Leitungen, Wegpunkte, Durchführungen bearbeiten | ab 6b.3 |
+| `electrical.route.write` | Leitungen, Wegpunkte, Durchführungen bearbeiten, Leitungsunterbrechungen bestätigen | **registriert (Phase 6b.3)**, Rolle Planer |
 | `electrical.settings.write` | Gerätetypen und Zonen-Standardwerte pflegen | offen – der Gerätekatalog ist in Phase 5 ein Systemkatalog aus dem Seed |
 
 Phase 3 registriert bewusst nur **zwei** Schlüssel: ansehen und bearbeiten. Wer die
@@ -546,6 +550,29 @@ Codes: `422` `board-code-taken`, `board-placement-not-in-building`,
 `board-placement-taken`, `board-has-circuits`, `device-assigned-elsewhere`, `version-conflict`,
 `project-completed`, `project-archived`. Lesen `electrical.plan.read`, Schreiben
 `electrical.circuit.write` (neu, Rolle Planer; nach der Migration Seed ausführen). Kein Event.
+
+### Ergänzt in Phase 6b.3 (ADR 0026, Entwurf §18)
+
+```
+GET    /buildings/{building_id}/cables                 Wege, Längen/Teilsummen, Befunde, Punkte
+POST   /circuits/{circuit_id}/cables                   ganze Leitung inkl. waypoints[], new_penetrations[]
+PUT    /cables/{cable_id}                              ganze Leitung, If-Match
+DELETE /cables/{cable_id}                              If-Match (Durchführungen bleiben)
+POST   /cables/{cable_id}/apply-proposal               If-Match (Leitung), {expected_circuit_version}
+GET    /floors/{floor_id}/penetrations                 Gegenlage, Gültigkeit, nutzende Leitungen
+PATCH  /penetrations/{penetration_id}                  If-Match, acknowledged_cable_ids
+DELETE /penetrations/{penetration_id}                  If-Match, nur ungenutzt
+```
+
+Codes `422`: `cable-route-invalid` (je Befund Code und Ort), `cable-endpoint-not-in-circuit`,
+`cable-endpoint-not-in-building`, `cable-endpoint-exterior`, `cable-start-required`,
+`cable-endpoints-equal`, `cable-reference-unknown`, `penetration-*`, `opening-over-cable`,
+`wall-split-with-cables`, `acknowledged-cable-duplicate`; `409`: `cables-would-break`,
+`cable-not-affected`, `circuit-proposal-changed`, `device-has-cables`, `wall-has-cables`, `room-has-cables`,
+`opening-has-cables`, `wall-link-has-penetrations`, `penetration-in-use`, `riser-stop-in-use`,
+`riser-in-use`, `circuit-device-has-cables`, `board-placement-has-cables`, `version-conflict`,
+`project-completed`, `project-archived`. Kein Event. Lesen `electrical.plan.read`, Leitungen und
+Durchführungen `electrical.route.write`, Vorschlag übernehmen `electrical.circuit.write`.
 
 ### Geplant (Phase 6)
 

@@ -83,6 +83,25 @@ describe("Steigwegverlauf - Parität zur Serverfunktion", () => {
     });
   });
 
+  it.each(daten.faelle.map((fall) => [fall.name, fall] as const))(
+    "Eingabereihenfolge ohne Wirkung: %s",
+    (_name, fall) => {
+      const geschosse = fall.geschosse.map((g) => ({
+        id: g.id,
+        level: g.ebene,
+        elevation_mm: g.hoehe,
+        elevation_confirmed: g.bestaetigt,
+        default_ceiling_height_mm: g.decke,
+      }));
+      const halte = fall.halte.map((h) => ({ schluessel: h.id, floor_id: h.geschoss, x_mm: h.x, y_mm: h.y }));
+      const basis = steigwegAuswerten(geschosse, halte, fall.versatz);
+      const rotiert = halte.length > 1 ? [...halte.slice(1), halte[0] as (typeof halte)[number]] : halte;
+      for (const variante of [[...halte].reverse(), rotiert]) {
+        expect(steigwegAuswerten([...geschosse].reverse(), variante, fall.versatz)).toEqual(basis);
+      }
+    },
+  );
+
   it("zeichnet bei direct keine diagonale 3D-Luftlinie", () => {
     const verlauf = steigwegVerlauf({ x_mm: 0, y_mm: 0 }, { x_mm: 3000, y_mm: 4000 }, 0, 2900, "direct");
     for (let i = 1; i < verlauf.length; i += 1) {

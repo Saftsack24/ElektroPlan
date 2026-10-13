@@ -16,7 +16,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -82,6 +82,10 @@ class _Strict(BaseModel):
     """Unbekannte Felder werden abgelehnt, nicht stillschweigend verworfen."""
 
     model_config = ConfigDict(extra="forbid")
+
+
+#: Hoechstzahl bestaetigter Leitungen je Vorgang (Phase 6b.3).
+MAX_ACKNOWLEDGED_CABLES = 500
 
 
 # ------------------------------------------------------- Kontur (Phase 4a)
@@ -202,6 +206,12 @@ class RoomContourUpdate(_Strict):
     removed_wall_link_ids: list[uuid.UUID] = Field(
         default_factory=list, max_length=MAX_WALLS_PER_ROOM * 4
     )
+    #: Leitungen, deren Unterbrechung ausdruecklich bestaetigt wird (Phase 6b.3, D4). Muss
+    #: **genau** die betroffenen Leitungen nennen (sonst ``409 cables-would-break``);
+    #: verlangt zusaetzlich ``electrical.route.write``.
+    acknowledged_cable_ids: list[uuid.UUID] = Field(
+        default_factory=list, max_length=MAX_ACKNOWLEDGED_CABLES
+    )
 
 
 # ---------------------------------------------------------------------- Raum
@@ -240,6 +250,10 @@ class RoomUpdate(_Strict):
     height_mm: int | None = Field(default=None, ge=MIN_ROOM_HEIGHT_MM, le=MAX_ROOM_HEIGHT_MM)
     #: Raumtyp (T7) - setzbar und ausdruecklich leerbar (``null``).
     room_type: RoomTypeValue | None = None
+    #: Bestaetigte Leitungsunterbrechungen (Phase 6b.3), etwa nach Anheben der Raumhoehe.
+    acknowledged_cable_ids: list[uuid.UUID] = Field(
+        default_factory=list, max_length=MAX_ACKNOWLEDGED_CABLES
+    )
 
     #: In der Datenbank ``NOT NULL`` - aenderbar, aber nicht leerbar.
     _not_nullable = field_validator("name")(reject_explicit_null)
@@ -493,12 +507,19 @@ class WallLinkCreate(_Strict):
     wall_a_id: uuid.UUID
     wall_b_id: uuid.UUID
     relation: WallLinkRelationValue
+    #: Bestaetigte Leitungsunterbrechungen (6b.3), etwa Bodenuebergang bei ``separate``.
+    acknowledged_cable_ids: list[uuid.UUID] = Field(
+        default_factory=list, max_length=MAX_ACKNOWLEDGED_CABLES
+    )
 
 
 class WallLinkUpdate(_Strict):
     """Entscheidung einer Kopplung aendern (``If-Match`` der Kopplungsversion)."""
 
     relation: WallLinkRelationValue
+    acknowledged_cable_ids: list[uuid.UUID] = Field(
+        default_factory=list, max_length=MAX_ACKNOWLEDGED_CABLES
+    )
 
 
 class WallLinkOut(BaseModel):
@@ -625,8 +646,14 @@ class RiserUpdate(_RiserFields):
     """Steigweg vollstaendig ersetzen (``If-Match`` der Steigwegversion).
 
     Halte, die in ``stops`` fehlen, werden entfernt; Halte mit ``id`` behalten
-    sie.
+    sie. Ein von einer Leitung genutzter Halt laesst sich nicht entfernen
+    (``409 riser-stop-in-use``); verschiebt sich ein genutzter Halt so, dass
+    eine Leitung unterbrochen wuerde, braucht es ``acknowledged_cable_ids``.
     """
+
+    acknowledged_cable_ids: list[uuid.UUID] = Field(
+        default_factory=list, max_length=MAX_ACKNOWLEDGED_CABLES
+    )
 
 
 class RiserStopOut(BaseModel):
@@ -867,3 +894,309 @@ class CircuitListOut(BaseModel):
 
     building_id: uuid.UUID
     circuits: list[CircuitOut]
+
+
+# --------------------------------------- Leitungen und Durchfuehrungen (6b.3)
+
+#: Grenzen je Leitung und Vorgang (Entwurf §10).
+MAX_CABLE_WAYPOINTS = 500
+MAX_CABLES_PER_CIRCUIT = 200
+MAX_NEW_PENETRATIONS = 50
+MAX_CABLE_ALLOWANCE_MM = 20_000
+
+CableStatusValue = Literal["confirmed", "incomplete", "conflict"]
+CableProblemKindValue = Literal["conflict", "missing"]
+CableSegmentKindValue = Literal[
+    "connection",
+    "wall",
+    "corner",
+    "wall-ceiling",
+    "wall-floor",
+    "ceiling",
+    "floor",
+    "penetration",
+    "opening-crossing",
+    "riser",
+    "shaft",
+]
+CableWaypointKindValue = Literal[
+    "wall", "ceiling", "floor", "penetration", "opening_crossing", "riser"
+]
+
+
+class WallWaypointIn(_Strict):
+    """Punkt auf der Achse einer Raumwand: Abstand ab Wandanfang, Hoehe ueber FFB."""
+
+    kind: Literal["wall"]
+    wall_id: uuid.UUID
+    offset_mm: int = Field(ge=0, le=MAX_COORDINATE_MM)
+    height_mm: int = Field(ge=0, le=MAX_ROOM_HEIGHT_MM)
+
+
+class AreaWaypointIn(_Strict):
+    """Punkt in der Decke (Raumhoehe) oder im Fussboden (FFB) eines Raums, Geschoss-x/y."""
+
+    kind: Literal["ceiling", "floor"]
+    room_id: uuid.UUID
+    x_mm: int = _coordinate(required=True)
+    y_mm: int = _coordinate(required=True)
+
+
+class PenetrationWaypointIn(_Strict):
+    """Durchfuehrung: vorhandene (``penetration_id``) oder neu im selben Vorgang angelegte
+    (``new_penetration_key`` aus ``new_penetrations``) - genau eins von beiden."""
+
+    kind: Literal["penetration"]
+    penetration_id: uuid.UUID | None = None
+    new_penetration_key: str | None = Field(default=None, min_length=1, max_length=40)
+
+    @model_validator(mode="after")
+    def _exactly_one(self) -> PenetrationWaypointIn:
+        if (self.penetration_id is None) == (self.new_penetration_key is None):
+            msg = "Genau eins von penetration_id und new_penetration_key angeben."
+            raise ValueError(msg)
+        return self
+
+
+class OpeningCrossingWaypointIn(_Strict):
+    """Bodenuebergang: Lage auf der Achse der Wand, an der die Oeffnung gespeichert ist.
+
+    ``opening_id`` ist der fachliche Bezug; ``null`` nur bei einer Leitung, deren
+    Oeffnung bestaetigt entfernt wurde (Konflikt, Entwurf §5.6).
+    """
+
+    kind: Literal["opening_crossing"]
+    wall_id: uuid.UUID
+    offset_mm: int = Field(ge=0, le=MAX_COORDINATE_MM)
+    opening_id: uuid.UUID | None
+
+
+class RiserWaypointIn(_Strict):
+    """Steigwegnutzung in Leitungsrichtung; Hoehen lokal ueber dem FFB des jeweiligen Halts."""
+
+    kind: Literal["riser"]
+    riser_id: uuid.UUID
+    from_stop_id: uuid.UUID
+    from_height_mm: int = Field(ge=0, le=MAX_ROOM_HEIGHT_MM)
+    to_stop_id: uuid.UUID
+    to_height_mm: int = Field(ge=0, le=MAX_ROOM_HEIGHT_MM)
+
+
+CableWaypointIn = Annotated[
+    WallWaypointIn
+    | AreaWaypointIn
+    | PenetrationWaypointIn
+    | OpeningCrossingWaypointIn
+    | RiserWaypointIn,
+    Field(discriminator="kind"),
+]
+
+
+class NewPenetrationIn(_Strict):
+    """Neue Durchfuehrung, die mit dieser Leitung entsteht (atomar, Entwurf §8.2).
+
+    Lage an ``wall_a`` der Kopplung (ab deren Wandanfang); ``key`` verbindet sie
+    mit dem Wegpunkt ``new_penetration_key``.
+    """
+
+    key: str = Field(min_length=1, max_length=40)
+    wall_link_id: uuid.UUID
+    offset_mm: int = Field(ge=0, le=MAX_COORDINATE_MM)
+    height_mm: int = Field(ge=0, le=MAX_ROOM_HEIGHT_MM)
+    note: str | None = Field(default=None, max_length=200)
+
+    _optional = field_validator("note")(_trimmed)
+
+
+class CableIn(_Strict):
+    """Leitung als Ganzes - anlegen (``POST /circuits/{id}/cables``) oder ersetzen (``PUT``).
+
+    Die Kabelangaben stehen an der Leitung; der Stromkreisvorschlag wird nicht
+    ergaenzt. ``start_device_id`` ist leer nur bei einer Verteilung ohne Lage.
+    Zugaben und Reserve nur ausdruecklich (D5). ``waypoints`` ist die
+    vollstaendige Liste in Leitungsrichtung.
+    """
+
+    label: str | None = Field(default=None, max_length=60)
+    start_device_id: uuid.UUID | None = None
+    end_device_id: uuid.UUID
+    cable_type: str | None = Field(default=None, max_length=40)
+    conductor_count: int | None = Field(default=None, ge=1, le=100)
+    cross_section_mm2: str | None = Field(
+        default=None, pattern=CROSS_SECTION_PATTERN, examples=["1.5", "2.50"]
+    )
+    start_allowance_mm: int = Field(default=0, ge=0, le=MAX_CABLE_ALLOWANCE_MM)
+    end_allowance_mm: int = Field(default=0, ge=0, le=MAX_CABLE_ALLOWANCE_MM)
+    reserve_mm: int = Field(default=0, ge=0, le=MAX_CABLE_ALLOWANCE_MM)
+    waypoints: list[CableWaypointIn] = Field(default_factory=list, max_length=MAX_CABLE_WAYPOINTS)
+    new_penetrations: list[NewPenetrationIn] = Field(
+        default_factory=list, max_length=MAX_NEW_PENETRATIONS
+    )
+
+    _optional = field_validator("label", "cable_type")(_trimmed)
+
+    @field_validator("cross_section_mm2")
+    @classmethod
+    def _positive(cls, value: str | None) -> str | None:
+        if value is not None and Decimal(value) == 0:
+            msg = "Der Querschnitt muss groesser als 0 sein."
+            raise ValueError(msg)
+        return value
+
+
+class CableWaypointOut(BaseModel):
+    """Gespeicherter Wegpunkt - je Art nur die zugehoerigen Felder gesetzt."""
+
+    kind: CableWaypointKindValue
+    wall_id: uuid.UUID | None = None
+    offset_mm: int | None = None
+    height_mm: int | None = None
+    room_id: uuid.UUID | None = None
+    x_mm: int | None = None
+    y_mm: int | None = None
+    penetration_id: uuid.UUID | None = None
+    opening_id: uuid.UUID | None = None
+    riser_id: uuid.UUID | None = None
+    from_stop_id: uuid.UUID | None = None
+    from_height_mm: int | None = None
+    to_stop_id: uuid.UUID | None = None
+    to_height_mm: int | None = None
+
+
+class CableProblemOut(BaseModel):
+    """Befund: ``conflict`` (ungueltig) oder ``missing`` (fehlt noch), mit Ort und Text.
+
+    ``ref``: ``start``/``end`` (Anschluss), ``route`` (Weg), ``w3`` (Wegpunkt) oder
+    ``w2-w3`` (Strecke zwischen zwei Wegpunkten).
+    """
+
+    code: str
+    kind: CableProblemKindValue
+    ref: str
+    message: str
+
+
+class CableSegmentOut(BaseModel):
+    """Teilstrecke - Laenge aus der reinen Funktion, Punkte nur fuer die Darstellung.
+
+    ``points``: Geschoss-x/y und absolute Hoehe ``z`` (gespeicherte Hoehenlage des
+    Geschosses + lokale Hoehe), ganze mm. ``floor_id`` fehlt bei Steigweg und Schacht.
+    """
+
+    kind: CableSegmentKindValue
+    ref: str
+    owner_id: str
+    floor_id: uuid.UUID | None
+    length_mm: int | None
+    known_mm: int
+    points: list[RiserCoursePointOut]
+
+
+class CableOut(BaseModel):
+    """Leitung samt Kabelangaben, Wegpunkten und berechnetem Weg (nie gespeichert).
+
+    ``length_mm`` nur bei ``status = confirmed``; sonst ist ``known_mm`` ausdruecklich
+    eine **Teilsumme** der gueltigen Teile plus Zugaben. ``deviates_from_proposal``:
+    die Kabelangaben weichen vom aktuellen Stromkreisvorschlag ab.
+    """
+
+    id: uuid.UUID
+    circuit_id: uuid.UUID
+    label: str | None
+    start_device_id: uuid.UUID | None
+    end_device_id: uuid.UUID
+    cable_type: str | None
+    conductor_count: int | None
+    cross_section_mm2: str | None
+    start_allowance_mm: int
+    end_allowance_mm: int
+    reserve_mm: int
+    waypoints: list[CableWaypointOut]
+    status: CableStatusValue
+    geometric_mm: int
+    allowance_mm: int
+    length_mm: int | None
+    known_mm: int
+    spec_complete: bool
+    deviates_from_proposal: bool
+    problems: list[CableProblemOut]
+    segments: list[CableSegmentOut]
+    penetration_ids: list[uuid.UUID]
+    opening_crossings: int
+    version: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class CableListOut(BaseModel):
+    """Leitungen eines Gebaeudes (oder einer Uebernahme), nach Stromkreis und Bezeichnung."""
+
+    building_id: uuid.UUID
+    cables: list[CableOut]
+
+
+class ApplyProposalIn(_Strict):
+    """Ausdrueckliche Uebernahme des Stromkreisvorschlags auf **eine** Leitung.
+
+    ``If-Match`` traegt die Version der Leitung; ``expected_circuit_version`` die
+    Version des Stromkreises, dessen Vorschlag der Anwender gesehen hat. Weicht eine
+    von beiden ab: ``409``, nichts geaendert. Uebernommen werden genau
+    ``cable_type``, ``conductor_count`` und ``cross_section_mm2`` - so, wie sie im
+    Vorschlag stehen, auch leer. Weg, Endgeraete, Zugaben und Bezeichnung bleiben.
+    """
+
+    expected_circuit_version: int = Field(ge=1)
+
+
+class PositionOut(BaseModel):
+    """Exakte Lage ``whole + steps * sqrt(m)`` ab Wandanfang und ihr gerundeter Wert."""
+
+    whole: int
+    steps: int
+    rounded_mm: int
+
+
+class PenetrationOut(BaseModel):
+    """Durchfuehrung an ``wall_a`` der Kopplung samt abgeleiteter Gegenlage an ``wall_b``.
+
+    ``problem_code`` ist ``null``, wenn die Durchfuehrung gueltig ist.
+    ``cable_ids``: Leitungen, die sie nutzen - gezaehlt wird sie einmal.
+    """
+
+    id: uuid.UUID
+    wall_link_id: uuid.UUID
+    wall_a_id: uuid.UUID
+    wall_b_id: uuid.UUID
+    floor_id: uuid.UUID
+    offset_mm: int
+    height_mm: int
+    note: str | None
+    opposite_offset: PositionOut | None
+    problem_code: str | None
+    cable_ids: list[uuid.UUID]
+    version: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class PenetrationListOut(BaseModel):
+    floor_id: uuid.UUID
+    penetrations: list[PenetrationOut]
+
+
+class PenetrationUpdate(_Strict):
+    """Lage, Hoehe oder Notiz einer Durchfuehrung aendern (``If-Match``).
+
+    Die neue Lage muss gueltig sein (``422``). Wuerde eine Leitung dadurch
+    unterbrochen, braucht es ``acknowledged_cable_ids`` mit genau diesen Leitungen.
+    """
+
+    offset_mm: int | None = Field(default=None, ge=0, le=MAX_COORDINATE_MM)
+    height_mm: int | None = Field(default=None, ge=0, le=MAX_ROOM_HEIGHT_MM)
+    note: str | None = Field(default=None, max_length=200)
+    acknowledged_cable_ids: list[uuid.UUID] = Field(
+        default_factory=list, max_length=MAX_ACKNOWLEDGED_CABLES
+    )
+
+    _not_nullable = field_validator("offset_mm", "height_mm")(reject_explicit_null)
+    _optional = field_validator("note")(_trimmed)

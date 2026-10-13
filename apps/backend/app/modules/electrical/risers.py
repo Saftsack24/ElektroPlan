@@ -34,6 +34,7 @@ from app.core.projects.planning import BuildingPlanningContext, FloorPlanningAcc
 from app.core.tenancy.repository import TenantRepository
 from app.db.mixins import utcnow
 from app.errors import ProblemFieldError, ValidationFailedError, VersionConflictError
+from app.modules.electrical.cable_rules import CableGuard, cables_referencing, in_use_error
 from app.modules.electrical.models import (
     RISER_NAME_CONSTRAINT,
     RISER_STOP_FLOOR_CONSTRAINT,
@@ -109,6 +110,7 @@ class RiserService:
         self.organization_id = organization_id
         self.risers = RiserRepository(session, organization_id)
         self.structure = FloorPlanningAccess(session, organization_id)
+        self.cable_guard = CableGuard(session, organization_id)
 
     # ------------------------------------------------------------------ Lesen
 
@@ -177,6 +179,21 @@ class RiserService:
                 context=context, changed=False
             )
 
+        # Ein genutzter Halt verschwindet nicht (Phase 6b.3, Entwurf §7).
+        users = cables_referencing(
+            self.session, self.organization_id, stop_ids=[stop.id for stop in removed]
+        )
+        if users:
+            raise in_use_error(
+                "Ein Uebergabepunkt, der entfallen soll, wird von Leitungen genutzt. Bitte zuerst "
+                "den Weg der Leitungen aendern.",
+                "riser-stop-in-use",
+                "Uebergabepunkt wird genutzt.",
+                users,
+                *(stop.id for stop in removed),
+            )
+        cables_before = self.cable_guard.snapshot(riser.building_id)
+
         # Erst entfernen, dann aendern und anlegen: Ein neuer Halt darf auf
         # einem Geschoss entstehen, dessen alter Halt im selben Schritt entfaellt.
         for stop in removed:
@@ -195,12 +212,29 @@ class RiserService:
         # Auch eine reine Halteaenderung zaehlt die Steigwegversion weiter.
         riser.updated_at = utcnow()
         self._flush()
+        # Verschobene Halte: Laengen aendern sich sichtbar; liegt ein Ein- oder
+        # Ausstieg danach nicht mehr am Halt, nur mit Bestaetigung (Entwurf §7).
+        self.cable_guard.require_unbroken(
+            cables_before,
+            acknowledged=payload.acknowledged_cable_ids,
+            acknowledgement_supported=True,
+        )
         stops = [by_id[stop_id] for stop_id in kept_ids] + new_stops
         return self._view(context, riser, stops), RiserWriteResult(context=context)
 
     def delete(self, riser_id: uuid.UUID, *, expected_version: int) -> RiserWriteResult:
         """Entfernt den Steigweg samt Halten (``ON DELETE CASCADE``)."""
         riser, context = self._locked(riser_id, expected_version)
+        users = cables_referencing(self.session, self.organization_id, riser_ids=[riser.id])
+        if users:
+            raise in_use_error(
+                "Dieser Steigweg wird von Leitungen genutzt. Bitte zuerst den Weg der Leitungen "
+                "aendern.",
+                "riser-in-use",
+                "Steigweg wird genutzt.",
+                users,
+                riser.id,
+            )
         self.session.delete(riser)
         flush(self.session)
         return RiserWriteResult(context=context)

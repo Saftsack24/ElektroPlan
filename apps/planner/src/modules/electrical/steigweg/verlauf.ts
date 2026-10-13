@@ -116,9 +116,15 @@ export function steigwegAuswerten(
 ): Steigwegauswertung {
   const nachId = new Map(geschosse.map((g) => [g.id, g]));
   const bekannteHalte = halte.filter((h) => nachId.has(h.floor_id));
-  const geordnet = [...bekannteHalte].sort(
-    (a, b) => (nachId.get(a.floor_id)?.level ?? 0) - (nachId.get(b.floor_id)?.level ?? 0),
-  );
+  // Wie `analyse_riser`: nach Ebene, bei gleicher Ebene nach Halt-ID - nie nach der
+  // Eingabereihenfolge. Gespeicherte Halte haben je Steigweg verschiedene Ebenen
+  // (UNIQUE je Geschoss, UNIQUE Ebene je Gebäude); ungespeicherte Entwürfe oder
+  // widersprüchliche Geschossdaten dürfen trotzdem nicht je nach Reihenfolge gültig werden.
+  const geordnet = [...bekannteHalte].sort((a, b) => {
+    const ebene = (nachId.get(a.floor_id)?.level ?? 0) - (nachId.get(b.floor_id)?.level ?? 0);
+    if (ebene !== 0) return ebene;
+    return a.schluessel < b.schluessel ? -1 : a.schluessel > b.schluessel ? 1 : 0;
+  });
   const nachEbene = [...geschosse].sort((a, b) => a.level - b.level);
   const abschnitte: Abschnitt[] = [];
   for (let i = 1; i < geordnet.length; i += 1) {

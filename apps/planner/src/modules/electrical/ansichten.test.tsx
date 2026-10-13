@@ -12,7 +12,7 @@ import { RueckfrageProvider } from "../../core/ui/Rueckfrage";
  * Die echte 3D-Ansicht wird lazy nachgeladen; nur ihre Browserumgebung
  * (WebGL-Renderer, Controls, Bildtakt) ist durch Test-Doubles ersetzt.
  */
-const zustand = vi.hoisted(() => ({ webgl: true, geladen: 0 }));
+const zustand = vi.hoisted(() => ({ webgl: true, geladen: 0, modul: null as Promise<unknown> | null }));
 
 vi.mock("./ansicht3d/umgebung", async () => {
   const { testumgebung } = await import("./ansicht3d/szenentest");
@@ -22,10 +22,14 @@ vi.mock("./ansicht3d/umgebung", async () => {
   };
 });
 
-// Zählt, wann das 3D-Modul (mit Three.js) tatsächlich geladen wird.
+// Zählt, wann das 3D-Modul (mit Three.js) tatsächlich geladen wird, und hält das
+// Nachladen fest: Beim ersten Laden im Testlauf transformiert Vitest den ganzen
+// 3D-Modulgraphen erst auf Anforderung - das dauert unter Last länger als die
+// Suchfrist von `findByText`. Der Test wartet deshalb auf das Nachladen selbst.
 vi.mock("./ansicht3d/Ansicht3d", async () => {
   zustand.geladen += 1;
-  return await vi.importActual("./ansicht3d/Ansicht3d");
+  zustand.modul = vi.importActual("./ansicht3d/Ansicht3d");
+  return await zustand.modul;
 });
 
 const api = { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn(), upload: vi.fn() };
@@ -96,8 +100,16 @@ describe("Ansichtswahl", () => {
   it("wechselt zur 3D-Ansicht, lädt sie erst dann und merkt sich die Wahl", async () => {
     zeigen();
     await screen.findByRole("application", { name: /Grundriss/ });
+    expect(zustand.geladen).toBe(0);
     fireEvent.click(knopf("3D-Ansicht"));
+    // Der Wechsel selbst ist asynchron (er könnte nachfragen). Erst die Wahl stößt das
+    // Nachladen an; bis es fertig ist, steht der Ladehinweis.
+    await waitFor(() => expect(knopf("3D-Ansicht")).toHaveAttribute("aria-pressed", "true"));
+    expect(screen.getByText(/3D-Ansicht wird geladen/)).toBeInTheDocument();
+    await waitFor(() => expect(zustand.modul).not.toBeNull());
+    await zustand.modul;
     expect(await screen.findByText(/7 von 7 Räumen dargestellt/)).toBeInTheDocument();
+    expect(screen.queryByText(/3D-Ansicht wird geladen/)).toBeNull();
     expect(zustand.geladen).toBe(1);
     expect(screen.getByRole("application", { name: "3D-Ansicht Hauptgebäude · Erdgeschoss" })).toBeInTheDocument();
     expect(document.querySelectorAll("canvas")).toHaveLength(1);

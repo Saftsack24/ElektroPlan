@@ -242,6 +242,31 @@
       }
     },
     {
+      "name": "Zwei Geschosse mit gleicher Ebene (widerspruechliche Geschossdaten) - Reihenfolge nach Halt-ID, nicht nach Eingabe; der Abschnitt bleibt widerspruechlich",
+      "versatz": "orthogonal",
+      "geschosse": [
+        { "id": "g-unten", "ebene": 0, "hoehe": 0, "bestaetigt": true, "decke": 2500 },
+        { "id": "g-oben", "ebene": 0, "hoehe": 3000, "bestaetigt": true, "decke": 2500 }
+      ],
+      "halte": [
+        { "id": "h-b", "geschoss": "g-unten", "x": 1000, "y": 1000 },
+        { "id": "h-a", "geschoss": "g-oben", "x": 1000, "y": 1000 }
+      ],
+      "erwartet": {
+        "reihenfolge": ["h-a", "h-b"],
+        "status": "conflict",
+        "bekannt": 0,
+        "laenge": null,
+        "abschnitte": [
+          {
+            "von": "h-a", "bis": "h-b", "durchquert": [], "status": "elevation-inconsistent",
+            "verlauf": [[1000, 1000, 3000], [1000, 1000, 0]],
+            "senkrecht": null, "waagerecht": 0, "laenge": null, "hinweise": []
+          }
+        ]
+      }
+    },
+    {
       "name": "Ohne Uebergabepunkt",
       "versatz": "direct",
       "geschosse": [{ "id": "eg", "ebene": 0, "hoehe": 0, "bestaetigt": false, "decke": 2500 }],

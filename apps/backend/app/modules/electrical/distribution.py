@@ -44,12 +44,14 @@ from app.errors import (
     ValidationFailedError,
     VersionConflictError,
 )
+from app.modules.electrical.cable_rules import in_use_error
 from app.modules.electrical.catalog import ASSIGNABLE_CATEGORIES, DISTRIBUTION_BOARD_TYPE
 from app.modules.electrical.models import (
     BOARD_CODE_CONSTRAINT,
     BOARD_PLACEMENT_CONSTRAINT,
     CIRCUIT_DESIGNATION_CONSTRAINT,
     CIRCUIT_DEVICE_PK,
+    ElectricalCable,
     ElectricalCircuit,
     ElectricalCircuitDevice,
     ElectricalDevice,
@@ -274,6 +276,22 @@ class DistributionService:
         placement = changes.get("placement_device_id")
         if placement is not None and placement != board.placement_device_id:
             self._require_placement(context, placement, exclude_board_id=board.id)
+        if (
+            "placement_device_id" in changes
+            and changes["placement_device_id"] != board.placement_device_id
+            and board.placement_device_id is not None
+        ):
+            # Leitungen beginnen am Lagegeraet: nie still an ein anderes umgehaengt (6b.3).
+            users = self._cables_at(board.id, board.placement_device_id)
+            if users:
+                raise in_use_error(
+                    "Am bisherigen Lagegeraet dieser Verteilung beginnen Leitungen. Bitte zuerst "
+                    "die Leitungen aendern.",
+                    "board-placement-has-cables",
+                    "Lagegeraet ist Endpunkt von Leitungen.",
+                    users,
+                    board.placement_device_id,
+                )
         changed = False
         for field, value in changes.items():
             if getattr(board, field) != value:
@@ -366,7 +384,11 @@ class DistributionService:
     def delete_circuit(
         self, circuit_id: uuid.UUID, *, expected_version: int
     ) -> DistributionWriteResult:
-        """Entfernt den Stromkreis; seine Zuordnungen folgen per ``CASCADE``."""
+        """Entfernt den Stromkreis; Zuordnungen und Leitungen folgen per ``CASCADE``.
+
+        Die Rueckfrage mit der Zahl der Leitungen stellt die Oberflaeche (Entwurf §7);
+        genutzte Durchfuehrungen bleiben bestehen und werden sichtbar ungenutzt.
+        """
         circuit, context = self._locked_circuit(circuit_id, expected_version)
         self.session.delete(circuit)
         flush(self.session)
@@ -421,6 +443,29 @@ class DistributionService:
                 context=context, changed=False
             )
         removed = before - after
+        users = [
+            cable
+            for cable in self._cables_of(circuit.id)
+            if cable.start_device_id in removed or cable.end_device_id in removed
+        ]
+        if users:
+            # Ein Endgeraet einer Leitung bleibt dem Stromkreis zugeordnet (6b.3).
+            raise in_use_error(
+                "Ein Geraet, dessen Zuordnung entfallen soll, ist Endpunkt einer Leitung dieses "
+                "Stromkreises. Bitte zuerst die Leitung aendern.",
+                "circuit-device-has-cables",
+                "Geraet ist Endpunkt einer Leitung.",
+                users,
+                *sorted(
+                    {
+                        device
+                        for cable in users
+                        for device in (cable.start_device_id, cable.end_device_id)
+                        if device in removed
+                    },
+                    key=str,
+                ),
+            )
         if removed:
             self.session.execute(
                 delete(ElectricalCircuitDevice)
@@ -596,6 +641,37 @@ class DistributionService:
         ).all():
             result.setdefault(circuit_id, []).append(device_id)
         return result
+
+    def _cables_of(self, circuit_id: uuid.UUID) -> list[ElectricalCable]:
+        return list(
+            self.session.execute(
+                select(ElectricalCable)
+                .where(
+                    ElectricalCable.organization_id == self.organization_id,
+                    ElectricalCable.circuit_id == circuit_id,
+                )
+                .order_by(ElectricalCable.id)
+            ).scalars()
+        )
+
+    def _cables_at(self, board_id: uuid.UUID, device_id: uuid.UUID) -> list[ElectricalCable]:
+        """Leitungen der Stromkreise dieser Verteilung mit dem Geraet als Endpunkt."""
+        circuits = select(ElectricalCircuit.id).where(
+            ElectricalCircuit.organization_id == self.organization_id,
+            ElectricalCircuit.board_id == board_id,
+        )
+        return [
+            cable
+            for cable in self.session.execute(
+                select(ElectricalCable)
+                .where(
+                    ElectricalCable.organization_id == self.organization_id,
+                    ElectricalCable.circuit_id.in_(circuits),
+                )
+                .order_by(ElectricalCable.id)
+            ).scalars()
+            if device_id in (cable.start_device_id, cable.end_device_id)
+        ]
 
     def _circuit_view(self, circuit: ElectricalCircuit) -> CircuitView:
         return CircuitView(circuit, tuple(self._device_ids_of([circuit.id]).get(circuit.id, [])))

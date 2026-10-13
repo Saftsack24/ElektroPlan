@@ -26,11 +26,19 @@ from app.modules.electrical.riser_course import (
 
 FIXTURE = Path(__file__).resolve().parents[3] / "testdata" / "geometry" / "steigweg.v1.json"
 DATEN: dict[str, Any] = json.loads(FIXTURE.read_text(encoding="utf-8"))
-_NS = uuid.UUID("6a4a0000-0000-4000-8000-000000000000")
 
 
 def _id(name: str) -> uuid.UUID:
-    return uuid.uuid5(_NS, name)
+    """Reihenfolgetreue ID: ``str(_id(a)) < str(_id(b))`` genau dann, wenn ``a < b``.
+
+    Das Backend sortiert Halte gleicher Ebene nach ihrer ID, das Frontend nach
+    demselben Schluessel als Zeichenkette. Die Fixture benennt Halte; diese
+    Abbildung erhaelt die Ordnung der Namen (ASCII, hoechstens 16 Zeichen), damit
+    beide Seiten dieselbe Reihenfolge pruefen.
+    """
+    raw = name.encode("ascii")
+    assert len(raw) <= 16, name
+    return uuid.UUID(bytes=raw.ljust(16, b"\0"))
 
 
 def test_fixture_hat_die_erwartete_version() -> None:
@@ -77,6 +85,21 @@ def test_verlauf_status_und_laengen(fall: dict[str, Any]) -> None:
         assert [hint.value for hint in section.hints] == soll["hinweise"]
         # Laenge und Darstellung stammen aus derselben Polylinie.
         assert section.horizontal_mm == horizontal_length_mm(section.course)
+
+
+@pytest.mark.parametrize("fall", DATEN["faelle"], ids=lambda fall: fall["name"])
+def test_eingabereihenfolge_ohne_wirkung(fall: dict[str, Any]) -> None:
+    """Umgekehrte oder rotierte Listen ergeben dasselbe Ergebnis - auch bei gleicher Ebene."""
+    floors = [
+        RiserFloor(_id(g["id"]), g["ebene"], g["hoehe"], g["bestaetigt"], g["decke"])
+        for g in fall["geschosse"]
+    ]
+    stops = [
+        RiserStopPoint(_id(h["id"]), _id(h["geschoss"]), h["x"], h["y"]) for h in fall["halte"]
+    ]
+    basis = analyse_riser(floors, stops, fall["versatz"])
+    for variante in (list(reversed(stops)), stops[1:] + stops[:1]):
+        assert analyse_riser(list(reversed(floors)), variante, fall["versatz"]) == basis
 
 
 def test_keine_diagonale_3d_luftlinie_bei_direct() -> None:

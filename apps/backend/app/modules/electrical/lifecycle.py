@@ -16,6 +16,11 @@ keine Core-Tabelle selbst.
   Halt. Sie muessen **vor** dem Core-Kaskadieren weg, weil ihre Fremdschluessel
   auf Gebaeude und Geschosse ``RESTRICT`` tragen; die Halte folgen per
   ``CASCADE``.
+* Seit Phase 6b.3 Leitungen (Wegpunkte per ``CASCADE``) und Durchfuehrungen.
+  Reihenfolge beim Loeschen (Entwurf §7): Leitungen → Durchfuehrungen →
+  Stromkreise → Verteilungen → Steigwege → Raeume. Leitungen halten Geraete, Waende,
+  Raeume, Oeffnungen, Durchfuehrungen und Steigweghalte per ``RESTRICT``;
+  Durchfuehrungen ihre Wandkopplung.
 * Seit Phase 6b.0 Verteilungen, Stromkreise und Geraetezuordnungen (ADR 0026),
   ebenfalls ueber die Gebaeude gefunden. Reihenfolge beim Loeschen: Stromkreise
   (Zuordnungen per ``CASCADE``) → Verteilungen → Steigwege → Raeume. Die
@@ -40,6 +45,7 @@ from app.contracts.v1.project_lifecycle import (
 )
 from app.core.projects.planning import FloorPlanningAccess
 from app.modules.electrical.models import (
+    ElectricalCable,
     ElectricalCircuit,
     ElectricalCircuitDevice,
     ElectricalDevice,
@@ -50,6 +56,7 @@ from app.modules.electrical.models import (
     ElectricalRoom,
     ElectricalWall,
     ElectricalWallLink,
+    ElectricalWallPenetration,
 )
 
 MODULE_ID = "electrical"
@@ -63,11 +70,12 @@ class ElectricalProjectContent:
     ) -> ProjectContentReport:
         access = FloorPlanningAccess(session, request.organization_id)
         building_ids = access.building_ids_of_project(request.project_id)
+        floor_ids = access.floor_ids_of_project(request.project_id)
         riser_items = [
             *_distribution_items(session, request, building_ids),
+            *_cable_items(session, request, building_ids, floor_ids),
             *_riser_items(session, request, building_ids),
         ]
-        floor_ids = access.floor_ids_of_project(request.project_id)
         if not floor_ids:
             return _report(riser_items)
 
@@ -146,6 +154,28 @@ class ElectricalProjectContent:
     def delete_project_content(self, session: Session, request: ProjectContentRequest) -> None:
         access = FloorPlanningAccess(session, request.organization_id)
         building_ids = access.building_ids_of_project(request.project_id)
+        floor_ids = access.floor_ids_of_project(request.project_id)
+        if building_ids:
+            # Leitungen zuerst (Wegpunkte per CASCADE): Sie halten Geraete, Waende,
+            # Raeume, Oeffnungen, Durchfuehrungen und Steigweghalte per RESTRICT.
+            session.execute(
+                delete(ElectricalCable)
+                .where(
+                    ElectricalCable.organization_id == request.organization_id,
+                    ElectricalCable.circuit_id.in_(_circuit_ids(request, building_ids)),
+                )
+                .execution_options(synchronize_session=False)
+            )
+        if floor_ids:
+            # Dann Durchfuehrungen: Sie halten ihre Wandkopplung per RESTRICT.
+            session.execute(
+                delete(ElectricalWallPenetration)
+                .where(
+                    ElectricalWallPenetration.organization_id == request.organization_id,
+                    ElectricalWallPenetration.wall_link_id.in_(_link_ids(request, floor_ids)),
+                )
+                .execution_options(synchronize_session=False)
+            )
         if building_ids:
             # Stromkreise und Verteilungen zuerst: Die Verteilung haelt ihr
             # Lagegeraet und ihr Gebaeude per RESTRICT, Stromkreise ihre
@@ -180,7 +210,6 @@ class ElectricalProjectContent:
                 )
                 .execution_options(synchronize_session=False)
             )
-        floor_ids = access.floor_ids_of_project(request.project_id)
         if not floor_ids:
             return
         session.execute(
@@ -238,6 +267,75 @@ def _distribution_items(
                 "electrical.circuit_devices", "Gerätezuordnungen zu Stromkreisen", assignment_count
             )
         )
+    return items
+
+
+def _circuit_ids(
+    request: ProjectContentRequest, building_ids: tuple[uuid.UUID, ...]
+) -> Select[tuple[uuid.UUID]]:
+    boards = select(ElectricalDistributionBoard.id).where(
+        ElectricalDistributionBoard.organization_id == request.organization_id,
+        ElectricalDistributionBoard.building_id.in_(building_ids),
+    )
+    return select(ElectricalCircuit.id).where(
+        ElectricalCircuit.organization_id == request.organization_id,
+        ElectricalCircuit.board_id.in_(boards),
+    )
+
+
+def _link_ids(
+    request: ProjectContentRequest, floor_ids: tuple[uuid.UUID, ...]
+) -> Select[tuple[uuid.UUID]]:
+    rooms = select(ElectricalRoom.id).where(
+        ElectricalRoom.organization_id == request.organization_id,
+        ElectricalRoom.floor_id.in_(floor_ids),
+    )
+    walls = select(ElectricalWall.id).where(
+        ElectricalWall.organization_id == request.organization_id,
+        ElectricalWall.room_id.in_(rooms),
+    )
+    return select(ElectricalWallLink.id).where(
+        ElectricalWallLink.organization_id == request.organization_id,
+        ElectricalWallLink.wall_a_id.in_(walls),
+    )
+
+
+def _cable_items(
+    session: Session,
+    request: ProjectContentRequest,
+    building_ids: tuple[uuid.UUID, ...],
+    floor_ids: tuple[uuid.UUID, ...],
+) -> list[ProjectContentItem]:
+    """Leitungen und Durchfuehrungen des Projekts (Phase 6b.3)."""
+    items: list[ProjectContentItem] = []
+    if building_ids:
+        cable_count = int(
+            session.execute(
+                select(func.count())
+                .select_from(ElectricalCable)
+                .where(
+                    ElectricalCable.organization_id == request.organization_id,
+                    ElectricalCable.circuit_id.in_(_circuit_ids(request, building_ids)),
+                )
+            ).scalar_one()
+        )
+        if cable_count:
+            items.append(ProjectContentItem("electrical.cables", "Leitungen", cable_count))
+    if floor_ids:
+        penetration_count = int(
+            session.execute(
+                select(func.count())
+                .select_from(ElectricalWallPenetration)
+                .where(
+                    ElectricalWallPenetration.organization_id == request.organization_id,
+                    ElectricalWallPenetration.wall_link_id.in_(_link_ids(request, floor_ids)),
+                )
+            ).scalar_one()
+        )
+        if penetration_count:
+            items.append(
+                ProjectContentItem("electrical.penetrations", "Durchführungen", penetration_count)
+            )
     return items
 
 

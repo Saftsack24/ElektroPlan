@@ -1,7 +1,7 @@
 # Aktueller Projektstand
 
 **Letzte Aktualisierung:** 2026-10-11
-**Aktualisiert nach:** Task 0039 — Nacharbeiten 6b.1 (Projektkopf, Fehleraufzeichnung) und gemeinsamer Checkpoint-Commit 6b.0/6b.1 (2026-10-12; technisch umgesetzt und geprüft, manuelle Gesamtprüfung nach Phase 6 offen, keine Produktions- oder Echtdatenfreigabe). Davor: Task 0038 — **6b.1 umgesetzt** (Oberfläche Verteilungen/Stromkreise/Gerätezuordnung, Abzweigdosen zuordenbar, Entwicklungsdatenbank auf `0012` migriert und Seed ausgeführt), automatisiert geprüft, **nicht committet**. Davor: Task 0037 — Phase-6b-Entwurf freigegeben (D11 bestätigt, ADR 0026 accepted); **6b.0 umgesetzt** (Verteilungen, Stromkreise, Gerätezuordnung, Migration `0012`), automatisiert geprüft, **nicht committet**. Davor: Task 0036 — Entwurf Phase 6b, 2. Fassung (D1, D2, D4, D5 bestätigt; Fußboden, Kabelangaben je Leitung, Durchführungs-Gegenlage; D11 offen; nicht committet). Davor: Task 0035 — Entwurf Phase 6b ([`phase-6b-design.md`](phase-6b-design.md), ADR 0026 proposed; nur Entwurf, nicht umgesetzt, nicht committet). Davor: Task 0034 — Checkpoint-Commit `686316c` Phase 6a.4–6a.5 (Steigwege), gepusht. Davor: Task 0033 — Checkpoint `595e8ac` gepusht; Phase 6a.4–6a.5 umgesetzt und automatisiert geprüft. Davor: Checkpoint-Commit Phase 6a.0–6a.3 mit Sicherheitskorrekturen und Abhängigkeitsupdates (Tasks 0027–0032; technisch umgesetzt und geprüft, manuelle Gesamtprüfung nach Phase 6 offen). Davor: Task 0031 — eigener lokaler JWT-Schlüssel aktiv (Entwicklungsersatz nicht mehr verwendet). Davor: Task 0030 — geprüften Stand im Docker-Entwicklungsstack aktiviert (Images neu gebaut, Updates aktiv). Davor: Task 0029 — Review-Restbefunde (Refresh-Limiter, Sicherheitsupdates, `127.0.0.1`), nicht committet. Davor: Task 0028 — Sicherheitsauftrag (sechs Befunde, getrennt von Phase 6a), umgesetzt und automatisiert geprüft, **nicht committet, keine manuelle Abnahme**. Davor: Task 0027 — Phase 6a.0–6a.3 (bestätigte Höhenlage, Wandkopplungen, Darstellung und Bedienung, Backfill-Befehl) umgesetzt, **wartet auf Abnahme, nicht committet**. Davor: Task 0026 — Entwurf Phase 6a; Task 0025 — Phase 5 als `fb4cc85` committet
+**Aktualisiert nach:** Task 0044 — gemeinsamer Checkpoint-Commit 6b.2/6b.3 inklusive der Testkorrektur aus Task 0043 (2026-10-13; technisch umgesetzt und geprüft, manuelle Gesamtprüfung nach Phase 6 offen, keine Produktions- oder Echtdatenfreigabe). Davor: Task 0043 — Lastabhängigen 3D-Ansichtstest stabilisiert (2026-10-13): Ursache war die knappe Suchfrist gegenüber dem kalten Nachladen des 3D-Moduls im Testlauf, kein Produktfehler; der Test wartet jetzt auf den Ansichtswechsel und das Nachladen selbst. Gesamtlauf `tasks.ps1 check` gegen PostgreSQL und MinIO vollständig grün – **6b.3 technisch geprüft**. Davor: Task 0042 — Datenbankabnahme 6b.3 (2026-10-12): alle Prüfungen gegen PostgreSQL und MinIO bestanden, Entwicklungsdatenbank auf `0013` migriert und Seed ausgeführt, synthetischer API-Durchlauf bestanden; `apply-proposal` auf den bestätigten Vertrag umgestellt; zwei Fehler behoben. Gesamtlauf `tasks.ps1 check` zweimal rot an demselben, nicht zu 6b.3 gehörenden, lastabhängigen 3D-Frontendtest – 6b.3 deshalb noch nicht als technisch geprüft eingetragen; nicht committet. Davor: Task 0041 — 6b.2 abgesichert (Steigweg-Sortierung, Raumpunkte, Anschluss-Status) und **6b.3 implementiert** (Leitungen, Wegpunkte, Durchführungen, Migration `0013`, API, Leitungsbefunde bei abhängigen Änderungen), **nicht committet**; Prüfung gegen PostgreSQL **ausstehend**, weil Docker Desktop die Engine nicht startete. Davor: Task 0040 — **6b.2 umgesetzt** (reine Längenfunktion: Weg, Länge, Status, Trassen; Backend-Referenz, Frontend-Spiegel, gemeinsame Fixture; keine Migration, keine API, keine Oberfläche), automatisiert geprüft, **nicht committet**. Davor: Task 0039 — Nacharbeiten 6b.1 (Projektkopf, Fehleraufzeichnung) und gemeinsamer Checkpoint-Commit 6b.0/6b.1 (2026-10-12; technisch umgesetzt und geprüft, manuelle Gesamtprüfung nach Phase 6 offen, keine Produktions- oder Echtdatenfreigabe). Davor: Task 0038 — **6b.1 umgesetzt** (Oberfläche Verteilungen/Stromkreise/Gerätezuordnung, Abzweigdosen zuordenbar, Entwicklungsdatenbank auf `0012` migriert und Seed ausgeführt), automatisiert geprüft, **nicht committet**. Davor: Task 0037 — Phase-6b-Entwurf freigegeben (D11 bestätigt, ADR 0026 accepted); **6b.0 umgesetzt** (Verteilungen, Stromkreise, Gerätezuordnung, Migration `0012`), automatisiert geprüft, **nicht committet**. Davor: Task 0036 — Entwurf Phase 6b, 2. Fassung (D1, D2, D4, D5 bestätigt; Fußboden, Kabelangaben je Leitung, Durchführungs-Gegenlage; D11 offen; nicht committet). Davor: Task 0035 — Entwurf Phase 6b ([`phase-6b-design.md`](phase-6b-design.md), ADR 0026 proposed; nur Entwurf, nicht umgesetzt, nicht committet). Davor: Task 0034 — Checkpoint-Commit `686316c` Phase 6a.4–6a.5 (Steigwege), gepusht. Davor: Task 0033 — Checkpoint `595e8ac` gepusht; Phase 6a.4–6a.5 umgesetzt und automatisiert geprüft. Davor: Checkpoint-Commit Phase 6a.0–6a.3 mit Sicherheitskorrekturen und Abhängigkeitsupdates (Tasks 0027–0032; technisch umgesetzt und geprüft, manuelle Gesamtprüfung nach Phase 6 offen). Davor: Task 0031 — eigener lokaler JWT-Schlüssel aktiv (Entwicklungsersatz nicht mehr verwendet). Davor: Task 0030 — geprüften Stand im Docker-Entwicklungsstack aktiviert (Images neu gebaut, Updates aktiv). Davor: Task 0029 — Review-Restbefunde (Refresh-Limiter, Sicherheitsupdates, `127.0.0.1`), nicht committet. Davor: Task 0028 — Sicherheitsauftrag (sechs Befunde, getrennt von Phase 6a), umgesetzt und automatisiert geprüft, **nicht committet, keine manuelle Abnahme**. Davor: Task 0027 — Phase 6a.0–6a.3 (bestätigte Höhenlage, Wandkopplungen, Darstellung und Bedienung, Backfill-Befehl) umgesetzt, **wartet auf Abnahme, nicht committet**. Davor: Task 0026 — Entwurf Phase 6a; Task 0025 — Phase 5 als `fb4cc85` committet
 
 > Dieses Dokument soll einer neuen Session in wenigen Minuten vermitteln, wo das Projekt
 > steht.
@@ -64,7 +64,10 @@ Produktions- oder Echtdatenfreigabe**; Befundstatus [`security.md`](security.md)
 **accepted**) · **6b.0 — Verteilungen, Stromkreise, Gerätezuordnung (Backend): TECHNISCH
 UMGESETZT UND GEPRÜFT** (Task 0037, Entwurf §15) · **6b.1 — Oberfläche: TECHNISCH UMGESETZT UND
 GEPRÜFT** (Tasks 0038/0039, Entwurf §16) – beide mit dem Checkpoint vom 2026-10-12 committet;
-manuelle Gesamtprüfung nach Phase 6 offen · 6b.2–6b.6 NOT STARTED
+manuelle Gesamtprüfung nach Phase 6 offen · **6b.2 — reine Längenfunktion: TECHNISCH UMGESETZT UND
+GEPRÜFT** (Task 0040, Entwurf §17; Präzisierungen bestätigt und abgesichert in Task 0041) ·
+**6b.3 — Persistenz und API: TECHNISCH UMGESETZT UND GEPRÜFT** (Tasks 0041–0043, Entwurf §18) –
+beide mit dem Checkpoint vom 2026-10-13 committet; manuelle Gesamtprüfung und Produktions-/Echtdatenfreigabe offen · 6b.4–6b.6 NOT STARTED
 
 > Phase 4a und 4a.1 sind als `887f254`, Phase 4.2 als `66cbff3` committet. Die
 > Entscheidungen **T8** (Wandhöhe und Wandtyp) und **T9** (deckungsgleiche Wände) sind
@@ -75,12 +78,51 @@ manuelle Gesamtprüfung nach Phase 6 offen · 6b.2–6b.6 NOT STARTED
 
 ## 2. Zuletzt abgeschlossene Aufgabe
 
+**Task 0043 (2026-10-13) — 3D-Ansichtstest stabilisiert, Gesamtabnahme 6b.3.** Ursache des
+wiederholten Fehlschlags in `ansichten.test.tsx`: Der Test ist der erste im Testlauf, der die
+3D-Ansicht lädt; Vitest transformiert den 3D-Modulgraphen dabei erst auf Anforderung (gemessen
+0,46–0,69 s ohne Last). Unter Last nach den Backendtests reichte die Suchfrist von `findByText`
+(1 s) nicht – beim Abbruch stand noch der Ladehinweis, kein Ladefehler. Der Test wartet jetzt auf
+den (asynchronen) Ansichtswechsel, prüft den Ladehinweis, wartet auf das Nachladen selbst und erst
+dann auf die Szene. Kein Produktivcode geändert, keine Fristen erhöht. Gesamtlauf danach grün.
+
+
+**Task 0042 (2026-10-12) — Datenbankabnahme 6b.3.** Docker lief nach dem Windows-Neustart wieder.
+`apply-proposal` nach Bestätigung des Auftraggebers: `POST /cables/{id}/apply-proposal`, `If-Match`
+der Leitung, `expected_circuit_version` im Körper, beide atomar unter der Projektsperre. Behoben:
+Leitungsversion stieg beim Ersetzen um 2 statt 1; Geschosshöhen-Teilnehmer warf bei fremdem Mandanten
+`404` statt „keine Konflikte“. Neue Wegwerf-Migrationsprüfung `test_migration_cables.py`. Ergebnisse
+und offene Punkte: Abschnitt 9 und task-history.
+
+
+**Task 0041 (2026-10-12) — 6b.2 abgesichert, 6b.3 implementiert.** Steigweghalte gleicher Ebene
+sortieren beide Seiten nach Halt-ID; räumliche Punkte (`segment_points`) aus denselben Läufen;
+fehlender vs. unzulässiger Anschluss getestet; §17.2 bestätigt. 6b.3: Migration `0013`,
+`cables.py`/`cable_rules.py`, API (Leitungen, Vorschlag übernehmen, Durchführungen),
+`acknowledged_cable_ids` an Raumentwurf, Raumhöhe, Kopplung, Steigweg, Durchführung; Schutz in
+allen abhängigen Schreibwegen (Entwurf §18). Ohne Datenbank alles grün (Backend 259 Tests,
+Frontend 1 038, Lint, Typen, Grenzen, Build, Drift, Lock). **Nicht gelaufen:** Datenbanktests,
+Migration der Entwicklungsdatenbank, API-Ablauf im laufenden System – Docker Desktop startete die
+Engine nicht (unzugängliche Socket-Datei, wie Task 0028; kein Werksreset, nichts verschoben).
+Nicht committet.
+
+
+**Task 0040 (2026-10-12) — 6b.2 reine Längenfunktion.** `cable_length.py`/`cable_traces.py`
+(Referenz) und `leitung/laenge.ts`/`leitung/trassen.ts` (Spiegel) berechnen aus Planungsstand und
+Wegpunkten Teilstrecken, geometrische Länge, Zugaben, Status (`confirmed`/`incomplete`/`conflict`),
+Teilsummen und Befunde sowie Trassen mit Belegung; gemeinsame Fixture
+`testdata/geometry/leitung.v1.json` (22 Fälle, 6 Gegenlagen, 10 Rundungsfälle). Wiederverwendet:
+Wandteilung, Kopplungsstatus, Fremdöffnungen, Kontur, Rundung, Steigwegverlauf; neu nur die
+Punkt-Gegenlage `topology.transfer`/`lageUebertragen`. Keine Migration, keine Tabellen, keine API,
+keine Oberfläche. Präzisierungen und Modellgrenzen: Entwurf §17. Nicht committet.
+
+
 **Task 0039 (2026-10-12) — Nacharbeiten 6b.1 und Checkpoint 6b.0/6b.1.** Projektkopf: nach
 erfolgreichen Schreibvorgängen in Steigwegen und Stromkreisen wird gezielt die Projektabfrage
 nachgeladen. Der einzelne Frontend-Fehlschlag aus Task 0038 ist **nicht identifiziert** (die
 Ausgabe des Laufs war nicht mehr vorhanden); künftige Läufe schreiben Testnamen und Meldungen
 als JUnit-XML nach `apps/planner/test-results/` und `tasks.ps1` den Exit-Code daneben (ignoriert).
-Gemeinsamer Checkpoint-Commit für 6b.0/6b.1, nicht gepusht.
+Gemeinsamer Checkpoint-Commit `541bae9` für 6b.0/6b.1, nicht gepusht.
 
 
 **Task 0038 (2026-10-11) — 6b.1 Verteilungen, Stromkreise, Gerätezuordnung (Oberfläche).**
@@ -1350,6 +1392,17 @@ der Backfill nur ausdrücklich mit `--apply` und nach Freigabe. **Nicht** eigens
 * Gemeinsamer Zähler für Anfragegrenzen bei mehr als einem Prozess – nur nach Freigabe (G-2).
 * Produktionskonfiguration (G-1) und die Punkte der Checkliste für echte Daten.
 * Access Tokens bleiben nach einem Logout bis zum Ablauf (15 min) gültig – bewusst, dokumentiert.
+
+**Offene Punkte aus 6b.3 (Tasks 0041/0042):**
+* ~~Prüfung gegen PostgreSQL~~ – bestanden (Task 0042).
+* ~~Lastabhängiger Frontendtest~~ `ansichten.test.tsx` – Ursache behoben (Task 0043), Gesamtlauf grün.
+* Bestätigungsrückfrage, Leitungsliste und grafische Bedienung folgen mit 6b.4/6b.5.
+
+**Offene Punkte aus 6b.2 (Task 0040):**
+* `cable_length.py` ist mit rund 1 400 Zeilen (überwiegend Typen, Texte, Dokumentation) groß;
+  wächst es in 6b.3, Eingabe-/Ergebnistypen in ein eigenes Modul trennen.
+* ~~Steigweghalte gleicher Ebene unterschiedlich sortiert~~ – erledigt in Task 0041.
+* ~~Leitungsbefunde vor/nach Schreibvorgängen~~ – mit 6b.3 umgesetzt, gegen PostgreSQL geprüft (Task 0042).
 
 **Offene Punkte aus 6a.0–6a.3:**
 * Sichtprüfung der 3D-Halbkörper und Mausbedienung im sichtbaren Fenster durch den Auftraggeber

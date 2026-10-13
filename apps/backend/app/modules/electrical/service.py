@@ -46,6 +46,20 @@ from app.errors import (
     VersionConflictError,
 )
 from app.modules.electrical import geometry
+from app.modules.electrical.cable_rules import (
+    BuildingCableState,
+    CableGuard,
+    cables_referencing,
+    detach_removed_openings,
+    in_use_error,
+    preserve_reversed_walls,
+    require_devices_free,
+    require_links_without_penetrations,
+    require_no_split_references,
+    require_room_free,
+    require_walls_free,
+    wall_length,
+)
 from app.modules.electrical.catalog import (
     ASSIGNABLE_CATEGORIES,
     DISTRIBUTION_BOARD_TYPE,
@@ -238,6 +252,8 @@ class ElectricalRoomService:
         self.device_check = FloorDeviceCheck(session, organization_id)
         #: Der einzige Weg zu Geschoss, Projekt und Archivregel des Core.
         self.structure = FloorPlanningAccess(session, organization_id)
+        #: Leitungen und Durchfuehrungen des Gebaeudes vorher/nachher (Phase 6b.3).
+        self.cable_guard = CableGuard(session, organization_id)
 
     # ------------------------------------------------------------------ Lesen
 
@@ -326,6 +342,7 @@ class ElectricalRoomService:
     def create_room(self, floor_id: uuid.UUID, payload: RoomCreate) -> tuple[RoomView, WriteResult]:
         context = self.structure.writable_context(floor_id)
         baseline = self._device_baseline(context)
+        cables_before = self._cables_before(context)
         # Die Identitaet entsteht vor dem Schreiben - ein Datensatz hat seine
         # endgueltige ID, bevor die Datenbank ihn gesehen hat (ADR 0007).
         room = ElectricalRoom(
@@ -342,6 +359,8 @@ class ElectricalRoomService:
             self._apply_contour(room, context, payload.walls, removed_opening_ids=[])
             # Ein neuer Raum kann ein Wandstueck eines Nachbarn zu einem geteilten machen.
             self._require_devices_fit(context, baseline)
+            # ... und eine Kopplung mehrdeutig machen (Durchfuehrung, Bodenuebergang).
+            self.cable_guard.require_unbroken(cables_before)
         return self._view(room, context), WriteResult(context=context, room_id=room.id)
 
     def update_room(
@@ -358,7 +377,8 @@ class ElectricalRoomService:
         room, context = self._locked_room(room_id)
         check_version(room, expected_version)
         baseline = self._device_baseline(context)
-        changes = payload.model_dump(exclude_unset=True)
+        cables_before = self._cables_before(context)
+        changes = payload.model_dump(exclude_unset=True, exclude={"acknowledged_cable_ids"})
         for field, value in changes.items():
             setattr(room, field, value)
         self._flush_room(room.room_number)
@@ -366,6 +386,14 @@ class ElectricalRoomService:
         self._require_openings_still_fit(room_id, room_height_mm=view.effective_height_mm)
         # Wandgeraete muessen unter die neue Decke passen; Deckengeraete folgen ihr.
         self._require_devices_fit(context, baseline)
+        # Wegpunkte und Durchfuehrungen ueber einer abgesenkten Decke: 422 (Entwurf §7).
+        # Eine angehobene Decke unterbricht Uebergaenge Wand - Decke: nur mit Bestaetigung.
+        self.cable_guard.require_unbroken(
+            cables_before,
+            acknowledged=payload.acknowledged_cable_ids,
+            acknowledgement_supported=True,
+            hard_codes=frozenset({"waypoint-outside-wall"}),
+        )
         return view, WriteResult(context=context, room_id=room.id)
 
     def delete_room(self, room_id: uuid.UUID, *, expected_version: int) -> WriteResult:
@@ -412,6 +440,16 @@ class ElectricalRoomService:
         # Zuordnung nicht als bestehend voraussetzen.
         walls = self._ordered_walls(room.id)
         links = links_touching(self.session, self.organization_id, [wall.id for wall in walls])
+        # Leitungen verschwinden nie nebenbei (Phase 6b.3): Wege, Bodenuebergaenge,
+        # Endgeraete und Durchfuehrungen halten den Raum.
+        require_room_free(
+            self.session,
+            self.organization_id,
+            room_id=room.id,
+            wall_ids=[wall.id for wall in walls],
+            device_ids=room_device_ids,
+            link_ids=[link.id for link in links],
+        )
         self._touch_partner_rooms(links, exclude=room.id)
         self.session.delete(room)
         flush(self.session)
@@ -430,6 +468,7 @@ class ElectricalRoomService:
         """
         room, context = self._locked_room(room_id)
         baseline = self._device_baseline(context)
+        cables_before = self._cables_before(context)
         existing = self._ordered_walls(room.id)
         if len(existing) >= MAX_WALLS_PER_ROOM:
             raise ValidationFailedError(
@@ -450,6 +489,7 @@ class ElectricalRoomService:
         _touch(room)
         flush(self.session)
         self._require_devices_fit(context, baseline)
+        self.cable_guard.require_unbroken(cables_before)
         return (
             WallDetail(wall=wall, opening_count=0),
             WriteResult(context=context, room_id=room.id),
@@ -470,8 +510,15 @@ class ElectricalRoomService:
         self._reread(wall)
         check_version(wall, expected_version)
         baseline = self._device_baseline(context)
+        cables_before = self._cables_before(context)
+        old = (wall.x1_mm, wall.y1_mm, wall.x2_mm, wall.y2_mm)
         for field, value in payload.model_dump(exclude_unset=True).items():
             setattr(wall, field, value)
+        if (wall.x1_mm, wall.y1_mm, wall.x2_mm, wall.y2_mm) == (old[2], old[3], old[0], old[1]):
+            # Umgekehrte Wand: Leitungsbezuege behalten ihren Ort (L - x).
+            preserve_reversed_walls(
+                self.session, self.organization_id, {wall.id: wall_length(wall)}
+            )
 
         walls = [item if item.id != wall.id else wall for item in self._ordered_walls(room.id)]
         _raise_geometry(
@@ -482,6 +529,7 @@ class ElectricalRoomService:
         _touch(room)
         flush(self.session)
         self._require_devices_fit(context, baseline)
+        self.cable_guard.require_unbroken(cables_before)
         return (
             WallDetail(wall=wall, opening_count=len(openings)),
             WriteResult(context=context, room_id=room.id),
@@ -499,6 +547,7 @@ class ElectricalRoomService:
         room, context = self._locked_room(room_id)
         check_version(room, expected_version)
         baseline = self._device_baseline(context)
+        cables_before = self._cables_before(context)
         walls = {wall.id: wall for wall in self._ordered_walls(room.id)}
 
         if len(set(wall_ids)) != len(wall_ids):
@@ -522,6 +571,7 @@ class ElectricalRoomService:
         flush(self.session)
         # Eine andere Reihenfolge kann die Kontur oeffnen - Deckengeraete brauchen sie.
         self._require_devices_fit(context, baseline)
+        self.cable_guard.require_unbroken(cables_before)
         return self._details(ordered), WriteResult(context=context, room_id=room.id)
 
     def delete_wall(self, wall_id: uuid.UUID, *, expected_version: int) -> WriteResult:
@@ -553,10 +603,12 @@ class ElectricalRoomService:
                 f"An dieser Wand sind noch {devices} Geraet(e) montiert. Bitte zuerst die Geraete "
                 "entfernen."
             )
+        require_walls_free(self.session, self.organization_id, [wall.id])
         links = links_touching(self.session, self.organization_id, [wall.id])
         if links:
             raise _wall_has_links([wall.id], links)
         baseline = self._device_baseline(context)
+        cables_before = self._cables_before(context)
 
         self.session.delete(wall)
         self.session.flush()
@@ -565,6 +617,7 @@ class ElectricalRoomService:
         _touch(room)
         flush(self.session)
         self._require_devices_fit(context, baseline)
+        self.cable_guard.require_unbroken(cables_before)
         return WriteResult(context=context, room_id=room.id)
 
     # ------------------------------------------------ Kontur als Ganzes (4a)
@@ -597,6 +650,9 @@ class ElectricalRoomService:
         check_version(room, expected_version)
         baseline = self._device_baseline(context)
         geometry_before = self._geometry_signature(room.id)
+        cables_before = self._cables_before(context)
+        if cables_before is not None:
+            self._prepare_contour_cables(room, payload, cables_before)
         changed = self._apply_contour(
             room,
             context,
@@ -609,6 +665,14 @@ class ElectricalRoomService:
         _touch(room)
         flush(self.session)
         self._require_devices_fit(context, baseline, changed=changed)
+        # Leitungen (Phase 6b.3): Oeffnung ueber einer Wandstrecke 422, jede andere
+        # Unterbrechung nur mit genauer Bestaetigung (D4).
+        self.cable_guard.require_unbroken(
+            cables_before,
+            acknowledged=payload.acknowledged_cable_ids,
+            acknowledgement_supported=True,
+            opening_rule=True,
+        )
         return self._reloaded_plan(room, context), WriteResult(
             context=context,
             room_id=room.id,
@@ -685,6 +749,11 @@ class ElectricalRoomService:
                 room_height_mm=self._effective_height(room, context),
             ),
             detail="Die Raumkontur ist so nicht zulaessig. Es wurde nichts gespeichert.",
+        )
+
+        # 2c. Eine Kopplung mit Durchfuehrung wird nicht mitgeloest (Phase 6b.3).
+        require_links_without_penetrations(
+            self.session, self.organization_id, [link.id for link in removed_links]
         )
 
         # 4. Schreiben: erst entfernen, dann aendern und anlegen.
@@ -1189,6 +1258,7 @@ class ElectricalRoomService:
         room, context = self._locked_room(wall.room_id)
         self._reread(wall)
         baseline = self._device_baseline(context)
+        cables_before = self._cables_before(context)
         existing = self.list_openings(wall.id)
         if len(existing) >= MAX_OPENINGS_PER_WALL:
             raise ValidationFailedError(
@@ -1211,6 +1281,8 @@ class ElectricalRoomService:
         flush(self.session)
         # Eine neue Oeffnung darf kein Geraet ueberdecken - auch keines im Nachbarraum.
         self._require_devices_fit(context, baseline)
+        # ... und keine Wandstrecke oder Durchfuehrung (Entwurf §7: 422).
+        self.cable_guard.require_unbroken(cables_before, opening_rule=True)
         return opening, WriteResult(context=context, room_id=room.id)
 
     def update_opening(
@@ -1224,6 +1296,7 @@ class ElectricalRoomService:
         check_version(opening, expected_version)
         # Vor jeder Zuweisung: Die Abfrage saehe sonst schon den geaenderten Stand.
         baseline = self._device_baseline(context)
+        cables_before = self._cables_before(context)
         for field, value in payload.model_dump(exclude_unset=True).items():
             setattr(opening, field, value)
         others = [item for item in self.list_openings(wall.id) if item.id != opening.id]
@@ -1236,6 +1309,7 @@ class ElectricalRoomService:
         _touch(room)
         flush(self.session)
         self._require_devices_fit(context, baseline)
+        self.cable_guard.require_unbroken(cables_before, opening_rule=True)
         return opening, WriteResult(context=context, room_id=room.id)
 
     def delete_opening(self, opening_id: uuid.UUID, *, expected_version: int) -> WriteResult:
@@ -1245,6 +1319,17 @@ class ElectricalRoomService:
         room, context = self._locked_room(wall.room_id)
         self._reread(wall, opening)
         check_version(opening, expected_version)
+        users = cables_referencing(self.session, self.organization_id, opening_ids=[opening.id])
+        if users:
+            # Speicherstrategie §5.6: nur ueber den Raumentwurf mit Bestaetigung.
+            raise in_use_error(
+                "An dieser Oeffnung liegt ein Bodenuebergang einer Leitung. Entfernen nur im "
+                "Raumentwurf mit ausdruecklicher Bestaetigung der Leitungen.",
+                "opening-has-cables",
+                "Oeffnung traegt einen Bodenuebergang.",
+                users,
+                opening.id,
+            )
         self.session.delete(opening)
         _touch(room)
         flush(self.session)
@@ -1384,6 +1469,54 @@ class ElectricalRoomService:
             self._openings_by_wall([wall.id for wall in walls]),
             self.device_check.devices_of_rooms([room.id]),
         )
+
+    # ----------------------------------------------------- Leitungen (6b.3)
+
+    def _cables_before(self, context: FloorPlanningContext) -> BuildingCableState | None:
+        """Leitungsstand des Gebaeudes vor der Aenderung (unter der Projektsperre)."""
+        return self.cable_guard.snapshot(context.building_id)
+
+    def _prepare_contour_cables(
+        self, room: ElectricalRoom, payload: RoomContourUpdate, before: BuildingCableState
+    ) -> None:
+        """Leitungsregeln des Raumentwurfs - vor dem Schreiben der Kontur (Entwurf §7).
+
+        * Endgeraete und Waende mit Leitungsbezug werden nicht entfernt (``409``),
+        * eine umgekehrte Wand behaelt die Orte ihrer Bezuege (``L - x``),
+        * beim Teilen faellt kein Bezug still in das neue Stueck (``422``),
+        * Bodenuebergaenge entfernter Oeffnungen verlieren nur den Bezug - wirksam
+          nur mit Bestaetigung der Leitungen (Speicherstrategie §5.6).
+        """
+        current = {wall.id: wall for wall in self._ordered_walls(room.id)}
+        target_ids = {wall.id for wall in payload.walls if wall.id is not None}
+        require_devices_free(self.session, self.organization_id, payload.removed_device_ids)
+        require_walls_free(
+            self.session, self.organization_id, [w for w in current if w not in target_ids]
+        )
+        reversed_walls: dict[uuid.UUID, int] = {}
+        changed: list[uuid.UUID] = []
+        for wall_in in payload.walls:
+            existing = current.get(wall_in.id) if wall_in.id is not None else None
+            if existing is None:
+                continue
+            new = (wall_in.x1_mm, wall_in.y1_mm, wall_in.x2_mm, wall_in.y2_mm)
+            old = (existing.x1_mm, existing.y1_mm, existing.x2_mm, existing.y2_mm)
+            if new == (old[2], old[3], old[0], old[1]):
+                reversed_walls[existing.id] = wall_length(existing)
+            elif new != old:
+                changed.append(existing.id)
+        require_no_split_references(
+            before,
+            [
+                (Point(w.x1_mm, w.y1_mm), Point(w.x2_mm, w.y2_mm))
+                for w in payload.walls
+                if w.id is None or w.id not in current
+            ],
+            changed,
+        )
+        preserve_reversed_walls(self.session, self.organization_id, reversed_walls)
+        detach_removed_openings(self.session, self.organization_id, payload.removed_opening_ids)
+        flush(self.session)
 
     # ------------------------------------------------------- Geraete (Phase 5)
 

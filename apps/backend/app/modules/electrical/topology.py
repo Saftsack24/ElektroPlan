@@ -430,6 +430,25 @@ def _back(source: SectionSource, local: Span, measure: LineMeasure) -> Span:
     return Span(_plus(local.start, source.start, measure), _plus(local.end, source.start, measure))
 
 
+def transfer(
+    at: Position, source: SectionSource, target: SectionSource, measure: LineMeasure
+) -> Position:
+    """Eine Lage auf der Quellwand eines Abschnitts als Lage auf einer anderen seiner Waende.
+
+    Dieselbe Abschnittstransformation wie :func:`_local`/:func:`_back`, nur fuer
+    einen Punkt mit exakter Lage (Phase 6b.2: Gegenlage einer Durchfuehrung).
+    Hin- und Ruecktransformation ergeben die Ausgangslage exakt.
+    """
+    local = (
+        _minus(source.end, at, measure) if source.reversed else _minus(at, source.start, measure)
+    )
+    return (
+        _minus(target.end, local, measure)
+        if target.reversed
+        else _plus(local, target.start, measure)
+    )
+
+
 def foreign_openings(item: WallPartition) -> list[ForeignOpening]:
     """Oeffnungen, die andere Waende auf den gemeinsamen Abschnitten dieser Wand tragen.
 

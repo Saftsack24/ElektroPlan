@@ -32,6 +32,8 @@ from app.core.seed import seed_initial_data
 from app.core.users.models import User
 from app.db.mixins import utcnow
 from app.modules.electrical.models import (
+    ElectricalCable,
+    ElectricalCableWaypoint,
     ElectricalCircuit,
     ElectricalCircuitDevice,
     ElectricalDevice,
@@ -42,6 +44,7 @@ from app.modules.electrical.models import (
     ElectricalRoom,
     ElectricalWall,
     ElectricalWallLink,
+    ElectricalWallPenetration,
 )
 from tests.conftest import ADMIN_PASSWORD, auth_headers, login, requires_database
 from tests.routes import all_routes
@@ -77,6 +80,9 @@ class Tenant:
     board_device_id: uuid.UUID
     circuit_id: uuid.UUID
     socket_id: uuid.UUID
+    #: Durchfuehrung auf der Kopplung und Leitung des Stromkreises (Phase 6b.3).
+    penetration_id: uuid.UUID
+    cable_id: uuid.UUID
     #: Benutzerverwaltung (Phase 4.2): ein weiteres Mitglied und eine offene
     #: Einladung je Betrieb.
     member_id: uuid.UUID
@@ -246,6 +252,32 @@ def two_tenants(
                     circuit_id=stromkreis.id,
                 )
             )
+            durchfuehrung = ElectricalWallPenetration(
+                organization_id=result.organization_id,
+                wall_link_id=kopplung.id,
+                offset_mm=2_500,
+                height_mm=2_200,
+            )
+            leitung = ElectricalCable(
+                organization_id=result.organization_id,
+                circuit_id=stromkreis.id,
+                label="L1",
+                start_device_id=lagegeraet.id,
+                end_device_id=steckdose.id,
+            )
+            session.add_all([durchfuehrung, leitung])
+            session.flush()
+            session.add(
+                ElectricalCableWaypoint(
+                    organization_id=result.organization_id,
+                    cable_id=leitung.id,
+                    seq=0,
+                    kind="wall",
+                    wall_id=wand.id,
+                    offset_mm=3_500,
+                    height_mm=2_200,
+                )
+            )
             datei = FileRecord(
                 organization_id=result.organization_id,
                 project_id=projekt.id,
@@ -304,6 +336,8 @@ def two_tenants(
                     board_device_id=lagegeraet.id,
                     circuit_id=stromkreis.id,
                     socket_id=steckdose.id,
+                    penetration_id=durchfuehrung.id,
+                    cable_id=leitung.id,
                     member_id=mitglied.id,
                     invitation_id=einladung.id,
                 )
@@ -411,6 +445,8 @@ def fremde_ids(tenant: Tenant) -> dict[str, str]:
         "riser_id": str(tenant.riser_id),
         "board_id": str(tenant.board_id),
         "circuit_id": str(tenant.circuit_id),
+        "cable_id": str(tenant.cable_id),
+        "penetration_id": str(tenant.penetration_id),
         "member_id": str(tenant.member_id),
         "invitation_id": str(tenant.invitation_id),
     }
@@ -1255,4 +1291,210 @@ def test_datenbank_verhindert_verteilung_und_zuordnung_ueber_mandantengrenzen(
                 session.flush()
         finally:
             session.rollback()
+            session.close()
+
+
+# ---------------------------------------------- Leitungen und Durchfuehrungen (6b.3)
+
+
+def _leitung_koerper(tenant: Tenant, **ueber: object) -> dict[str, object]:
+    koerper: dict[str, object] = {
+        "label": "L2",
+        "start_device_id": str(tenant.board_device_id),
+        "end_device_id": str(tenant.socket_id),
+        "waypoints": [
+            {"kind": "wall", "wall_id": str(tenant.wall_id), "offset_mm": 3_500, "height_mm": 2_200}
+        ],
+    }
+    koerper.update(ueber)
+    return koerper
+
+
+def test_fremde_leitung_und_durchfuehrung_sind_unsichtbar_und_unveraenderlich(
+    api: TestClient, engine: Engine, two_tenants: tuple[Tenant, Tenant]
+) -> None:
+    scholz, mueller = two_tenants
+    token = login(api, mueller.admin_email)
+    basis = "/api/v1/modules/electrical"
+    match = {**auth_headers(token), "If-Match": "1"}
+
+    assert (
+        api.get(
+            f"{basis}/buildings/{scholz.building_id}/cables", headers=auth_headers(token)
+        ).status_code
+        == 404
+    )
+    assert (
+        api.get(
+            f"{basis}/floors/{scholz.floor_id}/penetrations", headers=auth_headers(token)
+        ).status_code
+        == 404
+    )
+    assert (
+        api.post(
+            f"{basis}/circuits/{scholz.circuit_id}/cables",
+            headers=auth_headers(token),
+            json=_leitung_koerper(scholz),
+        ).status_code
+        == 404
+    )
+    assert (
+        api.put(
+            f"{basis}/cables/{scholz.cable_id}", headers=match, json=_leitung_koerper(scholz)
+        ).status_code
+        == 404
+    )
+    assert api.delete(f"{basis}/cables/{scholz.cable_id}", headers=match).status_code == 404
+    assert (
+        api.patch(
+            f"{basis}/penetrations/{scholz.penetration_id}",
+            headers=match,
+            json={"height_mm": 1_000},
+        ).status_code
+        == 404
+    )
+    assert (
+        api.delete(f"{basis}/penetrations/{scholz.penetration_id}", headers=match).status_code
+        == 404
+    )
+    assert (
+        api.post(
+            f"{basis}/cables/{scholz.cable_id}/apply-proposal",
+            headers=match,
+            json={"expected_circuit_version": 1},
+        ).status_code
+        == 404
+    )
+    session = sessionmaker(bind=engine)()
+    try:
+        fremd = session.get(ElectricalCable, scholz.cable_id)
+        assert fremd is not None and (fremd.label, fremd.version) == ("L1", 1)
+        assert session.get(ElectricalWallPenetration, scholz.penetration_id) is not None
+    finally:
+        session.close()
+
+
+def test_eigene_leitung_mit_fremden_bezuegen_liefert_422_ohne_existenzauskunft(
+    api: TestClient, engine: Engine, two_tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Fremde Geraete, Waende, Durchfuehrungen, Halte und Kopplungen im Koerper: 422."""
+    scholz, mueller = two_tenants
+    token = login(api, mueller.admin_email)
+    url = f"/api/v1/modules/electrical/circuits/{mueller.circuit_id}/cables"
+    wand = {"kind": "wall", "wall_id": str(mueller.wall_id), "offset_mm": 3_500, "height_mm": 2_200}
+    faelle = [
+        (
+            _leitung_koerper(mueller, end_device_id=str(scholz.socket_id)),
+            "cable-endpoint-not-in-building",
+        ),
+        (
+            _leitung_koerper(
+                mueller,
+                waypoints=[{**wand, "wall_id": str(scholz.wall_id)}],
+            ),
+            "cable-reference-unknown",
+        ),
+        (
+            _leitung_koerper(
+                mueller,
+                waypoints=[
+                    wand,
+                    {"kind": "penetration", "penetration_id": str(scholz.penetration_id)},
+                ],
+            ),
+            "cable-reference-unknown",
+        ),
+        (
+            _leitung_koerper(
+                mueller,
+                waypoints=[
+                    wand,
+                    {
+                        "kind": "riser",
+                        "riser_id": str(mueller.riser_id),
+                        "from_stop_id": str(scholz.riser_stop_id),
+                        "from_height_mm": 0,
+                        "to_stop_id": str(mueller.riser_stop_id),
+                        "to_height_mm": 0,
+                    },
+                ],
+            ),
+            "cable-reference-unknown",
+        ),
+        (
+            _leitung_koerper(
+                mueller,
+                waypoints=[wand, {"kind": "penetration", "new_penetration_key": "d"}],
+                new_penetrations=[
+                    {
+                        "key": "d",
+                        "wall_link_id": str(scholz.link_id),
+                        "offset_mm": 100,
+                        "height_mm": 100,
+                    }
+                ],
+            ),
+            "penetration-link-not-in-building",
+        ),
+    ]
+    for koerper, code in faelle:
+        response = api.post(url, headers=auth_headers(token), json=koerper)
+        assert response.status_code == 422, response.text
+        assert {e["code"] for e in response.json()["errors"]} == {code}
+    session = sessionmaker(bind=engine)()
+    try:
+        # Nichts entstanden: je Betrieb genau die eine Leitung und Durchfuehrung des Aufbaus.
+        assert session.query(ElectricalCable).count() == 2
+        assert session.query(ElectricalWallPenetration).count() == 2
+    finally:
+        session.close()
+
+
+def test_datenbank_verhindert_leitungsbezuege_ueber_mandantengrenzen(
+    engine: Engine, two_tenants: tuple[Tenant, Tenant]
+) -> None:
+    """Zusammengesetzte Fremdschluessel: Wegpunkt, Endgeraet und Halt bleiben im Mandanten."""
+    scholz, mueller = two_tenants
+    zeilen = [
+        ElectricalCableWaypoint(
+            organization_id=mueller.organization_id,
+            cable_id=mueller.cable_id,
+            seq=5,
+            kind="wall",
+            wall_id=scholz.wall_id,
+            offset_mm=100,
+            height_mm=100,
+        ),
+        ElectricalCable(
+            organization_id=mueller.organization_id,
+            circuit_id=mueller.circuit_id,
+            start_device_id=mueller.board_device_id,
+            end_device_id=scholz.socket_id,
+        ),
+        ElectricalCableWaypoint(
+            organization_id=mueller.organization_id,
+            cable_id=mueller.cable_id,
+            seq=6,
+            kind="riser",
+            riser_id=mueller.riser_id,
+            from_stop_id=scholz.riser_stop_id,
+            from_height_mm=0,
+            to_stop_id=mueller.riser_stop_id,
+            to_height_mm=0,
+        ),
+        ElectricalWallPenetration(
+            organization_id=mueller.organization_id,
+            wall_link_id=scholz.link_id,
+            offset_mm=100,
+            height_mm=100,
+        ),
+    ]
+    for zeile in zeilen:
+        session = sessionmaker(bind=engine)()
+        try:
+            session.add(zeile)
+            with pytest.raises(IntegrityError):
+                session.flush()
+            session.rollback()
+        finally:
             session.close()
