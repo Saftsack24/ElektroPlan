@@ -1,0 +1,42 @@
+/*
+ * Leitungen in Wand- und Deckenansicht (Phase 6b.4, Entwurf §9.2).
+ *
+ * Verlässlichkeit nie nur über Farbe: bestätigt durchgezogen, unvollständig
+ * gestrichelt (Warnfarbe), Konflikt strichpunktiert (Fehlerfarbe) - und immer
+ * mit Text im Seitenfeld. Anschlussstrecken (abgeleitet) fein gestrichelt.
+ * Hilfslinien sind eine unverbindliche Planungshilfe.
+ */
+@layer components {
+  .leitung { fill: none; stroke: var(--ep-plan-cable); stroke-width: 2.5; stroke-linecap: round; pointer-events: none; }
+  .leitung--andere { stroke-width: 1.5; opacity: 0.55; }
+  .leitung--gewaehlt { stroke-width: 3; opacity: 1; }
+  .leitung--entwurf { stroke-width: 3; }
+  .leitung--incomplete { stroke: var(--ep-warning); stroke-dasharray: 8 5; }
+  .leitung--conflict { stroke: var(--ep-danger); stroke-dasharray: 10 4 2 4; }
+  .leitung--anschluss { stroke-dasharray: 3 3; stroke-width: 1.5; }
+  .leitung-treffer { fill: none; stroke: transparent; stroke-width: 12; cursor: pointer; pointer-events: stroke; }
+
+  .leitung-punkt { fill: var(--ep-surface); stroke: var(--ep-plan-cable); stroke-width: 2; cursor: grab; }
+  .leitung-punkt--gewaehlt { fill: var(--ep-plan-cable); }
+  .leitung-punkt--fest { cursor: pointer; stroke-dasharray: 2 2; }
+  .leitung-punkt-text { fill: var(--ep-text); font-size: 10px; font-weight: 600; pointer-events: none; }
+  .leitung-punkt-text--gewaehlt { fill: var(--ep-surface); }
+
+  .leitung-kandidat { fill: var(--ep-plan-cable); fill-opacity: 0.25; stroke: var(--ep-plan-cable); stroke-width: 2; pointer-events: none; }
+  .leitung-kandidat--fehler { fill: var(--ep-danger); stroke: var(--ep-danger); }
+  .leitung-kandidat-strecke { stroke: var(--ep-plan-cable); stroke-width: 2; stroke-dasharray: 6 4; pointer-events: none; }
+  .leitung-kandidat-strecke--fehler { stroke: var(--ep-danger); }
+
+  .leitung-durchfuehrung { fill: var(--ep-surface); stroke: var(--ep-plan-cable); stroke-width: 2; cursor: pointer; }
+  .leitung-durchfuehrung--fehler { stroke: var(--ep-danger); }
+  .leitung-durchfuehrung--gewaehlt { stroke-width: 3.5; }
+
+  .leitung-zone { stroke: var(--ep-text-muted); stroke-width: 1; stroke-dasharray: 1 5; opacity: 0.8; pointer-events: none; }
+  .leitung-zone-text { fill: var(--ep-text-muted); font-size: 10px; pointer-events: none; }
+
+  .zuordnung-ring { fill: none; stroke-width: 2.5; pointer-events: none; }
+  .zuordnung-ring--dieser { stroke: var(--ep-plan-cable); }
+  .zuordnung-ring--anderer { stroke: var(--ep-text-muted); stroke-dasharray: 4 3; }
+  .zuordnung-ring--frei { stroke: var(--ep-warning); stroke-width: 1.5; }
+  .zuordnung-ring--nicht-zuordenbar { stroke: var(--ep-text-muted); stroke-width: 1; opacity: 0.4; }
+}

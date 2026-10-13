@@ -255,7 +255,7 @@ Verzweigungspunkt, seit 6b.1); nicht `data` und nicht das Lagegerät einer Verte
 still umgehängt. Gerät oder Stromkreis weg → Zuordnung weg (`CASCADE`); ein zugeordnetes Gerät
 wechselt im Raumentwurf nicht in eine nicht zuordenbare Art (`422 assigned-device-not-assignable`).
 
-### Leitungen, Wegpunkte, Durchführungen — geplant (6b.3, ADR 0026)
+### Leitungen, Wegpunkte, Durchführungen — umgesetzt (6b.3, Oberfläche Wand/Decke 6b.4; ADR 0026)
 Siehe [`phase-6b-design.md`](../phase-6b-design.md) §3.2–§5. Die Längen-, Status- und
 Trassenberechnung steht seit 6b.2 als reine Funktion bereit (`cable_length.py`,
 `cable_traces.py`, Spiegel `leitung/laenge.ts`, `leitung/trassen.ts`, Fixture
@@ -993,6 +993,16 @@ bearbeiten“; die Rückkehr stellt Kamera, Auswahl und Schalter wieder her. Kei
 
 **Lesemodus:** ohne Schreibrecht oder bei `completed`/`archived` Geräte sichtbar und auswählbar,
 keine Werkzeuge, Felder gesperrt.
+
+### Leitungsplanung in Wand- und Deckenansicht (Phase 6b.4) — umgesetzt, nicht committet
+
+Seitenfeld „Leitungen“ und Werkzeuge „Leitung“ (L) und „Zuordnen“ (Z) in den bestehenden Ansichten;
+Bedienung, Fang, Hilfslinien, Entwurfsregeln und Grenzen: [`phase-6b-design.md`](../phase-6b-design.md) §19.
+Der Leitungsentwurf gehört zum Geschoss im 2D-Editor (Planungskontext); Wand- und Deckenansichten
+sind Arbeitsflächen darin. Höchstens ein aktiver Entwurf (Raum, Zuordnung oder Leitung). Vorschau,
+Länge und Befunde rechnen mit `leitung/laenge.ts` über den gespeicherten Planungsstand des Gebäudes.
+Änderungen, die Leitungen unterbrechen, bestätigt `leitung/bestaetigung.tsx` mit genau den IDs der
+Serverantwort.
 
 ### Wandzuordnung (Phase 6a) — umgesetzt
 

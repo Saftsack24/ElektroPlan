@@ -30,6 +30,8 @@ import {
 } from "./stromkreise/daten";
 import { geraetName, katalogAbfrage, typenNachSchluessel } from "./geraete/katalog";
 import { ZUORDNUNG_MELDUNG } from "./stromkreise/texte";
+import { BestaetigungAbgelehnt, bestaetigungsfeld, useLeitungsbestaetigung } from "./leitung/bestaetigung";
+import { leitungenSchluessel } from "./leitung/daten";
 import type { Raumwerte } from "./RaumDialog";
 import { KONTURZUSTAND_LABEL, RAUMTYP_LABEL, flaecheAnzeigen, raumtypAusWert } from "./texte";
 import { AKTION } from "../../core/ui/aktionssymbole";
@@ -121,6 +123,9 @@ export default function RoomsTab() {
   const darfSchreibenGrundsaetzlich = usePermission("electrical.plan.write");
   // Verteilungen, Stromkreise und Zuordnung (Phase 6b.1) - eigenes Recht.
   const darfStromkreiseGrundsaetzlich = usePermission("electrical.circuit.write");
+  // Leitungen, Wegpunkte, Kabelangaben und Durchführungen (Phase 6b.4) - eigenes Recht.
+  const darfLeitungenGrundsaetzlich = usePermission("electrical.route.write");
+  const mitBestaetigung = useLeitungsbestaetigung();
   const masse = useMasse();
   const fragen = useRueckfrage();
 
@@ -267,16 +272,21 @@ export default function RoomsTab() {
           body: koerper,
         });
       } else {
-        await api.patch("/api/v1/modules/electrical/rooms/{room_id}", {
-          path: { room_id: bestehend.id },
-          ifMatch: bestehend.version,
-          body: koerper,
-        });
+        // Eine neue Raumhöhe kann Leitungen unterbrechen: genau diese bestätigen (6b.4).
+        await mitBestaetigung((bestaetigt) =>
+          api.patch("/api/v1/modules/electrical/rooms/{room_id}", {
+            path: { room_id: bestehend.id },
+            ifMatch: bestehend.version,
+            body: { ...koerper, ...bestaetigungsfeld(bestaetigt) },
+          }),
+        );
       }
       setRaumdialog(null);
       await raeumeNeuLaden();
+      if (aktivesGeschoss !== undefined) await queryClient.invalidateQueries({ queryKey: leitungenSchluessel(aktivesGeschoss.building_id) });
       return undefined;
     } catch (error: unknown) {
+      if (error instanceof BestaetigungAbgelehnt) return { fehler: "Nicht gespeichert – die Leitungen bleiben unverändert." };
       return alsFormularfehler(error, ["name", "room_number", "height_mm"] as const);
     }
   };
@@ -559,6 +569,9 @@ export default function RoomsTab() {
               setStartDeckenansicht(null);
             }}
             onZurueck3d={() => void ansichtWechseln("3d", { rueckkehr: true })}
+            darfLeitungen={darfLeitungenGrundsaetzlich && !archiviert}
+            darfStromkreise={darfStromkreiseGrundsaetzlich && !archiviert}
+            onGeschrieben={projektAktualisieren}
           />
         </section>
       )}

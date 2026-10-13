@@ -47,6 +47,8 @@ import { ABSCHNITTHINWEIS, ABSCHNITTSTATUS, PLANUNGSHINWEIS, STEIGWEG_MELDUNG, S
 import type { SteigwegGeschoss, Steigwegauswertung, Versatzart } from "./verlauf";
 import { steigwegAuswerten } from "./verlauf";
 import { Vorschau3d } from "./Vorschau3d";
+import { BestaetigungAbgelehnt, bestaetigungsfeld, useLeitungsbestaetigung } from "../leitung/bestaetigung";
+import { leitungenSchluessel } from "../leitung/daten";
 
 type FloorOut = components["schemas"]["FloorOut"];
 type RiserOut = components["schemas"]["RiserOut"];
@@ -104,6 +106,7 @@ export function Steigwege({
 }) {
   const { api } = useAuth();
   const queryClient = useQueryClient();
+  const mitBestaetigung = useLeitungsbestaetigung();
   const masse = useMasse();
   const fragen = useRueckfrage();
 
@@ -243,19 +246,25 @@ export function Steigwege({
               path: { building_id: buildingId },
               body: anfrage(entwurf),
             })
-          : await api.put("/api/v1/modules/electrical/risers/{riser_id}", {
-              path: { riser_id: entwurf.id },
-              ifMatch: entwurf.version,
-              body: anfrage(entwurf),
-            });
+          : await mitBestaetigung((bestaetigt) =>
+              // Verschobene Halte können Leitungsübergänge unterbrechen (6b.3/6b.4): genau diese bestätigen.
+              api.put("/api/v1/modules/electrical/risers/{riser_id}", {
+                path: { riser_id: entwurf.id as string },
+                ifMatch: entwurf.version as number,
+                body: { ...anfrage(entwurf), ...bestaetigungsfeld(bestaetigt) },
+              }),
+            );
       const neu = ausServer(antwort);
       await queryClient.invalidateQueries({ queryKey: steigwegSchluessel(buildingId) });
+      await queryClient.invalidateQueries({ queryKey: leitungenSchluessel(buildingId) });
       await onGeschrieben?.();
       setAuswahl(antwort.id);
       setEntwurf(neu);
       setBasis(neu);
     } catch (error: unknown) {
-      if (error instanceof ApiError) {
+      if (error instanceof BestaetigungAbgelehnt) {
+        setFehler("Nicht gespeichert – die Leitungen bleiben unverändert.");
+      } else if (error instanceof ApiError) {
         if (error.errorType === "version-conflict") setKonflikt(true);
         const name = error.problem?.errors?.find((e) => e.code === "riser-name-taken");
         if (name !== undefined) setNamensfehler("Dieser Name ist in diesem Gebäude bereits vergeben.");

@@ -1,4 +1,3 @@
-import { ApiError } from "@elektroplan/api-client";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 
@@ -22,7 +21,7 @@ import "../darstellung.css";
 import { katalogAbfrage, typenNachSchluessel } from "../geraete/katalog";
 import { Geraetesymbol } from "../geraete/symbole";
 import { planAbfrage } from "../plan";
-import type { Planergeraet, Stromkreis, Verteilung, Zuordnungsentwurf } from "./daten";
+import type { Planergeraet, Stromkreis, Verteilung } from "./daten";
 import {
   freieLagegeraete,
   geraeteDesGebaeudes,
@@ -33,10 +32,7 @@ import {
   stromkreiseSchluessel,
   verteilungenAbfrage,
   verteilungenSchluessel,
-  zuordnungAus,
-  zuordnungGeaendert,
   zuordnungNachGeraet,
-  zuordnungUmschalten,
 } from "./daten";
 import type { Stromkreisanfrage, Stromkreisergebnis, Stromkreiswerte } from "./StromkreisDialog";
 import { LEERER_STROMKREIS, StromkreisDialog } from "./StromkreisDialog";
@@ -44,8 +40,8 @@ import "./stromkreise.css";
 import { feldfehler, fehlermeldung, ZUORDNUNG_MELDUNG } from "./texte";
 import type { Verteilungsergebnis, Verteilungswerte } from "./VerteilungDialog";
 import { VerteilungDialog } from "./VerteilungDialog";
-import type { Geraetezustand } from "./ZuordnungsFlaeche";
 import { ZuordnungsFlaeche } from "./ZuordnungsFlaeche";
+import { geraetezustand, useZuordnungsentwurf } from "./zuordnung";
 
 type Dialogzustand =
   | { art: "verteilung"; verteilung: Verteilung | null }
@@ -130,13 +126,11 @@ export function Stromkreise({
   });
 
   const [dialog, setDialog] = useState<Dialogzustand | null>(null);
-  const [entwurf, setEntwurf] = useState<Zuordnungsentwurf | null>(null);
   const [fehler, setFehler] = useState<string | null>(null);
-  const [zuordnungsfehler, setZuordnungsfehler] = useState<string | null>(null);
-  const [konflikt, setKonflikt] = useState(false);
-  const [speichert, setSpeichert] = useState(false);
-
-  const offen = darfSchreiben && entwurf !== null && zuordnungGeaendert(entwurf);
+  // Derselbe Zuordnungsentwurf wie in Wand- und Deckenansicht (Phase 6b.4).
+  const zuordnungsentwurf = useZuordnungsentwurf({ buildingId, darfSchreiben, onGeschrieben });
+  const { entwurf, offen, konflikt, speichert } = zuordnungsentwurf;
+  const zuordnungsfehler = zuordnungsentwurf.fehler;
   useUngespeicherteAenderungen(offen, ZUORDNUNG_MELDUNG);
   useEffect(() => onUngespeichert(offen), [offen, onUngespeichert]);
   useEffect(() => () => onUngespeichert(false), [onUngespeichert]);
@@ -283,7 +277,7 @@ export function Stromkreise({
         ifMatch: kreis.version,
       });
       setFehler(null);
-      if (entwurf?.circuitId === kreis.id) setEntwurf(null);
+      if (entwurf?.circuitId === kreis.id) zuordnungsentwurf.schliessen();
       await neuLaden({ geschrieben: true });
     } catch (error: unknown) {
       setFehler(fehlermeldung(error, "Der Stromkreis konnte nicht entfernt werden."));
@@ -296,61 +290,16 @@ export function Stromkreise({
   const zuordnungOeffnen = async (kreis: Stromkreis) => {
     if (entwurf?.circuitId === kreis.id) return;
     if (!(await verwerfenErlaubt("Anderen Stromkreis bearbeiten?", `Sie wollen die Geräte von ${kreis.designation} bearbeiten.`))) return;
-    setZuordnungsfehler(null);
-    setKonflikt(false);
-    setEntwurf(zuordnungAus(kreis));
+    zuordnungsentwurf.oeffnen(kreis);
   };
 
   const zuordnungSchliessen = async () => {
     if (!(await verwerfenErlaubt("Zuordnung schließen?", "Sie wollen die Gerätezuordnung schließen."))) return;
-    setEntwurf(null);
-    setZuordnungsfehler(null);
-    setKonflikt(false);
+    zuordnungsentwurf.schliessen();
   };
 
-  const zuordnungSpeichern = async () => {
-    if (entwurf === null) return;
-    setSpeichert(true);
-    setZuordnungsfehler(null);
-    try {
-      const gespeichert = await api.put("/api/v1/modules/electrical/circuits/{circuit_id}/devices", {
-        path: { circuit_id: entwurf.circuitId },
-        ifMatch: entwurf.version,
-        body: { device_ids: [...entwurf.auswahl].sort() },
-      });
-      setEntwurf(zuordnungAus(gespeichert));
-      setKonflikt(false);
-      await neuLaden({ geschrieben: true });
-    } catch (error: unknown) {
-      const konfliktfall =
-        error instanceof ApiError &&
-        (error.errorType === "version-conflict" ||
-          (error.problem?.errors ?? []).some((e) => e.code === "device-assigned-elsewhere" || e.code === "circuit-device-not-in-building"));
-      setKonflikt(konfliktfall);
-      setZuordnungsfehler(fehlermeldung(error, "Die Zuordnung konnte nicht gespeichert werden."));
-    } finally {
-      setSpeichert(false);
-    }
-  };
-
-  const zuordnungNeuLaden = async () => {
-    if (entwurf === null) return;
-    const frisch = await queryClient.fetchQuery({ ...stromkreiseAbfrage(api, buildingId) });
-    const kreis = frisch.circuits.find((k) => k.id === entwurf.circuitId);
-    setKonflikt(false);
-    setZuordnungsfehler(null);
-    setEntwurf(kreis === undefined ? null : zuordnungAus(kreis));
-    await queryClient.invalidateQueries({ queryKey: verteilungenSchluessel(buildingId) });
-  };
-
-  const zustandVon = (id: string): Geraetezustand => {
-    const g = geraete.find((x) => x.id === id);
-    if (g === undefined || !g.zuordenbar) return "nicht-zuordenbar";
-    if (entwurf?.auswahl.has(id)) return "dieser";
-    const anderer = zuordnung.get(id);
-    if (anderer !== undefined && anderer.id !== entwurf?.circuitId) return "anderer";
-    return "frei";
-  };
+  const zustandVon = (id: string) =>
+    geraetezustand(id, geraete.find((x) => x.id === id)?.zuordenbar === true, entwurf, zuordnung);
 
   const beschriftungVon = (id: string): string => {
     const g = geraete.find((x) => x.id === id);
@@ -528,7 +477,7 @@ export function Stromkreise({
             <div className={meldungsflaeche()} role="alert">
               <p className="m-0">{zuordnungsfehler}</p>
               {konflikt && (
-                <button type="button" className={`${knopf("neutral", { klein: true })} mt-2`} onClick={() => void zuordnungNeuLaden()}>
+                <button type="button" className={`${knopf("neutral", { klein: true })} mt-2`} onClick={() => void zuordnungsentwurf.neuLaden()}>
                   Zuordnung verwerfen und neu laden
                 </button>
               )}
@@ -549,7 +498,7 @@ export function Stromkreise({
                       type="checkbox"
                       checked={art === "dieser"}
                       disabled={!darfSchreiben || art === "anderer" || speichert}
-                      onChange={() => setEntwurf(zuordnungUmschalten(entwurf, g.id))}
+                      onChange={() => zuordnungsentwurf.umschalten(g.id)}
                     />
                     <Geraetesymbol typ={typen.get(g.typKey)} groesse={18} />
                     <label htmlFor={id}>
@@ -566,10 +515,10 @@ export function Stromkreise({
           )}
           {darfSchreiben && (
             <div className={KNOPFZEILE}>
-              <button type="button" className={knopf("primaer")} disabled={!offen || speichert} onClick={() => void zuordnungSpeichern()}>
+              <button type="button" className={knopf("primaer")} disabled={!offen || speichert} onClick={() => void zuordnungsentwurf.speichern()}>
                 {speichert ? "Wird gespeichert ..." : "Zuordnung speichern"}
               </button>
-              <button type="button" className={knopf()} disabled={!offen || speichert} onClick={() => setEntwurf(zuordnungAus(aktiverKreis))}>
+              <button type="button" className={knopf()} disabled={!offen || speichert} onClick={() => zuordnungsentwurf.verwerfen(aktiverKreis)}>
                 Verwerfen
               </button>
               <button type="button" className={knopf()} onClick={() => void zuordnungSchliessen()}>
@@ -604,7 +553,7 @@ export function Stromkreise({
               zustand={zustandVon}
               beschriftung={beschriftungVon}
               bedienbar={darfSchreiben && !speichert}
-              onUmschalten={(id) => setEntwurf(zuordnungUmschalten(entwurf, id))}
+              onUmschalten={(id) => zuordnungsentwurf.umschalten(id)}
             />
           )}
           <p className="mt-1 text-label text-muted">

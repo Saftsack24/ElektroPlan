@@ -26,6 +26,9 @@ import { wandmodell } from "./wandmodell";
 import { lagePruefen } from "./wandpruefung";
 import type { Wandwerkzeug, ZeichenflaecheGriff } from "./WandZeichenflaeche";
 import { WandZeichenflaeche } from "./WandZeichenflaeche";
+import type { Leitungskontext } from "../leitung/kontext";
+import { Leitungsbereich } from "../leitung/Leitungsbereich";
+import { useWandleitungen } from "../leitung/Wandleitungen";
 
 const WERKZEUG = `${KNOPF_GRUND} border-control bg-surface px-2.5 py-[5px] text-fg disabled:cursor-not-allowed disabled:opacity-45`;
 const WERKZEUG_AKTIV = `${KNOPF_GRUND} border-accent bg-accent px-2.5 py-[5px] text-on-accent`;
@@ -37,6 +40,12 @@ const WERKZEUGE: readonly { wert: Wandwerkzeug; label: string; taste: string; sc
   { wert: "window", label: "Fenster", taste: "N", schreibend: true },
   { wert: "passage", label: "Durchgang", taste: "D", schreibend: true },
   { wert: "geraet", label: "Gerät", taste: "G", schreibend: true },
+];
+
+/** Werkzeuge der Leitungsplanung (6b.4) - nur mit offenem Leitungs- bzw. Zuordnungsentwurf. */
+const LEITUNGSWERKZEUGE: readonly { wert: Wandwerkzeug; label: string; taste: string }[] = [
+  { wert: "leitung", label: "Leitung", taste: "L" },
+  { wert: "zuordnen", label: "Zuordnen", taste: "Z" },
 ];
 
 export interface Wandziel {
@@ -91,6 +100,7 @@ export function Wandansicht({
   typen = new Map(),
   geraeteVon = () => [],
   geraetebefunde = new Map(),
+  leitungen,
 }: {
   ziel: Wandziel;
   zustand: EditorZustand;
@@ -121,6 +131,8 @@ export function Wandansicht({
   geraeteVon?: (raumId: string) => readonly EntwurfGeraet[];
   /** Befundcodes je Gerät (lokale Prüfung und letzte Serverantwort). */
   geraetebefunde?: ReadonlyMap<string, readonly string[]>;
+  /** Phase 6b.4: Leitungsplanung und Gerätezuordnung des Planungskontexts. */
+  leitungen?: Leitungskontext | undefined;
 }) {
   const masse = useMasse();
   const [werkzeug, setWerkzeug] = useState<Wandwerkzeug>(ziel.werkzeug ?? "auswahl");
@@ -225,9 +237,27 @@ export function Wandansicht({
   };
 
   // Ohne Schreibrecht nur betrachten; ein anderes Werkzeug ist dann nicht wählbar.
+  const leitungsentwurf = leitungen?.planung.entwurf ?? null;
+  const zuordnungsentwurf = leitungen?.zuordnung.entwurf ?? null;
+  const leitungErlaubt = leitungsentwurf !== null && leitungen?.planung.darfLeitungen === true && seite === "innen";
+  const zuordnenErlaubt = zuordnungsentwurf !== null;
   useEffect(() => {
-    if (!editierbar && werkzeug !== "auswahl" && werkzeug !== "pan") setWerkzeug("auswahl");
-  }, [editierbar, werkzeug]);
+    const erlaubt =
+      werkzeug === "auswahl" || werkzeug === "pan" || (werkzeug === "leitung" ? leitungErlaubt : werkzeug === "zuordnen" ? zuordnenErlaubt : editierbar);
+    if (!erlaubt) setWerkzeug("auswahl");
+  }, [editierbar, werkzeug, leitungErlaubt, zuordnenErlaubt]);
+
+  const wl = useWandleitungen({
+    k: leitungen,
+    bezug: ergebnis.ok ? ergebnis.bezug : null,
+    modell,
+    geraete,
+    werkzeug,
+    setWerkzeug,
+    fangAktiv,
+    rasterMm,
+    onStatus: setStatuszeile,
+  });
 
   const gegenseiten: Gegenseite[] = useMemo(() => {
     if (teilung === undefined) return [];
@@ -299,6 +329,8 @@ export function Wandansicht({
     const imFeld = element?.closest("input:not([type=checkbox]), textarea, select") != null;
     const strg = event.ctrlKey || event.metaKey;
     const k = event.key.toLowerCase();
+    // Leitungs- oder Zuordnungsentwurf offen: seine Tasten zuerst (Strg+S auch aus einem Feld).
+    if ((leitungsentwurf !== null || zuordnungsentwurf !== null) && (!imFeld || (strg && k === "s")) && wl.taste(event)) return;
     if (strg && k === "s") {
       event.preventDefault();
       onSpeichern();
@@ -367,6 +399,14 @@ export function Wandansicht({
       setWerkzeug("auswahl");
       return true;
     }
+    if (leitungsentwurf !== null && leitungsentwurf.auswahl !== null) {
+      leitungen?.planung.dispatch({ typ: "auswaehlen", auswahl: null });
+      return true;
+    }
+    if (wl.gewaehlt !== null) {
+      wl.setGewaehlt(null);
+      return true;
+    }
     if (gewaehlt !== null) {
       waehlen(null);
       return true;
@@ -387,7 +427,7 @@ export function Wandansicht({
   return (
     <Dialog offen titel={titel} groesse="gross" onClose={onSchliessen} onEscape={escape}>
       <div className="flex flex-col gap-2 split:h-full split:min-h-0" onKeyDown={taste}>
-        <div className="flex min-h-10 flex-wrap items-center justify-between gap-2" role="status" aria-live="polite">
+        <div className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-2" role="status" aria-live="polite">
           <span className="flex flex-wrap items-center gap-x-3">
             <strong data-testid="wandseite">{seitenname}</strong>
             <span className="text-muted">
@@ -399,7 +439,15 @@ export function Wandansicht({
                 {seite === "innen" ? "Außenseite ansehen" : "Innenseite ansehen"}
               </button>
             )}
-            <span className={`font-semibold ${status.farbe}`}>{editierbar ? status.text : "Nur Ansicht"}</span>
+            <span className={`font-semibold ${status.farbe}`}>
+              {leitungsentwurf !== null
+                ? `Leitungsentwurf: ${leitungen?.planung.ungespeichert === true ? "ungespeichert" : "gespeichert"}`
+                : zuordnungsentwurf !== null
+                  ? `Gerätezuordnung: ${leitungen?.zuordnung.offen === true ? "ungespeichert" : "gespeichert"}`
+                  : editierbar
+                    ? status.text
+                    : "Nur Ansicht"}
+            </span>
           </span>
           {darfSchreiben && aktiverRaum !== null && (
             <span className="flex flex-wrap gap-2">
@@ -413,9 +461,12 @@ export function Wandansicht({
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-3" role="toolbar" aria-label="Werkzeuge der Wandansicht">
+        <div className="flex shrink-0 flex-wrap items-center gap-3" role="toolbar" aria-label="Werkzeuge der Wandansicht">
           <div className="flex flex-wrap items-center gap-1">
-            {WERKZEUGE.filter((w) => editierbar || !w.schreibend).map((w) => (
+            {[
+              ...WERKZEUGE.filter((w) => editierbar || !w.schreibend),
+              ...LEITUNGSWERKZEUGE.filter((w) => (w.wert === "leitung" ? leitungErlaubt : zuordnenErlaubt)),
+            ].map((w) => (
               <button
                 key={w.wert}
                 type="button"
@@ -438,6 +489,16 @@ export function Wandansicht({
                 wert={geraetetyp?.key ?? null}
                 onWahl={setGeraetetypWahl}
               />
+            </div>
+          )}
+          {leitungsentwurf !== null && leitungen !== undefined && (
+            <div className="flex flex-wrap items-center gap-1" aria-label="Rückgängig im Leitungsentwurf">
+              <button type="button" className={WERKZEUG} disabled={leitungsentwurf.zurueck.length === 0} title="Rückgängig im Leitungsentwurf (Strg+Z)" onClick={() => leitungen.planung.dispatch({ typ: "rueckgaengig" })}>
+                Rückgängig
+              </button>
+              <button type="button" className={WERKZEUG} disabled={leitungsentwurf.vor.length === 0} title="Wiederholen im Leitungsentwurf (Strg+Y)" onClick={() => leitungen.planung.dispatch({ typ: "wiederholen" })}>
+                Wiederholen
+              </button>
             </div>
           )}
           {editierbar && (
@@ -506,6 +567,7 @@ export function Wandansicht({
                   onStatus={setStatuszeile}
                   geraete={geraete}
                   geraetetyp={geraetetyp}
+                  zusatz={leitungen !== undefined ? wl.zusatz : undefined}
                 />
               </div>
               {/* Feste Höhe: Die Fläche springt nicht, wenn der Text wechselt. */}
@@ -514,6 +576,26 @@ export function Wandansicht({
               </p>
             </div>
             <aside className="min-w-0 split:min-h-0 split:overflow-y-auto" aria-label="Eigenschaften der Wand">
+              {leitungen !== undefined && (
+                <div className="mb-2">
+                  {seite === "aussen" && leitungsentwurf !== null && (
+                    <p className={`${meldungsflaeche("schlicht")} m-0 mb-2`}>
+                      Leitungen werden innen geplant – Außenleitungen sind nicht vorgesehen. Mit „Innenseite ansehen“ weiterzeichnen.
+                    </p>
+                  )}
+                  <Leitungsbereich
+                    k={leitungen}
+                    flaeche={{ art: "wand", raumId: ziel.raumId, wandId: ziel.wandId, seite }}
+                    bezug={ergebnis.ok ? ergebnis.bezug : undefined}
+                    relevant={wl.relevant}
+                    gewaehlt={wl.gewaehlt}
+                    onWaehlen={wl.setGewaehlt}
+                    gewaehlteDurchfuehrung={wl.gewaehlteDurchfuehrung}
+                    onDurchfuehrung={wl.setDurchfuehrungId}
+                    onWerkzeug={(w) => setWerkzeug(w === "leitung" && seite === "aussen" ? "auswahl" : w)}
+                  />
+                </div>
+              )}
               {!editierbar && aktiverRaum !== ziel.raumId && (
                 <div className={`${meldungsflaeche("schlicht")} mb-2`}>
                   <p className="m-0">

@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { masseinheitSetzen } from "../../../core/ui/masseinheit";
+import { RueckfrageProvider } from "../../../core/ui/Rueckfrage";
 import type { TopoWand } from "../topologie/wandtopologie";
 import { wandtopologie } from "../topologie/wandtopologie";
 import type { KandidatImPlan, KopplungImPlan } from "./zuordnung";
@@ -52,7 +53,7 @@ function zeigen({
 } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
-    <QueryClientProvider client={client}>
+    <QueryClientProvider client={client}><RueckfrageProvider>
       <Wandzuordnung
         topologie={wandtopologie("geschoss-1", waende(versatz), kopplungenAus(kopplungen))}
         wandId={WAND_A}
@@ -62,7 +63,7 @@ function zeigen({
         darfSchreiben={darfSchreiben}
         entwurfOffen={entwurfOffen}
       />
-    </QueryClientProvider>,
+    </RueckfrageProvider></QueryClientProvider>,
   );
   return screen.getByRole("region", { name: "Wandzuordnung" });
 }
@@ -151,7 +152,7 @@ describe("Wandzuordnung", () => {
   it("ohne Nachbarwand erscheint nichts", () => {
     const client = new QueryClient();
     const { container } = render(
-      <QueryClientProvider client={client}>
+      <QueryClientProvider client={client}><RueckfrageProvider>
         <Wandzuordnung
           topologie={wandtopologie("geschoss-1", [waende()[0] as TopoWand & { staerkeMm: number }])}
           wandId={WAND_A}
@@ -161,7 +162,7 @@ describe("Wandzuordnung", () => {
           darfSchreiben
           entwurfOffen={false}
         />
-      </QueryClientProvider>,
+      </RueckfrageProvider></QueryClientProvider>,
     );
     expect(container).toBeEmptyDOMElement();
   });

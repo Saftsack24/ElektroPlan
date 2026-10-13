@@ -1,0 +1,518 @@
+import { ApiError } from "@elektroplan/api-client";
+import type { components } from "@elektroplan/api-client";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useMemo, useReducer, useState } from "react";
+
+import { useAuth } from "../../../core/auth/AuthProvider";
+import { katalogAbfrage, typenNachSchluessel } from "../geraete/katalog";
+import { planAbfrage } from "../plan";
+import { steigwegSchluessel } from "../steigweg/Steigwege";
+import type { Planergeraet, Stromkreis, Verteilung } from "../stromkreise/daten";
+import {
+  geraeteDesGebaeudes,
+  querschnittAlsEingabe,
+  querschnittLesen,
+  stromkreiseAbfrage,
+  stromkreiseSchluessel,
+  verteilungenAbfrage,
+} from "../stromkreise/daten";
+import { BestaetigungAbgelehnt, bestaetigungsfeld, useLeitungsbestaetigung } from "./bestaetigung";
+import type { DurchfuehrungAusServer, LeitungAusServer } from "./daten";
+import {
+  durchfuehrungenAbfrage,
+  durchfuehrungenSchluessel,
+  leitungAusServer,
+  leitungenAbfrage,
+  leitungenSchluessel,
+  leitungsplanAus,
+  liste,
+  wegpunktAlsAnfrage,
+} from "./daten";
+import type { Leitungsaktion, Leitungsentwurf, Leitungsfehler, Leitungswerte } from "./entwurf";
+import { entwurfAus, leiterzahlLesen, leitungUngespeichert, leitungsReducer } from "./entwurf";
+import type { Leitung, Leitungsergebnis, VorbereiteterPlan } from "./laenge";
+import { leitungAuswerten, planVorbereiten } from "./laenge";
+
+type Schemas = components["schemas"];
+type Geschossplan = Schemas["FloorPlanOut"];
+type RiserOut = Schemas["RiserOut"];
+
+// Feste Funktionen: `combine` läuft nur neu, wenn sich ein Abfrageergebnis ändert -
+// das Ergebnis bleibt sonst dasselbe Objekt, und die Längenvorbereitung läuft nicht bei jedem Rendern.
+function plaeneSammeln(ergebnisse: readonly { data?: Geschossplan | undefined }[]) {
+  return {
+    plaene: ergebnisse.map((r) => r.data),
+    fertig: ergebnisse.every((r) => r.data !== undefined),
+  };
+}
+
+function durchfuehrungenSammeln(ergebnisse: readonly { data?: unknown }[]) {
+  return ergebnisse.flatMap((r) => liste<DurchfuehrungAusServer>(r.data, "penetrations"));
+}
+
+/**
+ * Leitungsplanung eines Gebäudes für Wand- und Deckenansicht (Phase 6b.4).
+ *
+ * Hält höchstens **einen** Leitungsentwurf. Er gehört zum Planungskontext
+ * (Geschoss im 2D-Editor); ein Wechsel zwischen Wand- und Deckenansichten
+ * ändert ihn nicht, speichert nicht und verwirft nicht.
+ *
+ * * Vorschau, Länge und Befunde rechnen mit der gemeinsamen Längenfunktion
+ *   über denselben gespeicherten Planungsstand wie der Server.
+ * * Gespeichert wird nur ausdrücklich: `POST /circuits/{id}/cables` bzw.
+ *   `PUT /cables/{id}` mit `If-Match`. Ein Versionskonflikt überschreibt nie;
+ *   der Entwurf bleibt, bis bewusst verworfen und neu geladen wird.
+ * * Der Server prüft Rechte, Schreibschutz, Versionen und den Weg selbst.
+ */
+
+export interface Leitungsplanung {
+  readonly geladen: boolean;
+  readonly ladefehler: boolean;
+  readonly leitungen: readonly LeitungAusServer[];
+  readonly kreise: readonly Stromkreis[];
+  readonly verteilungen: readonly Verteilung[];
+  readonly geraete: readonly Planergeraet[];
+  readonly durchfuehrungen: readonly DurchfuehrungAusServer[];
+  readonly vorbereitet: VorbereiteterPlan | null;
+  /** Ergebnisse der gespeicherten Leitungen mit derselben Funktion - zum Zeichnen der Läufe. */
+  readonly ergebnisse: ReadonlyMap<string, Leitungsergebnis>;
+  readonly entwurf: Leitungsentwurf | null;
+  readonly ungespeichert: boolean;
+  readonly ergebnis: Leitungsergebnis | null;
+  /** Leitung des Entwurfs als Eingabe der Längenfunktion - für Kandidaten. */
+  readonly entwurfsleitung: Leitung | null;
+  readonly dispatch: (a: Leitungsaktion) => void;
+  readonly darfLeitungen: boolean;
+  readonly darfStromkreise: boolean;
+  readonly hinweis: string | null;
+  setHinweis(text: string | null): void;
+  kreisVon(id: string): Stromkreis | undefined;
+  kreisName(kreis: Pick<Stromkreis, "designation" | "name" | "board_id">): string;
+  geraetName(id: string | null): string;
+  /** Lagegerät der Verteilung und zugeordnete Geräte des Stromkreises. */
+  endpunkte(circuitId: string): Planergeraet[];
+  /** Hat diese gespeicherte Leitung Wegpunkte, die nicht gelesen werden können? */
+  unlesbar(cable: LeitungAusServer): boolean;
+  neueLeitung(circuitId: string): void;
+  bearbeiten(cable: LeitungAusServer): void;
+  schliessen(): void;
+  speichern(): Promise<boolean>;
+  verwerfenUndNeuLaden(): Promise<void>;
+  loeschen(cable: LeitungAusServer): Promise<string | null>;
+  vorschlagUebernehmen(cable: LeitungAusServer): Promise<string | null>;
+  durchfuehrungAendern(d: DurchfuehrungAusServer, werte: { offset_mm: number; height_mm: number }): Promise<string | null>;
+  durchfuehrungEntfernen(d: DurchfuehrungAusServer): Promise<string | null>;
+}
+
+function werteAusServer(c: LeitungAusServer, wegpunkte: Leitungswerte["wegpunkte"]): Leitungswerte {
+  return {
+    circuitId: c.circuit_id,
+    label: c.label ?? "",
+    startId: c.start_device_id,
+    endId: c.end_device_id,
+    kabeltyp: c.cable_type ?? "",
+    leiterzahl: c.conductor_count === null ? "" : String(c.conductor_count),
+    querschnitt: querschnittAlsEingabe(c.cross_section_mm2),
+    startzugabeMm: c.start_allowance_mm,
+    endzugabeMm: c.end_allowance_mm,
+    reserveMm: c.reserve_mm,
+    wegpunkte,
+  };
+}
+
+/** Eingabe der Längenfunktion aus dem Entwurf - Kabelangaben nur für „vollständig angegeben“. */
+export function leitungAusWerten(id: string, w: Leitungswerte): Leitung {
+  const zahl = leiterzahlLesen(w.leiterzahl);
+  const querschnitt = querschnittLesen(w.querschnitt);
+  return {
+    id,
+    startGeraetId: w.startId,
+    endGeraetId: w.endId,
+    wegpunkte: w.wegpunkte,
+    startzugabeMm: w.startzugabeMm,
+    endzugabeMm: w.endzugabeMm,
+    reserveMm: w.reserveMm,
+    kabeltyp: w.kabeltyp.trim() === "" ? null : w.kabeltyp.trim(),
+    leiterzahl: zahl.ok ? zahl.wert : null,
+    querschnittMm2: querschnitt.ok ? querschnitt.wert : null,
+  };
+}
+
+const VERSION_KONFLIKT =
+  "Diese Leitung wurde zwischenzeitlich an anderer Stelle geändert. Ihr Entwurf wurde nicht gespeichert und ist hier weiterhin vorhanden.";
+
+function fehlerAus(error: unknown, rueckfall: string): { status: "konflikt" | "fehler"; fehler: Leitungsfehler } {
+  if (!(error instanceof ApiError)) {
+    return { status: "fehler", fehler: { meldung: "Der Server ist nicht erreichbar. Ihr Entwurf ist unverändert erhalten.", eintraege: [] } };
+  }
+  if (error.status === 409 && error.errorType === "version-conflict") {
+    return { status: "konflikt", fehler: { meldung: VERSION_KONFLIKT, eintraege: [] } };
+  }
+  if (error.status === 409 && (error.errorType === "project-archived" || error.errorType === "project-completed")) {
+    return { status: "fehler", fehler: { meldung: "Das Projekt ist inzwischen schreibgeschützt. Es wurde nichts gespeichert.", eintraege: [] } };
+  }
+  const eintraege = (error.problem?.errors ?? []).map((e) => ({ code: e.code, meldung: e.message, feld: e.field }));
+  return { status: "fehler", fehler: { meldung: error.userMessage === "" ? rueckfall : error.userMessage, eintraege } };
+}
+
+function meldung(error: unknown, rueckfall: string): string {
+  if (!(error instanceof ApiError)) return rueckfall;
+  if (error.errorType === "version-conflict") {
+    return "Die Daten wurden inzwischen an anderer Stelle geändert. Es wurde nichts überschrieben – die Ansicht wurde neu geladen.";
+  }
+  const eintraege = (error.problem?.errors ?? []).map((e) => e.message);
+  return [error.userMessage, ...eintraege].filter((t) => t !== "").join(" ");
+}
+
+export function useLeitungsplanung({
+  buildingId,
+  darfLeitungen,
+  darfStromkreise,
+  onGeschrieben,
+}: {
+  buildingId: string | undefined;
+  /** `electrical.route.write` und Projekt nicht schreibgeschützt. */
+  darfLeitungen: boolean;
+  /** `electrical.circuit.write` und Projekt nicht schreibgeschützt (Vorschlag übernehmen). */
+  darfStromkreise: boolean;
+  onGeschrieben?: (() => Promise<void>) | undefined;
+}): Leitungsplanung {
+  const { api } = useAuth();
+  const queryClient = useQueryClient();
+  const mitBestaetigung = useLeitungsbestaetigung();
+  const haus = buildingId ?? "";
+  const aktiv = buildingId !== undefined;
+  const [entwurf, dispatch] = useReducer(leitungsReducer, null);
+  const [hinweis, setHinweis] = useState<string | null>(null);
+
+  const geschosse = useQuery({
+    queryKey: ["floors", haus],
+    queryFn: () => api.get("/api/v1/buildings/{building_id}/floors", { path: { building_id: haus } }),
+    enabled: aktiv,
+  });
+  const floorListe = useMemo(() => (Array.isArray(geschosse.data) ? geschosse.data : []), [geschosse.data]);
+  const plaene = useQueries({ queries: floorListe.map((g) => ({ ...planAbfrage(api, g.id), enabled: aktiv })), combine: plaeneSammeln });
+  const durchfuehrungen = useQueries({
+    queries: floorListe.map((g) => ({ ...durchfuehrungenAbfrage(api, g.id), enabled: aktiv })),
+    combine: durchfuehrungenSammeln,
+  });
+  const steigwege = useQuery({
+    queryKey: steigwegSchluessel(haus),
+    queryFn: ({ signal }) => api.get("/api/v1/modules/electrical/buildings/{building_id}/risers", { path: { building_id: haus }, signal }),
+    enabled: aktiv,
+  });
+  const leitungenQ = useQuery({ ...leitungenAbfrage(api, haus), enabled: aktiv });
+  const kreiseQ = useQuery({ ...stromkreiseAbfrage(api, haus), enabled: aktiv });
+  const verteilungenQ = useQuery({ ...verteilungenAbfrage(api, haus), enabled: aktiv });
+  const katalog = useQuery(katalogAbfrage(api));
+
+  const leitungen = useMemo(() => liste<LeitungAusServer>(leitungenQ.data, "cables"), [leitungenQ.data]);
+  const kreise = useMemo(() => liste<Stromkreis>(kreiseQ.data, "circuits"), [kreiseQ.data]);
+  const verteilungen = useMemo(() => liste<Verteilung>(verteilungenQ.data, "boards"), [verteilungenQ.data]);
+  const typen = useMemo(() => typenNachSchluessel(Array.isArray(katalog.data) ? katalog.data : undefined), [katalog.data]);
+  const plaeneGeladen = plaene.fertig;
+  const planListe = useMemo(
+    () => plaene.plaene.filter((p): p is Geschossplan => p !== undefined && Array.isArray(p.rooms)),
+    [plaene.plaene],
+  );
+  const steigwegListe = useMemo(() => liste<RiserOut>(steigwege.data, "risers"), [steigwege.data]);
+
+  const geraete = useMemo(() => {
+    const plaeneNachGeschoss = new Map(
+      floorListe.flatMap((g, i) => {
+        const p = plaene.plaene[i];
+        return p === undefined ? [] : [[g.id, p] as const];
+      }),
+    );
+    return geraeteDesGebaeudes(floorListe, plaeneNachGeschoss, typen);
+  }, [floorListe, typen, plaene.plaene]);
+
+  const vorbereitet = useMemo(() => {
+    if (!plaeneGeladen) return null;
+    return planVorbereiten(leitungsplanAus({ geschosse: floorListe, plaene: planListe, durchfuehrungen, steigwege: steigwegListe }));
+  }, [plaeneGeladen, floorListe, planListe, durchfuehrungen, steigwegListe]);
+
+  const ergebnisse = useMemo(() => {
+    const karte = new Map<string, Leitungsergebnis>();
+    if (vorbereitet === null) return karte;
+    for (const c of leitungen) karte.set(c.id, leitungAuswerten(vorbereitet, leitungAusServer(c).leitung));
+    return karte;
+  }, [vorbereitet, leitungen]);
+
+  const entwurfsleitung = useMemo(() => (entwurf === null ? null : leitungAusWerten(entwurf.cableId ?? "neu", entwurf.werte)), [entwurf]);
+  const ergebnis = useMemo(
+    () => (vorbereitet === null || entwurfsleitung === null ? null : leitungAuswerten(vorbereitet, entwurfsleitung)),
+    [vorbereitet, entwurfsleitung],
+  );
+
+  const kreisVon = useCallback((id: string) => kreise.find((k) => k.id === id), [kreise]);
+  const kreisName = useCallback(
+    (kreis: Pick<Stromkreis, "designation" | "name" | "board_id">) => {
+      const v = verteilungen.find((x) => x.id === kreis.board_id);
+      return `${v === undefined ? "" : `${v.code} · `}${kreis.designation} ${kreis.name}`.trim();
+    },
+    [verteilungen],
+  );
+  const geraetName = useCallback(
+    (id: string | null) => {
+      if (id === null) return "Verteilung ohne Lage";
+      const g = geraete.find((x) => x.id === id);
+      return g === undefined ? "unbekanntes Gerät" : `${g.name} (${g.raum})`;
+    },
+    [geraete],
+  );
+  const endpunkte = useCallback(
+    (circuitId: string) => {
+      const kreis = kreise.find((k) => k.id === circuitId);
+      if (kreis === undefined) return [];
+      const lage = verteilungen.find((v) => v.id === kreis.board_id)?.placement_device_id ?? null;
+      // Außen montierte Geräte werden im MVP nicht angeschlossen (D2) - sie bleiben unverändert.
+      const aussen = (id: string) => vorbereitet?.geraete.get(id)?.flaeche === "wall_exterior";
+      return geraete.filter((g) => (g.id === lage || kreis.device_ids.includes(g.id)) && !aussen(g.id));
+    },
+    [kreise, verteilungen, geraete, vorbereitet],
+  );
+
+  const neuLaden = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: leitungenSchluessel(haus) });
+    await queryClient.invalidateQueries({ queryKey: stromkreiseSchluessel(haus) });
+    for (const g of floorListe) await queryClient.invalidateQueries({ queryKey: durchfuehrungenSchluessel(g.id) });
+  }, [queryClient, haus, floorListe]);
+
+  const unlesbar = useCallback((c: LeitungAusServer) => leitungAusServer(c).unlesbar > 0, []);
+
+  const neueLeitung = useCallback(
+    (circuitId: string) => {
+      const kreis = kreise.find((k) => k.id === circuitId);
+      if (kreis === undefined) return;
+      const lage = verteilungen.find((v) => v.id === kreis.board_id)?.placement_device_id ?? null;
+      const anzahl = leitungen.filter((l) => l.circuit_id === circuitId).length;
+      // Kabelangaben aus dem **aktuellen** Vorschlag vorgefüllt und als solche gekennzeichnet.
+      dispatch({
+        typ: "oeffnen",
+        entwurf: entwurfAus(null, null, {
+          circuitId,
+          label: `L${anzahl + 1}`,
+          startId: lage,
+          endId: null,
+          kabeltyp: kreis.proposed_cable_type ?? "",
+          leiterzahl: kreis.proposed_conductor_count === null ? "" : String(kreis.proposed_conductor_count),
+          querschnitt: querschnittAlsEingabe(kreis.proposed_cross_section_mm2),
+          startzugabeMm: 0,
+          endzugabeMm: 0,
+          reserveMm: 0,
+          wegpunkte: [],
+        }),
+      });
+      setHinweis(null);
+    },
+    [kreise, verteilungen, leitungen],
+  );
+
+  const bearbeiten = useCallback((c: LeitungAusServer) => {
+    const { leitung, unlesbar: fehlend } = leitungAusServer(c);
+    if (fehlend > 0) {
+      // Nie bearbeiten, was beim Speichern still verloren ginge.
+      setHinweis("Diese Leitung enthält Wegpunkte, die hier nicht gelesen werden können. Sie wird nicht bearbeitet, damit nichts verloren geht.");
+      return;
+    }
+    dispatch({ typ: "oeffnen", entwurf: entwurfAus(c.id, c.version, werteAusServer(c, leitung.wegpunkte)) });
+    setHinweis(null);
+  }, []);
+
+  const schliessen = useCallback(() => {
+    dispatch({ typ: "schliessen" });
+    // Ein Hinweis zum geschlossenen Entwurf wäre danach veraltet.
+    setHinweis(null);
+  }, []);
+
+  const nachSchreiben = useCallback(async () => {
+    await neuLaden();
+    await onGeschrieben?.();
+  }, [neuLaden, onGeschrieben]);
+
+  const speichern = useCallback(async (): Promise<boolean> => {
+    if (entwurf === null || !darfLeitungen || entwurf.status === "speichert") return false;
+    const w = entwurf.werte;
+    const zahl = leiterzahlLesen(w.leiterzahl);
+    const querschnitt = querschnittLesen(w.querschnitt);
+    const lokal: Leitungsfehler["eintraege"][number][] = [];
+    if (w.endId === null) lokal.push({ code: "end-required", meldung: "Bitte ein Endgerät wählen.", feld: "end_device_id" });
+    if (!zahl.ok) lokal.push({ code: "conductor-count", meldung: zahl.fehler, feld: "conductor_count" });
+    if (!querschnitt.ok) lokal.push({ code: "cross-section", meldung: querschnitt.fehler, feld: "cross_section_mm2" });
+    if (w.kabeltyp.trim().length > 40) lokal.push({ code: "cable-type", meldung: "Der Leitungstyp ist zu lang (höchstens 40 Zeichen).", feld: "cable_type" });
+    if (w.label.trim().length > 60) lokal.push({ code: "label", meldung: "Die Bezeichnung ist zu lang (höchstens 60 Zeichen).", feld: "label" });
+    if (lokal.length > 0 || w.endId === null || !zahl.ok || !querschnitt.ok) {
+      dispatch({ typ: "gescheitert", status: "fehler", fehler: { meldung: "Nicht gespeichert – bitte die Angaben prüfen.", eintraege: lokal } });
+      return false;
+    }
+    const body = {
+      label: w.label.trim() === "" ? null : w.label.trim(),
+      start_device_id: w.startId,
+      end_device_id: w.endId,
+      cable_type: w.kabeltyp.trim() === "" ? null : w.kabeltyp.trim(),
+      conductor_count: zahl.wert,
+      cross_section_mm2: querschnitt.wert,
+      start_allowance_mm: w.startzugabeMm,
+      end_allowance_mm: w.endzugabeMm,
+      reserve_mm: w.reserveMm,
+      waypoints: w.wegpunkte.map(wegpunktAlsAnfrage),
+      new_penetrations: [],
+    };
+    dispatch({ typ: "speichern-beginnt" });
+    try {
+      const gespeichert =
+        entwurf.cableId === null
+          ? await api.post("/api/v1/modules/electrical/circuits/{circuit_id}/cables", { path: { circuit_id: w.circuitId }, body })
+          : await api.put("/api/v1/modules/electrical/cables/{cable_id}", {
+              path: { cable_id: entwurf.cableId },
+              ifMatch: entwurf.version ?? 0,
+              body,
+            });
+      const { leitung } = leitungAusServer(gespeichert);
+      dispatch({ typ: "gespeichert", cableId: gespeichert.id, version: gespeichert.version, werte: werteAusServer(gespeichert, leitung.wegpunkte) });
+      queryClient.setQueryData(leitungenSchluessel(haus), (alt: unknown) => {
+        const bisher = liste<LeitungAusServer>(alt, "cables");
+        if (bisher.length === 0 && (alt === undefined || Array.isArray(alt))) return alt;
+        const ohne = bisher.filter((l) => l.id !== gespeichert.id);
+        return { building_id: haus, cables: [...ohne, gespeichert] };
+      });
+      setHinweis(`Leitung „${gespeichert.label ?? "ohne Bezeichnung"}“ gespeichert.`);
+      await nachSchreiben();
+      return true;
+    } catch (error: unknown) {
+      const a = fehlerAus(error, "Die Leitung konnte nicht gespeichert werden.");
+      dispatch({ typ: "gescheitert", status: a.status, fehler: a.fehler });
+      return false;
+    }
+  }, [api, darfLeitungen, entwurf, haus, nachSchreiben, queryClient]);
+
+  /** Nach einem Konflikt: Entwurf bewusst verwerfen und die Leitung frisch laden. */
+  const verwerfenUndNeuLaden = useCallback(async () => {
+    if (entwurf === null) return;
+    const frisch = await queryClient.fetchQuery({ ...leitungenAbfrage(api, haus), staleTime: 0 });
+    await neuLaden();
+    const c = liste<LeitungAusServer>(frisch, "cables").find((l) => l.id === entwurf.cableId);
+    if (c === undefined) {
+      dispatch({ typ: "schliessen" });
+      setHinweis("Die Leitung gibt es nicht mehr – der Entwurf wurde geschlossen.");
+      return;
+    }
+    const { leitung } = leitungAusServer(c);
+    dispatch({ typ: "oeffnen", entwurf: entwurfAus(c.id, c.version, werteAusServer(c, leitung.wegpunkte)) });
+    setHinweis("Serverstand geladen – Ihr bisheriger Entwurf wurde verworfen.");
+  }, [api, entwurf, haus, neuLaden, queryClient]);
+
+  const loeschen = useCallback(
+    async (c: LeitungAusServer): Promise<string | null> => {
+      try {
+        await api.delete("/api/v1/modules/electrical/cables/{cable_id}", { path: { cable_id: c.id }, ifMatch: c.version });
+        if (entwurf?.cableId === c.id) dispatch({ typ: "schliessen" });
+        await nachSchreiben();
+        return null;
+      } catch (error: unknown) {
+        await neuLaden();
+        return meldung(error, "Die Leitung konnte nicht entfernt werden.");
+      }
+    },
+    [api, entwurf, nachSchreiben, neuLaden],
+  );
+
+  const vorschlagUebernehmen = useCallback(
+    async (c: LeitungAusServer): Promise<string | null> => {
+      const kreis = kreise.find((k) => k.id === c.circuit_id);
+      if (kreis === undefined) return "Der Stromkreis ist nicht (mehr) bekannt. Bitte neu laden.";
+      try {
+        // Beide Versionen: die der Leitung (If-Match) und die des gesehenen Vorschlags.
+        const neu = await api.post("/api/v1/modules/electrical/cables/{cable_id}/apply-proposal", {
+          path: { cable_id: c.id },
+          ifMatch: c.version,
+          body: { expected_circuit_version: kreis.version },
+        });
+        if (entwurf?.cableId === c.id && !leitungUngespeichert(entwurf)) {
+          const { leitung } = leitungAusServer(neu);
+          dispatch({ typ: "oeffnen", entwurf: entwurfAus(neu.id, neu.version, werteAusServer(neu, leitung.wegpunkte)) });
+        }
+        await nachSchreiben();
+        return null;
+      } catch (error: unknown) {
+        await neuLaden();
+        if (error instanceof ApiError && error.status === 409) {
+          return "Leitung oder Stromkreisvorschlag wurden inzwischen geändert. Es wurde nichts übernommen – bitte die neu geladenen Angaben prüfen.";
+        }
+        return meldung(error, "Der Vorschlag konnte nicht übernommen werden.");
+      }
+    },
+    [api, entwurf, kreise, nachSchreiben, neuLaden],
+  );
+
+  const durchfuehrungAendern = useCallback(
+    async (d: DurchfuehrungAusServer, werte: { offset_mm: number; height_mm: number }): Promise<string | null> => {
+      try {
+        await mitBestaetigung((bestaetigt) =>
+          api.patch("/api/v1/modules/electrical/penetrations/{penetration_id}", {
+            path: { penetration_id: d.id },
+            ifMatch: d.version,
+            body: { ...werte, ...bestaetigungsfeld(bestaetigt) },
+          }),
+        );
+        await nachSchreiben();
+        return null;
+      } catch (error: unknown) {
+        if (error instanceof BestaetigungAbgelehnt) return "Nicht verschoben – die Leitungen bleiben unverändert.";
+        await neuLaden();
+        return meldung(error, "Die Durchführung konnte nicht verschoben werden.");
+      }
+    },
+    [api, mitBestaetigung, nachSchreiben, neuLaden],
+  );
+
+  const durchfuehrungEntfernen = useCallback(
+    async (d: DurchfuehrungAusServer): Promise<string | null> => {
+      try {
+        await api.delete("/api/v1/modules/electrical/penetrations/{penetration_id}", { path: { penetration_id: d.id }, ifMatch: d.version });
+        await nachSchreiben();
+        return null;
+      } catch (error: unknown) {
+        await neuLaden();
+        return meldung(error, "Die Durchführung konnte nicht entfernt werden.");
+      }
+    },
+    [api, nachSchreiben, neuLaden],
+  );
+
+  return {
+    geladen: !geschosse.isPending && plaeneGeladen && !leitungenQ.isPending && !kreiseQ.isPending,
+    ladefehler: leitungenQ.isError || kreiseQ.isError,
+    leitungen,
+    kreise,
+    verteilungen,
+    geraete,
+    durchfuehrungen,
+    vorbereitet,
+    ergebnisse,
+    entwurf,
+    ungespeichert: leitungUngespeichert(entwurf),
+    ergebnis,
+    entwurfsleitung,
+    dispatch,
+    darfLeitungen,
+    darfStromkreise,
+    hinweis,
+    setHinweis,
+    kreisVon,
+    kreisName,
+    geraetName,
+    endpunkte,
+    unlesbar,
+    neueLeitung,
+    bearbeiten,
+    schliessen,
+    speichern,
+    verwerfenUndNeuLaden,
+    loeschen,
+    vorschlagUebernehmen,
+    durchfuehrungAendern,
+    durchfuehrungEntfernen,
+  };
+}

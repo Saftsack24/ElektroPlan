@@ -2,9 +2,9 @@
 
 **Status:** **2. Fassung, vom Auftraggeber als Umsetzungsgrundlage freigegeben (2026-10-11)** ·
 D1, D2, D4, D5, D11 bestätigt · **6b.0 und 6b.1 umgesetzt** (technisch geprüft, Checkpoint `541bae9` vom 2026-10-12) ·
-**6b.2 und 6b.3 technisch umgesetzt und geprüft** (Checkpoint vom 2026-10-13; manuelle Gesamtprüfung nach Phase 6
-offen) · 6b.4–6b.6 NOT STARTED ·
-Umsetzungsstand: **§15–§18** (vor §14)
+**6b.2 und 6b.3 technisch umgesetzt und geprüft** (Checkpoint `53fdc19` vom 2026-10-13; manuelle Gesamtprüfung nach Phase 6
+offen) · **6b.4 technisch umgesetzt und funktional geprüft** (Checkpoint vom 2026-10-13; Dunkles Theme, mm/m im Browser, Zuordnungsmodus und Durchführung verschieben im Browser stehen auf der Gesamtprüfliste) ·
+6b.5–6b.6 NOT STARTED · Umsetzungsstand: **§15–§19** (vor §14)
 **Grundlage:** Checkpoint `686316c` (Phase 6a.0–6a.5, gepusht), [ADR 0024](decisions/0024-wall-links-physical-wall-assignment.md),
 [ADR 0025](decisions/0025-risers-between-floors.md), [`phase-6a-design.md`](phase-6a-design.md)
 **ADR:** [ADR 0026 – Stromkreise, Leitungen und Leitungswege](decisions/0026-circuits-cables-and-cable-paths.md) (**accepted**)
@@ -938,7 +938,7 @@ Fixture wurde vor dem ersten Lauf korrigiert.
 
 ## 18. Umsetzungsstand 6b.3 (2026-10-12)
 
-**Implementiert und technisch geprüft, im Checkpoint vom 2026-10-13 committet** (Tasks 0042–0044):
+**Implementiert und technisch geprüft, im Checkpoint `53fdc19` vom 2026-10-13 committet** (Tasks 0042–0044):
 Datenbankabnahme gegen PostgreSQL und MinIO bestanden (neue Datenbanktests, Mandanten-Sweep,
 Fremdschlüsselproben, Migration `0013` mit Downgrade auf Wegwerf-Datenbank, `alembic check`,
 Entwicklungsdatenbank migriert, synthetischer API-Durchlauf im laufenden System). Nach der
@@ -1029,8 +1029,8 @@ Auftraggeber bestätigt 2026-10-12). Für den Halt gilt §7 wörtlich.
 
 ### 18.5 Grenzen
 
-Keine Oberfläche: Die einfache Leitungsliste und alle grafischen Werkzeuge folgen mit 6b.4/6b.5;
-in der Oberfläche gibt es noch keine Bestätigungsrückfrage (der Raumentwurf zeigt eine `409`
+Keine Oberfläche (Stand 6b.3; seit 6b.4 Leitungsliste, Wand-/Deckenwerkzeuge und Bestätigungsrückfrage,
+§19): Die grafischen Werkzeuge folgten mit 6b.4/6b.5; in der Oberfläche gab es noch keine Bestätigungsrückfrage (der Raumentwurf zeigt eine `409`
 `cables-would-break` als Fehlermeldung). Keine Mengenübersicht (6b.6), keine Materialintegration,
 keine Events, keine Bemessung oder Normaussage.
 
@@ -1044,6 +1044,170 @@ keine Events, keine Bemessung oder Normaussage.
 | `test_cable_concurrency.py` | parallele Ersetzung, Anlegen gegen Gerät entfernen, Ersetzen gegen Wand verkürzen, archiviert/abgeschlossen je Schreibweg, Schreibweg vor Archivierung | bestanden |
 | `test_tenant_isolation.py` | Sweep um die neuen Routen, fremde Bezüge, DB-Fremdschlüssel | bestanden |
 | `test_migration_cables.py` | Wegwerf-Datenbank: Bestand 0012 → 0013 unverändert, Modellabgleich, Wegpunktform und Bezüge in der Datenbank, Downgrade bricht mit Leitungen ab und gelingt ohne | bestanden |
+
+## 19. Umsetzungsstand 6b.4 (2026-10-13)
+
+**Technisch umgesetzt und funktional im Browser geprüft (§19.8), im 2. Checkpoint vom 2026-10-13 committet.** Dunkles Theme, mm/m im Browser, Zuordnungsmodus und Durchführung verschieben im Browser stehen auf der Gesamtprüfliste; die vollständige manuelle Abnahme nach Phase 6 bleibt offen. Keine Backendänderung, keine Migration, keine API-Erweiterung.
+
+### 19.1 Umfang
+
+| Thema | Umsetzung |
+|---|---|
+| Ort | bestehende Wand- und Deckenansicht des 2D-Editors; Seitenfeld „Leitungen“ und Werkzeuge „Leitung“ (L) und „Zuordnen“ (Z) – keine zweite Editorplattform |
+| Liste | Leitungen dieser Arbeitsfläche (Läufe, Wegpunkte oder Endgeräte hier), umschaltbar auf alle des Gebäudes; je Leitung Stromkreis, Bezeichnung, Endgeräte, Status, Länge bzw. ausdrückliche Teilsumme |
+| Auswahl | Kabelangaben, „weicht vom aktuellen Stromkreisvorschlag ab“, Weg/Zugaben/Gesamtlänge getrennt, Befunde mit verständlichem Ort („Wegpunkt 3“, „Strecke 2 – 3“, „Anschluss Endgerät“) |
+| Neue Leitung | Stromkreis wählen; Kabelangaben aus dem **aktuellen** Vorschlag vorgefüllt und „aus Vorschlag“ gekennzeichnet; Startgerät = Lage der Verteilung (falls platziert); Bezeichnung `L<n>` vorgeschlagen |
+| Entwurf | Bezeichnung, Start-/Endgerät (Lagegerät der Verteilung und zugeordnete Geräte, **nicht** außen montierte), Kabelangaben je Feld mit „aus Vorschlag“/„abweichend vom Vorschlag“, Zugaben Start/Ende/Reserve (0 … 20 m), Wegpunktliste, Ergebnis, nächster Schritt des Ablaufs |
+| Speichern | nur ausdrücklich: `POST /circuits/{id}/cables` bzw. `PUT /cables/{id}` mit `If-Match`; lokale Prüfung von Endgerät, Leiterzahl, Querschnitt; Serverantwort wird neue Basis |
+| Konflikt | `409 version-conflict`: nichts überschrieben, Entwurf bleibt; „Entwurf vorerst behalten“ oder „Entwurf verwerfen und Serverstand laden“ |
+| Vorschlag übernehmen | ausdrücklich mit Rückfrage (nennt Leitung und neue Angaben) über den bestehenden Vertrag: `If-Match` der Leitung, `expected_circuit_version` des gesehenen Stromkreises; bei `409` nichts übernommen, Hinweis, Neuladen |
+| Entfernen | Leitung mit Rückfrage (`If-Match`); Durchführungen bleiben |
+| Durchführungen | vorhandene als Symbol an beiden Wänden (Gegenlage aus der geprüften Transformation des Servers), als Wegpunkt aufnehmbar; Verschieben (nur an der Eigentümerwand, nur ohne offenen Leitungsentwurf) mit genauer Bestätigung; Entfernen nur ungenutzt |
+| Zuordnung | Modus „Zuordnen“ in Wand- und Deckenansicht mit **demselben** Zuordnungsentwurf (`stromkreise/zuordnung.ts`, auch von der Stromkreisansicht genutzt) |
+| Bestätigung | gemeinsame Rückfrage `leitung/bestaetigung.tsx` für Konturspeichern, Raumdaten (Editor und Tabellen), Wandzuordnung anlegen/ändern, Steigweg ändern, Durchführung verschieben |
+
+### 19.2 Gesten und Tastatur
+
+| Aktion | Bedienung |
+|---|---|
+| Wegpunkt setzen | Werkzeug „Leitung“ (L), Klick auf die Fläche; Vorschau folgt dem Zeiger und zeigt Gültigkeit, Maße und Fangziel; ein neuer Punkt folgt dem gewählten, sonst ans Ende |
+| Start-/Endgerät | Werkzeug „Leitung“, Klick auf ein Gerät des Stromkreises: ohne Startgerät wird es Startgerät, sonst Endgerät; fremde Geräte werden mit Grund abgelehnt; gleichwertig über die Auswahlfelder |
+| Auswählen / Ziehen | Klick auf einen Wegpunkt (jedes Werkzeug) wählt ihn; Ziehen verschiebt ihn – **eine Bewegung = ein Rückgängig-Schritt**; ungültige Lagen bleiben ungespeichert (letzte gültige Lage bleibt) |
+| Feinverschieben | Pfeiltasten 1 cm, mit Umschalt 10 cm – je Druck ein Schritt |
+| Entfernen | Entf/Rücktaste oder „Entfernen“ in der Liste – nur Wand-, Decken- und Durchführungspunkte |
+| Abschluss | Enter beendet das Zeichnen (Werkzeug „Auswählen“) und nennt den nächsten Schritt |
+| Escape | Bewegung → Werkzeug → Wegpunktauswahl → Leitungsauswahl → Ansicht schließen |
+| Rückgängig/Wiederholen | Strg+Z / Strg+Y (Strg+Umschalt+Z) im Leitungsentwurf; Strg+S speichert ihn |
+| Ausschluss | Während eines Leitungs- oder Zuordnungsentwurfs sind die Werkzeuge für Räume, Öffnungen und Geräte ausgeblendet; Alt setzt den Fang aus |
+
+### 19.3 Fang, Hilfslinien, Prüfung
+
+* **Wand:** Raumecken (Wandkanten), Decke (Übergang), Gerätemitten (Achse und Höhe), Durchführungen,
+  Öffnungskanten und Oberkanten, vorhandene Trassen (Höhen waagerechter, Lagen senkrechter Läufe),
+  Raster. Strecken auf derselben Wand bleiben **waagerecht oder senkrecht**: Nachbarpunkte derselben
+  Wand legen die Achse fest (der nähere Fall gewinnt). **Anschlusspunkte** am vorhandenen Weg: Ecke
+  zur Nachbarwand auf gleicher Höhe, Übergang von der Decke an derselben Stelle der Wandachse.
+* **Decke:** Raumecken, Gerätemitten, Flucht der Nachbarpunkte, vorhandene Trassen, Raster;
+  Anschlusspunkt „Übergang von Wand n“ (nur ganzzahlig). Strecken liegen vollständig in der
+  **echten** Kontur (auch L-Raum).
+* **Hilfslinien** (nur mit Werkzeug „Leitung“, ausdrücklich „unverbindlich“): waagerecht 300 mm unter
+  der Decke, 1 100 mm und 300 mm über dem Boden; senkrecht 200 mm neben Wandkanten und Öffnungen.
+  Keine Prüfung, keine Normaussage (Annahme ohne erhebliche Auswirkung, hier dokumentiert).
+* **Prüfung eines Kandidaten:** in den Entwurf eingesetzt und mit `leitung/laenge.ts` (Spiegel von
+  `cable_length.py`, gemeinsame Fixture) ausgewertet; ein Konflikt am Punkt oder an seinen Strecken
+  lehnt ihn ab (der Anschluss an das Endgerät zählt beim Zeichnen nicht). Ein Fangziel erzwingt nie
+  eine ungültige Lage (dann ohne Fang). Vorschau, Länge und Befunde stammen aus derselben
+  Auswertung – keine zweite Längenberechnung. Eingabe: derselbe gespeicherte Planungsstand wie beim
+  Server (`leitung/daten.ts`, Spiegel von `build_plan`).
+
+### 19.4 Entwürfe und Arbeitsflächen
+
+* **Planungskontext** = Geschoss im 2D-Editor. Er hält höchstens **einen** aktiven Entwurf: Raum,
+  Gerätezuordnung oder Leitung. Ein Leitungs- oder Zuordnungsentwurf beginnt nur ohne ungespeicherte
+  Raumänderungen; solange er offen ist, ruht die Raumbearbeitung (Hinweisleiste im Grundriss mit
+  „Leitung weiter bearbeiten“, „speichern“, „schließen“).
+* **Arbeitsfläche** = eine Wand- oder Deckenansicht darin. Wechsel („Arbeitsfläche wechseln“:
+  Nachbarwände, Decke, Wände der Decke) behalten den Entwurf, speichern und verwerfen nichts; die
+  Herkunft (2D/3D) bleibt erhalten.
+* **Verlassen** (Ansicht, Geschoss, Navigation, Abmelden) über den bestehenden Navigationsschutz;
+  „Entwurf schließen“ fragt bei ungespeicherten Änderungen. Kein `alert`/`confirm`, kein Autospeichern.
+* **Rückkehr aus 3D:** Schließen führt wie bisher zur 3D-Ansicht mit Kamera und Auswahl; ein
+  ungespeicherter Entwurf wird dabei erfragt.
+* **Benutzer-/Betriebswechsel:** Entwürfe sind Komponentenzustand im sitzungsgebundenen Baum – mit dem
+  neuen Sitzungsraum sind sie fort; Abfragen liegen im sitzungsgebundenen Query-Client, `signal`
+  wird weitergereicht.
+
+### 19.5 Erhalt nicht bearbeiteter Wegpunkte
+
+Fußboden-, Bodenübergangs- und Steigwegpunkte werden gelesen, mit Ort angezeigt, als „hier nicht
+bearbeitbar – bleibt unverändert“ gekennzeichnet und beim Speichern **unverändert** mitgesendet; sie
+lassen sich hier weder verschieben noch entfernen. Eine Leitung mit einem nicht lesbaren Wegpunkt wird
+nicht bearbeitet (nichts ginge still verloren).
+
+### 19.6 Präzisierungen (ohne neue fachliche Entscheidung)
+
+* **Durchführung setzen** ordnet §12 dem Grundriss (6b.5) zu; in 6b.4 werden nur vorhandene
+  Durchführungen genutzt, verschoben und (ungenutzt) entfernt – `new_penetrations` bleibt leer.
+* Außen montierte Geräte werden nicht als Endgeräte angeboten (§18.2); auf der Außenseite einer Wand
+  gibt es kein Werkzeug „Leitung“ und keine Wegpunkte.
+* Das Bestätigungsfeld `acknowledged_cable_ids` wird nur gesendet, wenn wirklich bestätigt wurde;
+  ohne Unterbrechung bleibt jede Anfrage wie bisher (kein `route.write` nötig).
+
+### 19.7 Tests
+
+`leitung/entwurf.test.ts` (Historie, ein Schritt je Ziehbewegung, Konflikt, Wegpunkte, Kabelangaben),
+`leitung/daten.test.ts` (Beispiel §6.4 8 500/9 200 über die Vorschau, Erhalt aller Wegpunktarten),
+`leitung/flaechen.test.ts` (Umrechnung, Fang, rechtwinklige Führung, Kontur L-Raum, Öffnung, Ecke,
+Übergang Wand – Decke), `leitung/Leitungsplanung.test.tsx` über den echten Editor (neue Leitung von
+Stromkreis bis Speichern, Ablehnungen, Ziehen/Undo/Redo, Pfeiltasten, Erhalt eines Fußbodenpunkts,
+Versionskonflikt, Wand → Decke, Rückkehr aus 3D, Vorschlag mit beiden Versionen und Konflikt,
+Unterbrechungsbestätigung mit genauen IDs und erneuter Frage, Durchführung verschieben, Zuordnung,
+Navigationsschutz, Rechte, Schreibschutz, Sitzungswechsel, Einheiten, Theme-Tokens, außen montierte
+Geräte); angepasst: `Wandzuordnung.test.tsx` (Rückfrage-Provider), Stromkreisansicht unverändert grün.
+
+### 19.8 Abnahme
+
+**Automatisiert (Task 0045/0046):** Frontend 1 095 Tests (92 Dateien) grün, Typecheck, ESLint,
+Modulgrenzen, Build und API-Drift grün; keine Backendänderung, daher kein erneuter Backendlauf.
+
+**Funktionaler Browserdurchlauf (Task 0046, 2026-10-13)** im laufenden Entwicklungsstack (Docker-Engine
+wieder verfügbar, Entwicklungsdatenbank auf `0013`, Seed mit `electrical.route.write`), nur mit
+synthetischen Daten. Voraussetzungen per API aufgebaut (Skript `browser_6b4_aufbau.py`): Diele und
+Küche mit gemeinsamer Bauwand, Verteilung UV1 mit Lagegerät, Stromkreis F3 (Vorschlag NYM-J 3 × 1,5)
+mit zwei zugeordneten Steckdosen, Leitung L1 mit **vorhandener** Durchführung (Durchführungen entstehen
+über die Oberfläche erst in 6b.5). Über die Oberfläche ausgeführt und gegen Server und Neuladen geprüft:
+
+| Ablauf | Ergebnis |
+|---|---|
+| Neue Leitung L2 in der Wandansicht: Start vorgefüllt, zwei Wegpunkte mit Fang, Endgerät per Klick, Zugaben 50/20 cm, Querschnitt abweichend 2,5 | Vorschau 520 cm geometrisch, 590 cm gesamt; `POST → 201`, Server 5 200/700/5 900 mm, „weicht ab“ |
+| Seite neu geladen, L2 gewählt | Verlauf, Kabel (NYM-J · 3 · 2,5 mm²), Zugaben 70 cm, 590 cm, „weicht vom Vorschlag ab“ – identisch |
+| Vorschlag übernehmen (Rückfrage) | `POST …/apply-proposal → 200`, 1,50 mm², Version 2, keine Abweichung mehr |
+| Wegpunkt ziehen, Rückgängig, Wiederholen | eine Bewegung = ein Schritt (370 → 300 → 370 → 300 cm) |
+| Versionskonflikt (Paralleländerung per API) | `PUT` mit `If-Match: 2 → 409`; Entwurf (300 cm) bleibt; erst „Entwurf verwerfen und Serverstand laden“ lädt „L2 extern“ |
+| Wegpunkt entfernen, Änderungen verwerfen | ein Punkt, dann wieder der gespeicherte Stand |
+| L3 Wand → Decke → Wand | Übergang von der Wand eingerastet, zwei Deckenpunkte, Rückweg zur Wand mit Übergang; Entwurf über beide Arbeitsflächenwechsel erhalten; 580 cm; `POST → 201`, Server mit zwei Übergängen Wand – Decke |
+| Navigationsschutz | Ansichtswechsel „Ansicht wechseln?“, Router-Navigation „Seite verlassen? … ungespeicherten Leitungsentwurf“, „Entwurf schließen“ mit Rückfrage – nichts verworfen ohne Bestätigung |
+| Raumhöhe 250 → 260 cm (unterbricht L3) | Rückfrage nennt genau „F3 · L3 …“ mit Grund; „Nicht speichern“: nichts gespeichert; bestätigt: `PATCH` mit genau der ID von L3 → 200; L3 als Konflikt mit Teilsumme und Befunden „Strecke 1 – 2/3 – 4“; per Pfeiltasten korrigiert, Strg+S → bestätigt 600 cm |
+| Projekt archiviert | Wandansicht „Nur Ansicht“, keine Raum-, Leitungs- oder Zuordnungswerkzeuge, Leitungsangaben lesbar |
+
+**Optisch geprüft** (Bildschirmfotos im Browser, nicht aus DOM-Messungen): Darstellung gespeicherter
+Leitungen (blass) und des Entwurfs (Leitungsfarbe, Anschlüsse gestrichelt, nummerierte Wegpunkte),
+Hilfslinien mit Beschriftung, Fangvorschau mit Fanglinie, unvollständige Deckenstrecke gestrichelt in
+Warnfarbe, Konfliktleitung strichpunktiert in Fehlerfarbe, Seitenfeld (Marken „aus Vorschlag“/
+„abweichend“, Länge/Teilsumme), Rückfragen (Vorschlag, Unterbrechung, Verlassen), Hinweisleiste im
+Grundriss, Lesemodus. Nur helles Theme, Fensterbreiten 1 280 und 640 px.
+
+**Im Durchlauf gefunden und behoben (mit Regressionstest):**
+
+1. Konflikt- und Fehlermeldung des Leitungsentwurfs standen oben im Seitenfeld, rund 1 000 px über dem
+   Knopf „Leitung speichern“ – nach dem Klick war keine Rückmeldung sichtbar. Jetzt direkt über den
+   Speicherknöpfen; oben „Konflikt – nicht gespeichert“.
+2. Hinweise der Leitungsplanung („Serverstand geladen …“) fehlten bei offenem Entwurf und blieben nach
+   dem Schließen veraltet stehen. Jetzt im Entwurf sichtbar, beim Schließen gelöscht.
+3. Kopf- und Werkzeugzeile der Wand- und Deckenansicht schrumpften in der Spalte fester Höhe auf ihre
+   Mindesthöhe; umgebrochene Knöpfe („Speichern“) überdeckten „Auswählen“. Bestand schon vor 6b.4,
+   verdeckt aber die Leitungswerkzeuge – jetzt `shrink-0`; sichtbar nachgeprüft.
+
+**Keine Fehler:** einzelne `ERR_ABORTED` sind die abgebrochenen ersten Abfragen des React-StrictMode
+im Entwicklungsmodus (Abbruchsignal wirkt); ein `401` in der Konsole stammt von der abgelaufenen
+Sitzung vor der erneuten Anmeldung. **Nicht reproduzierbar:** ein winziger Grundriss-Maßstab nach dem
+Neuladen bei ausgeblendetem Browserbereich; Öffnen/Schließen der Ansichten verändert den Maßstab nicht.
+
+**Nicht ausgeführt:** dunkles Theme und Einheit mm/m im Browser (nur Tests), Zuordnungsmodus und
+Durchführung verschieben im Browser (nur Tests), Abschluss-Status „abgeschlossen“ im Browser (Test;
+im Browser „archiviert“). **Hinweis zum Stack:** Der Vite-Server im Planner-Container übernimmt
+Dateiänderungen über die Windows-Bindung nicht; nach Codeänderungen den Container regulär neu starten.
+
+**Prüfdaten:** Projekt PR-2026-0007 „Leitungsplanung 6b.4 (synthetisch)“ (archiviert) bleibt mit L1–L3
+für die manuelle Prüfung erhalten; das zweite Prüfprojekt PR-2026-0008 ist samt Kunde entfernt.
+
+### 19.9 Vorbereitung 6b.5 (noch nicht umgesetzt)
+
+Der Leitungsentwurf ist heute an den Planungskontext **Geschoss** gebunden; ein Geschosswechsel
+verlässt ihn (Navigationsschutz). In 6b.5 muss der Entwurf beim Geschosswechsel über einen Steigweg
+**erhalten bleiben**: Er wird dann an das Gebäude gebunden, jeder Wegpunkt behält seinen eindeutigen
+Raum- bzw. Geschossbezug (Wand, Raum, Halt), und ein Wechsel der Arbeitsfläche – auch in ein anderes
+Geschoss – speichert und verwirft nie automatisch.
 
 ## 14. Ausdrücklich nicht in 6b
 

@@ -33,6 +33,8 @@
   --ep-plan-device-face: #ece9fb;
   /* Steigwege (Phase 6a.5): Übergabepunkt und bestätigter Verlauf, akzentunabhängig */
   --ep-plan-riser: #0f6b5c;
+  /* Leitungen (Phase 6b.4): Leitungsfarbe, akzentunabhängig; Status zusätzlich über Strichart und Text */
+  --ep-plan-cable: #0b5aa6;
 
   /* 3D */
   --ep-plan3d-background: #f4f6f8;
@@ -62,6 +64,7 @@
   --ep-plan-device: #c9c0ff;
   --ep-plan-riser: #6fd6c2;
   --ep-plan-device-face: #2e2a4d;
+  --ep-plan-cable: #7cc0ff;
 
   --ep-plan3d-background: #1d232b;
   --ep-plan3d-grid: #4a5663;

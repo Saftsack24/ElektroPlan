@@ -73,6 +73,10 @@ Dokumentation und Oberfläche auf Deutsch, Code und API auf Englisch.
 | Schachtfortsetzung | `shaft` (abgeleitet) | senkrechte Strecke über einem Steigweghalt bis zu einem Wand- oder Deckenpunkt genau darüber – seit 6b.2 |
 | Trassenmeter / Leitungsmeter | – (abgeleitet) | Länge einer Trasse einmal gezählt bzw. Summe der Leitungslängen auf ihr je Leitung – seit 6b.2 |
 | Teilsumme | `known_mm` | Summe der gültigen, bekannten Teile einer nicht bestätigten Leitung – nie eine Leitungslänge – seit 6b.2 |
+| Planungskontext | – (Oberfläche) | Geschoss im 2D-Editor; hält höchstens einen aktiven Entwurf (Raum, Gerätezuordnung oder Leitung) – seit 6b.4 |
+| Arbeitsfläche | – (Oberfläche) | eine Wand- oder Deckenansicht im Planungskontext; ein Wechsel behält jeden Entwurf – seit 6b.4 |
+| Anschlusspunkt (Fang) | – (Oberfläche) | ausdrücklicher Fortsetzungspunkt am vorhandenen Leitungsweg: Ecke zur Nachbarwand, Übergang Wand – Decke – seit 6b.4 |
+| Hilfslinie | – (Oberfläche) | unverbindliche Planungshilfe für Leitungswege in der Wandansicht, ohne Prüfung oder Normaussage – seit 6b.4 |
 | Anschlusszugabe / Reserve | `start_allowance_mm`, `end_allowance_mm`, `reserve_mm` | ausdrücklich je Leitung eingetragene Zusatzlänge, nie still – **Entwurf 6b** |
 | Standard-Geschosshöhe | `default_ceiling_height_mm` | lichte Höhe in Millimetern |
 | Protokolleintrag | `audit_entry` | |

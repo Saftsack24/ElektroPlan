@@ -25,10 +25,11 @@ import { geraetAendern, geraetEinfuegen, neuesWandgeraet } from "../geraete/gera
 import type { Geraetetyp } from "../geraete/katalog";
 import { SymbolImPlan } from "../geraete/symbole";
 import type { AnsichtsGeraet } from "./wandgeraete";
+import type { Flaechenzusatz } from "../leitung/zusatz";
 import { flaecheDerSeite, geraetLage, geraetLagePruefen, geraeteName, geraetemasslinien } from "./wandgeraete";
 
-/** Werkzeuge der Wandansicht: Öffnungsarten und seit Phase 5 „Gerät“. */
-export type Wandwerkzeug = "auswahl" | "pan" | Oeffnungsart | "geraet";
+/** Werkzeuge der Wandansicht: Öffnungsarten, seit Phase 5 „Gerät“, seit 6b.4 „Leitung“ und „Zuordnen“. */
+export type Wandwerkzeug = "auswahl" | "pan" | Oeffnungsart | "geraet" | "leitung" | "zuordnen";
 
 /** Ist das Werkzeug eines der Öffnungswerkzeuge? */
 function istOeffnungswerkzeug(w: Wandwerkzeug): w is Oeffnungsart {
@@ -50,7 +51,7 @@ export interface ZeichenflaecheGriff {
 }
 
 interface Laufend {
-  readonly art: "bewegung" | "platzieren" | "pan" | "geraet-bewegen" | "geraet-platzieren";
+  readonly art: "bewegung" | "platzieren" | "pan" | "geraet-bewegen" | "geraet-platzieren" | "zusatz";
   readonly pointerId: number;
   readonly element: Element;
   readonly startBild: Bildpunkt;
@@ -115,6 +116,8 @@ interface Props {
   geraete?: readonly AnsichtsGeraet[];
   /** Typ, den das Werkzeug „Gerät“ setzt. */
   geraetetyp?: Geraetetyp | null;
+  /** Phase 6b.4: Leitungsplanung als Zusatzebene (Wegpunkte, Endgeräte, Zuordnung). */
+  zusatz?: Flaechenzusatz | undefined;
 }
 
 const RUECKFALL: Groesse = { breite: 900, hoehe: 480 };
@@ -153,6 +156,8 @@ export function WandZeichenflaeche(props: Props) {
   const [vorschau, setVorschau] = useState<Vorschau | null>(null);
   const [geraetVorschau, setGeraetVorschau] = useState<GeraetVorschau | null>(null);
   const laufend = useRef<Laufend | null>(null);
+  const zusatzRef = useRef(props.zusatz);
+  zusatzRef.current = props.zusatz;
   const geraete = props.geraete ?? [];
   const L = bezug.laengeMm;
   const H = bezug.hoeheMm;
@@ -209,6 +214,7 @@ export function WandZeichenflaeche(props: Props) {
     freigeben();
     setVorschau(null);
     setGeraetVorschau(null);
+    if (l.art === "zusatz") return props.zusatz?.abbrechen() ?? true;
     if (l.art === "bewegung" || l.art === "geraet-bewegen") dispatch({ typ: "ziehen-abbrechen" });
     props.onStatus("Bewegung abgebrochen - nichts geändert.");
     return true;
@@ -226,6 +232,7 @@ export function WandZeichenflaeche(props: Props) {
     () => () => {
       const art = laufend.current?.art;
       if (art === "bewegung" || art === "geraet-bewegen") dispatch({ typ: "ziehen-abbrechen" });
+      if (art === "zusatz") zusatzRef.current?.abbrechen();
       laufend.current = null;
     },
     [dispatch],
@@ -353,6 +360,11 @@ export function WandZeichenflaeche(props: Props) {
       return;
     }
     if (event.button !== 0) return;
+    // Leitungsplanung (6b.4): Übernimmt die Zusatzebene, gilt nur sie - sonst alles wie bisher.
+    if (props.zusatz?.druecken({ welt: bildZuWelt(viewport, bild), ziel: event.target as Element, altKey: event.altKey, massstab: viewport.massstab }) === true) {
+      einfangen("zusatz");
+      return;
+    }
     const geraetZiel = (event.target as Element).closest?.("[data-geraet]");
     const geraetId = geraetZiel?.getAttribute("data-geraet") ?? null;
     if (geraetId !== null) {
@@ -406,6 +418,10 @@ export function WandZeichenflaeche(props: Props) {
     if (l?.art === "pan") {
       setViewport(verschieben(l.startViewport, bild.x - l.startBild.x, bild.y - l.startBild.y));
       return;
+    }
+    if (props.zusatz !== undefined && (l === null || l.art === "zusatz")) {
+      const ereignis = { welt, ziel: event.target as Element, altKey: event.altKey, massstab: viewport.massstab };
+      if (props.zusatz.bewegen(ereignis, l !== null) || l !== null) return;
     }
     if (l?.art === "geraet-bewegen" && l.startMitte !== undefined && l.ab !== undefined && l.geraetId !== undefined) {
       const g = geraete.find((x) => x.id === l.geraetId);
@@ -482,6 +498,10 @@ export function WandZeichenflaeche(props: Props) {
     const l = laufend.current;
     if (l === null) return;
     freigeben();
+    if (l.art === "zusatz") {
+      props.zusatz?.loslassen();
+      return;
+    }
     if (l.art === "geraet-bewegen") {
       setGeraetVorschau(null);
       dispatch({ typ: "ziehen-beenden" });
@@ -770,7 +790,7 @@ export function WandZeichenflaeche(props: Props) {
     }
   }
 
-  const cursor = werkzeug === "pan" ? "grab" : werkzeug === "auswahl" ? "default" : "crosshair";
+  const cursor = props.zusatz?.cursor ?? (werkzeug === "pan" ? "grab" : werkzeug === "auswahl" ? "default" : "crosshair");
 
   return (
     <div ref={huelle} className="relative h-full min-h-[300px] touch-none overflow-hidden rounded-ep border border-line bg-canvas">
@@ -794,6 +814,7 @@ export function WandZeichenflaeche(props: Props) {
           if (laufend.current === null) {
             setVorschau(null);
             setGeraetVorschau(null);
+            props.zusatz?.abbrechen();
           }
         }}
         onContextMenu={(event) => event.preventDefault()}
@@ -815,6 +836,7 @@ export function WandZeichenflaeche(props: Props) {
           {`${bezug.nachbarRechts !== null ? `Wand ${bezug.nachbarRechts} · ` : ""}rechts ▸`}
         </text>
         {elemente}
+        {props.zusatz?.zeichnen(b)}
       </svg>
     </div>
   );

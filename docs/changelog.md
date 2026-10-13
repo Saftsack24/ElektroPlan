@@ -5,7 +5,36 @@ Einträge entstehen nach relevanten Änderungen, nicht nach jedem Commit.
 
 ---
 
-## 2026-10-12 — Phase 6b.3: Leitungen, Wegpunkte, Durchführungen (technisch geprüft, Checkpoint vom 2026-10-13)
+## 2026-10-13 — Phase 6b.4: Leitungsplanung in Wand- und Deckenansicht (Checkpoint vom 2026-10-13)
+
+Keine Migration, keine API-Änderung. Funktional im Browser abgenommen (Entwurf §19.8).
+
+### Fixed (Browserabnahme)
+- Rückmeldung zu Konflikt und Fehler beim Speichern einer Leitung steht direkt an den Speicherknöpfen.
+- Hinweise der Leitungsplanung sind auch bei offenem Entwurf sichtbar und bleiben nicht veraltet stehen.
+- Kopf- und Werkzeugzeile der Wand- und Deckenansicht überlagern sich bei Umbruch nicht mehr.
+
+### Added
+- Seitenfeld „Leitungen“ in Wand- und Deckenansicht: Liste je Arbeitsfläche, Auswahl mit
+  Kabelangaben, Abweichung vom Stromkreisvorschlag, Weg/Zugaben/Gesamtlänge bzw. Teilsumme und
+  Befunden; neue Leitung (vorgefüllt aus dem Vorschlag), Bearbeiten, Entfernen, Vorschlag übernehmen.
+- Werkzeug „Leitung“ (L): Wegpunkte setzen, wählen, ziehen (ein Schritt je Bewegung), mit Pfeiltasten
+  verschieben, entfernen; Start-/Endgerät per Klick; Vorschau mit Fang (Ecken, Decke, Gerätemitten,
+  Durchführungen, Öffnungskanten, Trassen, unverbindliche Hilfslinien) und rechtwinkliger Führung;
+  Prüfung mit der gemeinsamen Längenfunktion.
+- Leitungsentwurf je Planungskontext: Wechsel zwischen Wand- und Deckenansichten behält ihn;
+  Rückgängig/Wiederholen, bewusstes Speichern mit `If-Match`, Konfliktbehandlung ohne Überschreiben.
+- Werkzeug „Zuordnen“ (Z) in Wand- und Deckenansicht mit demselben Zuordnungsentwurf wie die
+  Stromkreisansicht.
+- Bestätigungsrückfrage für Änderungen, die Leitungen unterbrechen (Kontur, Raumhöhe,
+  Wandzuordnung, Steigweg, Durchführung) - nennt die Leitungen, sendet genau ihre IDs.
+- Durchführung verschieben (Eigentümerwand) und ungenutzte entfernen; Farbtoken `--ep-plan-cable`.
+
+### Changed
+- Stromkreisansicht nutzt den gemeinsamen Zuordnungsentwurf (`stromkreise/zuordnung.ts`) - Verhalten
+  unverändert.
+
+## 2026-10-12 — Phase 6b.3: Leitungen, Wegpunkte, Durchführungen (technisch geprüft, Checkpoint `53fdc19` vom 2026-10-13)
 
 **Migration `0013_cables_and_penetrations`, danach Seed ausführen** (neues Recht).
 
@@ -26,7 +55,7 @@ Einträge entstehen nach relevanten Änderungen, nicht nach jedem Commit.
   verschoben oder gelöscht (`409 cables-would-break`, `wall-has-cables`, `device-has-cables` u. a.).
 - Steigweghalte gleicher Ebene sortieren Backend und Frontend nach Halt-ID.
 
-## 2026-10-12 — Phase 6b.2: Leitungslänge als reine Funktion (Checkpoint vom 2026-10-13)
+## 2026-10-12 — Phase 6b.2: Leitungslänge als reine Funktion (Checkpoint `53fdc19` vom 2026-10-13)
 
 ### Added
 

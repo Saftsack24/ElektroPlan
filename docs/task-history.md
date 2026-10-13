@@ -3593,7 +3593,7 @@ gepusht; manuelle Gesamtprüfung nach Phase 6 und Produktions-/Echtdatenfreigabe
 
 ---
 
-## Task 0044 – Checkpoint-Commit 6b.2/6b.3
+## Task 0044 – Checkpoint-Commit 6b.2/6b.3 (`53fdc19`)
 
 **Datum:** 2026-10-13 · **Status:** committet (kein Push); technisch umgesetzt und geprüft; manuelle
 Gesamtprüfung nach Phase 6 offen; keine Produktions- oder Echtdatenfreigabe.
@@ -3606,3 +3606,67 @@ Gesamtprüfung nach Phase 6 offen; keine Produktions- oder Echtdatenfreigabe.
   `git diff --check` sauber.
 * **Grundlage:** der dokumentierte Gesamtlauf aus Task 0043 (Backend 1 319, Frontend 1 038); für die
   Statusformulierungen nicht wiederholt.
+
+---
+
+## Task 0045 – Phase 6b.4: Leitungsplanung in Wand- und Deckenansicht
+
+**Datum:** 2026-10-13 · **Status:** implementiert, automatisiert geprüft, **nicht committet**; Browserdurchlauf
+nicht ausführbar; manuelle Gesamtprüfung nach Phase 6 offen; keine Produktions- oder Echtdatenfreigabe.
+
+* **Neu (Frontend, `modules/electrical/leitung/`):** `daten.ts` (Abfragen, Planungsstand wie `build_plan`,
+  Wegpunkte hin/zurück), `entwurf.ts` (Reducer, Historie, Kabelangaben), `flaechen.ts` (Umrechnung, Fang,
+  rechtwinklige Führung, Kandidatenprüfung), `bestaetigung.tsx` (Rückfrage `cables-would-break`),
+  `useLeitungsplanung.ts` (Daten, Entwurf, Speichern, Vorschlag, Durchführungen), `kontext.ts`,
+  `Leitungsbereich.tsx` (Seitenfeld), `Wandleitungen.tsx`/`Deckenleitungen.tsx` (Zeiger, Tasten,
+  Darstellung), `zusatz.ts` (Zusatzebene der Zeichenflächen), `leitung.css`; `stromkreise/zuordnung.ts`
+  (gemeinsamer Zuordnungsentwurf).
+* **Geändert:** `GrundrissEditor.tsx` (Planungskontext, Ausschluss, Hinweisleiste, Bestätigung beim
+  Speichern), `Wandansicht.tsx`/`WandZeichenflaeche.tsx`, `Deckenansicht.tsx` (Werkzeuge, Zusatzebene,
+  Seitenfeld), `RoomsTab.tsx` (Rechte, Bestätigung), `Wandzuordnung.tsx`, `Steigwege.tsx` (Bestätigung),
+  `Stromkreise.tsx` (gemeinsamer Zuordnungsentwurf), `darstellung.css` (`--ep-plan-cable` hell/dunkel).
+* **Behoben während der Umsetzung:** rechtwinklige Führung sortierte bei einem Nachbarpunkt nicht nach
+  Nähe; Nullstrecken einer Anschlussstrecke wurden gezeichnet.
+* **Prüfungen:** Frontend 1 094/1 094 (92 Dateien, davon neu 99 Leitungstests), Typecheck, ESLint,
+  Modulgrenzen, Build, API-Drift grün. Keine Backendänderung – kein PostgreSQL-Lauf nötig.
+* **Nicht ausführbar:** Browserdurchlauf. Docker Desktop wurde regulär gestartet, die Engine blieb
+  unerreichbar (`dockerDesktopLinuxEngine` fehlt); keine Reparatur ohne Freigabe. Ein synthetisches
+  Projekt wurde nicht angelegt.
+---
+
+## Task 0046 – Funktionale Abnahme 6b.4
+
+**Datum:** 2026-10-13 · **Status:** abgeschlossen, **nicht committet**, nicht gepusht; manuelle Gesamtprüfung
+nach Phase 6 offen; keine Produktions- oder Echtdatenfreigabe.
+
+* **Ausgangsstand:** Docker-Engine 29.8.0 verfügbar, Container healthy, Entwicklungsdatenbank `0013`, Seed
+  vorhanden (`electrical.route.write`). Keine Reparaturen, keine Volumes gelöscht, keine Datenbank angelegt.
+* **Synthetischer Aufbau** per API (`browser_6b4_aufbau.py` im Scratchpad): Projekt PR-2026-0007 mit Diele/
+  Küche, gemeinsamer Bauwand, UV1 mit Lagegerät, F3 mit zwei Steckdosen, L1 mit vorhandener Durchführung.
+  Paralleländerungen für den Konfliktfall per API (`browser_6b4_parallel.py`).
+* **Durchlauf über die Oberfläche** (Ergebnisse in Entwurf §19.8): L2 neu gezeichnet, gespeichert (201),
+  neu geladen und verglichen; Vorschlag übernommen (200); Ziehen/Undo/Redo; Konflikt 409 ohne
+  Überschreiben; Entfernen/Verwerfen; L3 Wand → Decke → Wand (201); Navigationsschutz dreifach;
+  Raumhöhe mit genauer Bestätigung (409, 409, 200 mit genau einer ID), Konflikt sichtbar und korrigiert;
+  Lesemodus nach Archivieren.
+* **Befunde behoben:** Rückmeldung zum Speichern an den Knöpfen; Hinweise im Entwurf sichtbar und beim
+  Schließen gelöscht; `shrink-0` für Kopf- und Werkzeugzeile der Wand- und Deckenansicht. Regressionstests
+  in `leitung/Leitungsplanung.test.tsx`. Nach dem Neustart des Planner-Containers sichtbar nachgeprüft
+  (zweites Prüfprojekt PR-2026-0008, danach samt Kunde entfernt).
+* **Prüfungen:** Frontend 1 095/1 095, Typecheck, ESLint, Modulgrenzen, Build, API-Drift grün; Backend
+  unverändert.
+* **Vorbereitung 6b.5** dokumentiert (Entwurf §19.9), nicht umgesetzt.
+---
+
+## Task 0047 – Checkpoint-Commit 6b.4
+
+**Datum:** 2026-10-13 · **Status:** committet (kein Push); technisch umgesetzt und funktional geprüft;
+manuelle Gesamtprüfung nach Phase 6 offen; keine Produktions- oder Echtdatenfreigabe.
+
+* **Umfang geprüft:** nur Planner-Quellen, Tests und Dokumentation zu 6b.4 einschließlich der
+  Browser-Nachkorrekturen; kein Backend, keine Migration, kein API-Client; keine Secrets, `.env`,
+  Vorschaukonfiguration, Screenshots, Logs, Dumps oder Scratchpad-Dateien; keine Debug-Reste, kein
+  `skip`/`only`, keine entfernten Prüfungen; `git diff --check` sauber.
+* **Grundlage:** Frontend 1 095 Tests und grüne Schranken (Task 0046), funktionaler Browserdurchlauf
+  (Entwurf §19.8). Sichtbar geprüft: helles Theme, 1 280 und 640 px. Auf der Gesamtprüfliste: dunkles
+  Theme, mm/m, Zuordnungsmodus und Durchführung verschieben im Browser.

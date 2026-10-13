@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 
 import { alsFormularfehler } from "../../../core/api/fehler";
 import { useAuth } from "../../../core/auth/AuthProvider";
-import { BEHALTEN_LABEL, VERWERFEN_LABEL, useRueckfrage } from "../../../core/ui/Rueckfrage";
+import { BEHALTEN_LABEL, VERWERFEN_LABEL, useRueckfrage, verwerfenOptionen } from "../../../core/ui/Rueckfrage";
 import { useUngespeicherteAenderungen } from "../../../core/ui/ungespeichert";
 import { KNOPFZEILE, knopf, meldungsflaeche } from "../../../core/ui/stil";
 import { planAbfrage, planSchluessel } from "../plan";
@@ -52,6 +52,12 @@ import { umlaufsinn } from "../wandansicht/wandbezug";
 import type { Auswahl, Speicherstatus, Werkzeug } from "./zustand";
 import { AKTION } from "../../../core/ui/aktionssymbole";
 import { Symbol } from "../../../core/ui/Symbol";
+import { BestaetigungAbgelehnt, bestaetigungsfeld, useLeitungsbestaetigung } from "../leitung/bestaetigung";
+import { durchfuehrungenSchluessel, leitungenSchluessel } from "../leitung/daten";
+import type { Arbeitsflaeche, Leitungskontext } from "../leitung/kontext";
+import { useLeitungsplanung } from "../leitung/useLeitungsplanung";
+import { ZUORDNUNG_MELDUNG } from "../stromkreise/texte";
+import { useZuordnungsentwurf } from "../stromkreise/zuordnung";
 
 
 const STATUS_TEXT: Record<Speicherstatus, string> = {
@@ -84,6 +90,9 @@ export interface Deckenziel {
 
 const RAUM_MELDUNG =
   "Der aktive Raum hat ungespeicherte Änderungen. Wenn Sie fortfahren, gehen sie verloren.";
+
+const LEITUNG_MELDUNG =
+  "Es gibt einen ungespeicherten Leitungsentwurf. Wenn Sie fortfahren, geht er verloren.";
 
 /** Wände eines Raums in Entwurfsform - Serverstand oder Entwurf. */
 function basisWaende(walls: RaumImPlan["walls"] | Raumentwurf["walls"]): Raumentwurf["walls"] {
@@ -136,6 +145,9 @@ export function GrundrissEditor({
   startDeckenansicht = null,
   onStartVerbraucht,
   onZurueck3d,
+  darfLeitungen = false,
+  darfStromkreise = false,
+  onGeschrieben,
 }: {
   floorId: string;
   /** Gebäude des Geschosses (Phase 6b.1) - für die Rückfrage zu zugeordneten Geräten. */
@@ -153,6 +165,12 @@ export function GrundrissEditor({
   onStartVerbraucht?: () => void;
   /** Wandansicht wurde aus 3D geöffnet und geschlossen: zurück zur 3D-Ansicht. */
   onZurueck3d?: () => void;
+  /** Phase 6b.4: `electrical.route.write` und Projekt nicht schreibgeschützt. */
+  darfLeitungen?: boolean;
+  /** Phase 6b.4: `electrical.circuit.write` und Projekt nicht schreibgeschützt. */
+  darfStromkreise?: boolean;
+  /** Nach Schreibvorgängen an Leitungen und Zuordnungen (Projektkopf nachladen). */
+  onGeschrieben?: (() => Promise<void>) | undefined;
 }) {
   const { api } = useAuth();
   const queryClient = useQueryClient();
@@ -193,9 +211,17 @@ export function GrundrissEditor({
   const kopplungen = useMemo(() => kopplungenAus(planKopplungen), [planKopplungen]);
 
   const offen = ungespeichert(zustand);
-  const schreibbar = darfSchreiben;
-  useUngespeicherteAenderungen(offen, RAUM_MELDUNG);
-  useEffect(() => onUngespeichert(offen), [offen, onUngespeichert]);
+  // Phase 6b.4: Leitungsentwurf und Gerätezuordnung gehören zu diesem Planungskontext.
+  const planung = useLeitungsplanung({ buildingId, darfLeitungen, darfStromkreise, onGeschrieben });
+  const zuordnung = useZuordnungsentwurf({ buildingId: buildingId ?? "", darfSchreiben: darfStromkreise, onGeschrieben });
+  const mitBestaetigung = useLeitungsbestaetigung();
+  const leitungAktiv = planung.entwurf !== null;
+  const zuordnungAktiv = zuordnung.entwurf !== null;
+  // Höchstens ein aktiver Entwurf: Solange Leitung oder Zuordnung offen ist, ruht die Raumbearbeitung.
+  const schreibbar = darfSchreiben && !leitungAktiv && !zuordnungAktiv;
+  const offenGesamt = offen || planung.ungespeichert || zuordnung.offen;
+  useUngespeicherteAenderungen(offenGesamt, planung.ungespeichert ? LEITUNG_MELDUNG : zuordnung.offen ? ZUORDNUNG_MELDUNG : RAUM_MELDUNG);
+  useEffect(() => onUngespeichert(offenGesamt), [offenGesamt, onUngespeichert]);
 
   // Neu geladener Serverstand: ersetzt nur einen unveränderten Entwurf.
   useEffect(() => {
@@ -586,22 +612,34 @@ export function GrundrissEditor({
     }
     dispatch({ typ: "speichern-beginnt" });
     try {
-      const gespeichert = await api.put("/api/v1/modules/electrical/rooms/{room_id}/contour", {
-        path: { room_id: basis.raum.id },
-        ifMatch: basis.raum.version,
-        body: { ...alsKonturanfrage(entwurf), removed_wall_link_ids: betroffen.map((k) => k.id) },
-      });
+      // Unterbricht das Speichern Leitungen, fragt der Server nach - bestätigt werden genau diese (6b.4).
+      const gespeichert = await mitBestaetigung((bestaetigt) =>
+        api.put("/api/v1/modules/electrical/rooms/{room_id}/contour", {
+          path: { room_id: basis.raum.id },
+          ifMatch: basis.raum.version,
+          body: { ...alsKonturanfrage(entwurf), removed_wall_link_ids: betroffen.map((k) => k.id), ...bestaetigungsfeld(bestaetigt) },
+        }),
+      );
       dispatch({ typ: "gespeichert", raum: gespeichert });
       queryClient.setQueryData<Geschossplan>(planSchluessel(floorId), (alt) =>
         alt === undefined ? alt : { ...alt, rooms: alt.rooms.map((r) => (r.id === gespeichert.id ? gespeichert : r)) },
       );
       // Kopplungsstatus und Versionen der Partnerräume kann das Speichern ändern.
       await queryClient.invalidateQueries({ queryKey: planSchluessel(floorId) });
-      // Entfernte Geräte verlieren ihre Stromkreiszuordnung (CASCADE).
-      if (buildingId !== undefined) await queryClient.invalidateQueries({ queryKey: stromkreiseSchluessel(buildingId) });
+      // Entfernte Geräte verlieren ihre Stromkreiszuordnung (CASCADE); Leitungen ändern Status und Länge.
+      if (buildingId !== undefined) {
+        await queryClient.invalidateQueries({ queryKey: stromkreiseSchluessel(buildingId) });
+        await queryClient.invalidateQueries({ queryKey: leitungenSchluessel(buildingId) });
+      }
+      await queryClient.invalidateQueries({ queryKey: durchfuehrungenSchluessel(floorId) });
       await nachSchreiben(gespeichert.id);
       return true;
     } catch (error: unknown) {
+      if (error instanceof BestaetigungAbgelehnt) {
+        dispatch({ typ: "hinweis-schliessen" });
+        setHinweis("Nicht gespeichert – die Leitungen bleiben unverändert. Ihr Entwurf ist erhalten.");
+        return false;
+      }
       const auswertung = fehlerAuswerten(error);
       dispatch({ typ: "speichern-gescheitert", status: auswertung.status, fehler: auswertung.fehler });
       return false;
@@ -686,22 +724,29 @@ export function GrundrissEditor({
     try {
       // If-Match mit der Basisversion: Nur wenn niemand sonst dazwischen war,
       // darf die neue Version in den Entwurf übernommen werden.
-      const raum = await api.patch("/api/v1/modules/electrical/rooms/{room_id}", {
-        path: { room_id: basis.raum.id },
-        ifMatch: basis.raum.version,
-        body: {
-          name: werte.name.trim(),
-          room_number: werte.room_number.trim() === "" ? null : werte.room_number.trim(),
-          height_mm: hoehe === "" ? null : Number.parseInt(hoehe, 10),
-          room_type: raumtypAusWert(werte.room_type),
-        },
-      });
+      const raum = await mitBestaetigung((bestaetigt) =>
+        api.patch("/api/v1/modules/electrical/rooms/{room_id}", {
+          path: { room_id: basis.raum.id },
+          ifMatch: basis.raum.version,
+          body: {
+            name: werte.name.trim(),
+            room_number: werte.room_number.trim() === "" ? null : werte.room_number.trim(),
+            height_mm: hoehe === "" ? null : Number.parseInt(hoehe, 10),
+            room_type: raumtypAusWert(werte.room_type),
+            ...bestaetigungsfeld(bestaetigt),
+          },
+        }),
+      );
       setRaumdaten(false);
+      if (buildingId !== undefined) await queryClient.invalidateQueries({ queryKey: leitungenSchluessel(buildingId) });
       dispatch({ typ: "stammdaten", raum });
       await queryClient.invalidateQueries({ queryKey: planSchluessel(floorId) });
       await nachSchreiben(raum.id);
       return undefined;
     } catch (error: unknown) {
+      if (error instanceof BestaetigungAbgelehnt) {
+        return { fehler: "Nicht gespeichert – die Leitungen bleiben unverändert." };
+      }
       if (error instanceof ApiError && error.errorType === "version-conflict") {
         return { fehler: "Der Raum wurde zwischenzeitlich geändert. Bitte zuerst den Serverstand laden." };
       }
@@ -815,6 +860,88 @@ export function GrundrissEditor({
     }
   };
 
+  // ------------------------------------------------ Leitungsplanung (6b.4)
+
+  const wandName = (wandId: string): string => {
+    for (const r of darstellung) {
+      const i = r.walls.findIndex((w) => w.id === wandId);
+      if (i >= 0) return `Wand ${i + 1} (${raumName(r.id)})`;
+    }
+    for (const r of planung.vorbereitet?.raeume.values() ?? []) {
+      const i = r.waende.findIndex((w) => w.id === wandId);
+      if (i >= 0) return `Wand ${i + 1} (anderes Geschoss)`;
+    }
+    return "unbekannte Wand";
+  };
+
+  /** Wechsel der Arbeitsfläche im selben Entwurf: nichts wird gespeichert oder verworfen. */
+  const arbeitsflaecheWechseln = (ziel: Arbeitsflaeche) => {
+    const von = herkunft.current;
+    if (ziel.art === "wand") {
+      setDeckenansicht(null);
+      void wandansichtOeffnen({ raumId: ziel.raumId, wandId: ziel.wandId, ...(ziel.seite !== undefined ? { seite: ziel.seite } : {}), herkunft: von });
+    } else {
+      setWandansicht(null);
+      void deckenansichtOeffnen({ raumId: ziel.raumId, herkunft: von });
+    }
+  };
+
+  const leitungSchliessen = async (): Promise<boolean> => {
+    if (planung.ungespeichert && (await fragen(verwerfenOptionen("Leitungsentwurf schließen?", "Sie wollen den Leitungsentwurf schließen.", LEITUNG_MELDUNG))) !== "bestaetigt") {
+      return false;
+    }
+    planung.schliessen();
+    return true;
+  };
+
+  const zuordnungSchliessen = async (): Promise<boolean> => {
+    if (zuordnung.offen && (await fragen(verwerfenOptionen("Zuordnung schließen?", "Sie wollen die Gerätezuordnung schließen.", ZUORDNUNG_MELDUNG))) !== "bestaetigt") {
+      return false;
+    }
+    zuordnung.schliessen();
+    return true;
+  };
+
+  const sperrgrund = offen
+    ? `Der Raum „${zustand.basis?.raum.name ?? ""}“ hat ungespeicherte Änderungen – bitte zuerst speichern oder verwerfen.`
+    : leitungAktiv
+      ? "Ein Leitungsentwurf ist bereits offen – bitte zuerst speichern oder schließen."
+      : zuordnungAktiv
+        ? "Eine Gerätezuordnung ist offen – bitte zuerst speichern oder schließen."
+        : null;
+
+  const leitungskontext: Leitungskontext = {
+    planung,
+    zuordnung,
+    sperrgrund,
+    arbeitsflaecheWechseln,
+    raumName,
+    wandName,
+    zuordnungSchliessen,
+    leitungSchliessen,
+  };
+
+  /** Aus dem Grundriss zurück in den offenen Leitungsentwurf: an seinen letzten Punkt. */
+  const leitungFortsetzen = () => {
+    const w = planung.entwurf?.werte;
+    if (w === undefined) return;
+    for (const wp of [...w.wegpunkte].reverse()) {
+      if (wp.art === "wand") {
+        const raum = darstellung.find((r) => r.walls.some((x) => x.id === wp.wandId));
+        if (raum !== undefined) return arbeitsflaecheWechseln({ art: "wand", raumId: raum.id, wandId: wp.wandId });
+      }
+      if (wp.art === "ceiling" && darstellung.some((r) => r.id === wp.raumId)) return arbeitsflaecheWechseln({ art: "decke", raumId: wp.raumId });
+    }
+    const start = planung.geraete.find((g) => g.id === w.startId && g.floorId === floorId);
+    if (start === undefined) {
+      setHinweis("Der Entwurf hat auf diesem Geschoss noch keinen Punkt – bitte eine Wand oder Decke öffnen.");
+      return;
+    }
+    const g = geraeteVon(start.raumId).find((x) => x.id === start.id);
+    if (g?.mounting_surface === "ceiling") arbeitsflaecheWechseln({ art: "decke", raumId: start.raumId });
+    else if (g?.wall_id != null) arbeitsflaecheWechseln({ art: "wand", raumId: start.raumId, wandId: g.wall_id });
+  };
+
   // --------------------------------------------------------------- Tastatur
 
   const taste = (event: KeyboardEvent) => {
@@ -826,7 +953,9 @@ export function GrundrissEditor({
     // speichern wollen.
     if (strg && k === "s") {
       event.preventDefault();
-      void speichern();
+      if (leitungAktiv) void planung.speichern();
+      else if (zuordnungAktiv) void zuordnung.speichern();
+      else void speichern();
       return;
     }
     const ziel = event.target instanceof Element ? event.target : null;
@@ -840,13 +969,15 @@ export function GrundrissEditor({
     }
     if (strg && k === "z" && !event.shiftKey) {
       event.preventDefault();
-      if (zustand.zeichnung.length > 0) dispatch({ typ: "zeichnung", punkte: letztenPunktEntfernen(zustand.zeichnung) });
+      if (leitungAktiv) planung.dispatch({ typ: "rueckgaengig" });
+      else if (zustand.zeichnung.length > 0) dispatch({ typ: "zeichnung", punkte: letztenPunktEntfernen(zustand.zeichnung) });
       else dispatch({ typ: "rueckgaengig" });
       return;
     }
     if (strg && (k === "y" || (k === "z" && event.shiftKey))) {
       event.preventDefault();
-      dispatch({ typ: "wiederholen" });
+      if (leitungAktiv) planung.dispatch({ typ: "wiederholen" });
+      else dispatch({ typ: "wiederholen" });
       return;
     }
     if (strg || event.altKey) return;
@@ -937,7 +1068,9 @@ export function GrundrissEditor({
 
       <div className="flex min-h-10 flex-wrap items-center justify-between gap-3" role="status" aria-live="polite">
         <span className={`font-semibold ${STATUS_FARBE[status]}`}>
-          {!schreibbar
+          {leitungAktiv || zuordnungAktiv
+            ? "Raumbearbeitung ruht, solange ein Leitungsentwurf oder eine Gerätezuordnung offen ist"
+            : !schreibbar
             ? "Nur Ansicht - Bearbeiten ist hier nicht möglich"
             : aktiverName === undefined
               ? "Kein Raum in Bearbeitung"
@@ -962,6 +1095,41 @@ export function GrundrissEditor({
           </span>
         )}
       </div>
+
+      {(leitungAktiv || zuordnungAktiv) && (
+        <div className={`${meldungsflaeche("schlicht")} flex flex-wrap items-center justify-between gap-2`} role="status" data-testid="entwurf-offen">
+          <span>
+            {leitungAktiv
+              ? `Leitungsentwurf offen${planung.ungespeichert ? " – ungespeichert" : ""}. Geplant wird in der Wand- und Deckenansicht.`
+              : `Gerätezuordnung offen${zuordnung.offen ? " – ungespeichert" : ""}. Zugeordnet wird in der Wand- und Deckenansicht.`}
+          </span>
+          <span className="flex flex-wrap gap-2">
+            {leitungAktiv && (
+              <>
+                <button type="button" className={knopf("neutral", { klein: true })} onClick={leitungFortsetzen}>
+                  Leitung weiter bearbeiten
+                </button>
+                <button type="button" className={knopf("primaer", { klein: true })} disabled={!planung.ungespeichert} onClick={() => void planung.speichern()}>
+                  Leitung speichern
+                </button>
+                <button type="button" className={knopf("neutral", { klein: true })} onClick={() => void leitungSchliessen()}>
+                  Entwurf schließen
+                </button>
+              </>
+            )}
+            {zuordnungAktiv && (
+              <>
+                <button type="button" className={knopf("primaer", { klein: true })} disabled={!zuordnung.offen} onClick={() => void zuordnung.speichern()}>
+                  Zuordnung speichern
+                </button>
+                <button type="button" className={knopf("neutral", { klein: true })} onClick={() => void zuordnungSchliessen()}>
+                  Zuordnung schließen
+                </button>
+              </>
+            )}
+          </span>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-3 split:grid-cols-[minmax(0,1fr)_300px]">
         {/* Hinweise liegen über der Zeichenfläche statt darüber: Die Fläche
@@ -1116,6 +1284,7 @@ export function GrundrissEditor({
           typen={typen}
           geraeteVon={geraeteVon}
           geraetebefunde={geraeteBefunde}
+          leitungen={buildingId !== undefined ? leitungskontext : undefined}
         />
       )}
       {deckenansicht !== null && (
@@ -1149,6 +1318,7 @@ export function GrundrissEditor({
           onSpeichern={() => void speichern()}
           onVerwerfen={() => void verwerfen()}
           startGeraetId={deckenansicht.geraetId ?? null}
+          leitungen={buildingId !== undefined ? leitungskontext : undefined}
         />
       )}
       {neuerRaum !== null && (

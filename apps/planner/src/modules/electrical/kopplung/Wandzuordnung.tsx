@@ -15,6 +15,8 @@ import type { Partnerzustand, Wandpartner } from "./wandpartner";
 import { partnerzustand, wandpartner } from "./wandpartner";
 import type { KandidatImPlan, KopplungImPlan } from "./zuordnung";
 import { BEZIEHUNG_ERKLAERUNG, GRUND_TEXT, OFFEN_ERKLAERUNG, STATUS_TEXT } from "./zuordnung";
+import { BestaetigungAbgelehnt, bestaetigungsfeld, useLeitungsbestaetigung } from "../leitung/bestaetigung";
+import { durchfuehrungenSchluessel } from "../leitung/daten";
 
 const ZUSTAND: Record<Partnerzustand, { titel: string; art: MarkenArt }> = {
   offen: { titel: "Zuordnung offen", art: "neutral" },
@@ -70,6 +72,8 @@ export function Wandzuordnung<W extends TopoWand & { readonly staerkeMm?: number
   const { api } = useAuth();
   const masse = useMasse();
   const queryClient = useQueryClient();
+  // Phase 6b.4: Unterbricht eine Zuordnung Leitungen, werden genau diese bestätigt.
+  const mitBestaetigung = useLeitungsbestaetigung();
   const [aktion, setAktion] = useState<Aktion | null>(null);
   const [laeuft, setLaeuft] = useState(false);
   const [fehler, setFehler] = useState<string | null>(null);
@@ -81,16 +85,20 @@ export function Wandzuordnung<W extends TopoWand & { readonly staerkeMm?: number
     setFehler(null);
     try {
       if (a.art === "anlegen") {
-        await api.post("/api/v1/modules/electrical/floors/{floor_id}/wall-links", {
-          path: { floor_id: topologie.floorId },
-          body: { wall_a_id: wandId, wall_b_id: a.partner.wandId, relation: a.beziehung },
-        });
+        await mitBestaetigung((bestaetigt) =>
+          api.post("/api/v1/modules/electrical/floors/{floor_id}/wall-links", {
+            path: { floor_id: topologie.floorId },
+            body: { wall_a_id: wandId, wall_b_id: a.partner.wandId, relation: a.beziehung, ...bestaetigungsfeld(bestaetigt) },
+          }),
+        );
       } else if (a.art === "aendern") {
-        await api.patch("/api/v1/modules/electrical/wall-links/{link_id}", {
-          path: { link_id: a.kopplung.id },
-          ifMatch: a.kopplung.version,
-          body: { relation: a.beziehung },
-        });
+        await mitBestaetigung((bestaetigt) =>
+          api.patch("/api/v1/modules/electrical/wall-links/{link_id}", {
+            path: { link_id: a.kopplung.id },
+            ifMatch: a.kopplung.version,
+            body: { relation: a.beziehung, ...bestaetigungsfeld(bestaetigt) },
+          }),
+        );
       } else {
         await api.delete("/api/v1/modules/electrical/wall-links/{link_id}", {
           path: { link_id: a.kopplung.id },
@@ -99,7 +107,14 @@ export function Wandzuordnung<W extends TopoWand & { readonly staerkeMm?: number
       }
       setAktion(null);
       await queryClient.invalidateQueries({ queryKey: planSchluessel(topologie.floorId) });
+      // Leitungsstatus und Durchführungen hängen an der Zuordnung.
+      await queryClient.invalidateQueries({ queryKey: ["electrical", "cables"] });
+      await queryClient.invalidateQueries({ queryKey: durchfuehrungenSchluessel(topologie.floorId) });
     } catch (error: unknown) {
+      if (error instanceof BestaetigungAbgelehnt) {
+        setFehler("Nicht gespeichert – die Leitungen bleiben unverändert.");
+        return;
+      }
       setFehler(fehlertext(error));
       if (error instanceof ApiError && error.errorType === "version-conflict") {
         await queryClient.invalidateQueries({ queryKey: planSchluessel(topologie.floorId) });

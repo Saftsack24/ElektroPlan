@@ -25,6 +25,9 @@ import type { Fangziel } from "../wandansicht/wandfang";
 import type { AnsichtsDeckengeraet, Richtung, Wandtreffer } from "./deckengeraete";
 import { deckengeraeteAus, deckenlage, deckenlagePruefen, wandabstaende } from "./deckengeraete";
 import { deckenmodell, imRaum, naechsteWand } from "./deckenmodell";
+import { useDeckenleitungen } from "../leitung/Deckenleitungen";
+import type { Leitungskontext } from "../leitung/kontext";
+import { Leitungsbereich } from "../leitung/Leitungsbereich";
 
 const WERKZEUG = `${KNOPF_GRUND} border-control bg-surface px-2.5 py-[5px] text-fg disabled:cursor-not-allowed disabled:opacity-45`;
 const WERKZEUG_AKTIV = `${KNOPF_GRUND} border-accent bg-accent px-2.5 py-[5px] text-on-accent`;
@@ -32,12 +35,12 @@ const LISTENKNOPF = `${knopf()} w-full text-left`;
 const LISTENKNOPF_GEWAEHLT = `${knopf("gewaehlt")} w-full text-left`;
 const RUECKFALL: Groesse = { breite: 900, hoehe: 520 };
 
-type Deckenwerkzeug = "auswahl" | "pan" | "geraet";
+type Deckenwerkzeug = "auswahl" | "pan" | "geraet" | "leitung" | "zuordnen";
 
 const RICHTUNG_LABEL: Record<Richtung, string> = { links: "links", rechts: "rechts", oben: "oben", unten: "unten" };
 
 interface Laufend {
-  readonly art: "pan" | "bewegen" | "platzieren";
+  readonly art: "pan" | "bewegen" | "platzieren" | "zusatz";
   readonly pointerId: number;
   readonly element: Element;
   readonly startBild: Bildpunkt;
@@ -92,6 +95,7 @@ export function Deckenansicht({
   onSpeichern,
   onVerwerfen,
   startGeraetId,
+  leitungen,
 }: {
   raumId?: string;
   raumName: string;
@@ -119,6 +123,8 @@ export function Deckenansicht({
   onVerwerfen?: () => void;
   /** Beim Öffnen ausgewähltes Gerät (etwa „An Decke bearbeiten“ aus 3D). */
   startGeraetId?: string | null;
+  /** Phase 6b.4: Leitungsplanung und Gerätezuordnung des Planungskontexts. */
+  leitungen?: Leitungskontext | undefined;
 }) {
   const masse = useMasse();
   const huelle = useRef<HTMLDivElement>(null);
@@ -177,10 +183,33 @@ export function Deckenansicht({
     return () => svg.removeEventListener("wheel", rad);
   }, []);
 
-  // Ohne Bearbeitungsrecht nur betrachten.
+  const leitungsentwurf = leitungen?.planung.entwurf ?? null;
+  const zuordnungsentwurf = leitungen?.zuordnung.entwurf ?? null;
+  const leitungErlaubt = leitungsentwurf !== null && leitungen?.planung.darfLeitungen === true;
+  const zuordnenErlaubt = zuordnungsentwurf !== null;
+  // Ohne Bearbeitungsrecht nur betrachten; Leitungswerkzeuge nur mit ihrem Entwurf.
   useEffect(() => {
-    if (!darfAendern && werkzeug === "geraet") setWerkzeug("auswahl");
-  }, [darfAendern, werkzeug]);
+    if ((!darfAendern && werkzeug === "geraet") || (werkzeug === "leitung" && !leitungErlaubt) || (werkzeug === "zuordnen" && !zuordnenErlaubt)) {
+      setWerkzeug("auswahl");
+    }
+  }, [darfAendern, werkzeug, leitungErlaubt, zuordnenErlaubt]);
+
+  const dl = useDeckenleitungen({
+    k: leitungen,
+    raumId,
+    waende: modell.waende,
+    geraete: deckengeraete,
+    werkzeug,
+    setWerkzeug,
+    fangAktiv,
+    rasterMm,
+    onStatus: setZeiger,
+  });
+  const zusatz = leitungen !== undefined ? dl.zusatz : undefined;
+  const zusatzRef = useRef(zusatz);
+  zusatzRef.current = zusatz;
+  // Beim Schließen darf auch keine Bewegung der Leitungsebene hängen bleiben (sie kennt ihren Stand selbst).
+  useEffect(() => () => void zusatzRef.current?.abbrechen(), []);
 
   // Beim Schließen darf keine Bewegung hängen bleiben.
   useEffect(
@@ -259,6 +288,7 @@ export function Deckenansicht({
     if (l === null) return false;
     freigeben();
     setVorschau(null);
+    if (l.art === "zusatz") return zusatz?.abbrechen() ?? true;
     if (l.art === "bewegen") dispatch?.({ typ: "ziehen-abbrechen" });
     setZeiger("Bewegung abgebrochen - nichts geändert.");
     return true;
@@ -268,6 +298,11 @@ export function Deckenansicht({
     if (event.button !== 0 && event.button !== 1) return;
     if (event.button === 1 || werkzeug === "pan") {
       einfangen(event, "pan");
+      return;
+    }
+    // Leitungsplanung (6b.4): Übernimmt die Zusatzebene, gilt nur sie - sonst alles wie bisher.
+    if (zusatz?.druecken({ welt: bildZuWelt(viewport, bild(event)), ziel: event.target as Element, altKey: event.altKey, massstab: viewport.massstab }) === true) {
+      einfangen(event, "zusatz");
       return;
     }
     const geraetId = (event.target as Element).closest?.("[data-geraet]")?.getAttribute("data-geraet") ?? null;
@@ -303,6 +338,10 @@ export function Deckenansicht({
     if (l?.art === "pan") {
       setViewport(verschieben(l.startViewport, p.x - l.startBild.x, p.y - l.startBild.y));
       return;
+    }
+    if (zusatz !== undefined && (l === null || l.art === "zusatz")) {
+      const ereignis = { welt, ziel: event.target as Element, altKey: event.altKey, massstab: viewport.massstab };
+      if (zusatz.bewegen(ereignis, l !== null) || l !== null) return;
     }
     if (l?.art === "bewegen" && l.start !== undefined && l.geraetId !== undefined && entwurf !== null) {
       const g = deckengeraete.find((x) => x.id === l.geraetId);
@@ -340,6 +379,10 @@ export function Deckenansicht({
     const l = laufend.current;
     if (l === null) return;
     freigeben();
+    if (l.art === "zusatz") {
+      zusatz?.loslassen();
+      return;
+    }
     if (l.art === "bewegen") {
       setVorschau(null);
       dispatch?.({ typ: "ziehen-beenden" });
@@ -385,6 +428,9 @@ export function Deckenansicht({
     const ziel = event.target as Element;
     const strg = event.ctrlKey || event.metaKey;
     const k = event.key.toLowerCase();
+    const imFeld = ziel.closest?.("select, input, textarea") != null;
+    // Leitungs- oder Zuordnungsentwurf offen: seine Tasten zuerst (Strg+S auch aus einem Feld).
+    if ((leitungsentwurf !== null || zuordnungsentwurf !== null) && (!imFeld || (strg && k === "s")) && dl.taste(event)) return;
     if (strg && k === "s" && onSpeichern !== undefined) {
       event.preventDefault();
       onSpeichern();
@@ -450,6 +496,14 @@ export function Deckenansicht({
       setVorschau(null);
       return true;
     }
+    if (leitungsentwurf !== null && leitungsentwurf.auswahl !== null) {
+      leitungen?.planung.dispatch({ typ: "auswaehlen", auswahl: null });
+      return true;
+    }
+    if (dl.gewaehlt !== null) {
+      dl.setGewaehlt(null);
+      return true;
+    }
     if (gewaehlt !== null) {
       waehlen(null);
       return true;
@@ -504,11 +558,21 @@ export function Deckenansicht({
   return (
     <Dialog offen titel={`Deckenansicht · ${raumName}`} groesse="gross" onClose={onSchliessen} onEscape={escape}>
       <div className="flex flex-col gap-2 split:h-full split:min-h-0" onKeyDown={taste}>
-        <div className="flex min-h-10 flex-wrap items-center justify-between gap-2" role="status" aria-live="polite">
+        <div className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-2" role="status" aria-live="polite">
           <span>
             <strong>Deckenansicht „{raumName}“</strong> · Deckenhöhe {masse.anzeigen(deckenhoeheMm)}
             {eigeneHoehe ? "" : " (Standard des Geschosses)"}
-            {status !== undefined && <span className={`ml-3 font-semibold ${status.farbe}`}>{darfAendern ? status.text : "Nur Ansicht"}</span>}
+            {status !== undefined && (
+              <span className={`ml-3 font-semibold ${status.farbe}`}>
+                {leitungsentwurf !== null
+                  ? `Leitungsentwurf: ${leitungen?.planung.ungespeichert === true ? "ungespeichert" : "gespeichert"}`
+                  : zuordnungsentwurf !== null
+                    ? `Gerätezuordnung: ${leitungen?.zuordnung.offen === true ? "ungespeichert" : "gespeichert"}`
+                    : darfAendern
+                      ? status.text
+                      : "Nur Ansicht"}
+              </span>
+            )}
           </span>
           {darfAendern && onSpeichern !== undefined && (
             <span className="flex flex-wrap gap-2">
@@ -521,7 +585,7 @@ export function Deckenansicht({
             </span>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-3" role="toolbar" aria-label="Werkzeuge der Deckenansicht">
+        <div className="flex shrink-0 flex-wrap items-center gap-3" role="toolbar" aria-label="Werkzeuge der Deckenansicht">
           <span className="flex flex-wrap items-center gap-1">
             <button type="button" className={werkzeug === "auswahl" ? WERKZEUG_AKTIV : WERKZEUG} aria-pressed={werkzeug === "auswahl"} title="Auswählen (V)" onClick={() => setWerkzeug("auswahl")}>
               Auswählen
@@ -534,11 +598,31 @@ export function Deckenansicht({
                 Gerät
               </button>
             )}
+            {leitungErlaubt && (
+              <button type="button" className={werkzeug === "leitung" ? WERKZEUG_AKTIV : WERKZEUG} aria-pressed={werkzeug === "leitung"} title="Leitung (L)" onClick={() => setWerkzeug("leitung")}>
+                Leitung
+              </button>
+            )}
+            {zuordnenErlaubt && (
+              <button type="button" className={werkzeug === "zuordnen" ? WERKZEUG_AKTIV : WERKZEUG} aria-pressed={werkzeug === "zuordnen"} title="Zuordnen (Z)" onClick={() => setWerkzeug("zuordnen")}>
+                Zuordnen
+              </button>
+            )}
           </span>
           {darfAendern && werkzeug === "geraet" && (
             <div className="min-w-[220px]">
               <TypAuswahl id="decke-werkzeug-typ" label="Deckengerät" typen={typen} flaeche="ceiling" wert={geraetetyp?.key ?? null} onWahl={setTypWahl} />
             </div>
+          )}
+          {leitungsentwurf !== null && leitungen !== undefined && (
+            <span className="flex flex-wrap items-center gap-1" aria-label="Rückgängig im Leitungsentwurf">
+              <button type="button" className={WERKZEUG} disabled={leitungsentwurf.zurueck.length === 0} title="Rückgängig im Leitungsentwurf (Strg+Z)" onClick={() => leitungen.planung.dispatch({ typ: "rueckgaengig" })}>
+                Rückgängig
+              </button>
+              <button type="button" className={WERKZEUG} disabled={leitungsentwurf.vor.length === 0} title="Wiederholen im Leitungsentwurf (Strg+Y)" onClick={() => leitungen.planung.dispatch({ typ: "wiederholen" })}>
+                Wiederholen
+              </button>
+            </span>
           )}
           {darfAendern && (
             <span className="flex flex-wrap items-center gap-1">
@@ -594,7 +678,7 @@ export function Deckenansicht({
                   tabIndex={0}
                   width={groesse.breite}
                   height={groesse.hoehe}
-                  style={{ cursor: werkzeug === "geraet" ? "crosshair" : "grab" }}
+                  style={{ cursor: zusatz?.cursor ?? (werkzeug === "geraet" ? "crosshair" : "grab") }}
                   onPointerDown={druecken}
                   onPointerMove={bewegen}
                   onPointerUp={loslassen}
@@ -603,7 +687,10 @@ export function Deckenansicht({
                     if (laufend.current !== null && laufend.current.art !== "pan") abbrechen();
                   }}
                   onPointerLeave={() => {
-                    if (laufend.current === null) setVorschau(null);
+                    if (laufend.current === null) {
+                      setVorschau(null);
+                      zusatz?.abbrechen();
+                    }
                   }}
                 >
                   <path d={raster.join("")} className="ansicht__raster" aria-hidden="true" />
@@ -636,6 +723,7 @@ export function Deckenansicht({
                       })()}
                     </g>
                   )}
+                  {zusatz?.zeichnen((x, y) => weltZuBild(viewport, { x, y }))}
                   {massMitte !== null && treffer !== null && <Wandmasse mitte={massMitte} treffer={treffer} viewport={viewport} mm={masse.anzeigen} />}
                   <text x={groesse.breite - 10} y={20} textAnchor="end" className="ansicht__text ansicht__text--klein">
                     ↑ oben wie im Grundriss
@@ -647,6 +735,16 @@ export function Deckenansicht({
               </p>
             </div>
             <aside className="flex min-w-0 flex-col gap-2 text-small split:min-h-0 split:overflow-y-auto" aria-label="Raumangaben und Deckengeräte">
+              {leitungen !== undefined && raumId !== undefined && (
+                <Leitungsbereich
+                  k={leitungen}
+                  flaeche={{ art: "decke", raumId }}
+                  relevant={dl.relevant}
+                  gewaehlt={dl.gewaehlt}
+                  onWaehlen={dl.setGewaehlt}
+                  onWerkzeug={setWerkzeug}
+                />
+              )}
               <div>
                 <p className="m-0">
                   Fläche {flaecheText(modell.flaecheMm2)} · Umfang {masse.anzeigenOptional(modell.umfangMm)}
