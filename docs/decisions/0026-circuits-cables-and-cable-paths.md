@@ -81,3 +81,17 @@ Stromkreis vor. Das passt nicht zum Modell und würde Mengen verfälschen.
   modellhaft auf FFB – beides sichtbar dokumentiert.
 * Gebäudeübergreifende, Außen- und Erdleitungen, Durchführungen durch getrennte Wände, Unterqueren
   geschlossener Wände und mehrere Stromkreise in einer Leitung bleiben offen.
+
+## Ergänzung 2026-10-14 (Umsetzung 6b.5)
+
+Keine neue fachliche Entscheidung; festgehalten, wie die Oberfläche die Entscheidung umsetzt:
+
+* Der **Leitungsentwurf gehört zum Gebäude** (`LeitungsplanungProvider`), nicht zum Geschoss: Er
+  übersteht Geschoss- und Ansichtswechsel im Gebäude und wird nur ausdrücklich gespeichert oder
+  verworfen. Jeder Wegpunkt behält seinen eigenen Raum-, Wand- bzw. Halt-Bezug.
+* **Neue Durchführungen** bleiben bis zum Speichern im Entwurf und entstehen atomar mit der Leitung
+  (`new_penetrations`); die Gegenlage wird nie gespeichert, sondern mit derselben
+  Abschnittstransformation abgeleitet.
+* Die **3D-Ansicht** zeigt ausschließlich den gespeicherten Stand aus den Teilstrecken des Servers,
+  ohne eigene Verbindung von Läufen; Geschossgrenzen werden als ausdrückliche Fortsetzung gezeigt.
+  Details: [`phase-6b-design.md`](../phase-6b-design.md) §20.

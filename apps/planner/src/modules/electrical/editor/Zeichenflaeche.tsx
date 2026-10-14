@@ -47,6 +47,7 @@ import type { Aktion, Auswahl, EditorZustand } from "./zustand";
 import type { Geraetetyp } from "../geraete/katalog";
 import { SymbolImPlan } from "../geraete/symbole";
 import { geraetelayout, SYMBOLGROESSE, type Symbollage } from "./geraetelayout";
+import type { Flaechenzusatz } from "../leitung/zusatz";
 
 /** Klasse je Öffnungsart (grundriss.css); ausgeschrieben statt zusammengesetzt. */
 const OEFFNUNG_KLASSE: Record<Oeffnungsart, string> = {
@@ -118,6 +119,11 @@ interface Props {
   geraete?: readonly Geraetedarstellung[];
   /** Doppelklick auf ein Gerät: in seiner Wand- oder Deckenansicht bearbeiten. */
   onGeraetBearbeiten?: (raumId: string, geraetId: string) => void;
+  /**
+   * Leitungsebene (Phase 6b.5): Sie hängt sich in die Zeigerereignisse ein. Übernimmt sie ein
+   * Drücken nicht, gilt das bisherige Verhalten des Grundrisses unverändert.
+   */
+  zusatz?: Flaechenzusatz | undefined;
 }
 
 interface OeffnungZiehen {
@@ -137,6 +143,7 @@ type Ziehen =
   | { art: "pan"; start: Bildpunkt; viewport: Viewport }
   | { art: "ecke"; punkt: Punkt; ab: Raumentwurf; raumId: string }
   | OeffnungZiehen
+  | { art: "zusatz" }
   | null;
 
 /** Vorschau einer Öffnung beim Platzieren oder Verschieben - reine Anzeige. */
@@ -255,7 +262,7 @@ export function Zeichenflaeche(props: Props) {
   // Dann auch hier: Zeiger freigeben, laufende Bewegung und Vorschau vergessen.
   useEffect(() => {
     const laufend = ziehen.current;
-    if (zustand.ziehenAb !== null || laufend === null || laufend.art === "pan") return;
+    if (zustand.ziehenAb !== null || laufend === null || laufend.art === "pan" || laufend.art === "zusatz") return;
     ziehen.current = null;
     freigeben();
     setVorschau(null);
@@ -330,6 +337,13 @@ export function Zeichenflaeche(props: Props) {
     }
     if (event.button !== 0) return;
     klickVerbraucht.current = false;
+    // Leitungsebene zuerst: Sie entscheidet selbst, ob sie den Druck übernimmt.
+    if (props.zusatz?.druecken({ welt: bildZuWelt(viewport, bild), ziel: event.target as Element, altKey: event.altKey, massstab: viewport.massstab }) === true) {
+      klickVerbraucht.current = true;
+      ziehen.current = { art: "zusatz" };
+      einfangen(event);
+      return;
+    }
     // Gerätegruppe auf- oder zuklappen - wählt nichts und ändert nichts.
     const gruppe = (event.target as Element | null)?.closest?.("[data-geraetegruppe]");
     if (gruppe instanceof SVGElement && gruppe.dataset.geraetegruppe !== undefined) {
@@ -463,6 +477,13 @@ export function Zeichenflaeche(props: Props) {
       setViewport(verschieben(laufend.viewport, bild.x - laufend.start.x, bild.y - laufend.start.y));
       return;
     }
+    if (props.zusatz !== undefined && (laufend === null || laufend.art === "zusatz")) {
+      const ereignis = { welt, ziel: event.target as Element, altKey: event.altKey, massstab: viewport.massstab };
+      if (props.zusatz.bewegen(ereignis, laufend !== null) || laufend !== null) {
+        setZeiger({ punkt: aufMillimeter(welt), ziel: "frei" });
+        return;
+      }
+    }
     if (laufend?.art === "ecke") {
       const ziel = gefangen(welt, event.altKey, laufend.punkt);
       setZeiger(ziel);
@@ -503,6 +524,10 @@ export function Zeichenflaeche(props: Props) {
     ziehen.current = null;
     freigeben();
     if (laufend === null || laufend.art === "pan") return;
+    if (laufend.art === "zusatz") {
+      props.zusatz?.loslassen();
+      return;
+    }
     if (laufend.art === "ecke" && zeiger !== null) {
       props.onWaehlen({ art: "ecke", raumId: laufend.raumId, punkt: zeiger.punkt });
     }
@@ -528,6 +553,10 @@ export function Zeichenflaeche(props: Props) {
     ziehen.current = null;
     freigeben();
     setVorschau(null);
+    if (laufend.art === "zusatz") {
+      props.zusatz?.abbrechen();
+      return;
+    }
     if (laufend.art !== "pan") dispatch({ typ: "ziehen-abbrechen" });
   };
 
@@ -539,6 +568,8 @@ export function Zeichenflaeche(props: Props) {
   };
 
   const doppelklick = (event: ReactMouseEvent<SVGSVGElement>) => {
+    // Ein aktives Leitungswerkzeug verarbeitet jeden Klick selbst - kein Ansichtswechsel nebenbei.
+    if (props.zusatz?.cursor != null) return;
     if (doppelklickGeraet(event)) return;
     const daten = datensatz(event.target);
     if (zustand.werkzeug === "auswahl" && daten?.raum !== undefined && daten.oeffnung !== undefined && daten.wand !== undefined) {
@@ -570,7 +601,7 @@ export function Zeichenflaeche(props: Props) {
         aria-label={`Grundriss ${props.geschossLabel}`}
         width={groesse.breite}
         height={groesse.hoehe}
-        style={{ cursor }}
+        style={{ cursor: props.zusatz?.cursor ?? cursor }}
         onPointerDown={druecken}
         onPointerMove={bewegen}
         onPointerUp={loslassen}
@@ -615,6 +646,7 @@ export function Zeichenflaeche(props: Props) {
         {darfSchreiben && aktiveDarstellung !== undefined && (
           <Eckgriffe raum={aktiveDarstellung} viewport={viewport} auswahl={zustand.auswahl} />
         )}
+        {props.zusatz?.zeichnen((x, y) => weltZuBild(viewport, { x, y }))}
         <Vorschau zustand={zustand} zeiger={zeiger} viewport={viewport} />
         {vorschau !== null && <Oeffnungsvorschaubild vorschau={vorschau} topologie={props.topologie} viewport={viewport} />}
         {wandvorschau !== null && <Wandvorschaubild vorschau={wandvorschau} topologie={props.topologie} viewport={viewport} />}

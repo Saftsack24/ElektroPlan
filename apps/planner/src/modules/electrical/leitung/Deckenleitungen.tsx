@@ -14,10 +14,9 @@ import { inAnsichtBearbeitbar } from "./daten";
 import type { Leitungswerte } from "./entwurf";
 import { wegpunktEinfuegen, wegpunktEntfernen, wegpunktErsetzen } from "./entwurf";
 import type { Anschlusspunkt, Fangeinstellung } from "./flaechen";
-import { achseFangen, anschlussFangen, deckenstrecken, kandidatPruefen } from "./flaechen";
+import { achseFangen, anschlussFangen, deckenstrecken } from "./flaechen";
 import type { Leitungskontext } from "./kontext";
 import type { Wegpunkt } from "./laenge";
-import { leitungAusWerten } from "./useLeitungsplanung";
 import type { Leitungswerkzeug } from "./Wandleitungen";
 import type { Flaechenzusatz } from "./zusatz";
 
@@ -66,20 +65,27 @@ export function useDeckenleitungen({
   waende: readonly Deckenwand[];
   geraete: readonly AnsichtsDeckengeraet[];
   werkzeug: string;
-  setWerkzeug: (w: "auswahl" | Leitungswerkzeug) => void;
+  setWerkzeug: (w: "auswahl" | Exclude<Leitungswerkzeug, "durchfuehrung">) => void;
   fangAktiv: boolean;
   rasterMm: number;
   onStatus: (text: string) => void;
 }) {
   const masse = useMasse();
-  const [kandidat, setKandidat] = useState<Kandidat | null>(null);
+  const [kandidat, setKandidatState] = useState<Kandidat | null>(null);
+  // Das Loslassen liest den Kandidaten aus der Ref: Folgen Bewegung und Loslassen vor dem nächsten
+  // Rendern, sähe es sonst einen veralteten Vorschaupunkt (Nachkorrektur 6b.5, wie im Grundriss).
+  const kandidatRef = useRef<Kandidat | null>(null);
+  const setKandidat = (c: Kandidat | null) => {
+    kandidatRef.current = c;
+    setKandidatState(c);
+  };
   const [gewaehlt, setGewaehlt] = useState<string | null>(null);
   const laufend = useRef<{ art: "setzen" } | { art: "ziehen"; index: number; gueltig: boolean } | null>(null);
   const vorher = useRef<{ x: string | null; y: string | null }>({ x: null, y: null });
   const [werkzeugVorher, setWerkzeugVorher] = useState(werkzeug);
   if (werkzeugVorher !== werkzeug) {
     setWerkzeugVorher(werkzeug);
-    setKandidat(null);
+    setKandidatState(null);
   }
 
   const p = k?.planung;
@@ -155,7 +161,7 @@ export function useDeckenleitungen({
   };
 
   const kandidatFuer = (rohX: number, rohY: number, ev: { altKey: boolean; massstab: number }, ersetzen: number | null): Kandidat | null => {
-    if (e === null || p === undefined || p.vorbereitet === null || raumId === undefined) return null;
+    if (e === null || p === undefined || p.vorbereitetEntwurf === null || raumId === undefined) return null;
     const w = e.werte;
     const index = ersetzen ?? (e.auswahl === null ? w.wegpunkte.length : e.auswahl + 1);
     const vor = w.wegpunkte[index - 1];
@@ -165,7 +171,7 @@ export function useDeckenleitungen({
     const versuchen = (x: number, y: number) => {
       const wp: Wegpunkt = { art: "ceiling", raumId, x: x + 0, y: y + 0 };
       const werte = ersetzen === null ? wegpunktEinfuegen(w, wp, index - 1 < 0 ? null : index - 1).werte : wegpunktErsetzen(w, ersetzen, wp);
-      return { werte, geprueft: kandidatPruefen(p.vorbereitet as NonNullable<typeof p.vorbereitet>, leitungAusWerten(e.cableId ?? "neu", werte), index) };
+      return { werte, geprueft: p.pruefen(werte, index) ?? { ok: false as const, grund: "Der Plan ist noch nicht geladen." } };
     };
     const ap = anschlussFangen({ a: rohX, b: rohY }, anschluesse([vor, nach]), f);
     let x: number;
@@ -316,7 +322,7 @@ export function useDeckenleitungen({
         return;
       }
       if (l?.art === "setzen") {
-        const c = kandidat;
+        const c = kandidatRef.current;
         setKandidat(null);
         if (c === null) return;
         if (!c.ok) {
@@ -370,13 +376,14 @@ export function useDeckenleitungen({
         onStatus(`Wegpunkt ${index + 1} entfernt – noch nicht gespeichert.`);
         return true;
       }
-      if (event.key.startsWith("Arrow") && index !== null && wp?.art === "ceiling" && wp.raumId === raumId && darf && p.vorbereitet !== null) {
+      if (event.key.startsWith("Arrow") && index !== null && wp?.art === "ceiling" && wp.raumId === raumId && darf) {
         event.preventDefault();
         const schritt = event.shiftKey ? 100 : 10;
         const dx = event.key === "ArrowLeft" ? -schritt : event.key === "ArrowRight" ? schritt : 0;
         const dy = event.key === "ArrowUp" ? schritt : event.key === "ArrowDown" ? -schritt : 0;
         const werte = wegpunktErsetzen(e.werte, index, { ...wp, x: wp.x + dx, y: wp.y + dy });
-        const geprueft = kandidatPruefen(p.vorbereitet, leitungAusWerten(e.cableId ?? "neu", werte), index);
+        const geprueft = p.pruefen(werte, index);
+        if (geprueft === null) return true;
         if (!geprueft.ok) {
           onStatus(`Nicht verschoben: ${geprueft.grund}`);
           return true;

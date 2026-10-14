@@ -37,7 +37,7 @@ export interface PunktMm {
  * `wandseite`: ein Wandabschnitt, dessen angeklickte Raumseite nicht eindeutig
  * war - die Seitenleiste bietet die Raumwahl an.
  */
-export type Objektart = "raum" | "wand" | "raumwand" | "wandseite" | "fassade" | "oeffnung" | "geraet";
+export type Objektart = "raum" | "wand" | "raumwand" | "wandseite" | "fassade" | "oeffnung" | "geraet" | "leitung";
 
 /**
  * Kleine, fachliche Auswahlreferenz - das Einzige, was aus der Szene in den

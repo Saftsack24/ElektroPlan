@@ -51,6 +51,10 @@
   --ep-plan3d-device-wall: #5b4bc4;
   --ep-plan3d-device-ceiling: #c7a400;
   --ep-plan3d-device-guide: #45505c;
+  /* Leitungen (6b.5): Status zusätzlich über Strichart und Text, akzentunabhängig */
+  --ep-plan3d-cable: #0b5aa6;
+  --ep-plan3d-cable-incomplete: #a65f00;
+  --ep-plan3d-cable-conflict: #c0262d;
 }
 
 :root[data-theme="dark"] {
@@ -72,6 +76,9 @@
   --ep-plan3d-device-wall: #9d90ff;
   --ep-plan3d-device-ceiling: #f2d24b;
   --ep-plan3d-device-guide: #c3ccd6;
+  --ep-plan3d-cable: #7cc0ff;
+  --ep-plan3d-cable-incomplete: #f0b44c;
+  --ep-plan3d-cable-conflict: #ff7a7a;
 }
 
 /*

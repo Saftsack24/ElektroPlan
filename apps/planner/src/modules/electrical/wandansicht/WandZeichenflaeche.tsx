@@ -29,7 +29,7 @@ import type { Flaechenzusatz } from "../leitung/zusatz";
 import { flaecheDerSeite, geraetLage, geraetLagePruefen, geraeteName, geraetemasslinien } from "./wandgeraete";
 
 /** Werkzeuge der Wandansicht: Öffnungsarten, seit Phase 5 „Gerät“, seit 6b.4 „Leitung“ und „Zuordnen“. */
-export type Wandwerkzeug = "auswahl" | "pan" | Oeffnungsart | "geraet" | "leitung" | "zuordnen";
+export type Wandwerkzeug = "auswahl" | "pan" | Oeffnungsart | "geraet" | "leitung" | "zuordnen" | "durchfuehrung";
 
 /** Ist das Werkzeug eines der Öffnungswerkzeuge? */
 function istOeffnungswerkzeug(w: Wandwerkzeug): w is Oeffnungsart {

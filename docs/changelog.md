@@ -5,6 +5,28 @@ Einträge entstehen nach relevanten Änderungen, nicht nach jedem Commit.
 
 ---
 
+## 2026-10-14 — Phase 6b.5: Leitungen im Grundriss, Steigwege, 3D (Checkpoint vom 2026-10-14)
+
+Keine Migration, keine API-Änderung, Backend unverändert. Funktional im Browser abgenommen (Entwurf §20.5).
+
+### Added
+- Leitungsentwurf je Gebäude: übersteht Geschoss- und Ansichtswechsel im Gebäude; Steigwege,
+  Stromkreise und ein anderes Gebäude fragen ausdrücklich nach.
+- Grundriss: Werkzeuge „Leitung“ und „Durchführung hier“, Ebenenwahl Fußboden/Wand/Decke, Höhe neuer
+  Wandpunkte, Fußbodenwege in der Raumkontur, Bodenübergang an Tür oder Durchgang, Steigweg nutzen mit
+  Vorschau, Zielgeschoss-Wechsel und Fortsetzung, Darstellung mit Strichart je Fläche und Legende.
+- Neue Durchführungen in Grundriss und Wandansicht – nur im Entwurf, atomar mit der Leitung gespeichert.
+- 3D: gespeicherte Leitungen mit Status über Strichart und Text, Fortsetzung an Geschossgrenzen,
+  Auswahl und Liste, Bearbeiten auf der passenden Fläche, Rückkehr mit Kamera und Auswahl.
+
+### Fixed (Browserabnahme)
+- Speichern mit neuer Durchführung scheiterte am zu langen Schlüssel.
+- Rückkehr in 3D behält im Entwicklungsmodus Kamera und Hervorhebung.
+- Marken verdecken die Wandachse nicht mehr; Raumecken werden nicht mehr als mehrdeutig abgelehnt;
+  eine Durchführung wird nicht doppelt aufgenommen; Loslassen liest nie einen veralteten Vorschaupunkt –
+  im Grundriss sowie (Nachkorrektur) in Wand- und Deckenansicht.
+- Steigwegbeschriftungen überdecken im Grundriss bei kleinem Maßstab keine Raum- und Maßtexte mehr.
+
 ## 2026-10-13 — Phase 6b.4: Leitungsplanung in Wand- und Deckenansicht (Checkpoint vom 2026-10-13)
 
 Keine Migration, keine API-Änderung. Funktional im Browser abgenommen (Entwurf §19.8).

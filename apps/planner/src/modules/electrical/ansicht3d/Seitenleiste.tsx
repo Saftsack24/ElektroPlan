@@ -15,6 +15,16 @@ import type { Geraet3d } from "./geraete3d";
 import { FLAECHE_LABEL } from "../geraete/katalog";
 import { Geraetesymbol } from "../geraete/symbole";
 import { warnungenZu } from "./szenenmodell";
+import type { Leitung3d, Leitungsflaeche3d } from "./leitungen3d";
+import { LEITUNGSSTATUS_TEXT } from "./leitungen3d";
+
+/** Wo eine gewählte Leitung bearbeitet wird - die passende Fläche ihres Teilstücks. */
+export type Leitungsziel3d =
+  | { readonly art: "grundriss" }
+  | { readonly art: "wand"; readonly raumId: string; readonly wandId: string }
+  | { readonly art: "decke"; readonly raumId: string };
+
+const FLAECHE3D_TEXT: Record<Leitungsflaeche3d, string> = { wand: "Wand", decke: "Decke", fussboden: "Fußboden", steigweg: "Steigweg" };
 
 /** Hinweise und ausgelassene Elemente. */
 const LISTE = "m-0 flex list-none flex-col gap-2 p-0 text-[0.88rem]";
@@ -75,6 +85,8 @@ function Auswahlinfo({
   onAuswahl,
   onWandansicht,
   onGeraetBearbeiten,
+  onLeitungBearbeiten,
+  leitungSperre,
 }: {
   modell: Szenenmodell;
   objekt: Objekt;
@@ -82,6 +94,10 @@ function Auswahlinfo({
   onWandansicht?: (ziel: { raumId: string; wandId: string; seite: "innen" | "aussen" }) => void;
   /** Phase 5: Gerät in der Wand- bzw. Deckenansicht des 2D-Editors bearbeiten. */
   onGeraetBearbeiten?: (geraet: Geraet3d) => void;
+  /** Phase 6b.5: die gewählte Leitung auf der passenden Fläche bearbeiten. */
+  onLeitungBearbeiten?: (leitung: Leitung3d, ziel: Leitungsziel3d) => void;
+  /** Warum gerade nicht bearbeitet werden kann - sonst `null`. */
+  leitungSperre?: string | null;
 }) {
   // Längen in der persönlichen Anzeigeeinheit - dieselbe wie im 2D-Editor.
   const { anzeigen: mm } = useMasse();
@@ -223,6 +239,56 @@ function Auswahlinfo({
     );
   }
 
+  if (objekt.art === "leitung") {
+    const { leitung: l } = objekt;
+    const anzahl = (f: Leitungsflaeche3d) => l.stuecke.filter((s) => s.flaeche === f).length;
+    const flaechen = (["wand", "decke", "fussboden", "steigweg"] as const).filter((f) => anzahl(f) > 0);
+    const wand = l.stuecke.find((s) => s.flaeche === "wand" && s.wandId !== null && s.raumId !== null);
+    const decke = l.stuecke.find((s) => s.flaeche === "decke" && s.raumId !== null);
+    return (
+      <>
+        <h3 className="mt-0 mb-1.5 text-[1rem]">Leitung {l.bezeichnung}</h3>
+        <Werte
+          zeilen={[
+            ["Status", LEITUNGSSTATUS_TEXT[l.status]],
+            ["Länge", l.laengeMm !== null ? mm(l.laengeMm) : `Teilsumme ${mm(l.bekanntMm)} – keine Gesamtlänge`],
+            ["Auf diesem Geschoss", flaechen.length === 0 ? "nur Fortsetzung" : flaechen.map((f) => `${FLAECHE3D_TEXT[f]} (${anzahl(f)})`).join(", ")],
+          ]}
+        />
+        {l.fortsetzungen.length > 0 && (
+          <ul className="mt-0 mb-2 pl-[18px] text-small" aria-label="Fortsetzungen in andere Geschosse">
+            {l.fortsetzungen.map((f, i) => (
+              <li key={i}>{f.text}</li>
+            ))}
+          </ul>
+        )}
+        <p className="mt-0 mb-1.5 text-muted">Gezeigt wird der gespeicherte Stand; bearbeitet wird im Leitungsentwurf.</p>
+        {onLeitungBearbeiten !== undefined &&
+          (leitungSperre != null ? (
+            <p className="mt-0 mb-1.5" role="status">
+              {leitungSperre}
+            </p>
+          ) : (
+            <div className="mb-2 flex flex-col gap-1.5">
+              {wand !== undefined && wand.wandId !== null && wand.raumId !== null && (
+                <button type="button" className={knopf("primaer")} onClick={() => onLeitungBearbeiten(l, { art: "wand", raumId: wand.raumId as string, wandId: wand.wandId as string })}>
+                  In der Wandansicht bearbeiten
+                </button>
+              )}
+              {decke !== undefined && decke.raumId !== null && (
+                <button type="button" className={knopf(wand === undefined ? "primaer" : "neutral")} onClick={() => onLeitungBearbeiten(l, { art: "decke", raumId: decke.raumId as string })}>
+                  In der Deckenansicht bearbeiten
+                </button>
+              )}
+              <button type="button" className={knopf(wand === undefined && decke === undefined ? "primaer" : "neutral")} onClick={() => onLeitungBearbeiten(l, { art: "grundriss" })}>
+                Im Grundriss bearbeiten
+              </button>
+            </div>
+          ))}
+      </>
+    );
+  }
+
   if (objekt.art === "geraet") {
     const { geraet: g } = objekt;
     const decke = g.flaeche === "ceiling";
@@ -354,6 +420,10 @@ export function Seitenleiste({
   onAuswahl,
   onWandansicht,
   onGeraetBearbeiten,
+  leitungen = [],
+  onLeitungBearbeiten,
+  leitungSperre = null,
+  entwurfHinweis = null,
 }: {
   modell: Szenenmodell;
   auswahl: Auswahl | null;
@@ -362,6 +432,12 @@ export function Seitenleiste({
   /** Phase 4f: die gewählte Raumwand in der Wandansicht des 2D-Editors öffnen. */
   onWandansicht?: (ziel: { raumId: string; wandId: string; seite: "innen" | "aussen" }) => void;
   onGeraetBearbeiten?: (geraet: Geraet3d) => void;
+  /** Phase 6b.5: gespeicherte Leitungen dieses Geschosses - auch als Text wählbar. */
+  leitungen?: readonly Leitung3d[];
+  onLeitungBearbeiten?: (leitung: Leitung3d, ziel: Leitungsziel3d) => void;
+  leitungSperre?: string | null;
+  /** Hinweis auf einen offenen Leitungsentwurf - er bleibt erhalten, 3D zeigt den gespeicherten Stand. */
+  entwurfHinweis?: string | null;
 }) {
   const eigene = auswahl !== null && objekt !== null ? warnungenZu(modell, auswahl) : [];
   return (
@@ -381,6 +457,7 @@ export function Seitenleiste({
               onAuswahl={onAuswahl}
               {...(onWandansicht !== undefined ? { onWandansicht } : {})}
               {...(onGeraetBearbeiten !== undefined ? { onGeraetBearbeiten } : {})}
+              {...(onLeitungBearbeiten !== undefined ? { onLeitungBearbeiten, leitungSperre } : {})}
             />
             {eigene.length > 0 && <Hinweisliste warnungen={eigene} />}
             <button type="button" className={knopf()} onClick={() => onAuswahl(null)}>
@@ -389,6 +466,36 @@ export function Seitenleiste({
           </>
         )}
       </section>
+
+      {(leitungen.length > 0 || entwurfHinweis !== null) && (
+        <section className="rounded-ep border border-line px-3 py-2.5" aria-label="Leitungen in der 3D-Ansicht">
+          <h2 className="mt-0 mb-1.5 text-[0.95rem]">Leitungen ({leitungen.length})</h2>
+          {entwurfHinweis !== null && (
+            <p className="mt-0 mb-1.5 text-muted" role="status">
+              {entwurfHinweis}
+            </p>
+          )}
+          <ul className={LISTE}>
+            {leitungen.map((l) => (
+              <li key={l.id}>
+                <button
+                  type="button"
+                  className={knopf(auswahl?.art === "leitung" && auswahl.id === l.id ? "gewaehlt" : "einfach")}
+                  aria-pressed={auswahl?.art === "leitung" && auswahl.id === l.id}
+                  onClick={() => onAuswahl({ art: "leitung", id: l.id })}
+                >
+                  {l.bezeichnung} – {LEITUNGSSTATUS_TEXT[l.status]}
+                  {l.fortsetzungen.length > 0 ? " · geschossübergreifend" : ""}
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 mb-0 text-label text-muted">
+            Strichart: bestätigt durchgezogen, unvollständig gestrichelt, Konflikt kurz gestrichelt. Kugeln markieren die
+            Fortsetzung in ein anderes Geschoss.
+          </p>
+        </section>
+      )}
 
       {modell.ausgelassen.length > 0 && (
         <section className="rounded-ep border border-line px-3 py-2.5">

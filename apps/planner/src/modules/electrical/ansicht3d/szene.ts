@@ -10,6 +10,7 @@
  * | `new Grundrissszene(...)` | initialisieren; wirft `WebGLNichtVerfuegbar` |
  * | `setzePlan(modell, { einpassen })` | Planobjekte ersetzen, alte GPU-Ressourcen freigeben |
  * | `setzeAuswahl(auswahl)` | Hervorhebung setzen (fachliche Referenz, kein Objekt) |
+ * | `setzeLeitungen(leitungen)` | gespeicherte Leitungen als Linienzüge (6b.5), Status über Strichart |
  * | `einpassen()` / `standardansicht()` / `draufsicht()` / `zoomen(f)` | Kamera |
  * | `groesseSetzen(b, h)` | Seitenverhältnis und Renderergröße, **ohne** Neuaufbau |
  * | `pausieren()` / `fortsetzen()` | kein Rendern, solange nicht sichtbar |
@@ -44,9 +45,11 @@ import {
   MeshBasicMaterial,
   MeshLambertMaterial,
   PerspectiveCamera,
+  Quaternion,
   Raycaster,
   RingGeometry,
   Scene,
+  SphereGeometry,
   Vector2,
   Vector3,
 } from "three";
@@ -56,6 +59,7 @@ import { MESSUNG, messen } from "./messung";
 import type { Auswahl, Szenenmodell } from "./modell";
 import { auswahlSchluessel } from "./modell";
 import type { Geraet3d } from "./geraete3d";
+import type { Leitung3d } from "./leitungen3d";
 import { inMeter, inSzene } from "./transformation";
 import { raumseiteAuswahl } from "./raumwand";
 import { LEERES_MODELL } from "./szenenmodell";
@@ -146,6 +150,10 @@ export interface Szenenfarben {
   readonly geraetWand: string;
   readonly geraetDecke: string;
   readonly geraetFuehrung: string;
+  /** Leitungen (6b.5): bestätigt, unvollständig, Konflikt - zusätzlich über Strichart und Text. */
+  readonly leitung: string;
+  readonly leitungWarnung: string;
+  readonly leitungKonflikt: string;
 }
 
 /**
@@ -181,7 +189,13 @@ export const STANDARD_SZENENFARBEN: Szenenfarben = Object.freeze({
   geraetWand: "#5b4bc4",
   geraetDecke: "#c7a400",
   geraetFuehrung: "#45505c",
+  leitung: "#0b5aa6",
+  leitungWarnung: "#a65f00",
+  leitungKonflikt: "#c0262d",
 });
+
+/** Radius des unsichtbaren Trefferkörpers um eine Leitung (mm) - Linien selbst sind kaum treffbar. */
+const LEITUNG_TREFFER_MM = 35;
 
 const SICHTFELD_GRAD = 45;
 const ISO_RICHTUNG = new Vector3(0.9, 1.1, 1.3);
@@ -206,6 +220,10 @@ interface Materialien {
   readonly geraetAuswahl: MeshBasicMaterial;
   readonly fuehrung: LineDashedMaterial;
   readonly marker: MeshBasicMaterial;
+  readonly leitung: LineBasicMaterial;
+  readonly leitungUnvollstaendig: LineDashedMaterial;
+  readonly leitungKonflikt: LineDashedMaterial;
+  readonly leitungFortsetzung: MeshBasicMaterial;
 }
 
 /** Materialien einmal je Szene; ein Farbwechsel ändert nur ihre Farbe. */
@@ -240,6 +258,11 @@ function materialienErzeugen(farben: Szenenfarben = STANDARD_SZENENFARBEN): Mate
     geraetAuswahl: new MeshBasicMaterial({ color: farben.auswahl }),
     fuehrung: new LineDashedMaterial({ color: farben.geraetFuehrung, dashSize: 0.08, gapSize: 0.06 }),
     marker: new MeshBasicMaterial({ color: farben.auswahl, transparent: true, opacity: 0.7, side: DoubleSide, depthWrite: false }),
+    // Die Strichart nennt den Status: durchgezogen, gestrichelt, kurz gestrichelt.
+    leitung: new LineBasicMaterial({ color: farben.leitung }),
+    leitungUnvollstaendig: new LineDashedMaterial({ color: farben.leitungWarnung, dashSize: 0.12, gapSize: 0.08 }),
+    leitungKonflikt: new LineDashedMaterial({ color: farben.leitungKonflikt, dashSize: 0.04, gapSize: 0.06 }),
+    leitungFortsetzung: new MeshBasicMaterial({ color: farben.leitung }),
   };
 }
 
@@ -259,6 +282,10 @@ function materialfarbenSetzen(m: Materialien, farben: Szenenfarben) {
   m.geraetAuswahl.color.set(farben.auswahl);
   m.fuehrung.color.set(farben.geraetFuehrung);
   m.marker.color.set(farben.auswahl);
+  m.leitung.color.set(farben.leitung);
+  m.leitungUnvollstaendig.color.set(farben.leitungWarnung);
+  m.leitungKonflikt.color.set(farben.leitungKonflikt);
+  m.leitungFortsetzung.color.set(farben.leitung);
 }
 
 function alleMaterialien(m: Materialien): Material[] {
@@ -279,6 +306,10 @@ function alleMaterialien(m: Materialien): Material[] {
     m.geraetAuswahl,
     m.fuehrung,
     m.marker,
+    m.leitung,
+    m.leitungUnvollstaendig,
+    m.leitungKonflikt,
+    m.leitungFortsetzung,
   ];
 }
 
@@ -333,6 +364,7 @@ export class Grundrissszene {
   private readonly fuehrungGeometrien: BufferGeometry[] = [];
   private readonly beschriftungen: HTMLDivElement | null;
   private beschriftungsElemente: { element: HTMLElement; geraet: Geraet3d }[] = [];
+  private leitungen: readonly Leitung3d[] = [];
 
   constructor(
     private readonly behaelter: HTMLElement,
@@ -559,7 +591,67 @@ export class Grundrissszene {
       }
     }
     this.geraeteAufbauen(modell);
+    this.leitungenAufbauen(modell);
     this.rasterSetzen(modell);
+  }
+
+  // ------------------------------------------------------------ Leitungen (6b.5)
+
+  /**
+   * Gespeicherte Leitungen dieses Geschosses ersetzen. Baut den Plan neu auf -
+   * die alten Geometrien werden dabei freigegeben; eine Auswahl, deren Leitung
+   * fehlt, verschwindet.
+   */
+  setzeLeitungen(leitungen: readonly Leitung3d[]) {
+    if (this.entsorgt) return;
+    this.leitungen = leitungen;
+    this.planAufbauen(this.modell);
+    const bisher = this.auswahl;
+    if (bisher !== null && !this.nachSchluessel.has(auswahlSchluessel(bisher))) this.auswahl = null;
+    this.hervorhebungAnwenden();
+    this.anfordern();
+  }
+
+  private leitungenAufbauen(modell: Szenenmodell) {
+    const t = modell.transformation;
+    const m = this.materialien;
+    const linie = { confirmed: m.leitung, incomplete: m.leitungUnvollstaendig, conflict: m.leitungKonflikt };
+    const radius = inMeter(LEITUNG_TREFFER_MM);
+    const achse = new Vector3(0, 1, 0);
+    for (const l of this.leitungen) {
+      const auswahl: Auswahl = { art: "leitung", id: l.id };
+      for (const stueck of l.stuecke) {
+        const punkte = stueck.punkte.map((p) => {
+          const q = inSzene(t, p.x, p.y, p.h);
+          return new Vector3(q.x, q.y, q.z);
+        });
+        const zug = new Line(new BufferGeometry().setFromPoints(punkte), linie[l.status]);
+        zug.computeLineDistances();
+        zug.renderOrder = 3;
+        this.planHinzufuegen(zug);
+        // Unsichtbare Trefferkörper je Teilstück; hervorgehoben werden sie sichtbar.
+        for (let i = 1; i < punkte.length; i += 1) {
+          const a = punkte[i - 1] as Vector3;
+          const b = punkte[i] as Vector3;
+          const laenge = a.distanceTo(b);
+          if (laenge === 0) continue;
+          const koerper = new Mesh(new CylinderGeometry(radius, radius, laenge, 8), m.unsichtbar);
+          koerper.position.copy(a).add(b).multiplyScalar(0.5);
+          koerper.quaternion.copy(new Quaternion().setFromUnitVectors(achse, b.clone().sub(a).normalize()));
+          koerper.renderOrder = 3;
+          koerper.updateMatrixWorld(true);
+          this.auswaehlbarHinzufuegen(koerper, auswahl, m.marker);
+        }
+      }
+      // Fortsetzung ins Nachbargeschoss: ausdrücklicher Punkt statt stiller Verbindung.
+      for (const f of l.fortsetzungen) {
+        const q = inSzene(t, f.punkt.x, f.punkt.y, f.punkt.h);
+        const kugel = new Mesh(new SphereGeometry(radius * 1.8, 12, 8), m.leitungFortsetzung);
+        kugel.position.set(q.x, q.y, q.z);
+        kugel.updateMatrixWorld(true);
+        this.auswaehlbarHinzufuegen(kugel, auswahl, m.marker);
+      }
+    }
   }
 
   // ------------------------------------------------------------ Geräte (Phase 5)
@@ -923,6 +1015,7 @@ export class Grundrissszene {
       fuehrung: this.fuehrungGruppe.children.length,
       beschriftungen: this.beschriftungsElemente.filter((b) => !b.element.hidden && this.sichtbarkeit.beschriftung).length,
       materialien: alleMaterialien(this.materialien).length,
+      leitungen: this.leitungen.length,
       raster: this.raster === null ? 0 : 1,
       bildAngefordert: this.bildId !== null,
       pausiert: this.pausiert,

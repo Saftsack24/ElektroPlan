@@ -16,6 +16,7 @@
  * Wegpunkte jeder Art bleiben unverändert erhalten - auch Fußboden-,
  * Bodenübergangs- und Steigwegpunkte, die hier nicht bearbeitet werden.
  */
+import type { NeueDurchfuehrung } from "./durchfuehrung";
 import type { Wegpunkt } from "./laenge";
 
 export interface Leitungswerte {
@@ -32,6 +33,11 @@ export interface Leitungswerte {
   readonly endzugabeMm: number;
   readonly reserveMm: number;
   readonly wegpunkte: readonly Wegpunkt[];
+  /**
+   * Phase 6b.5: Durchführungen, die erst mit dieser Leitung entstehen. Teil der Werte -
+   * Rückgängig und Verwerfen nehmen sie mit; auf dem Server gibt es sie erst nach dem Speichern.
+   */
+  readonly neueDurchfuehrungen: readonly NeueDurchfuehrung[];
 }
 
 export type Leitungsstatus = "bearbeiten" | "speichert" | "konflikt" | "fehler";
@@ -95,7 +101,8 @@ export function gleicheWerte(a: Leitungswerte, b: Leitungswerte): boolean {
     a.startzugabeMm === b.startzugabeMm &&
     a.endzugabeMm === b.endzugabeMm &&
     a.reserveMm === b.reserveMm &&
-    gleicheWegpunkte(a.wegpunkte, b.wegpunkte)
+    gleicheWegpunkte(a.wegpunkte, b.wegpunkte) &&
+    JSON.stringify(a.neueDurchfuehrungen) === JSON.stringify(b.neueDurchfuehrungen)
   );
 }
 
@@ -184,7 +191,36 @@ export function wegpunktErsetzen(werte: Leitungswerte, index: number, wp: Wegpun
 }
 
 export function wegpunktEntfernen(werte: Leitungswerte, index: number): Leitungswerte {
-  return { ...werte, wegpunkte: werte.wegpunkte.filter((_, i) => i !== index) };
+  return ungenutzteDurchfuehrungenEntfernen({ ...werte, wegpunkte: werte.wegpunkte.filter((_, i) => i !== index) });
+}
+
+/** Eine neue Durchführung, die kein Wegpunkt mehr nutzt, entfällt - der Server nähme sie ohnehin nicht. */
+export function ungenutzteDurchfuehrungenEntfernen(werte: Leitungswerte): Leitungswerte {
+  const genutzt = new Set(werte.wegpunkte.flatMap((wp) => (wp.art === "durchfuehrung" ? [wp.durchfuehrungId] : [])));
+  const bleiben = werte.neueDurchfuehrungen.filter((d) => genutzt.has(d.schluessel));
+  return bleiben.length === werte.neueDurchfuehrungen.length ? werte : { ...werte, neueDurchfuehrungen: bleiben };
+}
+
+/**
+ * Index eines direkten Nachbarn (vor oder an der Einfügestelle), der schon diese Durchführung ist -
+ * sonst `null`. Eine Durchführung wird nie zweimal hintereinander aufgenommen (Browserabnahme 6b.5).
+ */
+export function durchfuehrungDaneben(werte: Leitungswerte, index: number, id: string): number | null {
+  for (const i of [index - 1, index]) {
+    const wp = werte.wegpunkte[i];
+    if (wp?.art === "durchfuehrung" && wp.durchfuehrungId === id) return i;
+  }
+  return null;
+}
+
+/** Neue Durchführung samt ihrem Wegpunkt einfügen (nach dem gewählten, sonst am Ende). */
+export function durchfuehrungEinfuegen(
+  werte: Leitungswerte,
+  neu: NeueDurchfuehrung,
+  nach: number | null,
+): { werte: Leitungswerte; index: number } {
+  const e = wegpunktEinfuegen(werte, { art: "durchfuehrung", durchfuehrungId: neu.schluessel }, nach);
+  return { werte: { ...e.werte, neueDurchfuehrungen: [...werte.neueDurchfuehrungen, neu] }, index: e.index };
 }
 
 // ------------------------------------------------------------------ Kabelangaben

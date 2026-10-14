@@ -15,7 +15,7 @@ import { Eigenschaften, flaecheText } from "./Eigenschaften";
 import type { EntwurfGeraet, EntwurfWand, Geschossplan, Oeffnungsart, RaumImPlan, Raumentwurf } from "./entwurf";
 import { alsKonturanfrage, basisAus, ende, geraetAus, neueId, segmenteAus, start, STANDARD_WANDSTAERKE_MM } from "./entwurf";
 import type { Geraetedarstellung } from "./Zeichenflaeche";
-import { geraetebefunde } from "../geraete/geraetepruefung";
+import { geraetebefunde, punktImPolygon } from "../geraete/geraetepruefung";
 import type { PruefGeraet, PruefRaum } from "../geraete/geraetepruefung";
 import { geraetEntfernen, pruefmass } from "../geraete/geraeteentwurf";
 import { geraetName, katalogAbfrage, typenNachSchluessel } from "../geraete/katalog";
@@ -33,7 +33,7 @@ import { fehlerAuswerten } from "./speichern";
 import type { Groesse, Viewport } from "./viewport";
 import { START_VIEWPORT, einpassen, grenzenVon, zoomen } from "./viewport";
 import { Werkzeugleiste } from "./Werkzeugleiste";
-import { editorEinordnung, editorTopologie } from "./platzierung";
+import { editorEinordnung, editorTopologie, raumwandUnterZeiger } from "./platzierung";
 import { kopplungenAus, kopplungenDerWaende } from "../kopplung/zuordnung";
 import {
   letztenPunktEntfernen,
@@ -55,7 +55,12 @@ import { Symbol } from "../../../core/ui/Symbol";
 import { BestaetigungAbgelehnt, bestaetigungsfeld, useLeitungsbestaetigung } from "../leitung/bestaetigung";
 import { durchfuehrungenSchluessel, leitungenSchluessel } from "../leitung/daten";
 import type { Arbeitsflaeche, Leitungskontext } from "../leitung/kontext";
-import { useLeitungsplanung } from "../leitung/useLeitungsplanung";
+import type { Leitungsplanung } from "../leitung/useLeitungsplanung";
+import { LEITUNG_MELDUNG, LeitungsplanungProvider, useGrundrisseinstellung, useLeitungsplanungImKontext } from "../leitung/LeitungsplanungProvider";
+import { useGrundrissleitungen } from "../leitung/Grundrissleitungen";
+import type { Wandtreffer } from "../leitung/Grundrissleitungen";
+import { GrundrissLeitungsleiste, Steigwegwahl } from "../leitung/GrundrissLeitungsfeld";
+import { Leitungsbereich } from "../leitung/Leitungsbereich";
 import { ZUORDNUNG_MELDUNG } from "../stromkreise/texte";
 import { useZuordnungsentwurf } from "../stromkreise/zuordnung";
 
@@ -91,8 +96,6 @@ export interface Deckenziel {
 const RAUM_MELDUNG =
   "Der aktive Raum hat ungespeicherte Änderungen. Wenn Sie fortfahren, gehen sie verloren.";
 
-const LEITUNG_MELDUNG =
-  "Es gibt einen ungespeicherten Leitungsentwurf. Wenn Sie fortfahren, geht er verloren.";
 
 /** Wände eines Raums in Entwurfsform - Serverstand oder Entwurf. */
 function basisWaende(walls: RaumImPlan["walls"] | Raumentwurf["walls"]): Raumentwurf["walls"] {
@@ -125,15 +128,43 @@ function ruhend(raum: RaumImPlan): Raumdarstellung {
   return d;
 }
 
+type EditorProps = Parameters<typeof GrundrissEditorInhalt>[0] extends infer P ? Omit<P, "planung"> : never;
+
 /**
  * Grafischer Grundrisseditor eines Geschosses (Phase 4a).
  *
+ * Die Leitungsplanung gehört seit 6b.5 zum Gebäude (`LeitungsplanungProvider`):
+ * Im Projekt-Tab umschließt sie alle Ansichten eines Gebäudes, damit ein
+ * Leitungsentwurf Geschoss- und Ansichtswechsel übersteht. Wird der Editor ohne
+ * diesen Rahmen gezeigt, erhält er einen eigenen.
+ */
+export function GrundrissEditor(props: EditorProps) {
+  const planung = useLeitungsplanungImKontext();
+  if (planung !== null) return <GrundrissEditorInhalt {...props} planung={planung} />;
+  return (
+    <LeitungsplanungProvider
+      buildingId={props.buildingId}
+      darfLeitungen={props.darfLeitungen ?? false}
+      darfStromkreise={props.darfStromkreise ?? false}
+      onGeschrieben={props.onGeschrieben}
+    >
+      <EigenerRahmen {...props} />
+    </LeitungsplanungProvider>
+  );
+}
+
+function EigenerRahmen(props: EditorProps) {
+  const planung = useLeitungsplanungImKontext();
+  return planung === null ? null : <GrundrissEditorInhalt {...props} planung={planung} />;
+}
+
+/**
  * Lädt den Planungsstand in **einer** Anfrage, hält genau einen Raum als
  * lokalen Entwurf und speichert ihn **bewusst** und atomar über
  * `PUT /rooms/{id}/contour`. Kein Autosave; jede Bewegung bleibt lokal, bis
  * gespeichert wird. Die Serverantwort wird danach die neue Basis.
  */
-export function GrundrissEditor({
+function GrundrissEditorInhalt({
   floorId,
   buildingId,
   geschossLabel,
@@ -145,9 +176,11 @@ export function GrundrissEditor({
   startDeckenansicht = null,
   onStartVerbraucht,
   onZurueck3d,
-  darfLeitungen = false,
   darfStromkreise = false,
   onGeschrieben,
+  onGeschossWechseln,
+  rueckkehr3dAnbieten = false,
+  planung,
 }: {
   floorId: string;
   /** Gebäude des Geschosses (Phase 6b.1) - für die Rückfrage zu zugeordneten Geräten. */
@@ -171,6 +204,12 @@ export function GrundrissEditor({
   darfStromkreise?: boolean;
   /** Nach Schreibvorgängen an Leitungen und Zuordnungen (Projektkopf nachladen). */
   onGeschrieben?: (() => Promise<void>) | undefined;
+  /** Leitungsplanung des Gebäudes (6b.5) - vom Provider. */
+  planung: Leitungsplanung;
+  /** Steigweg (6b.5): ins Zielgeschoss wechseln - der Leitungsentwurf bleibt erhalten. */
+  onGeschossWechseln?: ((floorId: string) => void) | undefined;
+  /** Aus 3D geöffnet (6b.5): Rückweg zur 3D-Ansicht mit gemerkter Kamera anbieten. */
+  rueckkehr3dAnbieten?: boolean;
 }) {
   const { api } = useAuth();
   const queryClient = useQueryClient();
@@ -211,16 +250,17 @@ export function GrundrissEditor({
   const kopplungen = useMemo(() => kopplungenAus(planKopplungen), [planKopplungen]);
 
   const offen = ungespeichert(zustand);
-  // Phase 6b.4: Leitungsentwurf und Gerätezuordnung gehören zu diesem Planungskontext.
-  const planung = useLeitungsplanung({ buildingId, darfLeitungen, darfStromkreise, onGeschrieben });
+  // Gerätezuordnung gehört zu diesem Geschoss; der Leitungsentwurf (6b.5) zum Gebäude (Provider).
   const zuordnung = useZuordnungsentwurf({ buildingId: buildingId ?? "", darfSchreiben: darfStromkreise, onGeschrieben });
   const mitBestaetigung = useLeitungsbestaetigung();
   const leitungAktiv = planung.entwurf !== null;
   const zuordnungAktiv = zuordnung.entwurf !== null;
   // Höchstens ein aktiver Entwurf: Solange Leitung oder Zuordnung offen ist, ruht die Raumbearbeitung.
   const schreibbar = darfSchreiben && !leitungAktiv && !zuordnungAktiv;
-  const offenGesamt = offen || planung.ungespeichert || zuordnung.offen;
-  useUngespeicherteAenderungen(offenGesamt, planung.ungespeichert ? LEITUNG_MELDUNG : zuordnung.offen ? ZUORDNUNG_MELDUNG : RAUM_MELDUNG);
+  // Gemeldet werden Raum und Zuordnung - sie gehen mit dem Geschoss verloren. Den Leitungsentwurf
+  // meldet und schützt der Provider des Gebäudes; er übersteht einen Geschosswechsel.
+  const offenGesamt = offen || zuordnung.offen;
+  useUngespeicherteAenderungen(offenGesamt, zuordnung.offen ? ZUORDNUNG_MELDUNG : RAUM_MELDUNG);
   useEffect(() => onUngespeichert(offenGesamt), [offenGesamt, onUngespeichert]);
 
   // Neu geladener Serverstand: ersetzt nur einen unveränderten Entwurf.
@@ -869,7 +909,8 @@ export function GrundrissEditor({
     }
     for (const r of planung.vorbereitet?.raeume.values() ?? []) {
       const i = r.waende.findIndex((w) => w.id === wandId);
-      if (i >= 0) return `Wand ${i + 1} (anderes Geschoss)`;
+      // Gebäudeweiter Entwurf (6b.5): Raum mit Geschoss statt nur „anderes Geschoss“.
+      if (i >= 0) return `Wand ${i + 1} (${planung.raumMitGeschoss(r.id)})`;
     }
     return "unbekannte Wand";
   };
@@ -921,6 +962,26 @@ export function GrundrissEditor({
     leitungSchliessen,
   };
 
+  // Leitung im Grundriss (6b.5): Fußboden, grobe Wand- und Deckenpunkte, Übergänge, Steigwege.
+  const einstellung = useGrundrisseinstellung();
+  const wandUnterZeiger = (welt: Punkt, massstab: number): Wandtreffer => {
+    // Liegen an einer Ecke Wände mehrerer Räume im Fangradius, entscheidet der Raum, in dem der Zeiger
+    // wirklich liegt (Befund der Browserabnahme 6b.5) - auf der Linie selbst bleibt es mehrdeutig.
+    const zeigerRaum = darstellung.find((r) => r.walls.length >= 3 && punktImPolygon(welt, r.walls.map((w) => ({ x: w.x1_mm, y: w.y1_mm }))))?.id ?? null;
+    const t = raumwandUnterZeiger(topologie, welt, 10 / massstab, darstellung, zeigerRaum);
+    if (t === null) return null;
+    return t.ok ? { ok: true, raumId: t.treffer.raumId, wandId: t.treffer.wandId } : { ok: false, grund: t.grund };
+  };
+  const gl = useGrundrissleitungen({
+    k: buildingId !== undefined ? leitungskontext : undefined,
+    einstellung,
+    floorId,
+    wandUnterZeiger,
+    fangAktiv,
+    rasterMm,
+    onStatus: setHinweis,
+  });
+
   /** Aus dem Grundriss zurück in den offenen Leitungsentwurf: an seinen letzten Punkt. */
   const leitungFortsetzen = () => {
     const w = planung.entwurf?.werte;
@@ -967,6 +1028,8 @@ export function GrundrissEditor({
     ) {
       return;
     }
+    // Wand- und Deckenansicht führen eigene Tasten; im Grundriss zuerst die Leitungsebene.
+    if (wandansicht === null && deckenansicht === null && gl.taste(event)) return;
     if (strg && k === "z" && !event.shiftKey) {
       event.preventDefault();
       if (leitungAktiv) planung.dispatch({ typ: "rueckgaengig" });
@@ -1046,6 +1109,30 @@ export function GrundrissEditor({
   const status = zustand.status;
   const aktiverName = zustand.basis?.raum.name;
 
+  // Nur ein Leitungsfeld zugleich: Offene Wand- oder Deckenansichten führen ihr eigenes.
+  const leitungsfeld = wandansicht !== null || deckenansicht !== null ? null : (
+    <div className="flex flex-col gap-2" data-testid="grundriss-leitungen">
+      {einstellung !== null && <GrundrissLeitungsleiste k={leitungskontext} einstellung={einstellung} floorId={floorId} />}
+      {gl.steigwahl !== null && (
+        <Steigwegwahl
+          key={`${gl.steigwahl.steigwegId}|${gl.steigwahl.haltId}|${gl.steigwahl.index}`}
+          k={leitungskontext}
+          wahl={gl.steigwahl}
+          onSchliessen={() => gl.setSteigwahl(null)}
+          onGeschossWechseln={onGeschossWechseln}
+        />
+      )}
+      <Leitungsbereich
+        k={leitungskontext}
+        flaeche={{ art: "grundriss", floorId }}
+        relevant={gl.relevant}
+        gewaehlt={gl.gewaehlt}
+        onWaehlen={gl.setGewaehlt}
+        onWerkzeug={(w) => einstellung?.setWerkzeug(w === "leitung" ? "leitung" : "aus")}
+      />
+    </div>
+  );
+
   return (
     <div className="flex flex-col gap-2.5">
       <Werkzeugleiste
@@ -1100,7 +1187,7 @@ export function GrundrissEditor({
         <div className={`${meldungsflaeche("schlicht")} flex flex-wrap items-center justify-between gap-2`} role="status" data-testid="entwurf-offen">
           <span>
             {leitungAktiv
-              ? `Leitungsentwurf offen${planung.ungespeichert ? " – ungespeichert" : ""}. Geplant wird in der Wand- und Deckenansicht.`
+              ? `Leitungsentwurf offen${planung.ungespeichert ? " – ungespeichert" : ""}. Geplant wird hier im Grundriss (Werkzeug „Leitung“) und in der Wand- und Deckenansicht.`
               : `Gerätezuordnung offen${zuordnung.offen ? " – ungespeichert" : ""}. Zugeordnet wird in der Wand- und Deckenansicht.`}
           </span>
           <span className="flex flex-wrap gap-2">
@@ -1109,6 +1196,11 @@ export function GrundrissEditor({
                 <button type="button" className={knopf("neutral", { klein: true })} onClick={leitungFortsetzen}>
                   Leitung weiter bearbeiten
                 </button>
+                {rueckkehr3dAnbieten && onZurueck3d !== undefined && (
+                  <button type="button" className={knopf("neutral", { klein: true })} onClick={onZurueck3d}>
+                    Zurück zur 3D-Ansicht
+                  </button>
+                )}
                 <button type="button" className={knopf("primaer", { klein: true })} disabled={!planung.ungespeichert} onClick={() => void planung.speichern()}>
                   Leitung speichern
                 </button>
@@ -1179,6 +1271,7 @@ export function GrundrissEditor({
           raumName={raumName}
           geraete={geraeteDarstellung}
           onGeraetBearbeiten={geraetBearbeiten}
+          zusatz={buildingId !== undefined ? gl.zusatz : undefined}
         />
         </div>
         {/* Rückmeldungen des Servers stehen in der Seitenleiste: Die
@@ -1210,6 +1303,7 @@ export function GrundrissEditor({
             </div>
           </div>
         )}
+        {buildingId !== undefined && leitungAktiv && leitungsfeld}
         <Eigenschaften
           zustand={zustand}
           raeume={raeume}
@@ -1237,6 +1331,7 @@ export function GrundrissEditor({
             if (zustand.entwurf !== null) geraetBearbeiten(zustand.entwurf.roomId, geraetId);
           }}
         />
+        {buildingId !== undefined && !leitungAktiv && leitungsfeld}
         </div>
       </div>
 

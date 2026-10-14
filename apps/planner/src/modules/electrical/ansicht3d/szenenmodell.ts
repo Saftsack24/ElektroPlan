@@ -18,6 +18,7 @@
  *   mehrdeutige Kopplungen erscheinen als Hinweis - der Status stammt vom
  *   Server (`wall_links[].status`).
  */
+import type { Leitung3d } from "./leitungen3d";
 import type { Fassade3d, Raumwand3d } from "./raumwand";
 import type { Geraet3d } from "./geraete3d";
 import { geraeteAus } from "./geraete3d";
@@ -238,11 +239,16 @@ export type Objekt =
   | { readonly art: "wandseite"; readonly wand: Wand3d }
   | { readonly art: "fassade"; readonly fassade: Fassade3d; readonly abschnitt: string | null }
   | { readonly art: "oeffnung"; readonly oeffnung: Oeffnung3d; readonly wand: Wand3d }
-  | { readonly art: "geraet"; readonly geraet: Geraet3d };
+  | { readonly art: "geraet"; readonly geraet: Geraet3d }
+  | { readonly art: "leitung"; readonly leitung: Leitung3d };
 
 /** Das fachliche Objekt hinter einer Auswahl - oder `null`, wenn es fehlt. */
-export function objektZu(modell: Szenenmodell, auswahl: Auswahl | null): Objekt | null {
+export function objektZu(modell: Szenenmodell, auswahl: Auswahl | null, leitungen: readonly Leitung3d[] = []): Objekt | null {
   if (auswahl === null) return null;
+  if (auswahl.art === "leitung") {
+    const leitung = leitungen.find((l) => l.id === auswahl.id);
+    return leitung === undefined ? null : { art: "leitung", leitung };
+  }
   if (auswahl.art === "raum") {
     const raum = modell.raeume.find((r) => r.id === auswahl.id);
     return raum === undefined ? null : { art: "raum", raum };

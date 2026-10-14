@@ -26,6 +26,9 @@ const TOKEN: Record<keyof Szenenfarben, string> = {
   geraetWand: "--ep-plan3d-device-wall",
   geraetDecke: "--ep-plan3d-device-ceiling",
   geraetFuehrung: "--ep-plan3d-device-guide",
+  leitung: "--ep-plan3d-cable",
+  leitungWarnung: "--ep-plan3d-cable-incomplete",
+  leitungKonflikt: "--ep-plan3d-cable-conflict",
 };
 
 /**

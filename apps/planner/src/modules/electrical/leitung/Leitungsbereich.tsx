@@ -15,7 +15,8 @@ import { WEGPUNKTART_LABEL, inAnsichtBearbeitbar } from "./daten";
 import type { Leitungswerte, Vorschlagsvergleich } from "./entwurf";
 import { vorschlagVergleichen, wegpunktEntfernen } from "./entwurf";
 import { befundOrt, wandpunktInAnsicht } from "./flaechen";
-import type { Arbeitsflaeche, Leitungskontext } from "./kontext";
+import type { Arbeitsflaeche, Bearbeitungsflaeche, Leitungskontext } from "./kontext";
+import type { Leitungsplanung } from "./useLeitungsplanung";
 import type { Leitungsergebnis, Wegpunkt } from "./laenge";
 import { leitungsbefundText } from "./laenge";
 
@@ -152,7 +153,7 @@ export function Leitungsbereich({
   onWerkzeug,
 }: {
   k: Leitungskontext;
-  flaeche: Arbeitsflaeche;
+  flaeche: Bearbeitungsflaeche;
   /** Wandbezug der gezeigten Wand - für „von links“. */
   bezug?: Pick<Wandbezug, "anfangLinks" | "laengeMm" | "wandId"> | undefined;
   /** Leitungen, die diese Arbeitsfläche berühren. */
@@ -424,16 +425,36 @@ function wegpunktText(
     }
     case "ceiling":
     case "floor":
-      return `${k.raumName(wp.raumId)} · x ${anzeigen(wp.x)}, y ${anzeigen(wp.y)}`;
+      // Gebäudeweiter Entwurf (6b.5): Raum immer mit Geschoss - eindeutig auch nach einem Geschosswechsel.
+      return `${k.planung.raumMitGeschoss(wp.raumId)} · x ${anzeigen(wp.x)}, y ${anzeigen(wp.y)}`;
     case "durchfuehrung": {
       const d = k.planung.durchfuehrungen.find((x) => x.id === wp.durchfuehrungId);
-      return d === undefined ? "unbekannte Durchführung" : `${k.wandName(d.wall_a_id)} ↔ ${k.wandName(d.wall_b_id)} · ${anzeigen(d.height_mm)} hoch`;
+      if (d !== undefined) return `${k.wandName(d.wall_a_id)} ↔ ${k.wandName(d.wall_b_id)} · ${anzeigen(d.height_mm)} hoch`;
+      const neu = k.planung.entwurf?.werte.neueDurchfuehrungen.find((x) => x.schluessel === wp.durchfuehrungId);
+      const kopplung = neu === undefined ? undefined : k.planung.vorbereitet?.kopplungen.get(neu.kopplungId);
+      if (neu === undefined || kopplung === undefined) return "unbekannte Durchführung";
+      return `neu, entsteht beim Speichern · ${k.wandName(kopplung.wandA)} ↔ ${k.wandName(kopplung.wandB)} · ${anzeigen(neu.hoeheMm)} hoch`;
     }
     case "uebergang":
       return `${k.wandName(wp.wandId)} · ${anzeigen(wp.abstandMm)} ab Wandanfang`;
     case "steigweg":
-      return "Steigweg zwischen Geschossen";
+      return steigwegText(wp, k.planung, anzeigen);
   }
+}
+
+/** „Steigweg S1: EG (Einstieg 0 cm) → OG (Ausstieg 0 cm)“ - ohne IDs. */
+export function steigwegText(
+  wp: Extract<Wegpunkt, { art: "steigweg" }>,
+  p: Pick<Leitungsplanung, "steigwege" | "geschossName">,
+  anzeigen: (mm: number) => string,
+): string {
+  const s = p.steigwege.find((x) => x.id === wp.steigwegId);
+  if (s === undefined) return "unbekannter Steigweg";
+  const halt = (id: string) => {
+    const h = s.stops.find((x) => x.id === id);
+    return h === undefined ? "unbekannter Halt" : p.geschossName(h.floor_id);
+  };
+  return `${s.name}: ${halt(wp.vonHalt)} (Einstieg ${anzeigen(wp.vonHoeheMm)}) → ${halt(wp.nachHalt)} (Ausstieg ${anzeigen(wp.nachHoeheMm)})`;
 }
 
 /** Nächster Schritt des Ablaufs - verständlich, ohne Fachcodes. */
@@ -452,7 +473,7 @@ function Entwurfsfeld({
   onWerkzeug,
 }: {
   k: Leitungskontext;
-  flaeche: Arbeitsflaeche;
+  flaeche: Bearbeitungsflaeche;
   bezug: Pick<Wandbezug, "anfangLinks" | "laengeMm" | "wandId"> | undefined;
   onWerkzeug: (w: "leitung" | "zuordnen" | "auswahl") => void;
 }) {
@@ -568,7 +589,7 @@ function Entwurfsfeld({
         ) : (
           <ol className="m-0 flex flex-col gap-0.5 pl-[22px]" aria-label="Wegpunkte">
             {w.wegpunkte.map((wp, i) => {
-              const bearbeitbar = inAnsichtBearbeitbar(wp);
+              const bearbeitbar = inAnsichtBearbeitbar(wp, flaeche.art === "grundriss");
               return (
                 <li key={i}>
                   <span className="flex flex-wrap items-center gap-1.5">
@@ -580,7 +601,7 @@ function Entwurfsfeld({
                     >
                       {WEGPUNKTART_LABEL[wp.art]} · {wegpunktText(wp, k, bezug, masse.anzeigen)}
                     </button>
-                    {!bearbeitbar && <Marke art="neutral">hier nicht bearbeitbar – bleibt unverändert</Marke>}
+                    {!bearbeitbar && <Marke art="neutral">im Grundriss bearbeiten – bleibt hier unverändert</Marke>}
                     {bearbeitbar && darf && (
                       <button
                         type="button"
@@ -599,7 +620,7 @@ function Entwurfsfeld({
         )}
         <p className="m-0 mt-1 text-muted">
           Ein neuer Punkt folgt dem gewählten Wegpunkt, sonst kommt er ans Ende. Fußboden-, Bodenübergangs- und Steigwegpunkte
-          werden mit dem Grundriss (6b.5) bearbeitet; hier bleiben sie unverändert erhalten.
+          werden im Grundriss bearbeitet; in Wand- und Deckenansicht bleiben sie unverändert erhalten.
         </p>
       </div>
 
@@ -673,8 +694,9 @@ function zugabe(mm: number, setzen: (v: number) => void): string | undefined {
 }
 
 /** Wechsel der Arbeitsfläche im selben Entwurf - nichts wird gespeichert oder verworfen. */
-function Arbeitsflaechen({ k, flaeche }: { k: Leitungskontext; flaeche: Arbeitsflaeche }) {
+function Arbeitsflaechen({ k, flaeche }: { k: Leitungskontext; flaeche: Bearbeitungsflaeche }) {
   const p = k.planung;
+  if (flaeche.art === "grundriss") return null;
   const raum = p.vorbereitet?.raeume.get(flaeche.raumId);
   if (raum === undefined) return null;
   const wand = flaeche.art === "wand" ? raum.waende.findIndex((x) => x.id === flaeche.wandId) : -1;

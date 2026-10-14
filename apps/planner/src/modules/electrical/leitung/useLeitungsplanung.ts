@@ -29,13 +29,17 @@ import {
   wegpunktAlsAnfrage,
 } from "./daten";
 import type { Leitungsaktion, Leitungsentwurf, Leitungsfehler, Leitungswerte } from "./entwurf";
-import { entwurfAus, leiterzahlLesen, leitungUngespeichert, leitungsReducer } from "./entwurf";
-import type { Leitung, Leitungsergebnis, VorbereiteterPlan } from "./laenge";
+import type { NeueDurchfuehrung } from "./durchfuehrung";
+import { entwurfAus, leiterzahlLesen, leitungUngespeichert, leitungsReducer, ungenutzteDurchfuehrungenEntfernen } from "./entwurf";
+import type { Kandidatenpruefung } from "./flaechen";
+import { kandidatPruefen } from "./flaechen";
+import type { Leitung, Leitungsergebnis, Leitungsplan, VorbereiteterPlan } from "./laenge";
 import { leitungAuswerten, planVorbereiten } from "./laenge";
 
 type Schemas = components["schemas"];
 type Geschossplan = Schemas["FloorPlanOut"];
 type RiserOut = Schemas["RiserOut"];
+type FloorOut = Schemas["FloorOut"];
 
 // Feste Funktionen: `combine` läuft nur neu, wenn sich ein Abfrageergebnis ändert -
 // das Ergebnis bleibt sonst dasselbe Objekt, und die Längenvorbereitung läuft nicht bei jedem Rendern.
@@ -73,7 +77,12 @@ export interface Leitungsplanung {
   readonly verteilungen: readonly Verteilung[];
   readonly geraete: readonly Planergeraet[];
   readonly durchfuehrungen: readonly DurchfuehrungAusServer[];
+  /** Geschosse und Steigwege des Gebäudes (6b.5) - für gebäudeweite Entwürfe. */
+  readonly geschosse: readonly FloorOut[];
+  readonly steigwege: readonly RiserOut[];
   readonly vorbereitet: VorbereiteterPlan | null;
+  /** Wie `vorbereitet`, zusätzlich mit den neuen Durchführungen des Entwurfs - für Vorschau und Kandidaten. */
+  readonly vorbereitetEntwurf: VorbereiteterPlan | null;
   /** Ergebnisse der gespeicherten Leitungen mit derselben Funktion - zum Zeichnen der Läufe. */
   readonly ergebnisse: ReadonlyMap<string, Leitungsergebnis>;
   readonly entwurf: Leitungsentwurf | null;
@@ -89,6 +98,14 @@ export interface Leitungsplanung {
   kreisVon(id: string): Stromkreis | undefined;
   kreisName(kreis: Pick<Stromkreis, "designation" | "name" | "board_id">): string;
   geraetName(id: string | null): string;
+  /** „Küche (EG)“ - Raum mit Geschoss, eindeutig im ganzen Gebäude. */
+  raumMitGeschoss(raumId: string): string;
+  geschossName(floorId: string): string;
+  /**
+   * Prüft geänderte Werte des Entwurfs an Wegpunkt `index` - mit genau den neuen
+   * Durchführungen dieser Werte. `null`, solange der Plan nicht geladen ist.
+   */
+  pruefen(werte: Leitungswerte, index: number): Kandidatenpruefung | null;
   /** Lagegerät der Verteilung und zugeordnete Geräte des Stromkreises. */
   endpunkte(circuitId: string): Planergeraet[];
   /** Hat diese gespeicherte Leitung Wegpunkte, die nicht gelesen werden können? */
@@ -117,6 +134,7 @@ function werteAusServer(c: LeitungAusServer, wegpunkte: Leitungswerte["wegpunkte
     endzugabeMm: c.end_allowance_mm,
     reserveMm: c.reserve_mm,
     wegpunkte,
+    neueDurchfuehrungen: [],
   };
 }
 
@@ -136,6 +154,16 @@ export function leitungAusWerten(id: string, w: Leitungswerte): Leitung {
     leiterzahl: zahl.ok ? zahl.wert : null,
     querschnittMm2: querschnitt.ok ? querschnitt.wert : null,
   };
+}
+
+const KEINE_NEUEN: readonly NeueDurchfuehrung[] = [];
+
+/** Gespeicherter Plan plus neue Durchführungen eines Entwurfs - nur im Browser. */
+function planMitNeuen(plan: Leitungsplan, neue: readonly NeueDurchfuehrung[]): VorbereiteterPlan {
+  return planVorbereiten({
+    ...plan,
+    durchfuehrungen: [...plan.durchfuehrungen, ...neue.map((d) => ({ id: d.schluessel, kopplungId: d.kopplungId, abstandMm: d.abstandMm, hoeheMm: d.hoeheMm }))],
+  });
 }
 
 const VERSION_KONFLIKT =
@@ -221,16 +249,52 @@ export function useLeitungsplanung({
     const plaeneNachGeschoss = new Map(
       floorListe.flatMap((g, i) => {
         const p = plaene.plaene[i];
-        return p === undefined ? [] : [[g.id, p] as const];
+        return p === undefined || !Array.isArray(p.rooms) ? [] : [[g.id, p] as const];
       }),
     );
     return geraeteDesGebaeudes(floorListe, plaeneNachGeschoss, typen);
   }, [floorListe, typen, plaene.plaene]);
 
-  const vorbereitet = useMemo(() => {
-    if (!plaeneGeladen) return null;
-    return planVorbereiten(leitungsplanAus({ geschosse: floorListe, plaene: planListe, durchfuehrungen, steigwege: steigwegListe }));
-  }, [plaeneGeladen, floorListe, planListe, durchfuehrungen, steigwegListe]);
+  const gespeicherterPlan = useMemo(
+    () => (plaeneGeladen ? leitungsplanAus({ geschosse: floorListe, plaene: planListe, durchfuehrungen, steigwege: steigwegListe }) : null),
+    [plaeneGeladen, floorListe, planListe, durchfuehrungen, steigwegListe],
+  );
+  const vorbereitet = useMemo(() => (gespeicherterPlan === null ? null : planVorbereiten(gespeicherterPlan)), [gespeicherterPlan]);
+
+  // Neue Durchführungen des Entwurfs (6b.5) zählen für Vorschau und Prüfung mit - nur im Browser,
+  // bis die Leitung gespeichert ist. Ohne neue bleibt es derselbe vorbereitete Plan.
+  const neueImEntwurf = entwurf?.werte.neueDurchfuehrungen ?? KEINE_NEUEN;
+  const vorbereitetEntwurf = useMemo(() => {
+    if (gespeicherterPlan === null) return null;
+    if (neueImEntwurf.length === 0) return vorbereitet;
+    return planMitNeuen(gespeicherterPlan, neueImEntwurf);
+  }, [gespeicherterPlan, vorbereitet, neueImEntwurf]);
+
+  const pruefen = useCallback(
+    (werte: Leitungswerte, index: number): Kandidatenpruefung | null => {
+      if (gespeicherterPlan === null || vorbereitet === null) return null;
+      const neue = werte.neueDurchfuehrungen;
+      const plan =
+        neue.length === 0
+          ? vorbereitet
+          : JSON.stringify(neue) === JSON.stringify(neueImEntwurf) && vorbereitetEntwurf !== null
+            ? vorbereitetEntwurf
+            : planMitNeuen(gespeicherterPlan, neue);
+      return kandidatPruefen(plan, leitungAusWerten(entwurf?.cableId ?? "neu", werte), index);
+    },
+    [gespeicherterPlan, vorbereitet, vorbereitetEntwurf, neueImEntwurf, entwurf?.cableId],
+  );
+
+  const raumNamen = useMemo(() => {
+    const geschossNamen = new Map(floorListe.map((g) => [g.id, g.name]));
+    const karte = new Map<string, string>();
+    for (const plan of planListe) {
+      for (const r of plan.rooms) karte.set(r.id, `${r.name} (${geschossNamen.get(plan.floor_id) ?? "Geschoss"})`);
+    }
+    return karte;
+  }, [floorListe, planListe]);
+  const raumMitGeschoss = useCallback((raumId: string) => raumNamen.get(raumId) ?? "unbekannter Raum", [raumNamen]);
+  const geschossName = useCallback((floorId: string) => floorListe.find((g) => g.id === floorId)?.name ?? "unbekanntes Geschoss", [floorListe]);
 
   const ergebnisse = useMemo(() => {
     const karte = new Map<string, Leitungsergebnis>();
@@ -241,8 +305,8 @@ export function useLeitungsplanung({
 
   const entwurfsleitung = useMemo(() => (entwurf === null ? null : leitungAusWerten(entwurf.cableId ?? "neu", entwurf.werte)), [entwurf]);
   const ergebnis = useMemo(
-    () => (vorbereitet === null || entwurfsleitung === null ? null : leitungAuswerten(vorbereitet, entwurfsleitung)),
-    [vorbereitet, entwurfsleitung],
+    () => (vorbereitetEntwurf === null || entwurfsleitung === null ? null : leitungAuswerten(vorbereitetEntwurf, entwurfsleitung)),
+    [vorbereitetEntwurf, entwurfsleitung],
   );
 
   const kreisVon = useCallback((id: string) => kreise.find((k) => k.id === id), [kreise]);
@@ -302,6 +366,7 @@ export function useLeitungsplanung({
           endzugabeMm: 0,
           reserveMm: 0,
           wegpunkte: [],
+          neueDurchfuehrungen: [],
         }),
       });
       setHinweis(null);
@@ -346,6 +411,8 @@ export function useLeitungsplanung({
       dispatch({ typ: "gescheitert", status: "fehler", fehler: { meldung: "Nicht gespeichert – bitte die Angaben prüfen.", eintraege: lokal } });
       return false;
     }
+    const genutzt = ungenutzteDurchfuehrungenEntfernen(w);
+    const neueSchluessel = new Set(genutzt.neueDurchfuehrungen.map((d) => d.schluessel));
     const body = {
       label: w.label.trim() === "" ? null : w.label.trim(),
       start_device_id: w.startId,
@@ -356,8 +423,14 @@ export function useLeitungsplanung({
       start_allowance_mm: w.startzugabeMm,
       end_allowance_mm: w.endzugabeMm,
       reserve_mm: w.reserveMm,
-      waypoints: w.wegpunkte.map(wegpunktAlsAnfrage),
-      new_penetrations: [],
+      // Neue Durchführungen entstehen atomar mit der Leitung - nur die, die ein Wegpunkt nutzt.
+      waypoints: w.wegpunkte.map((wp) => wegpunktAlsAnfrage(wp, neueSchluessel)),
+      new_penetrations: genutzt.neueDurchfuehrungen.map((d) => ({
+        key: d.schluessel,
+        wall_link_id: d.kopplungId,
+        offset_mm: d.abstandMm,
+        height_mm: d.hoeheMm,
+      })),
     };
     dispatch({ typ: "speichern-beginnt" });
     try {
@@ -489,7 +562,10 @@ export function useLeitungsplanung({
     verteilungen,
     geraete,
     durchfuehrungen,
+    geschosse: floorListe,
+    steigwege: steigwegListe,
     vorbereitet,
+    vorbereitetEntwurf,
     ergebnisse,
     entwurf,
     ungespeichert: leitungUngespeichert(entwurf),
@@ -503,6 +579,9 @@ export function useLeitungsplanung({
     kreisVon,
     kreisName,
     geraetName,
+    raumMitGeschoss,
+    geschossName,
+    pruefen,
     endpunkte,
     unlesbar,
     neueLeitung,

@@ -3670,3 +3670,36 @@ manuelle Gesamtprüfung nach Phase 6 offen; keine Produktions- oder Echtdatenfre
 * **Grundlage:** Frontend 1 095 Tests und grüne Schranken (Task 0046), funktionaler Browserdurchlauf
   (Entwurf §19.8). Sichtbar geprüft: helles Theme, 1 280 und 640 px. Auf der Gesamtprüfliste: dunkles
   Theme, mm/m, Zuordnungsmodus und Durchführung verschieben im Browser.
+
+## Task 0048 – Checkpoint 6b.4 und Phase 6b.5: Leitungen im Grundriss, Steigwege, 3D
+
+**Datum:** 2026-10-13/14 · **Status:** 6b.4 als Checkpoint `0c07604` committet (vor Beginn); 6b.5
+technisch umgesetzt, automatisiert und funktional im Browser geprüft; zunächst nicht committet, mit den
+Nachkorrekturen aus Task 0049 als Checkpoint committet; manuelle Gesamtprüfung nach Phase 6 offen; keine
+Produktions- oder Echtdatenfreigabe.
+
+* **Umfang:** gebäudeweiter Leitungsentwurf (Provider), Grundriss-Werkzeug mit Ebenenwahl,
+  Fußbodenwegen, Bodenübergang, neuer Durchführung (auch Wandansicht), Steigwegnutzung mit
+  Geschosswechsel und Fortsetzung, 3D-Darstellung mit Auswahl und Rückkehr. Keine automatische Ecke,
+  keine Wegfindung, kein Material (6b.6), keine Backendänderung, keine Migration.
+* **Tests:** Frontend 1 129 Tests grün, Typecheck, ESLint, Modulgrenzen, import-linter, Build,
+  OpenAPI-Drift grün. Backend unverändert – keine PostgreSQL-Tests nötig.
+* **Abnahme:** synthetisches Projekt PR-2026-0009; L1 (Bodenübergang, 9 048 mm), L2 (neue Durchführung,
+  8 500 mm), L3 (EG → OG über S1, 9 236 mm) im Browser gezeichnet, gespeichert und gegen den Server
+  geprüft; Verwerfen ohne Serverreste; Versionskonflikt; 3D-Auswahl und Rückkehr. Sieben Befunde
+  behoben (Entwurf §20.5), darunter ein Speicherfehler (Schlüssellänge neuer Durchführungen).
+* **Docker:** nur reguläre Neustarts des Planner-Containers; keine Reparaturen, keine Datenlöschung.
+
+## Task 0049 – Nachkorrekturen 6b.5 und Checkpoint
+
+**Datum:** 2026-10-14 · **Status:** als Checkpoint vom 2026-10-14 committet (kein Push); manuelle
+Gesamtprüfung nach Phase 6 offen; keine Produktions- oder Echtdatenfreigabe.
+
+* **A:** Wand- und Deckenansicht übernehmen beim Loslassen den zuletzt gültigen Kandidaten aus einer Ref;
+  Regressionstests mit Drücken → Bewegen → Loslassen in einem Rendervorgang (schlagen ohne Korrektur fehl).
+* **B:** Steigwegbeschriftungen bei kleinem Maßstab als Pfeil, Volltext am gewählten Wegpunkt, als Titel,
+  in Wegpunktliste und Seitenfeld; Test und optische Prüfung bei 29 px/m und 375 px.
+* **C:** Nachweis der Kamera-Rückkehr präzisiert: im Browser geprüft; StrictMode-Ursache nur vermutet;
+  der Komponententest ist kein vollständiger Regressionsnachweis.
+* **Docker:** nach einem Neustart des Rechners Docker Desktop regulär gestartet und den vorhandenen Stack
+  mit `docker compose up -d` hochgefahren – keine Reparatur, keine Volumes oder Daten verändert.

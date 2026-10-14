@@ -32,6 +32,8 @@ import { geraetName, katalogAbfrage, typenNachSchluessel } from "./geraete/katal
 import { ZUORDNUNG_MELDUNG } from "./stromkreise/texte";
 import { BestaetigungAbgelehnt, bestaetigungsfeld, useLeitungsbestaetigung } from "./leitung/bestaetigung";
 import { leitungenSchluessel } from "./leitung/daten";
+import { LEITUNG_MELDUNG, LeitungsplanungProvider } from "./leitung/LeitungsplanungProvider";
+import type { Leitungsplanung } from "./leitung/useLeitungsplanung";
 import type { Raumwerte } from "./RaumDialog";
 import { KONTURZUSTAND_LABEL, RAUMTYP_LABEL, flaecheAnzeigen, raumtypAusWert } from "./texte";
 import { AKTION } from "../../core/ui/aktionssymbole";
@@ -139,6 +141,8 @@ export default function RoomsTab() {
   const [startWandansicht, setStartWandansicht] = useState<Wandziel | null>(null);
   const [startDeckenansicht, setStartDeckenansicht] = useState<Deckenziel | null>(null);
   const [rueckkehr3d, setRueckkehr3d] = useState<Rueckkehr3d | null>(null);
+  // Aus 3D eine Leitung im Grundriss bearbeiten (6b.5): Rückweg mit Kamera anbieten.
+  const [leitungAus3d, setLeitungAus3d] = useState(false);
   // Woher die Steigwegverwaltung geöffnet wurde - für „Zurück zu …".
   const [vorherigeAnsicht, setVorherigeAnsicht] = useState<Ansicht | null>(null);
   // Ungespeicherte Änderungen im Editor - für Geschoss- und Ansichtswechsel.
@@ -242,18 +246,60 @@ export default function RoomsTab() {
     return true;
   };
 
+  /**
+   * Leitungsentwurf (6b.5): Er gehört zum Gebäude und übersteht Geschoss-, Grundriss- und
+   * 3D-Wechsel. Verlassen wird er nur mit einem anderen Gebäude oder mit Ansichten, die einen
+   * eigenen Entwurf führen (Steigwege, Stromkreise) - dann ausdrücklich, nie still.
+   */
+  const leitungOffen = useRef(false);
+  const planungRef = useRef<Leitungsplanung | null>(null);
+  const leitungUngespeichertMelden = useCallback((offen: boolean) => {
+    leitungOffen.current = offen;
+  }, []);
+  const planungMerken = useCallback((p: Leitungsplanung) => {
+    planungRef.current = p;
+  }, []);
+  const leitungVerlassen = async (titel: string, situation: string): Promise<boolean> => {
+    if (leitungOffen.current) {
+      const antwort = await fragen(verwerfenOptionen(titel, situation, LEITUNG_MELDUNG));
+      if (antwort !== "bestaetigt") return false;
+      leitungOffen.current = false;
+    }
+    planungRef.current?.schliessen();
+    return true;
+  };
+
   const ansichtWechseln = async (neu: Ansicht, optionen: { rueckkehr?: boolean } = {}) => {
     if (neu === ansicht) return;
     const ziel = ANSICHTEN.find((a) => a.wert === neu)?.label ?? neu;
     if (hatEntwurf(ansicht) && !(await editorVerlassen("Ansicht wechseln?", `Sie wollen zur Ansicht „${ziel}“ wechseln.`))) {
       return;
     }
+    // Höchstens ein aktiver Entwurf: Steigwege und Stromkreise führen ihren eigenen.
+    if ((neu === "steigwege" || neu === "stromkreise") && !(await leitungVerlassen("Ansicht wechseln?", `Sie wollen zur Ansicht „${ziel}“ wechseln.`))) {
+      return;
+    }
     if (neu === "steigwege") setVorherigeAnsicht(ansicht);
     // Ein gewöhnlicher Ansichtswechsel vergisst den gemerkten 3D-Stand; nur der
     // Weg Wandansicht hin und zurück stellt ihn wieder her.
     if (optionen.rueckkehr !== true) setRueckkehr3d(null);
+    if (neu !== "editor") setLeitungAus3d(false);
     ansichtMerken(neu);
     setAnsicht(neu);
+  };
+
+  /**
+   * Geschosswechsel: Raumentwurf und Zuordnung gehören zum Geschoss (Rückfrage), ein
+   * Leitungsentwurf zum Gebäude - er bleibt im selben Gebäude erhalten (6b.5).
+   */
+  const geschossWechseln = async (id: string, gleichesGebaeude: boolean, ziel: string): Promise<boolean> => {
+    if (!(await editorVerlassen("Geschoss wechseln?", `Sie wollen zum Geschoss „${ziel}“ wechseln.`))) return false;
+    if (!gleichesGebaeude && !(await leitungVerlassen("Gebäude wechseln?", `Sie wollen zum Geschoss „${ziel}“ eines anderen Gebäudes wechseln.`))) {
+      return false;
+    }
+    setGeschossId(id);
+    setOffenerRaum(null);
+    return true;
   };
 
   const raumSpeichern = async (werte: Raumwerte) => {
@@ -436,15 +482,12 @@ export default function RoomsTab() {
             const ziel = zielEintrag?.label ?? "";
             // In der Steigwegverwaltung bleibt der Entwurf beim Wechsel innerhalb
             // desselben Gebäudes erhalten - nur das Grundrissgeschoss wechselt.
-            if (gebaeudebezogen(ansicht) && zielEintrag?.building_id === aktivesGeschoss?.building_id) {
+            const gleichesGebaeude = zielEintrag?.building_id === aktivesGeschoss?.building_id;
+            if (gebaeudebezogen(ansicht) && gleichesGebaeude) {
               setGeschossId(id);
               return;
             }
-            void editorVerlassen("Geschoss wechseln?", `Sie wollen zum Geschoss „${ziel}“ wechseln.`).then((weiter) => {
-              if (!weiter) return;
-              setGeschossId(id);
-              setOffenerRaum(null);
-            });
+            void geschossWechseln(id, gleichesGebaeude, ziel);
           }}
         >
           {auswahl.map((eintrag) => (
@@ -551,6 +594,15 @@ export default function RoomsTab() {
         )}
       </section>
 
+      <LeitungsplanungProvider
+        key={aktivesGeschoss?.building_id ?? "ohne"}
+        buildingId={aktivesGeschoss?.building_id}
+        darfLeitungen={darfLeitungenGrundsaetzlich && !archiviert}
+        darfStromkreise={darfStromkreiseGrundsaetzlich && !archiviert}
+        onGeschrieben={projektAktualisieren}
+        onUngespeichert={leitungUngespeichertMelden}
+        onPlanung={planungMerken}
+      >
       {ansicht === "editor" && aktivesGeschoss !== undefined && (
         <section className={karte("kompakt")}>
           <GrundrissEditor
@@ -569,9 +621,14 @@ export default function RoomsTab() {
               setStartDeckenansicht(null);
             }}
             onZurueck3d={() => void ansichtWechseln("3d", { rueckkehr: true })}
+            rueckkehr3dAnbieten={leitungAus3d && rueckkehr3d !== null}
             darfLeitungen={darfLeitungenGrundsaetzlich && !archiviert}
             darfStromkreise={darfStromkreiseGrundsaetzlich && !archiviert}
             onGeschrieben={projektAktualisieren}
+            onGeschossWechseln={(id) => {
+              const zielEintrag = auswahl.find((eintrag) => eintrag.id === id);
+              void geschossWechseln(id, zielEintrag?.building_id === aktivesGeschoss.building_id, zielEintrag?.label ?? "");
+            }}
           />
         </section>
       )}
@@ -592,6 +649,14 @@ export default function RoomsTab() {
             onDeckenansicht={(ziel, rueckkehr) => {
               setRueckkehr3d(rueckkehr);
               setStartDeckenansicht({ ...ziel, herkunft: "3d" });
+              void ansichtWechseln("editor", { rueckkehr: true });
+            }}
+            onLeitungBearbeiten={(ziel, rueckkehr) => {
+              // Der Leitungsentwurf ist bereits offen (Provider des Gebäudes) - hier nur die Fläche.
+              setRueckkehr3d(rueckkehr);
+              if (ziel.art === "wand") setStartWandansicht({ raumId: ziel.raumId, wandId: ziel.wandId, seite: "innen", herkunft: "3d" });
+              else if (ziel.art === "decke") setStartDeckenansicht({ raumId: ziel.raumId, herkunft: "3d" });
+              setLeitungAus3d(ziel.art === "grundriss");
               void ansichtWechseln("editor", { rueckkehr: true });
             }}
           />
@@ -635,6 +700,8 @@ export default function RoomsTab() {
           />
         </section>
       )}
+
+      </LeitungsplanungProvider>
 
       {ansicht === "tabelle" && geoeffnet !== null && (
         <RaumDetail

@@ -3,8 +3,9 @@
 **Status:** **2. Fassung, vom Auftraggeber als Umsetzungsgrundlage freigegeben (2026-10-11)** ·
 D1, D2, D4, D5, D11 bestätigt · **6b.0 und 6b.1 umgesetzt** (technisch geprüft, Checkpoint `541bae9` vom 2026-10-12) ·
 **6b.2 und 6b.3 technisch umgesetzt und geprüft** (Checkpoint `53fdc19` vom 2026-10-13; manuelle Gesamtprüfung nach Phase 6
-offen) · **6b.4 technisch umgesetzt und funktional geprüft** (Checkpoint vom 2026-10-13; Dunkles Theme, mm/m im Browser, Zuordnungsmodus und Durchführung verschieben im Browser stehen auf der Gesamtprüfliste) ·
-6b.5–6b.6 NOT STARTED · Umsetzungsstand: **§15–§19** (vor §14)
+offen) · **6b.4 technisch umgesetzt und funktional geprüft** (Checkpoint `0c07604` vom 2026-10-13) ·
+**6b.5 technisch umgesetzt und funktional geprüft** (Checkpoint vom 2026-10-14 inklusive Nachkorrekturen §20.7) ·
+6b.6 NOT STARTED · Umsetzungsstand: **§15–§20** (vor §14) · manuelle Gesamtprüfung nach Phase 6 offen
 **Grundlage:** Checkpoint `686316c` (Phase 6a.0–6a.5, gepusht), [ADR 0024](decisions/0024-wall-links-physical-wall-assignment.md),
 [ADR 0025](decisions/0025-risers-between-floors.md), [`phase-6a-design.md`](phase-6a-design.md)
 **ADR:** [ADR 0026 – Stromkreise, Leitungen und Leitungswege](decisions/0026-circuits-cables-and-cable-paths.md) (**accepted**)
@@ -1201,13 +1202,204 @@ Dateiänderungen über die Windows-Bindung nicht; nach Codeänderungen den Conta
 **Prüfdaten:** Projekt PR-2026-0007 „Leitungsplanung 6b.4 (synthetisch)“ (archiviert) bleibt mit L1–L3
 für die manuelle Prüfung erhalten; das zweite Prüfprojekt PR-2026-0008 ist samt Kunde entfernt.
 
-### 19.9 Vorbereitung 6b.5 (noch nicht umgesetzt)
+### 19.9 Vorbereitung 6b.5 (umgesetzt, siehe §20)
 
 Der Leitungsentwurf ist heute an den Planungskontext **Geschoss** gebunden; ein Geschosswechsel
 verlässt ihn (Navigationsschutz). In 6b.5 muss der Entwurf beim Geschosswechsel über einen Steigweg
 **erhalten bleiben**: Er wird dann an das Gebäude gebunden, jeder Wegpunkt behält seinen eindeutigen
 Raum- bzw. Geschossbezug (Wand, Raum, Halt), und ein Wechsel der Arbeitsfläche – auch in ein anderes
 Geschoss – speichert und verwirft nie automatisch.
+
+## 20. Umsetzungsstand 6b.5 (2026-10-14)
+
+**Status:** technisch umgesetzt, automatisiert und funktional im Browser geprüft; mit den Nachkorrekturen
+(§20.7) als Checkpoint vom 2026-10-14 committet; manuelle Gesamtprüfung nach Phase 6 offen; keine Produktions- oder Echtdatenfreigabe. Keine
+Backendänderung, keine Migration, keine API-Änderung (die API aus 6b.3 deckt Fußboden, Bodenübergang,
+Steigweg und `new_penetrations` bereits ab).
+
+### 20.1 Umfang
+
+* **Gebäudeweiter Leitungsentwurf** (§19.9 umgesetzt): `leitung/LeitungsplanungProvider.tsx` hält die
+  Leitungsplanung je Gebäude (Schlüssel: Gebäude) um Grundriss, Wand-, Decken-, 3D-, Steigweg- und
+  Stromkreisansicht. Ein Geschosswechsel im selben Gebäude, 2D ↔ 3D ↔ Tabellen behalten den Entwurf
+  ohne Rückfrage, speichern und verwerfen nichts. Steigwege und Stromkreise (eigene Entwürfe) sowie ein
+  anderes Gebäude fragen ausdrücklich nach. Projekt- und Benutzerwechsel bauen ihn wie bisher ab
+  (Navigationsschutz, sitzungsgebundener Query-Client).
+* **Grundriss-Werkzeug** (`leitung/Grundrissleitungen.tsx`, `leitung/GrundrissLeitungsfeld.tsx`,
+  reine Hilfen `leitung/grundriss.ts`): Werkzeuge „Leitung“ (L) und „Durchführung hier“ (U), Ebenenwahl
+  **Fußboden / Wand / Decke** (1/2/3), Höhe neuer Wandpunkte (0, 30 cm, 1,10 m, obere Zone = Raumhöhe −
+  300 mm wie die Zonenhilfslinien, Raumhöhe). Leitungsfeld und Legende in der Seitenleiste.
+* **Fußbodenwege:** Klick in einen Raum setzt einen Fußbodenpunkt in der Kontur; außerhalb jeder
+  Kontur oder bei Raumwechsel ohne Übergang steht der Grund in der Statuszeile, nichts wird gesetzt.
+  Fang auf Raster, ganzzahlige Wandachspunkte (Übergang zur Wand), Gerätefußpunkte, Steighalte.
+* **Bodenübergang:** nur ausdrücklich durch Klick auf eine Tür oder einen Durchgang (Ebene Fußboden),
+  Fang auf Türmitte und -kanten im Fangradius; Fenster werden abgelehnt. Als letzter Punkt ist die
+  fehlende Gegenseite ein Zwischenstand („jetzt den Fußbodenpunkt im Nachbarraum setzen“), keine
+  Ablehnung; alle übrigen Bedingungen prüft die gemeinsame Längenfunktion.
+* **Neue Durchführungen** (Grundriss und Wandansicht, Werkzeug „Durchführung“): nur in einem aktiven,
+  eindeutigen `shared`-Abschnitt genau einer Kopplung (`leitung/durchfuehrung.ts`, `durchfuehrungsziel`);
+  `undecided`, `separate`, mehrdeutig (mehr als zwei Räume), unterbrochen, Abschnittsgrenze und Wand
+  ohne Nachbarraum werden mit Grund abgelehnt. Gespeichert wird die Lage einmal an `wall_a`; die
+  Gegenlage folgt aus `lageUebertragen` (dieselbe Transformation wie im Server). Die Durchführung lebt nur
+  im Entwurf (`neueDurchfuehrungen`, Schlüssel `neu-` + 32 Hex-Zeichen ≤ 40 Zeichen wie
+  `NewPenetrationIn.key`) und entsteht atomar mit der Leitung über `new_penetrations`. Verwerfen,
+  Rückgängig oder Entfernen des Wegpunkts hinterlässt nichts. Dieselbe Durchführung wird nie zweimal
+  hintereinander aufgenommen.
+* **Steigweg nutzen:** Klick auf einen Steighalt setzt – falls der Wegpunkt davor nicht genau am Halt
+  liegt – ausdrücklich einen Fußboden- bzw. Deckenpunkt am Halt und öffnet die Steigwegwahl: Zielhalt,
+  Ausstieg über dem Fußboden, Vorschau von Verlauf, Länge und Status mit der Längenfunktion (unbestätigte
+  Höhen: „unvollständig“, Teilsumme; widersprüchliche Höhen: abgelehnt, nicht übernehmbar). „Steigweg
+  übernehmen“ ist ein Rückgängig-Schritt; „Weiter in „OG““ wechselt das Geschoss (kein Schritt). Im
+  Zielgeschoss setzt ein Klick auf den Halt ausdrücklich den Fortsetzungspunkt; dort zeigt der Grundriss
+  „kommt aus EG (S1)“ bzw. „weiter in OG (S1)“. Einstiegshöhe aus dem Wegpunkt davor (Fußboden 0, Decke
+  Raumhöhe, Wand dessen Höhe).
+* **Darstellung im Grundriss** (§9.2): Strichart nennt die Fläche – Wand durchgezogen an der Raumseite,
+  Decke fein, Fußboden grob gestrichelt; Status in Farbe und immer als Text (Titel, Seitenfeld, Legende).
+  Gespeicherte Leitungen aus den Teilstrecken des Servers, der Entwurf aus den Läufen der Längenfunktion.
+* **3D** (`ansicht3d/leitungen3d.ts`, `szene.ts`): gespeicherte Leitungen als Linienzüge je Teilstrecke
+  (nie verbunden, was der Server nicht als Lauf liefert); Wand an der Raumseite, Fußboden knapp über FFB,
+  Decke knapp darunter; Steigwege an den Geschossgrenzen gekappt mit ausdrücklicher Fortsetzung (Kugel,
+  Text „Fortsetzung in „OG““). Status über Strichart (durchgezogen / gestrichelt / kurz gestrichelt) und
+  Text, Farben aus `--ep-plan3d-cable*` (hell/dunkel). Auswahl über unsichtbare Trefferkörper, Liste der
+  Leitungen in der Seitenleiste; „In der Wandansicht / Deckenansicht / Im Grundriss bearbeiten“ öffnet den
+  Entwurf auf der passenden Fläche; Rückkehr mit Kamera und Auswahl. Ein offener Entwurf bleibt erhalten;
+  3D zeigt ausdrücklich den gespeicherten Stand. Geometrien werden beim Ersetzen und Entsorgen freigegeben.
+
+### 20.2 Gesten und Tastatur im Grundriss
+
+| Eingabe | Wirkung |
+|---|---|
+| Klick (Werkzeug „Leitung“) | Punkt der gewählten Ebene nach dem gewählten Wegpunkt, sonst ans Ende |
+| Klick auf Tür/Durchgang (Ebene Fußboden) | Bodenübergang |
+| Klick auf Steighalt | Einstieg (ggf. Punkt am Halt) bzw. Fortsetzung nach einem Steigweg |
+| Klick auf Gerät des Stromkreises | Start- bzw. Endgerät |
+| Klick (Werkzeug „Durchführung hier“) | neue Durchführung an der angeklickten Raumwand |
+| Ziehen eines Fußboden-/Deckenpunkts der gewählten Ebene | verschieben, ein Rückgängig-Schritt |
+| L / U / 1 / 2 / 3 | Leitung / Durchführung / Fußboden / Wand / Decke |
+| Entf | gewählten Wegpunkt entfernen (jede Art) |
+| Strg+Z / Strg+Y | Rückgängig / Wiederholen im Leitungsentwurf |
+| Enter / Escape | Werkzeug beenden / Vorschau, Bewegung oder Steigwegwahl abbrechen |
+
+### 20.3 Präzisierungen (ohne neue fachliche Entscheidung)
+
+* **Keine automatische Ecke oder Zwischenstrecke:** Es gibt keine vereinbarte deterministische
+  Bedienhilfe dafür; jeder Punkt wird ausdrücklich gesetzt. Fang (Wandachse, Lage des vorigen Punkts,
+  Wandenden) ist nur eine Lagehilfe.
+* **Ebenenwahl** gilt nur für neue Punkte; vorhandene Wegpunkte werden nie umgewandelt, nicht
+  bearbeitete Wegpunkte bleiben unverändert (wie §19.5).
+* **Greifbare Marken:** Im Werkzeug sind nur die Punkte der gewählten Ebene (Fußboden bzw. Decke)
+  greifbar; alle anderen Marken lassen den Klick durch, sonst verdeckten sie die Wandachse genau dort,
+  wo der Übergang gesetzt wird. Gewählt werden sie über die Wegpunktliste.
+* **Raumseite an Ecken:** Liegen im Fangradius Wände mehrerer Räume, entscheidet für das
+  Leitungswerkzeug der Raum, in dem der Zeiger liegt; auf der Linie selbst bleibt es mehrdeutig.
+  `raumwandUnterZeiger` selbst ist unverändert (Öffnungswerkzeug unberührt).
+* **Undo/Redo:** Steigweg übernehmen, Punkt am Halt, Bodenübergang und neue Durchführung (mit Wegpunkt)
+  sind je ein Schritt; ein reiner Geschoss- oder Ansichtswechsel ist kein Schritt.
+* **Benennung:** Fußboden-/Deckenpunkte immer mit Raum und Geschoss („Diele (EG)“), Wände anderer
+  Geschosse ebenso, Steigwege mit Halten und Höhen.
+
+### 20.4 Tests
+
+Frontend 97 Dateien, 1 129 Tests grün (vorher 1 095). Neu bzw. erweitert: `grundriss.test.ts`
+(Achsgitter, Raumbestimmung, Fang, Zeichenstrecken, Durchführungsziel mit allen Ablehnungen, Gegenlage
+hin und zurück, Höhenwahl), `durchfuehrung.test.ts` (Schlüssellänge gegen `openapi.json`),
+`Grundrissleitungen.test.tsx` (Ebenenwahl, Fußboden in/außer Kontur, Raumwechsel ohne Übergang,
+Bodenübergang inkl. Fenster, neue Durchführung speichern/verwerfen/Rückgängig ohne Serveraufruf,
+Steigweg EG → OG mit Geschosswechsel, Fortsetzung, Länge, Undo/Redo über den Wechsel, unbestätigte und
+widersprüchliche Höhen, Gebäudewechsel mit Rückfrage, schnelle Eingabe, Raumecke),
+`Leitungsplanung.test.tsx` (Durchführung in der Wandansicht mit Gegenseite; Ansichtswechsel im
+Gebäude), `leitungen3d.test.ts` (Ableitung, Kappung, keine falschen Verbindungen), `szene.test.ts`
+(Strichart je Status, Auswahl, Freigabe, Theme-Farben), `Ansicht3d.test.tsx` (Rückkehr im StrictMode),
+`Leitung3d.test.tsx` (3D → Grundriss → zurück mit Kamera und Auswahl, Entwurf bleibt, nichts
+gespeichert), `entwurf.test.ts` (Durchführung nicht doppelt). Typecheck, ESLint, Modulgrenzen
+(Frontend, import-linter Backend), Build, OpenAPI-Drift grün. Backend unverändert – keine
+PostgreSQL-Tests nötig.
+
+### 20.5 Abnahme im laufenden Stack (2026-10-13/14)
+
+Docker-Stack lief; der Planner-Container wurde nach Codeänderungen regulär neu gestartet (kein
+Dateibeobachten über den Windows-Bind-Mount – nicht behoben, wie beauftragt). Synthetische Daten per API
+(`browser_6b5_aufbau.py` im Scratchpad): Projekt **PR-2026-0009 „Leitungsplanung 6b.5 (synthetisch)“**,
+Gebäude „Haus“ mit EG (FFB 0) und OG (FFB 2 800), Diele mit Tür in der gemeinsamen Ostwand, Küche,
+Flur OG, Steigweg S1, UV1, F3. Bedient wurde über echte DOM-Ereignisse an der Stelle unter dem Zeiger
+(`elementFromPoint`), Prüfung gegen den Server per API.
+
+**Funktional (bestanden):**
+
+| Ablauf | Ergebnis |
+|---|---|
+| Fußbodenleitung L1 mit Bodenübergang EG Diele → Küche | Raumwechsel ohne Übergang abgelehnt; Tür-Klick rastet auf Türmitte; bestätigt 9 048 mm im Browser = Server (`opening_crossing` 1) |
+| Neue Durchführung L2 in der oberen Zone | Ecke ohne Ablehnung; Gegenlage Küche 1 500 (Server ebenso); gespeichert 8 500 mm, genau eine Durchführung |
+| Neue Durchführung verwerfen | nach Rückfrage verworfen; Server unverändert eine Durchführung |
+| Geschossübergreifend L3 über S1 | Vorschau 280 cm „Verlauf gültig“; Wechsel ins OG ohne Rückfrage, Werkzeug und Entwurf bleiben; Fortsetzung am Halt; bestätigt 9 236 mm im Browser = Server |
+| Neuladen | Listen, Längen, Status und Zeichnung (Wand/Fußboden) wie gespeichert |
+| Versionskonflikt (Paralleländerung per API) | „Konflikt – nicht gespeichert“, nichts überschrieben, Entwurf behalten; Steigwege fragen nach, Abbrechen behält ihn; „verwerfen und Serverstand laden“ übernimmt Version 3 |
+| 3D-Auswahl und Rückkehr | L3 mit „Fortsetzung in „OG““; „Im Grundriss bearbeiten“ öffnet Entwurf und Werkzeug; Rückkehr mit Draufsicht und Auswahl; ungespeicherte Änderung bleibt und wird benannt |
+| mm / dunkles Token / 375 px | Länge „9.236 mm“, `--ep-plan3d-cable` #7cc0ff, `--ep-plan3d-cable-conflict` #ff7a7a (nur Vorschau, abgebrochen); keine waagerechte Überbreite |
+
+**Optisch (Bildschirmfotos, helles Theme):** 3D isometrisch und Draufsicht: gewählte Leitung orange,
+übrige in Leitungsfarbe; Fortsetzungskugel am Halt; Fußbodenwege sichtbar über dem Boden. Grundriss
+bei 375 px: Werkzeugleiste, Ebenenwahl und Leitungsfeld ohne Überlauf, Fußboden grob gestrichelt.
+**Optischer Befund:** Beschriftungen „S1“ / „weiter in OG (S1)“ überdeckten bei kleinem Maßstab
+Raum- und Maßtexte – behoben mit §20.7 B. Das dunkle Theme ließ sich optisch nicht verlässlich prüfen (Bildschirmfoto vom
+Einstellungsdialog verdeckt); funktional geprüft sind nur die Tokenwerte.
+
+**Behobene Befunde der Abnahme** (Regressionstests zu 1–5 und 7; zu 6 siehe dort):
+
+1. Loslassen las den Vorschaupunkt aus einem veralteten Stand, wenn zwischen Drücken und Loslassen kein
+   Rendern lag → Kandidat zusätzlich in einer Ref.
+2. Marken von Wand- bzw. Fußbodenpunkten verdeckten den Fangbereich der Wandachse → nur Punkte der
+   gewählten Ebene greifbar (§20.3).
+3. An Raumecken wurde die Wandwahl als mehrdeutig abgelehnt → Raum unter dem Zeiger entscheidet.
+4. Die Marke einer neuen Durchführung fing den Klick auf die Gegenseite ab und nahm sie doppelt auf →
+   Marke nur Anzeige, keine doppelte Aufnahme.
+5. **Speichern scheiterte**: Schlüssel neuer Durchführungen war 54 Zeichen lang (Server: höchstens 40);
+   atomar wurde nichts gespeichert, der Entwurf blieb → kürzerer Schlüssel, Test gegen `openapi.json`.
+6. Rückkehr aus Grundriss/Wandansicht: Kamera neu eingepasst und Auswahl nicht hervorgehoben. Fehler und
+   Korrektur wurden **im Browser** geprüft (vorher isometrisch und ohne Hervorhebung, nachher Draufsicht
+   und orange hervorgehobene Leitung). Korrektur: Die gemerkte Rückkehr gilt für jedes neue Szenenexemplar
+   des Geschosses (statt nach dem ersten verbraucht zu werden), und die Leitungen werden vor der Auswahl
+   gesetzt. **Ursache vermutet, nicht nachgewiesen:** ein im Entwicklungsmodus (React StrictMode) zweites
+   Szenenexemplar, das die bereits verbrauchte Kamera nicht mehr fand. Der ergänzte Komponententest
+   („StrictMode mit bereits geladenem Plan“) erzeugt im Testlauf nur **ein** Szenenexemplar, bildet die
+   Ursache also nicht nach und besteht auch ohne die Korrektur – er ist **kein vollständiger
+   Regressionsnachweis**, sondern sichert nur die Rückkehr bei bereits geladenem Plan ab.
+7. Grundriss ohne obere Zone → Höhenwahl „obere Zone – 30 cm unter der Decke“; Wände anderer Geschosse
+   heißen „Wand 1 (Diele (EG))“ statt „anderes Geschoss“.
+
+**Nicht ausgeführt:** Rückwärtsnutzung und Teilnutzung eines Steigwegs mit drei Halten im Browser (in der
+gemeinsamen Fixture und Komponententests abgedeckt); Bodenübergang an einem Durchgang; Leitung in der
+Deckenansicht aus 3D; dunkles Theme und Meter optisch; Mobilgerät mit echtem Touch.
+
+**Prüfdaten:** PR-2026-0009 bleibt für die manuelle Gesamtprüfung erhalten (L1, L2 mit Durchführung,
+„L3 parallel 2“ geschossübergreifend). Keine Echtdaten, keine Datenbank angelegt, keine Volumes gelöscht.
+
+### 20.6 Grenzen und offene Punkte
+
+* ~~Wand- und Deckenansicht lesen den Vorschaupunkt beim Loslassen aus dem Zustand~~ – behoben (§20.7 A).
+* ~~Beschriftungsüberdeckung im Grundriss bei kleinem Maßstab~~ – behoben (§20.7 B).
+* Gespeicherte Durchführungen erscheinen im Grundriss nicht als eigene Marke (Aufnahme in der
+  Wandansicht); neue nur im Entwurf.
+* Mengenübersicht und Gesamtprüfung Phase 6: 6b.6.
+
+### 20.7 Nachkorrekturen vor dem Checkpoint (2026-10-14)
+
+* **A – letzte Zeigerposition beim Loslassen:** Wand- und Deckenansicht führten denselben Fehler wie der
+  Grundriss (Befund 1): Folgten Bewegung und Loslassen vor dem nächsten Rendern, wurde ein veralteter
+  Vorschaupunkt übernommen. Jetzt hält eine Ref den zuletzt gültigen Kandidaten (mit Fang); Abbruch und
+  Werkzeugwechsel leeren ihn. Ziehen lief schon über den Reducer und bleibt genau ein Rückgängig-Schritt.
+  Regressionstests mit der Folge Drücken → Bewegen → Loslassen in einem Rendervorgang
+  (`Leitungsplanung.test.tsx`, Wand und Decke, Decke mit Fang auf den Übergang); beide schlagen ohne die
+  Korrektur fehl. Der Zieh-Test besteht auch ohne sie und sichert den einen Rückgängig-Schritt ab.
+* **B – Steigwegbeschriftungen:** Unter 120 px/m zeigt der Grundriss am Halt keinen Namen und an der
+  Fortsetzung nur einen Pfeil (↑/↓ zum anderen Geschoss). Ausgeschrieben bleibt die Angabe bei großem
+  Maßstab, am gewählten Wegpunkt (auch per Tastatur über die Wegpunktliste wählbar), als Titel, in der
+  Wegpunktliste und im Seitenfeld („Steighalte auf diesem Geschoss: S1“). Test bei kleinem Maßstab;
+  optisch im Browser bei 29 px/m und 375 px geprüft: Raum- und Maßtexte lesbar, nur Haltquadrat und
+  Punktmarke liegen weiterhin nahe am Raumnamen, weil der Halt dort liegt.
+* **C – Dokumentation** der Kamera-Rückkehr präzisiert (§20.5 Punkt 6).
+* **Prüfung vor dem Checkpoint:** Frontend 97 Dateien, 1 132 Tests grün; Typecheck, ESLint, Modulgrenzen, Build grün;
+  Backend unverändert.
 
 ## 14. Ausdrücklich nicht in 6b
 

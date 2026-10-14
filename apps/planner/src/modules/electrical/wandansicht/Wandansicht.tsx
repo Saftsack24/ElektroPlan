@@ -45,6 +45,7 @@ const WERKZEUGE: readonly { wert: Wandwerkzeug; label: string; taste: string; sc
 /** Werkzeuge der Leitungsplanung (6b.4) - nur mit offenem Leitungs- bzw. Zuordnungsentwurf. */
 const LEITUNGSWERKZEUGE: readonly { wert: Wandwerkzeug; label: string; taste: string }[] = [
   { wert: "leitung", label: "Leitung", taste: "L" },
+  { wert: "durchfuehrung", label: "Durchführung", taste: "U" },
   { wert: "zuordnen", label: "Zuordnen", taste: "Z" },
 ];
 
@@ -243,7 +244,7 @@ export function Wandansicht({
   const zuordnenErlaubt = zuordnungsentwurf !== null;
   useEffect(() => {
     const erlaubt =
-      werkzeug === "auswahl" || werkzeug === "pan" || (werkzeug === "leitung" ? leitungErlaubt : werkzeug === "zuordnen" ? zuordnenErlaubt : editierbar);
+      werkzeug === "auswahl" || werkzeug === "pan" || (werkzeug === "leitung" || werkzeug === "durchfuehrung" ? leitungErlaubt : werkzeug === "zuordnen" ? zuordnenErlaubt : editierbar);
     if (!erlaubt) setWerkzeug("auswahl");
   }, [editierbar, werkzeug, leitungErlaubt, zuordnenErlaubt]);
 
@@ -465,7 +466,7 @@ export function Wandansicht({
           <div className="flex flex-wrap items-center gap-1">
             {[
               ...WERKZEUGE.filter((w) => editierbar || !w.schreibend),
-              ...LEITUNGSWERKZEUGE.filter((w) => (w.wert === "leitung" ? leitungErlaubt : zuordnenErlaubt)),
+              ...LEITUNGSWERKZEUGE.filter((w) => (w.wert === "zuordnen" ? zuordnenErlaubt : leitungErlaubt)),
             ].map((w) => (
               <button
                 key={w.wert}

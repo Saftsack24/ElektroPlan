@@ -34,6 +34,28 @@
   .leitung-zone { stroke: var(--ep-text-muted); stroke-width: 1; stroke-dasharray: 1 5; opacity: 0.8; pointer-events: none; }
   .leitung-zone-text { fill: var(--ep-text-muted); font-size: 10px; pointer-events: none; }
 
+  /* Neue Durchführung (6b.5): nur im Entwurf - gestrichelt, bis sie mit der Leitung gespeichert ist. */
+  .leitung-durchfuehrung--neu { stroke-dasharray: 3 2; }
+
+  /*
+   * Grundriss (6b.5, Entwurf §9.2): Die Strichart nennt die Fläche - Wand durchgezogen an der
+   * Raumseite, Decke fein gestrichelt, Fußboden grob gestrichelt. Der Status steht in Farbe
+   * und immer zusätzlich als Text (Titel, Seitenfeld).
+   */
+  .leitung-plan { fill: none; stroke: var(--ep-plan-cable); stroke-width: 2.5; stroke-linecap: butt; pointer-events: none; }
+  .leitung-plan--decke { stroke-dasharray: 3 3; }
+  .leitung-plan--fussboden { stroke-dasharray: 12 6; stroke-width: 3.5; }
+  .leitung-plan--andere { stroke-width: 1.5; opacity: 0.55; }
+  .leitung-plan--andere.leitung-plan--fussboden { stroke-width: 2.5; }
+  .leitung-plan--gewaehlt { opacity: 1; stroke-width: 3; }
+  .leitung-plan--entwurf { stroke-width: 3; }
+  .leitung-plan--incomplete { stroke: var(--ep-warning); }
+  .leitung-plan--conflict { stroke: var(--ep-danger); }
+  .leitung-plan-text { fill: var(--ep-text); font-size: 11px; pointer-events: none; paint-order: stroke; stroke: var(--ep-surface); stroke-width: 3px; }
+  .leitung-halt { fill: var(--ep-surface); stroke: var(--ep-plan-cable); stroke-width: 2; cursor: pointer; }
+  .leitung-punkt--floor { stroke-dasharray: 4 2; }
+  .leitung-punkt--steigweg, .leitung-punkt--uebergang { stroke-width: 3; }
+
   .zuordnung-ring { fill: none; stroke-width: 2.5; pointer-events: none; }
   .zuordnung-ring--dieser { stroke: var(--ep-plan-cable); }
   .zuordnung-ring--anderer { stroke: var(--ep-text-muted); stroke-dasharray: 4 3; }

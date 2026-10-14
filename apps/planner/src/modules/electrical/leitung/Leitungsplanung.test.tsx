@@ -224,6 +224,39 @@ describe("Neue Leitung zeichnen", () => {
   });
 });
 
+describe("Neue Durchführung in der Wandansicht (6b.5)", () => {
+  it("Werkzeug Durchführung legt sie nur im Entwurf an; die Gegenseite zeigt sie an der transformierten Lage", async () => {
+    leitungen = [];
+    zeigen();
+    await screen.findByRole("application", { name: /Grundriss/ });
+    fireEvent.click(await screen.findByRole("button", { name: /0.01 Diele/ }));
+    grundrissKlick(await screen.findByTestId("wand-diele-w1"), 4200, 1500);
+    fireEvent.click(await screen.findByRole("button", { name: /^Wand (bearbeiten|ansehen)$/ }));
+    const d = await screen.findByRole("dialog", { name: /Wandansicht/ });
+    fireEvent.click(await within(d).findByRole("button", { name: "Neue Leitung" }));
+    const entwurf = within(d).getByRole("region", { name: "Leitungsentwurf" });
+    // Ostwand der Diele (3 000 lang, Wandende links): Abstand 1 500 liegt bei u = 1 500.
+    const ort = (u: number, h: number) => ({ bubbles: true, cancelable: true, button: 0, ...bild(u, h, 3000) });
+    for (const typ of ["pointermove", "pointerdown", "pointerup"]) fireEvent(ansicht(), new MouseEvent(typ, ort(1500, 300)));
+    expect(within(entwurf).getAllByText(/Wandpunkt · diese Wand · 150 cm von links · 30 cm hoch/)).toHaveLength(1);
+    fireEvent.click(within(d).getByRole("button", { name: "Durchführung" }));
+    for (const typ of ["pointermove", "pointerdown", "pointerup"]) fireEvent(ansicht(), new MouseEvent(typ, ort(1500, 300)));
+    expect(within(d).getByTestId("wand-statuszeile")).toHaveTextContent(/Neue Durchführung als Wegpunkt 2/);
+    expect(within(entwurf).getByText(/Durchführung · neu, entsteht beim Speichern/)).toBeInTheDocument();
+    expect(document.querySelector("[data-neu='ja']")).not.toBeNull();
+    // Nur im Entwurf: Der Server hat nichts erhalten.
+    expect(api.post).not.toHaveBeenCalled();
+
+    fireEvent.click(within(d).getByRole("button", { name: /Gegenseite aus „0.02 Küche“ ansehen/ }));
+    const k = await screen.findByRole("dialog", { name: /Wandansicht.*Küche|Küche.*Wandansicht/ });
+    // Küche.West läuft von (4200,3000) nach (4200,0); Gegenlage 3 000 − 1 500 = 1 500 ab Wandanfang.
+    const marke = await within(k).findByTestId(/^durchfuehrung-neu-[0-9a-f]{32}$/);
+    expect(marke.querySelector("circle")).toHaveAttribute("data-neu", "ja");
+    expect(api.post).not.toHaveBeenCalled();
+    expect(api.put).not.toHaveBeenCalled();
+  });
+});
+
 describe("Außen montierte Geräte", () => {
   it("werden nicht als Endgerät angeboten und bleiben unverändert", async () => {
     leitungen = [];
@@ -260,7 +293,7 @@ describe("Bestehende Leitung bearbeiten", () => {
     fireEvent.click(within(d).getByRole("button", { name: "Leitung bearbeiten" }));
     const entwurf = within(d).getByRole("region", { name: "Leitungsentwurf" });
     expect(within(entwurf).getByText(/Fußbodenpunkt/)).toBeInTheDocument();
-    expect(within(entwurf).getByText("hier nicht bearbeitbar – bleibt unverändert")).toBeInTheDocument();
+    expect(within(entwurf).getByText("im Grundriss bearbeiten – bleibt hier unverändert")).toBeInTheDocument();
     // Die Räume sind gesperrt, solange die Leitung offen ist - kein zweiter Entwurf.
     expect(within(d).queryByRole("button", { name: "Tür" })).toBeNull();
 
@@ -350,6 +383,83 @@ describe("Wand- und Deckenwechsel", () => {
     expect(api.post).not.toHaveBeenCalled();
     expect(api.put).not.toHaveBeenCalled();
     expect(within(decke).getByRole("button", { name: "Leitung" })).toHaveAttribute("aria-pressed", "false");
+  });
+});
+
+// ------------------------------------------------------------------ Schnelle Eingabe (Nachkorrektur 6b.5)
+
+/** Ereignisse ohne Rendern dazwischen - wie eine schnelle Geste vor dem nächsten React-Render. */
+function ohneRendern(schritte: readonly [Element, string, { clientX: number; clientY: number }][]) {
+  act(() => {
+    for (const [ziel, typ, ort] of schritte) ziel.dispatchEvent(new MouseEvent(typ, { bubbles: true, cancelable: true, button: 0, ...ort }));
+  });
+}
+
+/** Bildpunkt einer Deckenstelle aus den Ecken der gezeichneten Diele (0,0), (4200,0), (0,3000). */
+function deckenbild(x: number, y: number) {
+  const punkte = (screen.getByTestId("deckenkontur").getAttribute("points") ?? "").trim().split(/\s+/).map((p) => p.split(",").map(Number) as [number, number]);
+  const [a, b, , c] = punkte as [[number, number], [number, number], [number, number], [number, number]];
+  return { clientX: a[0] + ((b[0] - a[0]) * x) / 4200 + ((c[0] - a[0]) * y) / 3000, clientY: a[1] + ((b[1] - a[1]) * x) / 4200 + ((c[1] - a[1]) * y) / 3000 };
+}
+
+describe("Loslassen nach schneller Bewegung übernimmt den letzten gültigen Punkt", () => {
+  it("Wandansicht: Drücken, Bewegen, Loslassen ohne Rendern - Punkt an der letzten Lage", async () => {
+    leitungen = [];
+    zeigen();
+    const d = await wandOeffnen();
+    fireEvent.click(within(d).getByRole("button", { name: "Neue Leitung" }));
+    const entwurf = within(d).getByRole("region", { name: "Leitungsentwurf" });
+    ohneRendern([
+      [ansicht(), "pointermove", bild(3700, 2210)],
+      [ansicht(), "pointerdown", bild(3700, 2210)],
+      [ansicht(), "pointermove", bild(1200, 2210)],
+      [ansicht(), "pointerup", bild(1200, 2210)],
+    ]);
+    const punkte = within(within(entwurf).getByRole("list", { name: "Wegpunkte" })).getAllByRole("listitem");
+    expect(punkte).toHaveLength(1);
+    expect(punkte[0]).toHaveTextContent("Wandpunkt · diese Wand · 120 cm von links · 220 cm hoch");
+  });
+
+  it("Wandansicht: schnelles Ziehen ist genau ein Rückgängig-Schritt und endet an der letzten Lage", async () => {
+    zeigen();
+    const d = await wandOeffnen();
+    fireEvent.click(within(d).getByRole("button", { name: /F3 · L1/ }));
+    fireEvent.click(within(d).getByRole("button", { name: "Leitung bearbeiten" }));
+    const entwurf = within(d).getByRole("region", { name: "Leitungsentwurf" });
+    const punkt = screen.getByTestId("wegpunkt-0").querySelector("circle") as Element;
+    ohneRendern([
+      [punkt, "pointerdown", bild(3700, 2200)],
+      [ansicht(), "pointermove", bild(3500, 2200)],
+      [ansicht(), "pointermove", bild(3300, 2200)],
+      [ansicht(), "pointerup", bild(3300, 2200)],
+    ]);
+    expect(within(entwurf).getByText(/Wandpunkt · diese Wand · 330 cm von links · 220 cm hoch/)).toBeInTheDocument();
+    fireEvent.click(within(d).getByRole("button", { name: "Rückgängig" }));
+    expect(within(entwurf).getByText(/Wandpunkt · diese Wand · 370 cm von links · 220 cm hoch/)).toBeInTheDocument();
+  });
+
+  it("Deckenansicht: Drücken, Bewegen, Loslassen ohne Rendern - Punkt an der letzten Lage", async () => {
+    leitungen = [];
+    zeigen();
+    const d = await wandOeffnen();
+    fireEvent.click(within(d).getByRole("button", { name: "Neue Leitung" }));
+    klicken(3700, 2480);
+    fireEvent.click(within(d).getByText("Arbeitsfläche wechseln (Entwurf bleibt erhalten)"));
+    fireEvent.click(within(d).getByRole("button", { name: "Decke dieses Raums" }));
+    const decke = await screen.findByRole("dialog", { name: /Deckenansicht/ });
+    fireEvent.click(within(decke).getByRole("button", { name: "Leitung" }));
+    const flaeche = decke.querySelector("svg.ansicht__svg") as Element;
+    ohneRendern([
+      [flaeche, "pointermove", deckenbild(800, 800)],
+      [flaeche, "pointerdown", deckenbild(800, 800)],
+      // Die Bewegung endet knapp neben dem Übergang von der Wand - der Fang setzt ihn genau.
+      [flaeche, "pointermove", deckenbild(500, 30)],
+      [flaeche, "pointerup", deckenbild(500, 30)],
+    ]);
+    const entwurf = within(decke).getByRole("region", { name: "Leitungsentwurf" });
+    const punkte = within(within(entwurf).getByRole("list", { name: "Wegpunkte" })).getAllByRole("listitem");
+    expect(punkte).toHaveLength(2);
+    expect(punkte[1]).toHaveTextContent("Deckenpunkt · Diele (Erdgeschoss) · x 50 cm, y 0 cm");
   });
 });
 
@@ -506,7 +616,7 @@ describe("Gerätezuordnung in der Wandansicht", () => {
 // ------------------------------------------------------------------ Schutz
 
 describe("Entwurfsschutz, Rechte und Sitzung", () => {
-  it("ungespeicherter Leitungsentwurf: Ansichtswechsel fragt nach, nichts wird verworfen", async () => {
+  it("ungespeicherter Leitungsentwurf: übersteht Ansichtswechsel im Gebäude; Steigwege fragen nach, nichts wird verworfen", async () => {
     leitungen = [];
     zeigen();
     const d = await wandOeffnen();
@@ -514,8 +624,16 @@ describe("Entwurfsschutz, Rechte und Sitzung", () => {
     klicken(3700, 2200);
     fireEvent.click(within(d).getByRole("button", { name: "Dialog schließen" }));
     expect(await screen.findByTestId("entwurf-offen")).toHaveTextContent("Leitungsentwurf offen – ungespeichert");
-    fireEvent.click(screen.getByRole("button", { name: "3D-Ansicht" }));
+    // 6b.5: Der Entwurf gehört zum Gebäude - ein Wechsel zu Tabellen und zurück fragt nicht und verliert nichts.
+    fireEvent.click(screen.getByRole("button", { name: "Tabellen & Details" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Tabellen & Details" })).toHaveAttribute("aria-pressed", "true"));
+    expect(screen.queryByRole("dialog", { name: "Ansicht wechseln?" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "2D-Editor" }));
+    expect(await screen.findByTestId("entwurf-offen")).toHaveTextContent("Leitungsentwurf offen – ungespeichert");
+    // Steigwege führen einen eigenen Entwurf: höchstens ein aktiver Entwurf - also Rückfrage.
+    fireEvent.click(screen.getByRole("button", { name: "Steigwege" }));
     const frage = await screen.findByRole("dialog", { name: "Ansicht wechseln?" });
+    expect(within(frage).getByText(/ungespeicherten Leitungsentwurf/)).toBeInTheDocument();
     fireEvent.click(within(frage).getByRole("button", { name: /behalten|Abbrechen|bleiben/ }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Ansicht wechseln?" })).toBeNull());
     expect(screen.getByTestId("entwurf-offen")).toBeInTheDocument();

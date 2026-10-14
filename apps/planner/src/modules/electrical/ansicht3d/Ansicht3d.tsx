@@ -17,6 +17,11 @@ import type { Geraetesichtbarkeit, Kamerastand } from "./szene";
 import type { Rueckmeldung } from "./szene";
 import type { Geraet3d } from "./geraete3d";
 import { katalogAbfrage, typenNachSchluessel } from "../geraete/katalog";
+import { raumseite } from "../leitung/grundriss";
+import { useGrundrisseinstellung, useLeitungsplanungImKontext } from "../leitung/LeitungsplanungProvider";
+import type { Leitung3d } from "./leitungen3d";
+import { leitungen3d } from "./leitungen3d";
+import type { Leitungsziel3d } from "./Seitenleiste";
 import { objektZu, szenenmodellAus } from "./szenenmodell";
 import { browserUmgebung } from "./umgebung";
 
@@ -29,7 +34,7 @@ export type Szenensteuerung = Pick<
   Grundrissszene,
   "setzePlan" | "setzeAuswahl" | "einpassen" | "standardansicht" | "draufsicht" | "zoomen" | "entsorgen"
 > &
-  Partial<Pick<Grundrissszene, "kamerastand" | "kamerastandSetzen" | "setzeGeraetesichtbarkeit">>;
+  Partial<Pick<Grundrissszene, "kamerastand" | "kamerastandSetzen" | "setzeGeraetesichtbarkeit" | "setzeLeitungen">>;
 
 /**
  * Was die 3D-Ansicht beim Wechsel in die Wandansicht abgibt und bei der
@@ -46,8 +51,10 @@ export interface Rueckkehr3d {
 /** Ziel „An Decke bearbeiten“ aus 3D (Phase 5). */
 export interface Deckenansichtsziel3d {
   readonly raumId: string;
-  readonly geraetId: string;
+  readonly geraetId?: string;
 }
+
+export type { Leitungsziel3d };
 
 /** Ziel einer Wandansicht aus 3D - mit der angeklickten Seite. */
 export interface Wandansichtsziel3d {
@@ -94,6 +101,7 @@ export default function Ansicht3d({
   onWandansicht,
   onDeckenansicht,
   anfang,
+  onLeitungBearbeiten,
   szeneErzeugen = echteSzene,
 }: {
   floorId: string;
@@ -105,6 +113,11 @@ export default function Ansicht3d({
   onDeckenansicht?: (ziel: Deckenansichtsziel3d, rueckkehr: Rueckkehr3d) => void;
   /** Bei der Rückkehr aus der Wandansicht: Kamera und Auswahl wiederherstellen. */
   anfang?: Rueckkehr3d | null;
+  /**
+   * Phase 6b.5: Eine gewählte Leitung auf der passenden Fläche bearbeiten. Der
+   * Leitungsentwurf ist dann bereits geöffnet; Kamera und Auswahl gehen mit.
+   */
+  onLeitungBearbeiten?: (ziel: Leitungsziel3d, rueckkehr: Rueckkehr3d) => void;
   szeneErzeugen?: SzeneErzeugen;
 }) {
   const { api } = useAuth();
@@ -119,6 +132,31 @@ export default function Ansicht3d({
     () => messen(MESSUNG.szenenmodell, () => szenenmodellAus(plan.data, masse.anzeigen, typen)),
     [plan.data, masse, typen],
   );
+
+  // Gespeicherte Leitungen des Gebäudes (6b.5) - nur der gespeicherte Stand, nie der Entwurf.
+  const planung = useLeitungsplanungImKontext();
+  const einstellung = useGrundrisseinstellung();
+  const leitungen: readonly Leitung3d[] = useMemo(() => {
+    const v = planung?.vorbereitet ?? null;
+    if (planung === null || v === null || !Array.isArray(plan.data?.rooms)) return [];
+    const staerken = new Map(plan.data.rooms.flatMap((r) => r.walls.map((w) => [w.id, w.thickness_mm] as const)));
+    return leitungen3d(planung.leitungen, {
+      floorId,
+      geschosse: planung.geschosse,
+      raumseite: (wandId) => {
+        const n = raumseite(v, wandId);
+        return n === null ? null : { x: n.x, y: n.y, halbeStaerkeMm: (staerken.get(wandId) ?? 0) / 2 };
+      },
+      raumDerWand: (wandId) => {
+        const info = v.waende.get(wandId);
+        return info !== undefined && info.raum.geschossId === floorId ? info.raum.id : null;
+      },
+      bezeichnung: (c) => {
+        const kreis = planung.kreisVon(c.circuit_id);
+        return `${kreis === undefined ? "" : `${kreis.designation} · `}${c.label ?? "Leitung"}`;
+      },
+    });
+  }, [planung, plan.data, floorId]);
 
   const anfangRef = useRef(anfang?.floorId === floorId ? anfang : null);
   const [auswahl, setAuswahl] = useState<Auswahl | null>(anfangRef.current?.auswahl ?? null);
@@ -164,19 +202,23 @@ export default function Ansicht3d({
     const erstesMal = gezeigtesGeschoss.current !== modell.floorId;
     const rueckkehr = anfangRef.current;
     if (erstesMal && rueckkehr !== null && rueckkehr.floorId === modell.floorId && rueckkehr.kamera !== null) {
-      // Rückkehr aus der Wandansicht: dieselbe Kamera wie vorher, nicht neu einpassen.
+      // Rückkehr aus Wand-, Decken- oder Grundrissbearbeitung: dieselbe Kamera wie vorher, nicht
+      // neu einpassen. Die Rückkehr gilt für jedes neue Szenenexemplar dieses Geschosses - im
+      // StrictMode entsteht die Szene zweimal, und das zweite Exemplar darf nicht neu einpassen
+      // (Befund der Browserabnahme 6b.5). Erst ein anderes Geschoss beendet sie.
       instanz.setzePlan(modell, { einpassen: false });
       instanz.kamerastandSetzen?.(rueckkehr.kamera);
-      anfangRef.current = null;
     } else {
+      if (rueckkehr !== null && modell.floorId !== null && rueckkehr.floorId !== modell.floorId) anfangRef.current = null;
       instanz.setzePlan(modell, { einpassen: erstesMal });
     }
     gezeigtesGeschoss.current = modell.floorId;
   }, [modell, start]);
 
-  const objekt = objektZu(modell, auswahl);
-  // Erst mit geladenem Plan entscheiden - sonst ginge eine wiederhergestellte Auswahl verloren.
-  const fehlt = auswahl !== null && objekt === null && plan.isSuccess;
+  const objekt = objektZu(modell, auswahl, leitungen);
+  // Erst mit geladenem Plan (und bei Leitungen: geladener Planung) entscheiden - sonst ginge
+  // eine wiederhergestellte Auswahl verloren.
+  const fehlt = auswahl !== null && objekt === null && plan.isSuccess && (auswahl.art !== "leitung" || planung?.geladen === true);
   const gueltig = fehlt ? null : auswahl;
 
   // Eine Auswahl, deren Objekt nach dem Neuladen fehlt, verschwindet.
@@ -184,9 +226,15 @@ export default function Ansicht3d({
     if (fehlt) setAuswahl(null);
   }, [fehlt]);
 
+  // Leitungen vor der Auswahl setzen: Eine gewählte Leitung muss in der Szene schon vorhanden sein,
+  // auch in einem neu erzeugten Szenenexemplar (Befund der Browserabnahme 6b.5).
+  useEffect(() => {
+    szene.current?.setzeLeitungen?.(leitungen);
+  }, [leitungen, start]);
+
   useEffect(() => {
     szene.current?.setzeAuswahl(gueltig);
-  }, [gueltig, modell, start]);
+  }, [gueltig, modell, start, leitungen]);
 
   // Schalter über der Ansicht: ausgeblendete Geräte sind auch keine Klickziele.
   useEffect(() => {
@@ -209,6 +257,29 @@ export default function Ansicht3d({
       onWandansicht?.({ raumId: g.raumId, wandId: g.wandId, seite: g.flaeche === "wall_exterior" ? "aussen" : "innen", geraetId: g.id }, rueckkehr());
     }
   };
+
+  // Leitung bearbeiten (6b.5): Entwurf öffnen (nie still einen anderen verwerfen), dann die passende Fläche.
+  const entwurf = planung?.entwurf ?? null;
+  const leitungSperre =
+    planung === null || !planung.darfLeitungen
+      ? "Nur ansehen – Leitungen bearbeiten ist hier nicht möglich."
+      : gueltig?.art === "leitung" && entwurf !== null && entwurf.cableId !== gueltig.id
+        ? "Ein anderer Leitungsentwurf ist offen – bitte zuerst speichern oder schließen."
+        : gueltig?.art === "leitung" && planung.leitungen.some((c) => c.id === gueltig.id && planung.unlesbar(c))
+          ? "Diese Leitung enthält Wegpunkte, die hier nicht gelesen werden können – Bearbeiten ist gesperrt."
+          : null;
+  const leitungBearbeiten = (l: Leitung3d, ziel: Leitungsziel3d) => {
+    if (planung === null || leitungSperre !== null) return;
+    const cable = planung.leitungen.find((c) => c.id === l.id);
+    if (cable === undefined) return;
+    if (planung.entwurf === null) planung.bearbeiten(cable);
+    if (ziel.art === "grundriss") einstellung?.setWerkzeug("leitung");
+    onLeitungBearbeiten?.(ziel, rueckkehr());
+  };
+  const entwurfHinweis =
+    entwurf === null
+      ? null
+      : `Ein Leitungsentwurf ist offen${planung?.ungespeichert === true ? " und ungespeichert" : ""} – er bleibt erhalten; die 3D-Ansicht zeigt den gespeicherten Stand.`;
 
   const schalter = (feld: keyof Geraetesichtbarkeit, label: string, anzahl?: number) => (
     <button
@@ -361,6 +432,10 @@ export default function Ansicht3d({
               }
             : {})}
           {...(onWandansicht !== undefined || onDeckenansicht !== undefined ? { onGeraetBearbeiten: geraetBearbeiten } : {})}
+          leitungen={leitungen}
+          {...(onLeitungBearbeiten !== undefined ? { onLeitungBearbeiten: leitungBearbeiten } : {})}
+          leitungSperre={leitungSperre}
+          entwurfHinweis={entwurfHinweis}
         />
       </div>
       <p className="m-0 text-label text-muted" id={zusammenfassungId}>

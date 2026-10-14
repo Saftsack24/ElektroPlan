@@ -13,6 +13,7 @@ import { testumgebung } from "./szenentest";
 import { einfamilienhaus, plan, rechteck } from "./testplan";
 import { szenenmodellAus } from "./szenenmodell";
 import { mmAnzeigen } from "../../../core/masse";
+import { planSchluessel } from "../plan";
 
 /**
  * 3D-Ansicht als React-Komponente (Phase 4b).
@@ -414,6 +415,32 @@ describe("Auswahl und Bedienung", () => {
     expect(s.setzePlan).toHaveBeenCalledWith(expect.anything(), { einpassen: false });
     expect(s.kamerastandSetzen).toHaveBeenCalledWith({ position: [4, 5, 6], ziel: [1, 0, 1] });
     expect(s.setzeAuswahl).toHaveBeenLastCalledWith({ art: "raumwand", id: wand.id });
+  });
+
+  it("StrictMode mit bereits geladenem Plan: auch das zweite Szenenexemplar übernimmt die gemerkte Kamera", async () => {
+    const modell = szenenmodellAus(einfamilienhaus());
+    const wand = modell.raumwaende[0]!;
+    const c = client();
+    // Plan im Cache wie bei der Rückkehr aus dem Editor - die Szene sieht ihn sofort.
+    c.setQueryData(planSchluessel("geschoss-1"), einfamilienhaus());
+    const ansicht = (
+      <QueryClientProvider client={c}>
+        <StrictMode>
+          <Ansicht3d
+            floorId="geschoss-1"
+            geschossLabel="Hauptgebäude · Erdgeschoss"
+            onAnsicht={onAnsicht}
+            anfang={{ floorId: "geschoss-1", kamera: { position: [4, 5, 6], ziel: [1, 0, 1] }, auswahl: { art: "raumwand", id: wand.id } }}
+            szeneErzeugen={fabrik}
+          />
+        </StrictMode>
+      </QueryClientProvider>
+    );
+    render(ansicht);
+    await geladen();
+    const s = szenen.at(-1)!;
+    expect(s.kamerastandSetzen).toHaveBeenCalledWith({ position: [4, 5, 6], ziel: [1, 0, 1] });
+    expect(s.setzePlan).not.toHaveBeenCalledWith(expect.anything(), { einpassen: true });
   });
 
   it("die Wandansicht erhält beim Öffnen den aktuellen Kamerastand für die Rückkehr", async () => {

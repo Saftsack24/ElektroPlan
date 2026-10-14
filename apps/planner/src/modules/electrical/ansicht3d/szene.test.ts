@@ -1,7 +1,8 @@
 import type { Material, Mesh, Object3D } from "three";
-import { BufferGeometry, Color, Material as MaterialKlasse, Vector3 } from "three";
+import { BufferGeometry, Color, Line, LineDashedMaterial, Material as MaterialKlasse, Vector3 } from "three";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { Leitung3d } from "./leitungen3d";
 import type { Auswahl } from "./modell";
 import { Grundrissszene, STANDARD_SZENENFARBEN, WebGLNichtVerfuegbar } from "./szene";
 import { szenenmodellAus } from "./szenenmodell";
@@ -582,5 +583,105 @@ describe("Geräte (Phase 5)", () => {
     expect(szene.statistik().beschriftungen).toBe(1);
     szene.entsorgen();
     expect(behaelter.querySelector(".ansicht3d__beschriftungen")).toBeNull();
+  });
+});
+
+describe("Leitungen (6b.5)", () => {
+  const leitungen: Leitung3d[] = [
+    {
+      id: "l1",
+      bezeichnung: "F3 · L1",
+      status: "confirmed",
+      laengeMm: 3000,
+      bekanntMm: 3000,
+      stuecke: [{ flaeche: "fussboden", punkte: [{ x: 1000, y: 1000, h: 15 }, { x: 4000, y: 1000, h: 15 }], wandId: null, raumId: "r1" }],
+      fortsetzungen: [],
+    },
+    {
+      id: "l2",
+      bezeichnung: "F3 · L2",
+      status: "incomplete",
+      laengeMm: null,
+      bekanntMm: 2000,
+      stuecke: [{ flaeche: "steigweg", punkte: [{ x: 2500, y: 3000, h: 0 }, { x: 2500, y: 3000, h: 2800 }], wandId: null, raumId: null }],
+      fortsetzungen: [{ punkt: { x: 2500, y: 3000, h: 2800 }, floorId: "og", text: "Fortsetzung in „OG“" }],
+    },
+    {
+      id: "l3",
+      bezeichnung: "F3 · L3",
+      status: "conflict",
+      laengeMm: null,
+      bekanntMm: 0,
+      stuecke: [{ flaeche: "decke", punkte: [{ x: 500, y: 2000, h: 2485 }, { x: 4500, y: 2000, h: 2485 }], wandId: null, raumId: "r1" }],
+      fortsetzungen: [],
+    },
+  ];
+
+  function linien(test: ReturnType<typeof erzeugen>["test"]): Line[] {
+    test.bild();
+    const gefunden: Line[] = [];
+    test.letzteSzene()?.traverse((o) => {
+      if (o instanceof Line && o.renderOrder === 3) gefunden.push(o as Line);
+    });
+    return gefunden;
+  }
+
+  it("Status über Strichart: bestätigt durchgezogen, unvollständig und Konflikt verschieden gestrichelt", () => {
+    const { test, szene } = erzeugen();
+    szene.setzePlan(einRaum(), { einpassen: true });
+    szene.setzeLeitungen(leitungen);
+    const [bestaetigt, offen, konflikt] = linien(test);
+    expect(bestaetigt?.material).not.toBeInstanceOf(LineDashedMaterial);
+    expect(offen?.material).toBeInstanceOf(LineDashedMaterial);
+    expect(konflikt?.material).toBeInstanceOf(LineDashedMaterial);
+    expect((offen?.material as LineDashedMaterial).dashSize).not.toBe((konflikt?.material as LineDashedMaterial).dashSize);
+    expect(szene.statistik().leitungen).toBe(3);
+  });
+
+  it("Auswahl über unsichtbare Trefferkörper; hervorgehoben werden sie sichtbar", () => {
+    const { test, szene } = erzeugen();
+    szene.setzePlan(einRaum(), { einpassen: true });
+    szene.setzeLeitungen(leitungen);
+    szene.draufsicht();
+    test.bild();
+    // Mitte der Fußbodenleitung L1: (2500, 1000) knapp über dem Boden.
+    expect(szene.auswahlBei(...ndc(szene, new Vector3(0, 0.015, 1)))).toEqual({ art: "leitung", id: "l1" });
+    const koerper = meshMit(test.letzteSzene(), { art: "leitung", id: "l1" });
+    const vorher = koerper?.material;
+    szene.setzeAuswahl({ art: "leitung", id: "l1" });
+    expect(koerper?.material).not.toBe(vorher);
+    // Fortsetzung ins Nachbargeschoss: eigener, wählbarer Punkt derselben Leitung.
+    expect(meshMit(test.letzteSzene(), { art: "leitung", id: "l2" })).toBeDefined();
+  });
+
+  it("Ersetzen und Entfernen geben die Geometrien frei; eine verschwundene Leitung verliert die Auswahl", () => {
+    const { szene } = erzeugen();
+    szene.setzePlan(einRaum(), { einpassen: true });
+    const ohne = szene.statistik().planGeometrien;
+    szene.setzeLeitungen(leitungen);
+    szene.setzeAuswahl({ art: "leitung", id: "l3" });
+    const mit = szene.statistik().planGeometrien;
+    expect(mit).toBeGreaterThan(ohne);
+    const freigegeben = vi.spyOn(BufferGeometry.prototype, "dispose");
+    szene.setzeLeitungen(leitungen.slice(0, 2));
+    expect(freigegeben).toHaveBeenCalledTimes(mit);
+    expect(szene.aktuelleAuswahl()).toBeNull();
+    szene.setzeLeitungen([]);
+    expect(szene.statistik().planGeometrien).toBe(ohne);
+    szene.entsorgen();
+    expect(szene.statistik()).toMatchObject({ planGeometrien: 0, auswaehlbar: 0, entsorgt: true });
+  });
+
+  it("Theme: Leitungsfarben folgen den Tokens, ohne neue Materialien", () => {
+    const { test, szene } = erzeugen();
+    szene.setzePlan(einRaum(), { einpassen: true });
+    szene.setzeLeitungen(leitungen);
+    const anzahl = szene.statistik().materialien;
+    szene.setzeFarben({ ...STANDARD_SZENENFARBEN, leitung: "#7cc0ff", leitungWarnung: "#f0b44c", leitungKonflikt: "#ff7a7a" });
+    const [bestaetigt, offen, konflikt] = linien(test);
+    expect((bestaetigt?.material as LineDashedMaterial).color.equals(new Color("#7cc0ff"))).toBe(true);
+    expect((offen?.material as LineDashedMaterial).color.equals(new Color("#f0b44c"))).toBe(true);
+    expect((konflikt?.material as LineDashedMaterial).color.equals(new Color("#ff7a7a"))).toBe(true);
+    expect(szene.statistik().materialien).toBe(anzahl);
   });
 });

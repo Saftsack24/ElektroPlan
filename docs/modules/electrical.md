@@ -994,15 +994,27 @@ bearbeiten“; die Rückkehr stellt Kamera, Auswahl und Schalter wieder her. Kei
 **Lesemodus:** ohne Schreibrecht oder bei `completed`/`archived` Geräte sichtbar und auswählbar,
 keine Werkzeuge, Felder gesperrt.
 
-### Leitungsplanung in Wand- und Deckenansicht (Phase 6b.4) — umgesetzt, nicht committet
+### Leitungsplanung in Wand- und Deckenansicht (Phase 6b.4) — umgesetzt, committet
 
 Seitenfeld „Leitungen“ und Werkzeuge „Leitung“ (L) und „Zuordnen“ (Z) in den bestehenden Ansichten;
 Bedienung, Fang, Hilfslinien, Entwurfsregeln und Grenzen: [`phase-6b-design.md`](../phase-6b-design.md) §19.
-Der Leitungsentwurf gehört zum Geschoss im 2D-Editor (Planungskontext); Wand- und Deckenansichten
-sind Arbeitsflächen darin. Höchstens ein aktiver Entwurf (Raum, Zuordnung oder Leitung). Vorschau,
+Der Leitungsentwurf gehörte in 6b.4 zum Geschoss im 2D-Editor; seit 6b.5 zum Gebäude (siehe
+unten). Wand- und Deckenansichten sind Arbeitsflächen darin. Höchstens ein aktiver Entwurf (Raum, Zuordnung oder Leitung). Vorschau,
 Länge und Befunde rechnen mit `leitung/laenge.ts` über den gespeicherten Planungsstand des Gebäudes.
 Änderungen, die Leitungen unterbrechen, bestätigt `leitung/bestaetigung.tsx` mit genau den IDs der
 Serverantwort.
+
+### Leitung im Grundriss und in 3D (Phase 6b.5) — umgesetzt, committet
+
+Der Leitungsentwurf gehört seit 6b.5 zum **Gebäude** (`leitung/LeitungsplanungProvider.tsx`) und
+übersteht Geschoss- und Ansichtswechsel im Gebäude. Im Grundriss: Werkzeuge „Leitung“ (L) und
+„Durchführung hier“ (U), Ebenenwahl Fußboden/Wand/Decke (nur für neue Punkte), Fußbodenwege in der
+Raumkontur, Bodenübergang nur ausdrücklich an Tür oder Durchgang, neue Durchführungen nur in aktiven,
+eindeutigen `shared`-Abschnitten (atomar mit der Leitung), Steigweg nutzen mit Vorschau und Wechsel
+ins Zielgeschoss (`leitung/Grundrissleitungen.tsx`, `leitung/grundriss.ts`, `leitung/durchfuehrung.ts`).
+3D zeigt gespeicherte Leitungen aus den Serverteilstrecken, an Geschossgrenzen gekappt und ausdrücklich
+fortgesetzt (`ansicht3d/leitungen3d.ts`); die Auswahl öffnet die passende Bearbeitungsfläche, die
+Rückkehr stellt Kamera und Auswahl her. Details: [`phase-6b-design.md`](../phase-6b-design.md) §20.
 
 ### Wandzuordnung (Phase 6a) — umgesetzt
 

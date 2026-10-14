@@ -1,4 +1,4 @@
-import type { Deckenansichtsziel3d, Rueckkehr3d, Wandansichtsziel3d } from "./Ansicht3d";
+import type { Deckenansichtsziel3d, Leitungsziel3d, Rueckkehr3d, Wandansichtsziel3d } from "./Ansicht3d";
 import { Component, Suspense, lazy, useMemo, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 
@@ -21,6 +21,8 @@ type Props = {
   /** Phase 4f: eine gewählte Wand in der Wandansicht öffnen - mit Seite und Rückkehrzustand. */
   onWandansicht?: (ziel: Wandansichtsziel3d, rueckkehr: Rueckkehr3d) => void;
   onDeckenansicht?: (ziel: Deckenansichtsziel3d, rueckkehr: Rueckkehr3d) => void;
+  /** Phase 6b.5: gewählte Leitung auf der passenden Fläche bearbeiten. */
+  onLeitungBearbeiten?: (ziel: Leitungsziel3d, rueckkehr: Rueckkehr3d) => void;
   anfang?: Rueckkehr3d | null;
 };
 type Modul = { default: ComponentType<Props> };

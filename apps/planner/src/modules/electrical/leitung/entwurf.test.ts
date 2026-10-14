@@ -9,6 +9,7 @@ import {
   leitungsReducer,
   querschnittNormal,
   vorschlagVergleichen,
+  durchfuehrungDaneben,
   wegpunktEinfuegen,
   wegpunktEntfernen,
   wegpunktErsetzen,
@@ -32,6 +33,7 @@ function werte(wegpunkte: readonly Wegpunkt[] = []): Leitungswerte {
     endzugabeMm: 0,
     reserveMm: 0,
     wegpunkte,
+    neueDurchfuehrungen: [],
   };
 }
 
@@ -138,6 +140,17 @@ describe("Wegpunkte", () => {
     expect(neu.wegpunkte[3]).toEqual(STEIG);
     expect(wegpunktEntfernen(neu, 2).wegpunkte).toEqual([BODEN, wand(2), STEIG]);
     expect(gleicheWerte(w, werte([BODEN, wand(1), STEIG]))).toBe(true);
+  });
+});
+
+describe("Durchführung nicht doppelt", () => {
+  it("erkennt dieselbe Durchführung direkt davor oder an der Einfügestelle", () => {
+    const d: Wegpunkt = { art: "durchfuehrung", durchfuehrungId: "d1" };
+    const w = werte([wand(1), d]);
+    expect(durchfuehrungDaneben(w, 2, "d1")).toBe(1);
+    expect(durchfuehrungDaneben(w, 1, "d1")).toBe(1);
+    expect(durchfuehrungDaneben(w, 2, "d2")).toBeNull();
+    expect(durchfuehrungDaneben(werte([d, wand(1)]), 2, "d1")).toBeNull();
   });
 });
 

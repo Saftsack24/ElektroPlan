@@ -184,8 +184,11 @@ export function wegpunktAusServer(wp: WegpunktAusServer): Wegpunkt | null {
   }
 }
 
-/** Wegpunkt → Anfrageform. Jede Art geht unverändert zurück an den Server. */
-export function wegpunktAlsAnfrage(wp: Wegpunkt): WegpunktAnfrage {
+/**
+ * Wegpunkt → Anfrageform. Jede Art geht unverändert zurück an den Server; eine
+ * Durchführung, die erst mit der Leitung entsteht, wird über ihren Schlüssel genannt.
+ */
+export function wegpunktAlsAnfrage(wp: Wegpunkt, neueSchluessel: ReadonlySet<string> = new Set()): WegpunktAnfrage {
   switch (wp.art) {
     case "wand":
       return { kind: "wall", wall_id: wp.wandId, offset_mm: wp.abstandMm, height_mm: wp.hoeheMm };
@@ -193,7 +196,9 @@ export function wegpunktAlsAnfrage(wp: Wegpunkt): WegpunktAnfrage {
     case "floor":
       return { kind: wp.art, room_id: wp.raumId, x_mm: wp.x, y_mm: wp.y };
     case "durchfuehrung":
-      return { kind: "penetration", penetration_id: wp.durchfuehrungId };
+      return neueSchluessel.has(wp.durchfuehrungId)
+        ? { kind: "penetration", new_penetration_key: wp.durchfuehrungId }
+        : { kind: "penetration", penetration_id: wp.durchfuehrungId };
     case "uebergang":
       return { kind: "opening_crossing", wall_id: wp.wandId, offset_mm: wp.abstandMm, opening_id: wp.oeffnungId };
     case "steigweg":
@@ -235,8 +240,9 @@ export function leitungAusServer(l: LeitungAusServer): { leitung: Leitung; unles
 }
 
 /** Kann die Wand- bzw. Deckenansicht diesen Wegpunkt bearbeiten (6b.4)? */
-export function inAnsichtBearbeitbar(wp: Wegpunkt): boolean {
-  return wp.art === "wand" || wp.art === "ceiling" || wp.art === "durchfuehrung";
+export function inAnsichtBearbeitbar(wp: Wegpunkt, grundriss = false): boolean {
+  // Der Grundriss (6b.5) bearbeitet zusätzlich Fußboden-, Bodenübergangs- und Steigwegpunkte.
+  return grundriss || wp.art === "wand" || wp.art === "ceiling" || wp.art === "durchfuehrung";
 }
 
 /** Verständlicher Name einer Wegpunktart. */

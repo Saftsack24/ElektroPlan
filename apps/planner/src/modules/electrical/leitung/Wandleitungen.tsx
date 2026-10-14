@@ -13,12 +13,12 @@ import type { Wandmodell } from "../wandansicht/wandmodell";
 import "./leitung.css";
 import { inAnsichtBearbeitbar } from "./daten";
 import type { Leitungswerte } from "./entwurf";
-import { wegpunktEinfuegen, wegpunktEntfernen, wegpunktErsetzen } from "./entwurf";
+import { durchfuehrungDaneben, durchfuehrungEinfuegen, wegpunktEinfuegen, wegpunktEntfernen, wegpunktErsetzen } from "./entwurf";
+import { durchfuehrungsWandlage, durchfuehrungsziel, istNeu, neuerSchluessel } from "./durchfuehrung";
 import type { Anschlusspunkt, Fangeinstellung } from "./flaechen";
 import {
   achseFangen,
   anschlussFangen,
-  kandidatPruefen,
   rechtwinkligeLagen,
   wandFangziele,
   wandpunktAusAnsicht,
@@ -29,11 +29,10 @@ import {
 } from "./flaechen";
 import type { Leitungskontext } from "./kontext";
 import type { Wegpunkt } from "./laenge";
-import { leitungAusWerten } from "./useLeitungsplanung";
 import type { Flaechenzusatz, Zeigerereignis } from "./zusatz";
 
-/** Werkzeuge der Leitungsplanung in einer Ansicht. */
-export type Leitungswerkzeug = "leitung" | "zuordnen";
+/** Werkzeuge der Leitungsplanung in einer Ansicht; „durchfuehrung“ legt eine neue im Entwurf an (6b.5). */
+export type Leitungswerkzeug = "leitung" | "zuordnen" | "durchfuehrung";
 
 interface Kandidat {
   readonly u: number;
@@ -55,6 +54,8 @@ interface Wanddurchfuehrung {
   readonly u: number;
   readonly h: number;
   readonly fehler: boolean;
+  /** Nur im Entwurf - entsteht erst mit der Leitung. */
+  readonly neu: boolean;
 }
 
 function ganzerAbstand(a: Punkt, b: Punkt): number | null {
@@ -95,7 +96,14 @@ export function useWandleitungen({
   onStatus: (text: string) => void;
 }) {
   const masse = useMasse();
-  const [kandidat, setKandidat] = useState<Kandidat | null>(null);
+  const [kandidat, setKandidatState] = useState<Kandidat | null>(null);
+  // Das Loslassen liest den Kandidaten aus der Ref: Folgen Bewegung und Loslassen vor dem nächsten
+  // Rendern, sähe es sonst einen veralteten Vorschaupunkt (Nachkorrektur 6b.5, wie im Grundriss).
+  const kandidatRef = useRef<Kandidat | null>(null);
+  const setKandidat = (c: Kandidat | null) => {
+    kandidatRef.current = c;
+    setKandidatState(c);
+  };
   const [gewaehlt, setGewaehlt] = useState<string | null>(null);
   const [durchfuehrungId, setDurchfuehrungId] = useState<string | null>(null);
   const laufend = useRef<{ art: "setzen" } | { art: "ziehen"; index: number; gueltig: boolean } | null>(null);
@@ -105,7 +113,7 @@ export function useWandleitungen({
   const [werkzeugVorher, setWerkzeugVorher] = useState(werkzeug);
   if (werkzeugVorher !== werkzeug) {
     setWerkzeugVorher(werkzeug);
-    setKandidat(null);
+    setKandidatState(null);
   }
 
   const p = k?.planung;
@@ -115,16 +123,25 @@ export function useWandleitungen({
 
   // ------------------------------------------------------------ Daten der Wand
 
+  const neueDurchfuehrungen = e?.werte.neueDurchfuehrungen;
   const durchfuehrungen: Wanddurchfuehrung[] = useMemo(() => {
     if (p === undefined || bezug === null) return [];
-    return p.durchfuehrungen.flatMap((d) => {
-      if (d.wall_a_id === bezug.wandId) return [{ id: d.id, u: wandpunktInAnsicht(bezug, d.offset_mm, d.height_mm).u, h: d.height_mm, fehler: d.problem_code !== null }];
+    const gespeichert = p.durchfuehrungen.flatMap((d) => {
+      if (d.wall_a_id === bezug.wandId) return [{ id: d.id, u: wandpunktInAnsicht(bezug, d.offset_mm, d.height_mm).u, h: d.height_mm, fehler: d.problem_code !== null, neu: false }];
       if (d.wall_b_id === bezug.wandId && d.opposite_offset !== null) {
-        return [{ id: d.id, u: wandpunktInAnsicht(bezug, d.opposite_offset.rounded_mm, d.height_mm).u, h: d.height_mm, fehler: d.problem_code !== null }];
+        return [{ id: d.id, u: wandpunktInAnsicht(bezug, d.opposite_offset.rounded_mm, d.height_mm).u, h: d.height_mm, fehler: d.problem_code !== null, neu: false }];
       }
       return [];
     });
-  }, [p, bezug]);
+    // Neue Durchführungen des Entwurfs: Gegenlage über dieselbe geprüfte Transformation.
+    const v = p.vorbereitetEntwurf;
+    const neue = (neueDurchfuehrungen ?? []).flatMap((n) => {
+      const d = v?.durchfuehrungen.get(n.schluessel);
+      const lage = v === null || d === undefined ? null : durchfuehrungsWandlage(v, d, bezug.wandId);
+      return lage === null ? [] : [{ id: n.schluessel, u: wandpunktInAnsicht(bezug, lage, n.hoeheMm).u, h: n.hoeheMm, fehler: false, neu: true }];
+    });
+    return [...gespeichert, ...neue];
+  }, [p, bezug, neueDurchfuehrungen]);
 
   const andere = useMemo(() => {
     if (p === undefined || bezug === null) return [];
@@ -210,7 +227,7 @@ export function useWandleitungen({
   };
 
   const kandidatFuer = (rohU: number, rohH: number, ereignis: Pick<Zeigerereignis, "altKey" | "massstab">, ersetzen: number | null): Kandidat | null => {
-    if (e === null || p === undefined || p.vorbereitet === null || bezug === null || modell === null) return null;
+    if (e === null || p === undefined || p.vorbereitetEntwurf === null || bezug === null || modell === null) return null;
     const w = e.werte;
     const index = ersetzen ?? (e.auswahl === null ? w.wegpunkte.length : e.auswahl + 1);
     const vor = w.wegpunkte[index - 1];
@@ -231,7 +248,7 @@ export function useWandleitungen({
       const wp = wandpunktAusAnsicht(bezug, u, h);
       const werte = ersetzen === null ? wegpunktEinfuegen(w, wp, index - 1 < 0 ? null : index - 1).werte : wegpunktErsetzen(w, ersetzen, wp);
       // Ohne gewählten Punkt am Ende einfügen: `nach` = Index - 1 ergibt genau diese Stelle.
-      const geprueft = kandidatPruefen(p.vorbereitet as NonNullable<typeof p.vorbereitet>, leitungAusWerten(e.cableId ?? "neu", werte), index);
+      const geprueft = p.pruefen(werte, index) ?? { ok: false as const, grund: "Der Plan ist noch nicht geladen." };
       return { werte, geprueft };
     };
 
@@ -316,17 +333,50 @@ export function useWandleitungen({
   };
 
   const durchfuehrungAufnehmen = (id: string) => {
-    if (e === null || p === undefined || p.vorbereitet === null) return;
+    if (e === null || p === undefined) return;
     const w = e.werte;
     const index = e.auswahl === null ? w.wegpunkte.length : e.auswahl + 1;
+    const daneben = durchfuehrungDaneben(w, index, id);
+    if (daneben !== null) {
+      onStatus(`Diese Durchführung ist bereits Wegpunkt ${daneben + 1} – weiter mit einem Wandpunkt auf der Gegenseite.`);
+      return;
+    }
     const werte = wegpunktEinfuegen(w, { art: "durchfuehrung", durchfuehrungId: id }, index - 1 < 0 ? null : index - 1).werte;
-    const geprueft = kandidatPruefen(p.vorbereitet, leitungAusWerten(e.cableId ?? "neu", werte), index);
+    const geprueft = p.pruefen(werte, index);
+    if (geprueft === null) return;
     if (!geprueft.ok) {
       onStatus(`Durchführung nicht aufgenommen: ${geprueft.grund}`);
       return;
     }
     p.dispatch({ typ: "aendern", werte, auswahl: index });
     onStatus(`Durchführung als Wegpunkt ${index + 1} aufgenommen – weiter auf der Gegenseite („Gegenseite“ bzw. Arbeitsfläche wechseln).`);
+  };
+
+  /**
+   * Neue Durchführung an dieser Stelle (6b.5): nur in einem aktiven, eindeutigen gemeinsamen
+   * Abschnitt; gespeichert wird sie erst mit der Leitung. Lage und Höhe auf ganze Zentimeter.
+   */
+  const durchfuehrungAnlegen = (rohU: number, rohH: number) => {
+    if (e === null || p === undefined || bezug === null || p.vorbereitetEntwurf === null) return;
+    const stelle = wandpunktAusAnsicht(bezug, Math.round(rohU / 10) * 10, Math.round(rohH / 10) * 10);
+    if (stelle.art !== "wand") return;
+    const ziel = durchfuehrungsziel(p.vorbereitetEntwurf, bezug.wandId, stelle.abstandMm);
+    if (!ziel.ok) {
+      onStatus(`Keine Durchführung: ${ziel.grund}`);
+      return;
+    }
+    const w = e.werte;
+    const nach = e.auswahl ?? (w.wegpunkte.length === 0 ? null : w.wegpunkte.length - 1);
+    const neu = { schluessel: neuerSchluessel(), kopplungId: ziel.kopplungId, abstandMm: ziel.abstandMm, hoeheMm: stelle.hoeheMm };
+    const { werte, index } = durchfuehrungEinfuegen(w, neu, nach);
+    const geprueft = p.pruefen(werte, index);
+    if (geprueft === null) return;
+    if (!geprueft.ok) {
+      onStatus(`Keine Durchführung: ${geprueft.grund}`);
+      return;
+    }
+    p.dispatch({ typ: "aendern", werte, auswahl: index });
+    onStatus(`Neue Durchführung als Wegpunkt ${index + 1} – entsteht erst beim Speichern der Leitung. Weiter auf der Gegenseite.`);
   };
 
   const zuordnungUmschalten = (id: string) => {
@@ -351,7 +401,7 @@ export function useWandleitungen({
   // ------------------------------------------------------------ Zeiger
 
   const zusatz: Flaechenzusatz = {
-    cursor: werkzeug === "leitung" && darf ? "crosshair" : werkzeug === "zuordnen" ? "pointer" : null,
+    cursor: (werkzeug === "leitung" || werkzeug === "durchfuehrung") && darf ? "crosshair" : werkzeug === "zuordnen" ? "pointer" : null,
     druecken: (ev) => {
       if (k === undefined || p === undefined || bezug === null) return false;
       const ziel = ev.ziel;
@@ -373,6 +423,11 @@ export function useWandleitungen({
         return true;
       }
       const durchfuehrung = ziel?.closest?.("[data-durchfuehrung]")?.getAttribute("data-durchfuehrung") ?? null;
+      if (werkzeug === "durchfuehrung" && darf) {
+        if (durchfuehrung !== null) durchfuehrungAufnehmen(durchfuehrung);
+        else durchfuehrungAnlegen(ev.welt.x, ev.welt.y);
+        return true;
+      }
       if (werkzeug === "leitung" && darf) {
         if (geraet !== null) {
           geraetGeklickt(geraet);
@@ -433,7 +488,7 @@ export function useWandleitungen({
         return;
       }
       if (l?.art === "setzen") {
-        const c = kandidat;
+        const c = kandidatRef.current;
         setKandidat(null);
         if (c === null) return;
         if (!c.ok) {
@@ -498,8 +553,8 @@ export function useWandleitungen({
         const dh = event.key === "ArrowUp" ? schritt : event.key === "ArrowDown" ? -schritt : 0;
         const neu = wandpunktAusAnsicht(bezug, a.u + du, a.h + dh);
         const werte = wegpunktErsetzen(e.werte, index, neu);
-        if (p.vorbereitet === null) return true;
-        const geprueft = kandidatPruefen(p.vorbereitet, leitungAusWerten(e.cableId ?? "neu", werte), index);
+        const geprueft = p.pruefen(werte, index);
+        if (geprueft === null) return true;
         if (!geprueft.ok) {
           onStatus(`Nicht verschoben: ${geprueft.grund}`);
           return true;
@@ -517,6 +572,10 @@ export function useWandleitungen({
       }
       if (kk === "l" && darf) {
         setWerkzeug("leitung");
+        return true;
+      }
+      if (kk === "u" && darf) {
+        setWerkzeug("durchfuehrung");
         return true;
       }
     }
@@ -586,8 +645,14 @@ export function useWandleitungen({
       const m = b(d.u, d.h);
       teile.push(
         <g key={`d-${d.id}`} data-durchfuehrung={d.id} data-testid={`durchfuehrung-${d.id}`}>
-          <circle cx={m.x} cy={m.y} r={7} className={`leitung-durchfuehrung${d.fehler ? " leitung-durchfuehrung--fehler" : ""}${d.id === durchfuehrungId ? " leitung-durchfuehrung--gewaehlt" : ""}`}>
-            <title>Durchführung</title>
+          <circle
+            cx={m.x}
+            cy={m.y}
+            r={7}
+            data-neu={d.neu ? "ja" : undefined}
+            className={`leitung-durchfuehrung${d.neu ? " leitung-durchfuehrung--neu" : ""}${d.fehler ? " leitung-durchfuehrung--fehler" : ""}${d.id === durchfuehrungId ? " leitung-durchfuehrung--gewaehlt" : ""}`}
+          >
+            <title>{d.neu ? "Neue Durchführung – entsteht erst beim Speichern der Leitung" : "Durchführung"}</title>
           </circle>
           <line x1={m.x - 4} y1={m.y - 4} x2={m.x + 4} y2={m.y + 4} className="leitung" />
           <line x1={m.x - 4} y1={m.y + 4} x2={m.x + 4} y2={m.y - 4} className="leitung" />
@@ -644,6 +709,6 @@ export function useWandleitungen({
     return <g data-testid="leitungsebene">{teile}</g>;
   };
 
-  const gewaehlteDurchfuehrung = p?.durchfuehrungen.find((d) => d.id === durchfuehrungId) ?? null;
+  const gewaehlteDurchfuehrung = durchfuehrungId === null || istNeu(durchfuehrungId) ? null : (p?.durchfuehrungen.find((d) => d.id === durchfuehrungId) ?? null);
   return { zusatz, taste, relevant, gewaehlt, setGewaehlt, gewaehlteDurchfuehrung, setDurchfuehrungId, setKandidat };
 }

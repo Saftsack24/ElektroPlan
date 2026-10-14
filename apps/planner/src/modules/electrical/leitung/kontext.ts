@@ -15,6 +15,9 @@ export type Arbeitsflaeche =
   | { readonly art: "wand"; readonly raumId: string; readonly wandId: string; readonly seite?: Wandseite }
   | { readonly art: "decke"; readonly raumId: string };
 
+/** Fläche, auf der der Leitungsbereich gezeigt wird; der Grundriss bearbeitet alle Wegpunktarten (6b.5). */
+export type Bearbeitungsflaeche = Arbeitsflaeche | { readonly art: "grundriss"; readonly floorId: string };
+
 export interface Leitungskontext {
   readonly planung: Leitungsplanung;
   readonly zuordnung: ReturnType<typeof useZuordnungsentwurf>;
