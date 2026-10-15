@@ -6989,6 +6989,60 @@
         }
       }
     },
+    "/api/v1/modules/electrical/buildings/{building_id}/cabling-summary": {
+      "get": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Mengenuebersicht der Leitungen eines Gebaeudes",
+        "description": "Mengen nach den tatsaechlichen Kabelangaben, Trassen, Durchfuehrungen, Geraete.\n\nRein lesend und abgeleitet - nichts davon ist gespeichert; ein konsistenter Stand je\nAntwort, auch fuer abgeschlossene und archivierte Projekte. Offene und konflikthafte\nLeitungen stehen getrennt und nie in der bestaetigten Menge. Kein Material, keine\nPreise, keine Bemessung oder Normaussage.",
+        "operationId": "getElectricalCablingSummary",
+        "parameters": [
+          {
+            "name": "building_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Building Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CablingSummaryOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/modules/electrical/circuits/{circuit_id}/cables": {
       "post": {
         "tags": [
@@ -8601,6 +8655,555 @@
         ],
         "title": "CableWaypointOut",
         "description": "Gespeicherter Wegpunkt - je Art nur die zugehoerigen Felder gesetzt."
+      },
+      "CablingBucketOut": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "geometric_mm": {
+            "type": "integer",
+            "title": "Geometric Mm"
+          },
+          "allowance_mm": {
+            "type": "integer",
+            "title": "Allowance Mm"
+          },
+          "total_mm": {
+            "type": "integer",
+            "title": "Total Mm"
+          },
+          "cable_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Cable Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "count",
+          "geometric_mm",
+          "allowance_mm",
+          "total_mm",
+          "cable_ids"
+        ],
+        "title": "CablingBucketOut",
+        "description": "Leitungen eines Status in einer Gruppe.\n\n``total_mm`` = ``geometric_mm`` + ``allowance_mm``: bei ``confirmed`` die Summe der\nLeitungslaengen, sonst ausdruecklich die **Teilsumme** der bekannten Teile."
+      },
+      "CablingCableOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "circuit_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Circuit Id"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "start_device_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Device Id"
+          },
+          "end_device_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "End Device Id"
+          },
+          "cable_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cable Type"
+          },
+          "conductor_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conductor Count"
+          },
+          "cross_section_mm2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cross Section Mm2"
+          },
+          "missing_spec": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "cable_type",
+                "conductor_count",
+                "cross_section_mm2"
+              ]
+            },
+            "type": "array",
+            "title": "Missing Spec"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "incomplete",
+              "conflict"
+            ],
+            "title": "Status"
+          },
+          "geometric_mm": {
+            "type": "integer",
+            "title": "Geometric Mm"
+          },
+          "allowance_mm": {
+            "type": "integer",
+            "title": "Allowance Mm"
+          },
+          "length_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Length Mm"
+          },
+          "known_mm": {
+            "type": "integer",
+            "title": "Known Mm"
+          },
+          "problem_codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Problem Codes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "circuit_id",
+          "label",
+          "start_device_id",
+          "end_device_id",
+          "cable_type",
+          "conductor_count",
+          "cross_section_mm2",
+          "missing_spec",
+          "status",
+          "geometric_mm",
+          "allowance_mm",
+          "length_mm",
+          "known_mm",
+          "problem_codes"
+        ],
+        "title": "CablingCableOut",
+        "description": "Eine Leitung als Bestandteil der Uebersicht - Aufschluesselung bis zur Leitung."
+      },
+      "CablingCircuitOut": {
+        "properties": {
+          "circuit_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Circuit Id"
+          },
+          "board_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Board Id"
+          },
+          "designation": {
+            "type": "string",
+            "title": "Designation"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "by_type": {
+            "items": {
+              "$ref": "#/components/schemas/CablingTypeCountOut"
+            },
+            "type": "array",
+            "title": "By Type"
+          },
+          "device_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Device Ids"
+          },
+          "devices_without_cable": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Devices Without Cable"
+          }
+        },
+        "type": "object",
+        "required": [
+          "circuit_id",
+          "board_id",
+          "designation",
+          "name",
+          "by_type",
+          "device_ids",
+          "devices_without_cable"
+        ],
+        "title": "CablingCircuitOut",
+        "description": "Geraete eines Stromkreises je Typ; zugeordnete Geraete ohne Leitung gesondert."
+      },
+      "CablingCrossingOut": {
+        "properties": {
+          "opening_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opening Id"
+          },
+          "wall_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Wall Id"
+          },
+          "cable_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Cable Ids"
+          },
+          "uses": {
+            "type": "integer",
+            "title": "Uses"
+          }
+        },
+        "type": "object",
+        "required": [
+          "opening_id",
+          "wall_id",
+          "cable_ids",
+          "uses"
+        ],
+        "title": "CablingCrossingOut",
+        "description": "Bodenuebergang an einer Oeffnung: **Nutzungen** je Leitung, kein Bauteil.\n\n``opening_id = null``: die Oeffnung wurde entfernt (Leitung im Konflikt)."
+      },
+      "CablingGroupOut": {
+        "properties": {
+          "cable_type": {
+            "type": "string",
+            "title": "Cable Type"
+          },
+          "conductor_count": {
+            "type": "integer",
+            "title": "Conductor Count"
+          },
+          "cross_section_mm2": {
+            "type": "string",
+            "title": "Cross Section Mm2"
+          },
+          "confirmed": {
+            "$ref": "#/components/schemas/CablingBucketOut"
+          },
+          "incomplete": {
+            "$ref": "#/components/schemas/CablingBucketOut"
+          },
+          "conflict": {
+            "$ref": "#/components/schemas/CablingBucketOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cable_type",
+          "conductor_count",
+          "cross_section_mm2",
+          "confirmed",
+          "incomplete",
+          "conflict"
+        ],
+        "title": "CablingGroupOut",
+        "description": "Gruppe gleicher **tatsaechlicher** Kabelangaben (nie der Stromkreisvorschlag)."
+      },
+      "CablingPenetrationOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "used": {
+            "type": "boolean",
+            "title": "Used"
+          },
+          "cable_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Cable Ids"
+          },
+          "problem_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "used",
+          "cable_ids",
+          "problem_code"
+        ],
+        "title": "CablingPenetrationOut",
+        "description": "Durchfuehrung nach Identitaet - einmal gezaehlt, egal wie viele Leitungen sie nutzen."
+      },
+      "CablingSummaryOut": {
+        "properties": {
+          "building_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Building Id"
+          },
+          "building_name": {
+            "type": "string",
+            "title": "Building Name"
+          },
+          "project_status": {
+            "type": "string",
+            "title": "Project Status"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/CablingGroupOut"
+            },
+            "type": "array",
+            "title": "Groups"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/CablingTotalsOut"
+          },
+          "unspecified": {
+            "items": {
+              "$ref": "#/components/schemas/CablingCableOut"
+            },
+            "type": "array",
+            "title": "Unspecified"
+          },
+          "cables": {
+            "items": {
+              "$ref": "#/components/schemas/CablingCableOut"
+            },
+            "type": "array",
+            "title": "Cables"
+          },
+          "surfaces": {
+            "items": {
+              "$ref": "#/components/schemas/CablingSurfaceOut"
+            },
+            "type": "array",
+            "title": "Surfaces"
+          },
+          "penetrations": {
+            "items": {
+              "$ref": "#/components/schemas/CablingPenetrationOut"
+            },
+            "type": "array",
+            "title": "Penetrations"
+          },
+          "crossings": {
+            "items": {
+              "$ref": "#/components/schemas/CablingCrossingOut"
+            },
+            "type": "array",
+            "title": "Crossings"
+          },
+          "circuits": {
+            "items": {
+              "$ref": "#/components/schemas/CablingCircuitOut"
+            },
+            "type": "array",
+            "title": "Circuits"
+          },
+          "unassigned_device_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Unassigned Device Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "building_id",
+          "building_name",
+          "project_status",
+          "groups",
+          "totals",
+          "unspecified",
+          "cables",
+          "surfaces",
+          "penetrations",
+          "crossings",
+          "circuits",
+          "unassigned_device_ids"
+        ],
+        "title": "CablingSummaryOut",
+        "description": "Mengenuebersicht eines Gebaeudes aus dem **gespeicherten** Stand (Entwurf §6.5).\n\nAbgeleitet bei jedem Lesen, nie gespeichert; ein konsistenter Planungsstand je\nAntwort. Laengen in ganzen Millimetern; ``cross_section_mm2`` als Dezimalstring.\n\"Bestaetigt\" heisst vollstaendig im Planungsmodell - keine Normpruefung, keine\nBemessung, keine Aussage ueber Ausfuehrbarkeit. Kein Material, keine Preise."
+      },
+      "CablingSurfaceOut": {
+        "properties": {
+          "surface": {
+            "type": "string",
+            "enum": [
+              "wall",
+              "ceiling",
+              "floor",
+              "riser",
+              "shaft"
+            ],
+            "title": "Surface"
+          },
+          "confirmed_trace_mm": {
+            "type": "integer",
+            "title": "Confirmed Trace Mm"
+          },
+          "confirmed_cable_mm": {
+            "type": "integer",
+            "title": "Confirmed Cable Mm"
+          },
+          "all_trace_mm": {
+            "type": "integer",
+            "title": "All Trace Mm"
+          },
+          "all_cable_mm": {
+            "type": "integer",
+            "title": "All Cable Mm"
+          },
+          "confirmed_complete": {
+            "type": "boolean",
+            "title": "Confirmed Complete"
+          },
+          "all_complete": {
+            "type": "boolean",
+            "title": "All Complete"
+          }
+        },
+        "type": "object",
+        "required": [
+          "surface",
+          "confirmed_trace_mm",
+          "confirmed_cable_mm",
+          "all_trace_mm",
+          "all_cable_mm",
+          "confirmed_complete",
+          "all_complete"
+        ],
+        "title": "CablingSurfaceOut",
+        "description": "Trassen- und Leitungsmeter einer Flaeche.\n\n``confirmed_*`` nur aus bestaetigten Leitungen; ``all_*`` aus allen gueltigen\nTeilstrecken aller Leitungen (einschliesslich vorlaeufiger). Gemeinsam genutzte\nAbschnitte zaehlen als Trasse einmal. ``*_complete = false``: mindestens ein\nSteigweganteil mit unbekannter senkrechter Laenge - gezaehlt ist nur der bekannte Teil."
+      },
+      "CablingTotalsOut": {
+        "properties": {
+          "confirmed": {
+            "$ref": "#/components/schemas/CablingBucketOut"
+          },
+          "incomplete": {
+            "$ref": "#/components/schemas/CablingBucketOut"
+          },
+          "conflict": {
+            "$ref": "#/components/schemas/CablingBucketOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "confirmed",
+          "incomplete",
+          "conflict"
+        ],
+        "title": "CablingTotalsOut",
+        "description": "Summen ueber alle vollstaendig angegebenen Leitungen - je Status getrennt."
+      },
+      "CablingTypeCountOut": {
+        "properties": {
+          "type_key": {
+            "type": "string",
+            "title": "Type Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type_key",
+          "label",
+          "count"
+        ],
+        "title": "CablingTypeCountOut"
       },
       "CircuitCreate": {
         "properties": {

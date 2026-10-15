@@ -80,6 +80,7 @@ from app.modules.electrical.cable_rules import (
     to_cable,
     to_waypoint,
 )
+from app.modules.electrical.cabling_summary import CablingSummary, summarize
 from app.modules.electrical.catalog import MountingSurface
 from app.modules.electrical.distribution import circuits_of_devices
 from app.modules.electrical.models import (
@@ -222,6 +223,18 @@ class CableService:
         """Alle Leitungen eines Gebaeudes - archivierte Projekte bleiben lesbar."""
         state = self.loader.load(building_id)
         return state, [cable_view(state, cable_id) for cable_id in state.cables]
+
+    def cabling_summary(self, building_id: uuid.UUID) -> tuple[BuildingCableState, CablingSummary]:
+        """Mengenuebersicht aus dem gespeicherten Stand - rein lesend, ein konsistenter Stand.
+
+        Die geteilte Projektsperre haelt Schreibvorgaenge an, bis alles gelesen ist
+        (``consistent_building_context``); fremdes oder unbekanntes Gebaeude: ``404``.
+        Feste Zahl von Abfragen - keine Kette je Leitung.
+        """
+        context = self.structure.consistent_building_context(building_id)
+        state = self.loader.load(context.building_id)
+        assignments = circuits_of_devices(self.session, self.organization_id, state.devices)
+        return state, summarize(state, assignments)
 
     def floor_penetrations(self, floor_id: uuid.UUID) -> list[PenetrationView]:
         context = self.structure.context(floor_id)

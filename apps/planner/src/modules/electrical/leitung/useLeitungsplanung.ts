@@ -16,6 +16,7 @@ import {
   stromkreiseSchluessel,
   verteilungenAbfrage,
 } from "../stromkreise/daten";
+import { mengenSchluessel } from "../mengen/daten";
 import { BestaetigungAbgelehnt, bestaetigungsfeld, useLeitungsbestaetigung } from "./bestaetigung";
 import type { DurchfuehrungAusServer, LeitungAusServer } from "./daten";
 import {
@@ -341,6 +342,8 @@ export function useLeitungsplanung({
     await queryClient.invalidateQueries({ queryKey: leitungenSchluessel(haus) });
     await queryClient.invalidateQueries({ queryKey: stromkreiseSchluessel(haus) });
     for (const g of floorListe) await queryClient.invalidateQueries({ queryKey: durchfuehrungenSchluessel(g.id) });
+    // Die Mengenübersicht (6b.6) leitet sich aus genau diesen Daten ab.
+    await queryClient.invalidateQueries({ queryKey: mengenSchluessel(haus) });
   }, [queryClient, haus, floorListe]);
 
   const unlesbar = useCallback((c: LeitungAusServer) => leitungAusServer(c).unlesbar > 0, []);

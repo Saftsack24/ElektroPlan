@@ -574,17 +574,21 @@ Codes `422`: `cable-route-invalid` (je Befund Code und Ort), `cable-endpoint-not
 `project-completed`, `project-archived`. Kein Event. Lesen `electrical.plan.read`, Leitungen und
 Durchführungen `electrical.route.write`, Vorschlag übernehmen `electrical.circuit.write`.
 
-### Geplant (Phase 6)
+### Ergänzt in Phase 6b.6 (ADR 0026, Entwurf §21)
 
 ```
-GET    /projects/{project_id}/circuits
-POST   /projects/{project_id}/cable-routes
-PUT    /cable-routes/{route_id}/points   (gesamte Punktliste)
-GET    /projects/{project_id}/summary    Mengenübersicht
+GET    /buildings/{building_id}/cabling-summary   Mengenübersicht aus dem gespeicherten Stand
 ```
 
-Punktlisten werden als Ganzes ersetzt (`PUT`), nicht punktweise gepatcht — wie die
-Raumkontur seit Phase 4a.
+Gruppen nach den tatsächlichen Kabelangaben (bestätigt, offen, Konflikt getrennt), unvollständig
+angegebene Leitungen, Trassen- und Leitungsmeter je Fläche (bestätigt und mit vorläufigen Teilen),
+Durchführungen nach Identität, Bodenübergänge als Nutzungen, Geräte je Stromkreis und Typ, nicht
+zugeordnete Geräte, Zugaben getrennt. Abgeleitet, nie gespeichert; ein konsistenter Stand je Antwort
+(geteilte Projektsperre). Lesen `electrical.plan.read`, auch bei abgeschlossenen und archivierten
+Projekten; `404` bei fremdem Mandanten oder unbekanntem Gebäude. Kein Event.
+
+*Frühere Planung (Phase 0):* `GET /projects/{id}/summary` und Polygonzug-Routen – durch die
+gebäudebezogenen Endpunkte aus 6b ersetzt.
 
 ---
 
@@ -1015,6 +1019,13 @@ ins Zielgeschoss (`leitung/Grundrissleitungen.tsx`, `leitung/grundriss.ts`, `lei
 3D zeigt gespeicherte Leitungen aus den Serverteilstrecken, an Geschossgrenzen gekappt und ausdrücklich
 fortgesetzt (`ansicht3d/leitungen3d.ts`); die Auswahl öffnet die passende Bearbeitungsfläche, die
 Rückkehr stellt Kamera und Auswahl her. Details: [`phase-6b-design.md`](../phase-6b-design.md) §20.
+
+### Mengenübersicht (Phase 6b.6) — umgesetzt, committet
+
+Ansicht „Mengen“ im Tab „Räume & Grundriss“ (`mengen/`): nur Anzeige des Serverergebnisses, keine
+eigene Berechnung. Aufschlüsselung bis zur Leitung, „Bearbeiten“ öffnet den Leitungsentwurf im
+Grundriss, „Zurück zur Mengenübersicht“ behält die aufgeklappten Gruppen. Ein offener Entwurf ist
+benannt und nicht enthalten. Details: [`phase-6b-design.md`](../phase-6b-design.md) §21.
 
 ### Wandzuordnung (Phase 6a) — umgesetzt
 

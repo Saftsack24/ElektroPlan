@@ -2,7 +2,7 @@
 
 Status: **accepted** (2026-10-11) – Gesamtentwurf (2. Fassung) vom Auftraggeber als
 Umsetzungsgrundlage freigegeben; D1, D2, D4, D5, D11 bestätigt, D6 und D7 auf seine Vorgabe
-geändert. Umsetzung schrittweise: **6b.0 und 6b.1 umgesetzt** (Checkpoint `541bae9` vom 2026-10-12), **6b.2 und 6b.3 technisch umgesetzt und geprüft** (reine Längenfunktion, Persistenz und API; Checkpoint `53fdc19` vom 2026-10-13; Entwurf §17/§18), **6b.4 technisch umgesetzt und funktional geprüft** (Leitungsplanung in Wand- und Deckenansicht; Checkpoint vom 2026-10-13; Entwurf §19), 6b.5–6b.6 offen.
+geändert. Umsetzung schrittweise: **6b.0 und 6b.1 umgesetzt** (Checkpoint `541bae9` vom 2026-10-12), **6b.2 und 6b.3 technisch umgesetzt und geprüft** (reine Längenfunktion, Persistenz und API; Checkpoint `53fdc19` vom 2026-10-13; Entwurf §17/§18), **6b.4 technisch umgesetzt und funktional geprüft** (Leitungsplanung in Wand- und Deckenansicht; Checkpoint vom 2026-10-13; Entwurf §19), **6b.5 und 6b.6 technisch umgesetzt und geprüft** (Checkpoint `62a1cc9` vom 2026-10-14 bzw. Checkpoint vom 2026-10-15; Entwurf §20/§21); manuelle Gesamtprüfung durch den Auftraggeber offen.
 Präzisierung 6b.1: Abzweigdosen sind einem Stromkreis zuordenbar (Verzweigungspunkt); das
 Lagegerät einer Verteilung und Datendosen nicht.
 Betrifft: Phase 6b
@@ -95,3 +95,12 @@ Keine neue fachliche Entscheidung; festgehalten, wie die Oberfläche die Entsche
 * Die **3D-Ansicht** zeigt ausschließlich den gespeicherten Stand aus den Teilstrecken des Servers,
   ohne eigene Verbindung von Läufen; Geschossgrenzen werden als ausdrückliche Fortsetzung gezeigt.
   Details: [`phase-6b-design.md`](../phase-6b-design.md) §20.
+
+## Ergänzung 2026-10-14 (Umsetzung 6b.6)
+
+* Die **Mengenübersicht** (`GET /buildings/{id}/cabling-summary`) bleibt eine Ableitung: dieselbe reine
+  Längenfunktion und Trassenableitung, nichts gespeichert, keine Materialbegriffe.
+* **Konsistente Auswertung:** Lesende Auswertungen über viele Tabellen eines Gebäudes nehmen eine geteilte
+  Projektsperre (`FOR SHARE`) über den generischen Core-Zugang `consistent_building_context`. Da jeder
+  Schreibvorgang das Projekt zuerst exklusiv sperrt, sieht eine Antwort genau einen Planungsstand. Keine
+  neue Infrastruktur, kein Fachwissen im Core. Details: [`phase-6b-design.md`](../phase-6b-design.md) §21.

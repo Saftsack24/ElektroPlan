@@ -5,7 +5,24 @@ Einträge entstehen nach relevanten Änderungen, nicht nach jedem Commit.
 
 ---
 
-## 2026-10-14 — Phase 6b.5: Leitungen im Grundriss, Steigwege, 3D (Checkpoint vom 2026-10-14)
+## 2026-10-14 — Phase 6b.6: Mengenübersicht (Checkpoint vom 2026-10-15)
+
+Keine Migration. Neuer Lese-Endpunkt `GET /api/v1/modules/electrical/buildings/{building_id}/cabling-summary`
+(API-Client neu erzeugt). Phase 6 technisch umgesetzt und geprüft; manuelle Gesamtprüfung ausstehend.
+
+### Added
+- Ansicht „Mengen“: Leitungsmengen nach tatsächlichen Kabelangaben (bestätigt, offen, Konflikt getrennt;
+  Weg und Zugaben getrennt), unvollständig angegebene Leitungen, Trassen- und Leitungsmeter je Fläche,
+  Durchführungen in Stück, Bodenübergänge als Nutzungen, Geräte je Stromkreis, nicht zugeordnete Geräte;
+  Aufschlüsselung bis zur Leitung, Bearbeiten im Grundriss und Rückkehr.
+- Core: geteilte Projektsperre für konsistente lesende Auswertungen (`consistent_building_context`).
+- Prüfliste für die manuelle Gesamtprüfung Phase 6 (`docs/phase-6-pruefliste.md`).
+
+### Fixed (Abnahme)
+- Gespeicherte Leitungen verdecken im Grundriss bei Raumbearbeitung keine Wände und Öffnungen mehr.
+- Ansichtsleiste bricht bei schmaler Breite um; Mengentabelle scrollt statt Wort für Wort umzubrechen.
+
+## 2026-10-14 — Phase 6b.5: Leitungen im Grundriss, Steigwege, 3D (Checkpoint `62a1cc9`)
 
 Keine Migration, keine API-Änderung, Backend unverändert. Funktional im Browser abgenommen (Entwurf §20.5).
 

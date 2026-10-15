@@ -76,6 +76,9 @@ Dokumentation und Oberfläche auf Deutsch, Code und API auf Englisch.
 | Planungskontext | – (Oberfläche) | Geschoss im 2D-Editor; hält höchstens einen aktiven Entwurf (Raum, Gerätezuordnung oder Leitung) – seit 6b.4; der Leitungsentwurf gehört seit 6b.5 zum Gebäude |
 | Arbeitsfläche | – (Oberfläche) | eine Wand- oder Deckenansicht im Planungskontext; ein Wechsel behält jeden Entwurf – seit 6b.4 |
 | Anschlusspunkt (Fang) | – (Oberfläche) | ausdrücklicher Fortsetzungspunkt am vorhandenen Leitungsweg: Ecke zur Nachbarwand, Übergang Wand – Decke – seit 6b.4 |
+| Mengenübersicht | `cabling-summary` (abgeleitet) | Mengen eines Gebäudes aus dem gespeicherten Stand: Gruppen nach tatsächlichen Kabelangaben, Trassen, Durchführungen, Bodenübergänge, Geräte – nie gespeichert, kein Material – seit 6b.6 |
+| Vorläufige Teilstrecke | – (abgeleitet) | gültige Teilstrecke einer offenen oder konflikthaften Leitung; zählt nur „mit vorläufigen Teilen“, nie in bestätigten Mengen – seit 6b.6 |
+| Nutzung (Bodenübergang) | – (abgeleitet) | ein Bodenübergang-Wegpunkt einer Leitung an einer Öffnung; keine Stückzahl eines Bauteils – seit 6b.6 |
 | Ebenenwahl | – (Oberfläche) | Wahl Fußboden / Wand / Decke für **neue** Wegpunkte im Grundriss; wandelt vorhandene Punkte nie um – seit 6b.5 |
 | Fortsetzung (Leitung) | – (Oberfläche, abgeleitet) | ausdrückliche Markierung, wo eine Leitung über einen Steigweg in ein anderes Geschoss weitergeht – im Grundriss am Halt, in 3D an der Geschossgrenze – seit 6b.5 |
 | Neue Durchführung | `new_penetrations` | Durchführung, die nur im Leitungsentwurf besteht und atomar mit der Leitung entsteht; Verwerfen hinterlässt nichts – seit 6b.5 |

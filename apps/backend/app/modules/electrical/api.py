@@ -28,11 +28,18 @@ from app.core.preconditions import require_if_match
 from app.core.projects.planning import FloorPlanningAccess
 from app.db.session import get_session
 from app.errors import ProblemDetail
+from app.modules.electrical.cable_rules import BuildingCableState
 from app.modules.electrical.cables import (
     CableService,
     CableView,
     CableWriteResult,
     PenetrationView,
+)
+from app.modules.electrical.cabling_summary import (
+    CableGroup,
+    CableLine,
+    CablingSummary,
+    StatusBucket,
 )
 from app.modules.electrical.distribution import (
     CircuitView,
@@ -60,6 +67,17 @@ from app.modules.electrical.schemas import (
     CableSegmentOut,
     CableWaypointKindValue,
     CableWaypointOut,
+    CablingBucketOut,
+    CablingCableOut,
+    CablingCircuitOut,
+    CablingCrossingOut,
+    CablingGroupOut,
+    CablingPenetrationOut,
+    CablingSummaryOut,
+    CablingSurfaceOut,
+    CablingSurfaceValue,
+    CablingTotalsOut,
+    CablingTypeCountOut,
     CircuitCreate,
     CircuitDevicesUpdate,
     CircuitListOut,
@@ -73,6 +91,7 @@ from app.modules.electrical.schemas import (
     DistributionBoardUpdate,
     FloorPlanOut,
     GeometryProblemOut,
+    MissingSpecValue,
     OpeningCreate,
     OpeningOut,
     OpeningUpdate,
@@ -1453,6 +1472,136 @@ def list_cables(
     """
     _, views = CableService(session, current_user.organization_id).overview(building_id)
     return CableListOut(building_id=building_id, cables=[_cable_out(view) for view in views])
+
+
+@router.get(
+    "/buildings/{building_id}/cabling-summary",
+    response_model=CablingSummaryOut,
+    operation_id="getElectricalCablingSummary",
+    summary="Mengenuebersicht der Leitungen eines Gebaeudes",
+    responses=_READ_RESPONSES,
+)
+def get_cabling_summary(
+    building_id: uuid.UUID,
+    current_user: CurrentUser = Depends(require_permission(PLAN_READ)),
+    session: Session = Depends(get_session),
+) -> CablingSummaryOut:
+    """Mengen nach den tatsaechlichen Kabelangaben, Trassen, Durchfuehrungen, Geraete.
+
+    Rein lesend und abgeleitet - nichts davon ist gespeichert; ein konsistenter Stand je
+    Antwort, auch fuer abgeschlossene und archivierte Projekte. Offene und konflikthafte
+    Leitungen stehen getrennt und nie in der bestaetigten Menge. Kein Material, keine
+    Preise, keine Bemessung oder Normaussage.
+    """
+    state, summary = CableService(session, current_user.organization_id).cabling_summary(
+        building_id
+    )
+    return _summary_out(state, summary)
+
+
+def _bucket_out(bucket: StatusBucket) -> CablingBucketOut:
+    return CablingBucketOut(
+        count=bucket.count,
+        geometric_mm=bucket.geometric_mm,
+        allowance_mm=bucket.allowance_mm,
+        total_mm=bucket.total_mm,
+        cable_ids=list(bucket.cable_ids),
+    )
+
+
+def _summary_cable_out(line: CableLine) -> CablingCableOut:
+    cable = line.cable
+    result = line.result
+    return CablingCableOut(
+        id=cable.id,
+        circuit_id=cable.circuit_id,
+        label=cable.label,
+        start_device_id=cable.start_device_id,
+        end_device_id=cable.end_device_id,
+        cable_type=cable.cable_type,
+        conductor_count=cable.conductor_count,
+        cross_section_mm2=cross_section_out(cable.cross_section_mm2),
+        missing_spec=[cast(MissingSpecValue, field) for field in line.missing],
+        status=result.status.value,
+        geometric_mm=result.geometric_mm,
+        allowance_mm=result.allowance_mm,
+        length_mm=result.length_mm,
+        known_mm=result.known_mm,
+        problem_codes=[problem.code for problem in result.problems],
+    )
+
+
+def _group_out(group: CableGroup) -> CablingGroupOut:
+    return CablingGroupOut(
+        cable_type=group.spec.cable_type,
+        conductor_count=group.spec.conductor_count,
+        cross_section_mm2=cross_section_out(group.spec.cross_section_mm2) or "",
+        confirmed=_bucket_out(group.confirmed),
+        incomplete=_bucket_out(group.incomplete),
+        conflict=_bucket_out(group.conflict),
+    )
+
+
+def _summary_out(state: BuildingCableState, summary: CablingSummary) -> CablingSummaryOut:
+    return CablingSummaryOut(
+        building_id=state.context.building_id,
+        building_name=state.context.building_name,
+        project_status=state.context.project_status,
+        groups=[_group_out(group) for group in summary.groups],
+        totals=CablingTotalsOut(
+            confirmed=_bucket_out(summary.totals.confirmed),
+            incomplete=_bucket_out(summary.totals.incomplete),
+            conflict=_bucket_out(summary.totals.conflict),
+        ),
+        unspecified=[_summary_cable_out(line) for line in summary.unspecified],
+        cables=[_summary_cable_out(line) for line in summary.cables],
+        surfaces=[
+            CablingSurfaceOut(
+                surface=cast(CablingSurfaceValue, item.surface),
+                confirmed_trace_mm=item.confirmed_trace_mm,
+                confirmed_cable_mm=item.confirmed_cable_mm,
+                all_trace_mm=item.all_trace_mm,
+                all_cable_mm=item.all_cable_mm,
+                confirmed_complete=item.confirmed_complete,
+                all_complete=item.all_complete,
+            )
+            for item in summary.surfaces
+        ],
+        penetrations=[
+            CablingPenetrationOut(
+                id=item.penetration_id,
+                used=len(item.cable_ids) > 0,
+                cable_ids=list(item.cable_ids),
+                problem_code=item.problem_code,
+            )
+            for item in summary.penetrations
+        ],
+        crossings=[
+            CablingCrossingOut(
+                opening_id=item.opening_id,
+                wall_id=item.wall_id,
+                cable_ids=list(item.cable_ids),
+                uses=item.uses,
+            )
+            for item in summary.crossings
+        ],
+        circuits=[
+            CablingCircuitOut(
+                circuit_id=item.circuit_id,
+                board_id=state.circuits[item.circuit_id].board_id,
+                designation=state.circuits[item.circuit_id].designation,
+                name=state.circuits[item.circuit_id].name,
+                by_type=[
+                    CablingTypeCountOut(type_key=t.type_key, label=t.label, count=t.count)
+                    for t in item.by_type
+                ],
+                device_ids=list(item.device_ids),
+                devices_without_cable=list(item.without_cable),
+            )
+            for item in summary.circuits
+        ],
+        unassigned_device_ids=list(summary.unassigned_device_ids),
+    )
 
 
 @router.post(

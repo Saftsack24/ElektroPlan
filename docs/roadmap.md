@@ -1,6 +1,6 @@
 # Roadmap
 
-Stand: 2026-10-04 (nach Task 0025 — Phase 5: Electrical Devices, abgeschlossen und committet)
+Stand: 2026-10-15 (Checkpoint 6b.6 – Phase 6 technisch umgesetzt und geprüft, manuelle Gesamtprüfung offen)
 Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 
 ---
@@ -30,8 +30,7 @@ Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 | 4e | Benutzerlebenszyklus, Kontosperren, Passwortzurücksetzung, serverseitige Einstellungen, Maßeinheit m | **DONE** (mit diesem Checkpoint committet) | 4d |
 | 4f | Wand- und Deckenansicht; `completed` schreibgeschützt; Prüfung der Geschoss-Standardhöhe | DONE | 4e |
 | 5 | Electrical Devices | **DONE** (vom Auftraggeber manuell abgenommen, committet) | 4a |
-| 6 | Circuits & Cable Routes | NOT STARTED | 5 |
-| 7 | Materials | NOT STARTED | 6 |
+| 6 | Circuits & Cable Routes | IN PROGRESS (technisch umgesetzt und geprüft; manuelle Gesamtprüfung durch den Auftraggeber ausstehend) | 5 |
 | 8 | Service Templates & Material Engine | NOT STARTED | 7 |
 | 9 | Calculation | NOT STARTED | 8 |
 | 10 | Offers | NOT STARTED | 9 |
@@ -437,7 +436,7 @@ Frontendtests bestanden. **Vom Auftraggeber manuell abgenommen und committet.**
 
 ---
 
-## Phase 6 — Circuits & Cable Routes · BEGONNEN (6a technisch umgesetzt, 6b NOT STARTED)
+## Phase 6 — Circuits & Cable Routes · TECHNISCH UMGESETZT UND GEPRÜFT – manuelle Gesamtprüfung durch den Auftraggeber ausstehend
 
 **Phase 6a** ([`docs/phase-6a-design.md`](phase-6a-design.md), ADR 0024/0025 accepted):
 
@@ -461,8 +460,11 @@ Manuelle Gesamtprüfung aller 6a-Schritte durch den Auftraggeber: nach Abschluss
 | 6b.2 | reine Längenfunktion + Fixture (Backend-Referenz, Frontend-Spiegel, Trassen) | **technisch umgesetzt und geprüft** (Checkpoint `53fdc19` vom 2026-10-13) |
 | 6b.3 | Leitungen, Wegpunkte, Durchführungen (Backend, Migration `0013`) | **technisch umgesetzt und geprüft** (Checkpoint `53fdc19` vom 2026-10-13; manuelle Gesamtprüfung offen) |
 | 6b.4 | Leitungen in Wand-/Deckenansicht | **technisch umgesetzt und funktional geprüft** (Checkpoint `0c07604` vom 2026-10-13; manuelle Gesamtprüfung offen) |
-| 6b.5 | Grundriss mit Fußboden, Bodenübergang, Steigweg, 3D | **technisch umgesetzt und funktional geprüft** (Tasks 0048/0049, Entwurf §20; Checkpoint vom 2026-10-14; manuelle Gesamtprüfung offen) |
-| 6b.6 | Mengenübersicht, Gesamtprüfung Phase 6 | NOT STARTED |
+| 6b.5 | Grundriss mit Fußboden, Bodenübergang, Steigweg, 3D | **technisch umgesetzt und funktional geprüft** (Tasks 0048/0049, Entwurf §20; Checkpoint `62a1cc9` vom 2026-10-14; manuelle Gesamtprüfung offen) |
+| 6b.6 | Mengenübersicht, technische Gesamtprüfung Phase 6 | **technisch umgesetzt und geprüft** (Checkpoint vom 2026-10-15; Task 0050, Entwurf §21; Prüfliste [`phase-6-pruefliste.md`](phase-6-pruefliste.md)) |
+
+**Phase 6 ist technisch umgesetzt und geprüft; die manuelle Gesamtprüfung durch den Auftraggeber steht
+aus.** Erst danach gilt die Phase als abgeschlossen.
 
 Verteilungen, Stromkreise, Zuordnung von Geräten, Leitungswege mit Installationszonen,
 Längenberechnung, Mengenübersicht.

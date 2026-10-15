@@ -568,6 +568,29 @@ class ProjectService:
             raise NotFoundError("Project wurde nicht gefunden.")
         return project
 
+    def lock_project_for_reading(self, project_id: uuid.UUID) -> Project:
+        """Geteilte Sperre auf die Projektzeile (``FOR SHARE``) - fuer einen konsistenten Lesestand.
+
+        Jeder Schreibvorgang unter einem Projekt sperrt zuerst dessen Zeile exklusiv
+        (:meth:`lock_project`). Ein Leser mit geteilter Sperre wartet deshalb, bis ein
+        laufender Schreibvorgang committet hat, und kein neuer kann committen, bevor
+        der Leser fertig ist: Alle folgenden Abfragen derselben Transaktion sehen
+        **einen** Planungsstand. Kein Schreibschutz - auch abgeschlossene und
+        archivierte Projekte bleiben lesbar. Fremd oder unbekannt: ``404``.
+        """
+        project = self.session.execute(
+            select(Project)
+            .where(
+                Project.organization_id == self.organization_id,
+                Project.id == project_id,
+            )
+            .with_for_update(read=True)
+            .execution_options(populate_existing=True)
+        ).scalar_one_or_none()
+        if project is None:
+            raise NotFoundError("Project wurde nicht gefunden.")
+        return project
+
     def require_writable_unlocked(self, project_id: uuid.UUID) -> Project:
         """Prueft den Schreibschutz **ohne** Sperre - nur als fruehe Absage.
 

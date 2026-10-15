@@ -231,6 +231,7 @@ def test_oeffentlicher_einstiegspunkt_exportiert_nur_den_descriptor() -> None:
         "cable_rules",
         "cable_traces",
         "cables",
+        "cabling_summary",
         "catalog",
         "device_rules",
         "devices",

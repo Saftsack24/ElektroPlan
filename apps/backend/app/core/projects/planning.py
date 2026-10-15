@@ -185,6 +185,21 @@ class FloorPlanningAccess:
             floors=floors,
         )
 
+    def consistent_building_context(self, building_id: uuid.UUID) -> BuildingPlanningContext:
+        """Wie :meth:`building_context`, haelt aber eine **geteilte** Projektsperre.
+
+        Fuer Auswertungen, die viele Tabellen eines Gebaeudes lesen und einen in sich
+        konsistenten Stand brauchen (etwa eine Mengenuebersicht): Bis zum Ende der
+        Transaktion committet kein Schreibvorgang unter diesem Projekt. Kein
+        Schreibschutz, keine Aenderung. Fremd oder unbekannt: ``404``.
+        """
+        building = self._projects.buildings.get_or_404(building_id)
+        self._projects.lock_project_for_reading(building.project_id)
+        self._projects.session.refresh(building)
+        for floor in self._projects.list_floors(building.id):
+            self._projects.session.refresh(floor)
+        return self.building_context(building_id)
+
     def writable_building_context(self, building_id: uuid.UUID) -> BuildingPlanningContext:
         """Wie :meth:`building_context`, **sperrt** aber zuerst die Projektzeile.
 

@@ -4,8 +4,9 @@
 D1, D2, D4, D5, D11 bestätigt · **6b.0 und 6b.1 umgesetzt** (technisch geprüft, Checkpoint `541bae9` vom 2026-10-12) ·
 **6b.2 und 6b.3 technisch umgesetzt und geprüft** (Checkpoint `53fdc19` vom 2026-10-13; manuelle Gesamtprüfung nach Phase 6
 offen) · **6b.4 technisch umgesetzt und funktional geprüft** (Checkpoint `0c07604` vom 2026-10-13) ·
-**6b.5 technisch umgesetzt und funktional geprüft** (Checkpoint vom 2026-10-14 inklusive Nachkorrekturen §20.7) ·
-6b.6 NOT STARTED · Umsetzungsstand: **§15–§20** (vor §14) · manuelle Gesamtprüfung nach Phase 6 offen
+**6b.5 technisch umgesetzt und funktional geprüft** (Checkpoint `62a1cc9` vom 2026-10-14 inklusive Nachkorrekturen §20.7) ·
+**6b.6 technisch umgesetzt und geprüft** (Checkpoint vom 2026-10-15, §21) · Umsetzungsstand: **§15–§21** (vor §14) ·
+**Phase 6 technisch umgesetzt und geprüft; manuelle Gesamtprüfung durch den Auftraggeber ausstehend**
 **Grundlage:** Checkpoint `686316c` (Phase 6a.0–6a.5, gepusht), [ADR 0024](decisions/0024-wall-links-physical-wall-assignment.md),
 [ADR 0025](decisions/0025-risers-between-floors.md), [`phase-6a-design.md`](phase-6a-design.md)
 **ADR:** [ADR 0026 – Stromkreise, Leitungen und Leitungswege](decisions/0026-circuits-cables-and-cable-paths.md) (**accepted**)
@@ -1213,7 +1214,7 @@ Geschoss – speichert und verwirft nie automatisch.
 ## 20. Umsetzungsstand 6b.5 (2026-10-14)
 
 **Status:** technisch umgesetzt, automatisiert und funktional im Browser geprüft; mit den Nachkorrekturen
-(§20.7) als Checkpoint vom 2026-10-14 committet; manuelle Gesamtprüfung nach Phase 6 offen; keine Produktions- oder Echtdatenfreigabe. Keine
+(§20.7) als Checkpoint `62a1cc9` vom 2026-10-14 committet; manuelle Gesamtprüfung nach Phase 6 offen; keine Produktions- oder Echtdatenfreigabe. Keine
 Backendänderung, keine Migration, keine API-Änderung (die API aus 6b.3 deckt Fußboden, Bodenübergang,
 Steigweg und `new_penetrations` bereits ab).
 
@@ -1400,6 +1401,127 @@ Deckenansicht aus 3D; dunkles Theme und Meter optisch; Mobilgerät mit echtem To
 * **C – Dokumentation** der Kamera-Rückkehr präzisiert (§20.5 Punkt 6).
 * **Prüfung vor dem Checkpoint:** Frontend 97 Dateien, 1 132 Tests grün; Typecheck, ESLint, Modulgrenzen, Build grün;
   Backend unverändert.
+
+## 21. Umsetzungsstand 6b.6 (2026-10-14)
+
+**Status:** technisch umgesetzt und geprüft (Gesamtlauf gegen PostgreSQL und MinIO, Abnahme im laufenden
+Stack), mit dem Checkpoint vom 2026-10-15 committet. Damit ist **Phase 6 technisch umgesetzt und geprüft; die manuelle
+Gesamtprüfung durch den Auftraggeber steht aus** (Prüfliste: [`phase-6-pruefliste.md`](phase-6-pruefliste.md)).
+Keine Migration; neuer Lese-Endpunkt; Material, Artikel, Preise und Kalkulation bleiben Phase 7+.
+
+### 21.1 Endpunkt und Architektur
+
+`GET /api/v1/modules/electrical/buildings/{building_id}/cabling-summary` (`getElectricalCablingSummary`,
+Recht `electrical.plan.read`). Aggregation in `electrical/cabling_summary.py` (rein) auf Basis des
+vorhandenen Ladezustands (`CableStateLoader`, feste Zahl gebündelter Abfragen – keine Kette je
+Leitung), der Ergebnisse von `analyse_cable` und der Trassen aus `derive_traces`. **Keine zweite
+Berechnung, nichts gespeichert.** Gerätezuordnungen in einer zusätzlichen Abfrage.
+
+**Ein konsistenter Stand je Antwort:** Die Abfrage nimmt zuerst eine **geteilte** Sperre auf die
+Projektzeile (`FOR SHARE`, neue generische Methode `FloorPlanningAccess.consistent_building_context` bzw.
+`ProjectService.lock_project_for_reading` im Core – ohne Electrical-Bezug). Jeder Schreibvorgang sperrt das
+Projekt zuerst exklusiv; ein laufender Schreibvorgang wird abgewartet, und bis zum Ende der Lesetransaktion
+kann keiner committen. Keine Seiteneffekte, kein Schreibschutz (abgeschlossene und archivierte Projekte
+bleiben lesbar). Fremder Mandant oder unbekanntes Gebäude: `404`.
+
+### 21.2 Zählweise (verbindlich)
+
+| Menge | Regel |
+|---|---|
+| Gruppen | nach den **tatsächlichen** Angaben der Leitung (`cable_type`, `conductor_count`, `cross_section_mm2` als `Decimal`: `1.5` = `1.50`); der Stromkreisvorschlag spielt keine Rolle |
+| Status je Gruppe | **bestätigt** (Anzahl, Weg, Zugaben, Summe = `length_mm`), **offen** und **Konflikt** (Anzahl, Weg, Zugaben, Teilsumme = `known_mm`) – getrennt, nie in die bestätigte Summe |
+| Zugaben | genau einmal je Leitung, getrennt vom Weg ausgewiesen; keine Trasse |
+| Unvollständig spezifiziert | Leitung mit fehlender Angabe – eigene Liste mit vorhandenen Angaben, fehlenden Feldern, Status und Länge; nie in einer Gruppe; Summen nur über vollständig angegebene Leitungen |
+| Trassen | `derive_traces` zweimal: nur bestätigte Leitungen („bestätigt“) und alle gültigen Teilstrecken aller Leitungen („mit vorläufigen Teilen“); gemeinsame Abschnitte einmal, Leitungsmeter je Leitung; Wand, Decke, Fußboden, Steigweg, Schachtfortsetzung getrennt; Steigweg mit unbestätigter Höhe nur bekannter Teil und ausdrücklich so gekennzeichnet |
+| Durchführungen | nach Identität (alle des Gebäudes), genutzt = von einem gespeicherten Wegpunkt referenziert, mit den nutzenden Leitungen; einmal gezählt |
+| Bodenübergänge | **Nutzungen** je Leitung und Öffnung (auch „Öffnung entfernt“); keine Stückzahl von Bauteilen |
+| Geräte | je Stromkreis und Typ (Stück); zugeordnet ohne Leitung = weder Start- noch Endgerät einer Leitung; nicht zugeordnet = nur zuordenbare Kategorien (keine Datendosen, kein Lagegerät einer Verteilung) – ohne Aussage über die elektrische Ausführung |
+
+### 21.3 Oberfläche
+
+Ansicht **„Mengen“** im Tab „Räume & Grundriss“ (gebäudebezogen, `mengen/Mengenuebersicht.tsx`):
+Bezug (Gebäude, gespeicherter Stand, Hinweis auf einen offenen Entwurf – er ist nicht enthalten und wird
+weder gespeichert noch verworfen), Leitungsmengen je Gruppe mit Summe, aufklappbar bis zur Leitung,
+„Unvollständig spezifiziert“ mit konkret fehlender Angabe, „Noch offen oder im Konflikt“ mit Befundtexten,
+Trassen- und Leitungsmeter je Fläche, Durchführungen (Stück) und Bodenübergänge (Nutzungen), Geräte je
+Stromkreis, nicht zugeordnete Geräte, Modellgrenzen. „Bearbeiten“ öffnet den Leitungsentwurf im Grundriss
+des Geschosses ihres ersten Laufs (Werkzeug „Leitung“); ein anderer offener Entwurf sperrt mit Grund.
+„Zurück zur Mengenübersicht“ behält die aufgeklappten Gruppen. Laden, Fehler („keine Mengen“, nie „0“)
+und leere Zustände getrennt; Abfrage `staleTime 0`, zusätzlich nach jedem Leitungsschreibvorgang
+invalidiert; sitzungsgebundener Query-Client. Einheiten: Längen in der persönlichen Einheit, Geräte und
+Durchführungen in Stück, Querschnitt in mm².
+
+### 21.4 Tests
+
+Backend (PostgreSQL): `test_electrical_cabling_summary.py` – Gruppen nach tatsächlichen Angaben inkl.
+`1.5`/`1.50`, unvollständig spezifiziert bei bestätigter Geometrie, offen und Konflikt außerhalb der
+bestätigten Summe, Zugaben einmal, bestätigte Unterbrechung (Tür entfernt) wechselt in den Konfliktbereich
+(3 600 mm Teilsumme), Änderung und Löschung einer Leitung, unveränderte Angaben nach Vorschlagsänderung,
+drei Leitungen mit 4 000 mm Trasse und 10 000 mm Leitungsmetern samt teilweiser Überdeckung, zweitem
+Stromkreis und getrennter Fußbodenfläche, gemeinsamer Steigweganteil einmal (1 450 / 2 900 mm), vorläufige
+Teilstrecken getrennt, genutzte/ungenutzte Durchführung, Bodenübergang als Nutzung, Geräte (nicht
+zugeordnet, ohne Leitung, Datendose), keine Seiteneffekte, abgeschlossenes Projekt lesbar, fehlende Rechte
+(`403`), unbekanntes Gebäude und fremder Betrieb (`404`). `test_cabling_summary_concurrency.py` – über
+`lock_timeout` deterministisch: Die Übersicht liest nie an einem laufenden Schreibvorgang vorbei und
+blockiert Schreibvorgänge bis zum Ende ihrer Transaktion. Frontend: `mengen/Mengenuebersicht.test.tsx`
+(Anzeige, Einheiten mm/cm/m, Laden/Fehler, Aufschlüsselung, Bearbeiten und Rückkehr, Entwurfsschutz,
+Sitzungswechsel), `Leitung3d.test.tsx` (Leitungstreffer bei Raumbearbeitung).
+
+Gesamtlauf `tasks.ps1 check` gegen PostgreSQL und MinIO grün: Ruff, Format, mypy `--strict`, Modulgrenzen (4/4), ein Alembic-Head (`0013`), Lockfile, **1 331 Backendtests**, API-Client aktuell, Frontend-Typecheck, ESLint, **1 140 Frontendtests** (98 Dateien), Build. Zwei Zwischenläufe waren rot, weil Bestandstests die Liste der Modulbestandteile bzw. der Ansichten festschreiben – beide Listen um `cabling_summary` bzw. „Mengen“ ergänzt, keine Prüfung abgeschwächt.
+
+Hinweis zum Beispiel §6.5: Die Tests bilden dessen Struktur (zwei Gruppen, abweichende Leiterzahl,
+fehlender Querschnitt, offene Leitung) mit eigenen, von Hand hergeleiteten Längen nach; die Längen aus
+§6.5 selbst sind illustrativ.
+
+### 21.5 Abnahme im laufenden Stack (2026-10-14)
+
+Docker Desktop nach einem Rechnerneustart regulär gestartet, Stack mit `docker compose up -d`; das
+Backend-Image regulär neu gebaut und nur der Backend-Container neu gestartet (keine Migration, keine
+Volumes oder Daten verändert); der Planner-Container nach Änderungen neu gestartet.
+
+**Funktional (bestanden), Prüfprojekt PR-2026-0010:**
+
+| Ablauf | Soll (von Hand) | Ist |
+|---|---|---|
+| NYM-J 3 × 1,5 bestätigt (L1 9 200, L2 5 200) | 14 400 mm, Weg 13 700 + Zugaben 700 | 1.440 cm, getrennt ausgewiesen |
+| NYM-J 3 × 1,5 offen (L4) | Teilsumme 2 100 (2 000 + 100) | 210 cm |
+| NYM-J 5 × 2,5 (L5 9 236, L6 12 036) | 21 272 mm | 2.127,2 cm |
+| unvollständig spezifiziert (L3) | 8 284 mm, Querschnitt fehlt | wie erwartet |
+| Steigweg-Trasse / -Leitungsmeter | 5 600 / 8 400 mm | 560 / 840 cm |
+| Fußboden-Trasse / -Leitungsmeter | 12 856 / 14 856 mm | 1.285,6 / 1.485,6 cm |
+| Durchführung, Bodenübergang, nicht zugeordnet | 1 Stück, 1 Nutzung, 1 Steckdose (keine Netzwerkdose) | wie erwartet |
+| L3 über „Bearbeiten“ ergänzt (Querschnitt 1,5), gespeichert | Gruppe 22 684 mm, unvollständig 0 | 2.268,4 cm, 0 |
+| Durchgang im Grundriss entfernt → Rückfrage nennt L3 → bestätigt | L3 Konflikt, Teilsumme 6 400; bestätigt wieder 14 400 | wie erwartet, Übergang „Öffnung entfernt“ |
+| Konflikt aus der Übersicht in der Bearbeitung geöffnet, zurück | Befund im Entwurf, Gruppe aufgeklappt | wie erwartet |
+| Neu laden und vergleichen | Summe 35 672 mm | 3.567,2 cm |
+
+**Optisch:** helles Theme bei 375 px (Kopf, umbrechende Ansichtsleiste, Mengentabelle scrollt im Rahmen),
+dunkles Theme (vorübergehend gesetztes Theme-Attribut, keine gespeicherte Einstellung) lesbar. Die Einheiten
+mm/m sind durch Komponententests belegt, nicht optisch im Browser.
+
+**Behobene Befunde der Abnahme:**
+
+1. Im Grundriss verdeckte die Trefferfläche gespeicherter Leitungen Wände und Öffnungen (Durchgang mit
+   Bodenübergang nicht wählbar) → bei Raumbearbeitung lassen Leitungen Klicks durch (Regressionstest).
+2. Die Ansichtsleiste brach mit der sechsten Ansicht bei schmaler Breite nicht um (Überbreite schon mit
+   „Stromkreise“) → umbrechend wie die übrigen Reiterleisten.
+3. Mengenzellen wurden schmal Wort für Wort umbrochen → Mindestbreite, die Tabelle scrollt im Rahmen.
+
+### 21.6 Prüfprojekt und Prüfliste
+
+**PR-2026-0010 „Gesamtprüfung Phase 6 (synthetisch)“** (Kunde „Synthetik Phase 6“): EG/OG/DG mit
+bestätigten Höhen; Diele mit Tür zur Küche (gemeinsame Bauwand) und Durchgang zum Bad; Flur OG, Studio DG;
+Steigweg S1 mit drei Halten; UV1, F1/F2; L1 (Durchführung), L2 (`1.50`), L3 (Bodenübergang am Durchgang,
+nach der Abnahme mit Querschnitt und im Konflikt), L4 (offen), L5 EG → OG, L6 EG → DG (Zwischenhalt
+durchfahren); eine nicht zugeordnete Steckdose, eine Netzwerkdose. Prüfliste für die manuelle
+Gesamtprüfung: [`phase-6-pruefliste.md`](phase-6-pruefliste.md).
+
+### 21.7 Grenzen
+
+* Keine Meter-Darstellung als `Decimal`-String und kein Export/Druck (Phase 7 bzw. nicht beauftragt).
+* Servermeldungen einzelner Befunde in Rückfragen enthalten Umschreibungen ohne Umlaute
+  („Bodenuebergang ohne Tuer …“) – vorhandener Stand aus 6b.3, nicht geändert.
+* Echte Touch-Bedienung nicht prüfbar.
 
 ## 14. Ausdrücklich nicht in 6b
 

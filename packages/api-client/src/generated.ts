@@ -1675,6 +1675,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/modules/electrical/buildings/{building_id}/cabling-summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Mengenuebersicht der Leitungen eines Gebaeudes
+         * @description Mengen nach den tatsaechlichen Kabelangaben, Trassen, Durchfuehrungen, Geraete.
+         *
+         *     Rein lesend und abgeleitet - nichts davon ist gespeichert; ein konsistenter Stand je
+         *     Antwort, auch fuer abgeschlossene und archivierte Projekte. Offene und konflikthafte
+         *     Leitungen stehen getrennt und nie in der bestaetigten Menge. Kein Material, keine
+         *     Preise, keine Bemessung oder Normaussage.
+         */
+        get: operations["getElectricalCablingSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/modules/electrical/circuits/{circuit_id}/cables": {
         parameters: {
             query?: never;
@@ -2203,6 +2228,233 @@ export interface components {
             to_stop_id?: string | null;
             /** To Height Mm */
             to_height_mm?: number | null;
+        };
+        /**
+         * CablingBucketOut
+         * @description Leitungen eines Status in einer Gruppe.
+         *
+         *     ``total_mm`` = ``geometric_mm`` + ``allowance_mm``: bei ``confirmed`` die Summe der
+         *     Leitungslaengen, sonst ausdruecklich die **Teilsumme** der bekannten Teile.
+         */
+        CablingBucketOut: {
+            /** Count */
+            count: number;
+            /** Geometric Mm */
+            geometric_mm: number;
+            /** Allowance Mm */
+            allowance_mm: number;
+            /** Total Mm */
+            total_mm: number;
+            /** Cable Ids */
+            cable_ids: string[];
+        };
+        /**
+         * CablingCableOut
+         * @description Eine Leitung als Bestandteil der Uebersicht - Aufschluesselung bis zur Leitung.
+         */
+        CablingCableOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Circuit Id
+             * Format: uuid
+             */
+            circuit_id: string;
+            /** Label */
+            label: string | null;
+            /** Start Device Id */
+            start_device_id: string | null;
+            /**
+             * End Device Id
+             * Format: uuid
+             */
+            end_device_id: string;
+            /** Cable Type */
+            cable_type: string | null;
+            /** Conductor Count */
+            conductor_count: number | null;
+            /** Cross Section Mm2 */
+            cross_section_mm2: string | null;
+            /** Missing Spec */
+            missing_spec: ("cable_type" | "conductor_count" | "cross_section_mm2")[];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "confirmed" | "incomplete" | "conflict";
+            /** Geometric Mm */
+            geometric_mm: number;
+            /** Allowance Mm */
+            allowance_mm: number;
+            /** Length Mm */
+            length_mm: number | null;
+            /** Known Mm */
+            known_mm: number;
+            /** Problem Codes */
+            problem_codes: string[];
+        };
+        /**
+         * CablingCircuitOut
+         * @description Geraete eines Stromkreises je Typ; zugeordnete Geraete ohne Leitung gesondert.
+         */
+        CablingCircuitOut: {
+            /**
+             * Circuit Id
+             * Format: uuid
+             */
+            circuit_id: string;
+            /**
+             * Board Id
+             * Format: uuid
+             */
+            board_id: string;
+            /** Designation */
+            designation: string;
+            /** Name */
+            name: string;
+            /** By Type */
+            by_type: components["schemas"]["CablingTypeCountOut"][];
+            /** Device Ids */
+            device_ids: string[];
+            /** Devices Without Cable */
+            devices_without_cable: string[];
+        };
+        /**
+         * CablingCrossingOut
+         * @description Bodenuebergang an einer Oeffnung: **Nutzungen** je Leitung, kein Bauteil.
+         *
+         *     ``opening_id = null``: die Oeffnung wurde entfernt (Leitung im Konflikt).
+         */
+        CablingCrossingOut: {
+            /** Opening Id */
+            opening_id: string | null;
+            /**
+             * Wall Id
+             * Format: uuid
+             */
+            wall_id: string;
+            /** Cable Ids */
+            cable_ids: string[];
+            /** Uses */
+            uses: number;
+        };
+        /**
+         * CablingGroupOut
+         * @description Gruppe gleicher **tatsaechlicher** Kabelangaben (nie der Stromkreisvorschlag).
+         */
+        CablingGroupOut: {
+            /** Cable Type */
+            cable_type: string;
+            /** Conductor Count */
+            conductor_count: number;
+            /** Cross Section Mm2 */
+            cross_section_mm2: string;
+            confirmed: components["schemas"]["CablingBucketOut"];
+            incomplete: components["schemas"]["CablingBucketOut"];
+            conflict: components["schemas"]["CablingBucketOut"];
+        };
+        /**
+         * CablingPenetrationOut
+         * @description Durchfuehrung nach Identitaet - einmal gezaehlt, egal wie viele Leitungen sie nutzen.
+         */
+        CablingPenetrationOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Used */
+            used: boolean;
+            /** Cable Ids */
+            cable_ids: string[];
+            /** Problem Code */
+            problem_code: string | null;
+        };
+        /**
+         * CablingSummaryOut
+         * @description Mengenuebersicht eines Gebaeudes aus dem **gespeicherten** Stand (Entwurf §6.5).
+         *
+         *     Abgeleitet bei jedem Lesen, nie gespeichert; ein konsistenter Planungsstand je
+         *     Antwort. Laengen in ganzen Millimetern; ``cross_section_mm2`` als Dezimalstring.
+         *     "Bestaetigt" heisst vollstaendig im Planungsmodell - keine Normpruefung, keine
+         *     Bemessung, keine Aussage ueber Ausfuehrbarkeit. Kein Material, keine Preise.
+         */
+        CablingSummaryOut: {
+            /**
+             * Building Id
+             * Format: uuid
+             */
+            building_id: string;
+            /** Building Name */
+            building_name: string;
+            /** Project Status */
+            project_status: string;
+            /** Groups */
+            groups: components["schemas"]["CablingGroupOut"][];
+            totals: components["schemas"]["CablingTotalsOut"];
+            /** Unspecified */
+            unspecified: components["schemas"]["CablingCableOut"][];
+            /** Cables */
+            cables: components["schemas"]["CablingCableOut"][];
+            /** Surfaces */
+            surfaces: components["schemas"]["CablingSurfaceOut"][];
+            /** Penetrations */
+            penetrations: components["schemas"]["CablingPenetrationOut"][];
+            /** Crossings */
+            crossings: components["schemas"]["CablingCrossingOut"][];
+            /** Circuits */
+            circuits: components["schemas"]["CablingCircuitOut"][];
+            /** Unassigned Device Ids */
+            unassigned_device_ids: string[];
+        };
+        /**
+         * CablingSurfaceOut
+         * @description Trassen- und Leitungsmeter einer Flaeche.
+         *
+         *     ``confirmed_*`` nur aus bestaetigten Leitungen; ``all_*`` aus allen gueltigen
+         *     Teilstrecken aller Leitungen (einschliesslich vorlaeufiger). Gemeinsam genutzte
+         *     Abschnitte zaehlen als Trasse einmal. ``*_complete = false``: mindestens ein
+         *     Steigweganteil mit unbekannter senkrechter Laenge - gezaehlt ist nur der bekannte Teil.
+         */
+        CablingSurfaceOut: {
+            /**
+             * Surface
+             * @enum {string}
+             */
+            surface: "wall" | "ceiling" | "floor" | "riser" | "shaft";
+            /** Confirmed Trace Mm */
+            confirmed_trace_mm: number;
+            /** Confirmed Cable Mm */
+            confirmed_cable_mm: number;
+            /** All Trace Mm */
+            all_trace_mm: number;
+            /** All Cable Mm */
+            all_cable_mm: number;
+            /** Confirmed Complete */
+            confirmed_complete: boolean;
+            /** All Complete */
+            all_complete: boolean;
+        };
+        /**
+         * CablingTotalsOut
+         * @description Summen ueber alle vollstaendig angegebenen Leitungen - je Status getrennt.
+         */
+        CablingTotalsOut: {
+            confirmed: components["schemas"]["CablingBucketOut"];
+            incomplete: components["schemas"]["CablingBucketOut"];
+            conflict: components["schemas"]["CablingBucketOut"];
+        };
+        /** CablingTypeCountOut */
+        CablingTypeCountOut: {
+            /** Type Key */
+            type_key: string;
+            /** Label */
+            label: string;
+            /** Count */
+            count: number;
         };
         /**
          * CircuitCreate
@@ -9477,6 +9729,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CableListOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    getElectricalCablingSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                building_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CablingSummaryOut"];
                 };
             };
             /** @description Nicht gefunden */

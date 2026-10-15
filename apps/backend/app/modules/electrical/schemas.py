@@ -1200,3 +1200,142 @@ class PenetrationUpdate(_Strict):
 
     _not_nullable = field_validator("offset_mm", "height_mm")(reject_explicit_null)
     _optional = field_validator("note")(_trimmed)
+
+
+# ------------------------------------------------------------------ Mengenuebersicht (6b.6)
+
+CablingSurfaceValue = Literal["wall", "ceiling", "floor", "riser", "shaft"]
+MissingSpecValue = Literal["cable_type", "conductor_count", "cross_section_mm2"]
+
+
+class CablingBucketOut(BaseModel):
+    """Leitungen eines Status in einer Gruppe.
+
+    ``total_mm`` = ``geometric_mm`` + ``allowance_mm``: bei ``confirmed`` die Summe der
+    Leitungslaengen, sonst ausdruecklich die **Teilsumme** der bekannten Teile.
+    """
+
+    count: int
+    geometric_mm: int
+    allowance_mm: int
+    total_mm: int
+    cable_ids: list[uuid.UUID]
+
+
+class CablingGroupOut(BaseModel):
+    """Gruppe gleicher **tatsaechlicher** Kabelangaben (nie der Stromkreisvorschlag)."""
+
+    cable_type: str
+    conductor_count: int
+    cross_section_mm2: str
+    confirmed: CablingBucketOut
+    incomplete: CablingBucketOut
+    conflict: CablingBucketOut
+
+
+class CablingTotalsOut(BaseModel):
+    """Summen ueber alle vollstaendig angegebenen Leitungen - je Status getrennt."""
+
+    confirmed: CablingBucketOut
+    incomplete: CablingBucketOut
+    conflict: CablingBucketOut
+
+
+class CablingCableOut(BaseModel):
+    """Eine Leitung als Bestandteil der Uebersicht - Aufschluesselung bis zur Leitung."""
+
+    id: uuid.UUID
+    circuit_id: uuid.UUID
+    label: str | None
+    start_device_id: uuid.UUID | None
+    end_device_id: uuid.UUID
+    cable_type: str | None
+    conductor_count: int | None
+    cross_section_mm2: str | None
+    missing_spec: list[MissingSpecValue]
+    status: CableStatusValue
+    geometric_mm: int
+    allowance_mm: int
+    length_mm: int | None
+    known_mm: int
+    problem_codes: list[str]
+
+
+class CablingSurfaceOut(BaseModel):
+    """Trassen- und Leitungsmeter einer Flaeche.
+
+    ``confirmed_*`` nur aus bestaetigten Leitungen; ``all_*`` aus allen gueltigen
+    Teilstrecken aller Leitungen (einschliesslich vorlaeufiger). Gemeinsam genutzte
+    Abschnitte zaehlen als Trasse einmal. ``*_complete = false``: mindestens ein
+    Steigweganteil mit unbekannter senkrechter Laenge - gezaehlt ist nur der bekannte Teil.
+    """
+
+    surface: CablingSurfaceValue
+    confirmed_trace_mm: int
+    confirmed_cable_mm: int
+    all_trace_mm: int
+    all_cable_mm: int
+    confirmed_complete: bool
+    all_complete: bool
+
+
+class CablingPenetrationOut(BaseModel):
+    """Durchfuehrung nach Identitaet - einmal gezaehlt, egal wie viele Leitungen sie nutzen."""
+
+    id: uuid.UUID
+    used: bool
+    cable_ids: list[uuid.UUID]
+    problem_code: str | None
+
+
+class CablingCrossingOut(BaseModel):
+    """Bodenuebergang an einer Oeffnung: **Nutzungen** je Leitung, kein Bauteil.
+
+    ``opening_id = null``: die Oeffnung wurde entfernt (Leitung im Konflikt).
+    """
+
+    opening_id: uuid.UUID | None
+    wall_id: uuid.UUID
+    cable_ids: list[uuid.UUID]
+    uses: int
+
+
+class CablingTypeCountOut(BaseModel):
+    type_key: str
+    label: str
+    count: int
+
+
+class CablingCircuitOut(BaseModel):
+    """Geraete eines Stromkreises je Typ; zugeordnete Geraete ohne Leitung gesondert."""
+
+    circuit_id: uuid.UUID
+    board_id: uuid.UUID
+    designation: str
+    name: str
+    by_type: list[CablingTypeCountOut]
+    device_ids: list[uuid.UUID]
+    devices_without_cable: list[uuid.UUID]
+
+
+class CablingSummaryOut(BaseModel):
+    """Mengenuebersicht eines Gebaeudes aus dem **gespeicherten** Stand (Entwurf §6.5).
+
+    Abgeleitet bei jedem Lesen, nie gespeichert; ein konsistenter Planungsstand je
+    Antwort. Laengen in ganzen Millimetern; ``cross_section_mm2`` als Dezimalstring.
+    "Bestaetigt" heisst vollstaendig im Planungsmodell - keine Normpruefung, keine
+    Bemessung, keine Aussage ueber Ausfuehrbarkeit. Kein Material, keine Preise.
+    """
+
+    building_id: uuid.UUID
+    building_name: str
+    project_status: str
+    groups: list[CablingGroupOut]
+    totals: CablingTotalsOut
+    unspecified: list[CablingCableOut]
+    cables: list[CablingCableOut]
+    surfaces: list[CablingSurfaceOut]
+    penetrations: list[CablingPenetrationOut]
+    crossings: list[CablingCrossingOut]
+    circuits: list[CablingCircuitOut]
+    unassigned_device_ids: list[uuid.UUID]

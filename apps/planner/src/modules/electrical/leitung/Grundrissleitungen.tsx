@@ -79,6 +79,7 @@ export function useGrundrissleitungen({
   fangAktiv,
   rasterMm,
   onStatus,
+  raumBearbeitung = false,
 }: {
   k: Leitungskontext | undefined;
   einstellung: Grundrisseinstellung | null;
@@ -87,6 +88,11 @@ export function useGrundrissleitungen({
   fangAktiv: boolean;
   rasterMm: number;
   onStatus: (text: string | null) => void;
+  /**
+   * Ein Raum ist in Bearbeitung: Gespeicherte Leitungen lassen Klicks durch - sonst verdeckte ihre
+   * Trefferfläche Wände und Öffnungen, etwa einen Durchgang mit Bodenübergang (Abnahme 6b.6).
+   */
+  raumBearbeitung?: boolean;
 }) {
   const masse = useMasse();
   const [kandidat, setKandidatState] = useState<Kandidat | null>(null);
@@ -671,7 +677,7 @@ export function useGrundrissleitungen({
         teile.push(
           <g key={`andere-${l.id}-${i}`} data-leitung={l.id} data-testid={`plan-leitung-${l.id}`}>
             <path d={d.join("")} className={`${klasse} leitung-plan--${s.flaeche}`} />
-            <path d={d.join("")} className="leitung-treffer">
+            <path d={d.join("")} className="leitung-treffer" style={raumBearbeitung ? { pointerEvents: "none" } : undefined}>
               <title>{`Leitung ${l.label ?? ""} – ${FLAECHE_TEXT[s.flaeche]} – ${STATUS_TEXT[l.status] ?? l.status}`}</title>
             </path>
           </g>,

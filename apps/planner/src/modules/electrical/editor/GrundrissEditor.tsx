@@ -180,6 +180,7 @@ function GrundrissEditorInhalt({
   onGeschrieben,
   onGeschossWechseln,
   rueckkehr3dAnbieten = false,
+  onZurueckZuMengen,
   planung,
 }: {
   floorId: string;
@@ -210,6 +211,8 @@ function GrundrissEditorInhalt({
   onGeschossWechseln?: ((floorId: string) => void) | undefined;
   /** Aus 3D geöffnet (6b.5): Rückweg zur 3D-Ansicht mit gemerkter Kamera anbieten. */
   rueckkehr3dAnbieten?: boolean;
+  /** Aus der Mengenübersicht geöffnet (6b.6): Rückweg dorthin - aufgeklappte Gruppen bleiben. */
+  onZurueckZuMengen?: (() => void) | undefined;
 }) {
   const { api } = useAuth();
   const queryClient = useQueryClient();
@@ -980,6 +983,7 @@ function GrundrissEditorInhalt({
     fangAktiv,
     rasterMm,
     onStatus: setHinweis,
+    raumBearbeitung: zustand.entwurf !== null,
   });
 
   /** Aus dem Grundriss zurück in den offenen Leitungsentwurf: an seinen letzten Punkt. */
@@ -1196,6 +1200,11 @@ function GrundrissEditorInhalt({
                 <button type="button" className={knopf("neutral", { klein: true })} onClick={leitungFortsetzen}>
                   Leitung weiter bearbeiten
                 </button>
+                {onZurueckZuMengen !== undefined && (
+                  <button type="button" className={knopf("neutral", { klein: true })} onClick={onZurueckZuMengen}>
+                    Zurück zur Mengenübersicht
+                  </button>
+                )}
                 {rueckkehr3dAnbieten && onZurueck3d !== undefined && (
                   <button type="button" className={knopf("neutral", { klein: true })} onClick={onZurueck3d}>
                     Zurück zur 3D-Ansicht

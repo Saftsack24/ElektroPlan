@@ -33,6 +33,7 @@ import { ZUORDNUNG_MELDUNG } from "./stromkreise/texte";
 import { BestaetigungAbgelehnt, bestaetigungsfeld, useLeitungsbestaetigung } from "./leitung/bestaetigung";
 import { leitungenSchluessel } from "./leitung/daten";
 import { LEITUNG_MELDUNG, LeitungsplanungProvider } from "./leitung/LeitungsplanungProvider";
+import { Mengenuebersicht } from "./mengen/Mengenuebersicht";
 import type { Leitungsplanung } from "./leitung/useLeitungsplanung";
 import type { Raumwerte } from "./RaumDialog";
 import { KONTURZUSTAND_LABEL, RAUMTYP_LABEL, flaecheAnzeigen, raumtypAusWert } from "./texte";
@@ -52,7 +53,7 @@ type Geschosswahl = {
   default_ceiling_height_mm: number;
 };
 
-type Ansicht = "editor" | "3d" | "tabelle" | "steigwege" | "stromkreise";
+type Ansicht = "editor" | "3d" | "tabelle" | "steigwege" | "stromkreise" | "mengen";
 
 const ANSICHTEN: readonly { wert: Ansicht; label: string }[] = [
   { wert: "editor", label: "2D-Editor" },
@@ -60,6 +61,7 @@ const ANSICHTEN: readonly { wert: Ansicht; label: string }[] = [
   { wert: "tabelle", label: "Tabellen & Details" },
   { wert: "steigwege", label: "Steigwege" },
   { wert: "stromkreise", label: "Stromkreise" },
+  { wert: "mengen", label: "Mengen" },
 ];
 
 /** Zuletzt gewählte Ansicht - eine reine Bequemlichkeit je Browser. */
@@ -93,7 +95,7 @@ function hatEntwurf(ansicht: Ansicht): boolean {
 
 /** Gebäudebezogene Ansichten: Ein Geschosswechsel im selben Gebäude behält ihren Entwurf. */
 function gebaeudebezogen(ansicht: Ansicht): boolean {
-  return ansicht === "steigwege" || ansicht === "stromkreise";
+  return ansicht === "steigwege" || ansicht === "stromkreise" || ansicht === "mengen";
 }
 
 /**
@@ -143,6 +145,9 @@ export default function RoomsTab() {
   const [rueckkehr3d, setRueckkehr3d] = useState<Rueckkehr3d | null>(null);
   // Aus 3D eine Leitung im Grundriss bearbeiten (6b.5): Rückweg mit Kamera anbieten.
   const [leitungAus3d, setLeitungAus3d] = useState(false);
+  // Mengenübersicht (6b.6): aufgeklappte Gruppen und Rückweg aus der Bearbeitung.
+  const [mengenOffen, setMengenOffen] = useState<readonly string[]>([]);
+  const [leitungAusMengen, setLeitungAusMengen] = useState(false);
   // Woher die Steigwegverwaltung geöffnet wurde - für „Zurück zu …".
   const [vorherigeAnsicht, setVorherigeAnsicht] = useState<Ansicht | null>(null);
   // Ungespeicherte Änderungen im Editor - für Geschoss- und Ansichtswechsel.
@@ -283,7 +288,10 @@ export default function RoomsTab() {
     // Ein gewöhnlicher Ansichtswechsel vergisst den gemerkten 3D-Stand; nur der
     // Weg Wandansicht hin und zurück stellt ihn wieder her.
     if (optionen.rueckkehr !== true) setRueckkehr3d(null);
-    if (neu !== "editor") setLeitungAus3d(false);
+    if (neu !== "editor") {
+      setLeitungAus3d(false);
+      setLeitungAusMengen(false);
+    }
     ansichtMerken(neu);
     setAnsicht(neu);
   };
@@ -497,7 +505,7 @@ export default function RoomsTab() {
           ))}
         </Auswahl>
 
-        <div className="my-2 flex gap-1 border-b border-line" role="group" aria-label="Ansicht">
+        <div className="my-2 flex flex-wrap gap-1 border-b border-line" role="group" aria-label="Ansicht">
           {ANSICHTEN.map(({ wert, label }) => (
             <button
               key={wert}
@@ -622,6 +630,7 @@ export default function RoomsTab() {
             }}
             onZurueck3d={() => void ansichtWechseln("3d", { rueckkehr: true })}
             rueckkehr3dAnbieten={leitungAus3d && rueckkehr3d !== null}
+            onZurueckZuMengen={leitungAusMengen ? () => void ansichtWechseln("mengen") : undefined}
             darfLeitungen={darfLeitungenGrundsaetzlich && !archiviert}
             darfStromkreise={darfStromkreiseGrundsaetzlich && !archiviert}
             onGeschrieben={projektAktualisieren}
@@ -699,6 +708,20 @@ export default function RoomsTab() {
             onGeschrieben={projektAktualisieren}
           />
         </section>
+      )}
+
+      {ansicht === "mengen" && aktivesGeschoss !== undefined && (
+        <Mengenuebersicht
+          key={aktivesGeschoss.building_id}
+          buildingId={aktivesGeschoss.building_id}
+          offen={mengenOffen}
+          onOffen={setMengenOffen}
+          onBearbeitungOeffnen={({ floorId }) => {
+            // Der Leitungsentwurf ist geöffnet (Provider); nur Geschoss und Ansicht wechseln.
+            if (floorId !== null && auswahl.some((e) => e.id === floorId && e.building_id === aktivesGeschoss.building_id)) setGeschossId(floorId);
+            void ansichtWechseln("editor").then(() => setLeitungAusMengen(true));
+          }}
+        />
       )}
 
       </LeitungsplanungProvider>

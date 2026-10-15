@@ -252,6 +252,13 @@ und danach auf eine Projektzeile wartet, existiert nicht; der Zyklus ist damit
 ausgeschlossen (Einzelheiten in `docs/database.md`, „Sperrreihenfolge und
 Nebenläufigkeit").
 
+**Konsistente lesende Auswertungen (Phase 6b.6).** Eine Auswertung, die viele Tabellen eines
+Projekts in einer Antwort zusammenfasst (Mengenübersicht), nimmt zuerst eine **geteilte** Sperre auf die
+Projektzeile (`SELECT … FOR SHARE`, `ProjectService.lock_project_for_reading`, für Fachmodule
+`FloorPlanningAccess.consistent_building_context`). Sie wartet einen laufenden Schreibvorgang ab und
+lässt bis zu ihrem Ende keinen committen – damit liest sie genau einen Stand. Sie prüft keinen
+Schreibschutz und schreibt nichts.
+
 **Verhalten bei gleichzeitiger Archivierung.** Es gibt genau zwei serialisierbare
 Ausgänge:
 

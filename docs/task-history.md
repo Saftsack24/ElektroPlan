@@ -3692,7 +3692,7 @@ Produktions- oder Echtdatenfreigabe.
 
 ## Task 0049 – Nachkorrekturen 6b.5 und Checkpoint
 
-**Datum:** 2026-10-14 · **Status:** als Checkpoint vom 2026-10-14 committet (kein Push); manuelle
+**Datum:** 2026-10-14 · **Status:** als Checkpoint `62a1cc9` vom 2026-10-14 committet (kein Push); manuelle
 Gesamtprüfung nach Phase 6 offen; keine Produktions- oder Echtdatenfreigabe.
 
 * **A:** Wand- und Deckenansicht übernehmen beim Loslassen den zuletzt gültigen Kandidaten aus einer Ref;
@@ -3703,3 +3703,22 @@ Gesamtprüfung nach Phase 6 offen; keine Produktions- oder Echtdatenfreigabe.
   der Komponententest ist kein vollständiger Regressionsnachweis.
 * **Docker:** nach einem Neustart des Rechners Docker Desktop regulär gestartet und den vorhandenen Stack
   mit `docker compose up -d` hochgefahren – keine Reparatur, keine Volumes oder Daten verändert.
+
+## Task 0050 – Phase 6b.6: Mengenübersicht und technische Gesamtprüfung Phase 6
+
+**Datum:** 2026-10-14 · **Status:** technisch umgesetzt und geprüft, mit dem Checkpoint vom 2026-10-15 committet, nicht gepusht;
+Phase 6 technisch umgesetzt und geprüft, **manuelle Gesamtprüfung durch den Auftraggeber ausstehend**;
+keine Produktions- oder Echtdatenfreigabe.
+
+* **Backend:** `cabling_summary.py` (reine Aggregation über `analyse_cable` und `derive_traces`),
+  `CableService.cabling_summary`, Endpunkt `GET /buildings/{id}/cabling-summary`, Schemas; Core:
+  `lock_project_for_reading`, `consistent_building_context` (geteilte Projektsperre). Keine Migration.
+* **Frontend:** Ansicht „Mengen“ (`mengen/`), Rückweg aus dem Grundriss, Invalidierung nach
+  Leitungsschreibvorgängen; API-Client neu erzeugt.
+* **Tests:** 10 + 2 neue Backendtests (inkl. deterministischer Konsistenztest), 7 Frontendtests,
+  Regressionstest Leitungstreffer. Gesamtlauf `tasks.ps1 check` gegen PostgreSQL und MinIO grün: Ruff, Format, mypy `--strict`, Modulgrenzen (4/4), ein Alembic-Head (`0013`), Lockfile, **1 331 Backendtests**, API-Client aktuell, Frontend-Typecheck, ESLint, **1 140 Frontendtests** (98 Dateien), Build. Zwei Zwischenläufe waren rot, weil Bestandstests die Liste der Modulbestandteile bzw. der Ansichten festschreiben – beide Listen um `cabling_summary` bzw. „Mengen“ ergänzt, keine Prüfung abgeschwächt.
+* **Abnahme:** PR-2026-0010 im laufenden Stack gegen von Hand hergeleitete Sollwerte; Änderung,
+  bestätigte Unterbrechung, Öffnen aus der Übersicht, Neuladen; drei Befunde behoben.
+* **Docker:** Docker Desktop regulär gestartet, `docker compose up -d`, Backend-Image regulär neu
+  gebaut, Container neu gestartet; keine Reparatur, keine Volumes oder Daten verändert.
+* **Prüfliste:** `docs/phase-6-pruefliste.md`.

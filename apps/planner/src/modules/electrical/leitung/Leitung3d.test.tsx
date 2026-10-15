@@ -111,4 +111,20 @@ describe("Leitung in 3D", () => {
     expect(api.post).not.toHaveBeenCalled();
     expect(api.put).not.toHaveBeenCalled();
   });
+
+  it("Grundriss: gespeicherte Leitungen verdecken bei Raumbearbeitung keine Wände und Öffnungen", async () => {
+    window.localStorage.setItem("elektroplan.electrical.ansicht", "editor");
+    zeigen();
+    await screen.findByRole("application", { name: /Grundriss/ });
+    // Je Teilstrecke eine Gruppe mit Trefferfläche.
+    const treffer = () => screen.getAllByTestId("plan-leitung-l1").map((g) => g.querySelector("path.leitung-treffer") as Element);
+    await screen.findAllByTestId("plan-leitung-l1");
+    // Ohne Raumbearbeitung ist die Leitung wählbar ...
+    for (const t of treffer()) expect(t).not.toHaveStyle({ pointerEvents: "none" });
+    fireEvent.click(await screen.findByRole("button", { name: /0.01 Diele/ }));
+    // ... während ein Raum bearbeitet wird, lässt sie Klicks zu Wand und Öffnung durch (Abnahme 6b.6).
+    await waitFor(() => {
+      for (const t of treffer()) expect(t).toHaveStyle({ pointerEvents: "none" });
+    });
+  });
 });
