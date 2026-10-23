@@ -34,6 +34,9 @@ Format: Context · Problem · Considered Options · Decision · Consequences
 | [0024](0024-wall-links-physical-wall-assignment.md) | Physische Wandzuordnung als Wandkopplung zweier Raumwände (T10), Zustände unentschieden/shared/separate, Geometrie bleibt abgeleitet; bewusst begrenztes Paarmodell | accepted (umgesetzt in 6a.1–6a.3) | 2026-10-06 |
 | [0025](0025-risers-between-floors.md) | Bestätigte Höhenlage im Core (6a.0); Steigwege mit definiertem Verlauf (T4, 6a.4–6a.5) | accepted (umgesetzt) | 2026-10-06 |
 | [0026](0026-circuits-cables-and-cable-paths.md) | Verteilungen, Stromkreise (Kabelangaben als Vorschlag), Leitungen mit eigenen Kabelangaben und Wegpunkten (Wand, Decke, Fußboden), abgeleitete Trassen, Durchführungen, Steigwegnutzung, Leitungslängen (Phase 6b) | accepted (6b.0–6b.6 technisch umgesetzt und geprüft; manuelle Gesamtprüfung offen) | 2026-10-11 |
+| [0027](0027-planning-defaults-cable-templates-and-reserve.md) | Planungsvorgaben (Betrieb, Projekt), Kabelvorlagen, Prioritätskette, prozentuale Leitungsreserve, zentrale Anwendung mit Vorschau; löst 0026 D5 ab (Phase 6c) | proposed | 2026-10-15 |
+| [0028](0028-distribution-board-placement-and-layout.md) | Atomare Platzierung des Lagegeräts einer Verteilung; Aufbau mit Reihen, Teilungseinheiten, Komponenten, Vorlagen und Hinweisregeln (Phase 6c) | proposed | 2026-10-15 |
+| [0029](0029-module-display-preference-flags.md) | Modulbezogene Ja/Nein-Anzeigeschalter in den persönlichen Einstellungen; erweitert 0021 (Phase 6c) | proposed | 2026-10-15 |
 
 ## Wann ein ADR nötig ist
 

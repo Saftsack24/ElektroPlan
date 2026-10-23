@@ -6,13 +6,13 @@ import { alsFormularfehler } from "../../../core/api/fehler";
 import { useAuth } from "../../../core/auth/AuthProvider";
 import { BEHALTEN_LABEL, VERWERFEN_LABEL, useRueckfrage, verwerfenOptionen } from "../../../core/ui/Rueckfrage";
 import { useUngespeicherteAenderungen } from "../../../core/ui/ungespeichert";
-import { KNOPFZEILE, knopf, meldungsflaeche } from "../../../core/ui/stil";
+import { knopf, meldungsflaeche } from "../../../core/ui/stil";
 import { planAbfrage, planSchluessel } from "../plan";
 import { RaumDialog } from "../RaumDialog";
 import { raumtypAusWert } from "../texte";
 import type { Raumwerte } from "../RaumDialog";
 import { Eigenschaften, flaecheText } from "./Eigenschaften";
-import type { EntwurfGeraet, EntwurfWand, Geschossplan, Oeffnungsart, RaumImPlan, Raumentwurf } from "./entwurf";
+import type { EntwurfGeraet, EntwurfWand, Geschossplan, RaumImPlan, Raumentwurf } from "./entwurf";
 import { alsKonturanfrage, basisAus, ende, geraetAus, neueId, segmenteAus, start, STANDARD_WANDSTAERKE_MM } from "./entwurf";
 import type { Geraetedarstellung } from "./Zeichenflaeche";
 import { geraetebefunde, punktImPolygon } from "../geraete/geraetepruefung";
@@ -33,6 +33,15 @@ import { fehlerAuswerten } from "./speichern";
 import type { Groesse, Viewport } from "./viewport";
 import { START_VIEWPORT, einpassen, grenzenVon, zoomen } from "./viewport";
 import { Werkzeugleiste } from "./Werkzeugleiste";
+import type { Wandwahl } from "./Werkzeugleiste";
+import { HilfeDialog } from "../arbeitsflaeche/Werkzeuggruppen";
+import { useAnsichtsgedaechtnis } from "../arbeitsflaeche/ansichtsgedaechtnis";
+import { knopftext, useKompakt } from "../arbeitsflaeche/kompakt";
+import { useStabil } from "../arbeitsflaeche/stabil";
+import { GrundrissLegende } from "../leitung/GrundrissLeitungsfeld";
+import { Planungsarbeitsflaeche, useArbeitsflaeche } from "../arbeitsflaeche/Planungsarbeitsflaeche";
+import type { Arbeitsflaechenzustand } from "../arbeitsflaeche/Planungsarbeitsflaeche";
+import { Entwurfsfehler, Raumrueckmeldung } from "../arbeitsflaeche/Kontextleiste";
 import { editorEinordnung, editorTopologie, raumwandUnterZeiger } from "./platzierung";
 import { kopplungenAus, kopplungenDerWaende } from "../kopplung/zuordnung";
 import {
@@ -181,6 +190,7 @@ function GrundrissEditorInhalt({
   onGeschossWechseln,
   rueckkehr3dAnbieten = false,
   onZurueckZuMengen,
+  arbeitsflaeche,
   planung,
 }: {
   floorId: string;
@@ -213,6 +223,11 @@ function GrundrissEditorInhalt({
   rueckkehr3dAnbieten?: boolean;
   /** Aus der Mengenübersicht geöffnet (6b.6): Rückweg dorthin - aufgeklappte Gruppen bleiben. */
   onZurueckZuMengen?: (() => void) | undefined;
+  /**
+   * Panel- und Maximierungszustand von außen (6c.0): Der Projekt-Tab hält ihn, damit er
+   * Geschoss- und Ansichtswechsel übersteht. Ohne Angabe hält der Editor ihn selbst.
+   */
+  arbeitsflaeche?: Arbeitsflaechenzustand | undefined;
 }) {
   const { api } = useAuth();
   const queryClient = useQueryClient();
@@ -222,10 +237,20 @@ function GrundrissEditorInhalt({
   const groesse = useRef<Groesse>({ breite: 900, hoehe: 560 });
   const [rasterMm, setRasterMm] = useState<number>(STANDARD_RASTER_MM);
   const [fangAktiv, setFangAktiv] = useState(true);
-  const [oeffnungsart, setOeffnungsart] = useState<Oeffnungsart>("door");
+  /** Was ein Klick auf eine Wand öffnet: Öffnungsart oder Gerätewerkzeug der Wandfläche (L1). */
+  const [wandwahl, setWandwahl] = useState<Wandwahl>("door");
+  /** Hilfe zur Fläche (Tastenkürzel, Legende) im Dialog statt unter der Zeichenfläche (L1). */
+  const [hilfe, setHilfe] = useState(false);
+  /** Viewport je besuchter Wand-/Deckenfläche – begrenzt, ohne eingehängte Flächen (L1). */
+  const flaechenansichten = useAnsichtsgedaechtnis();
+  const kompakt = useKompakt();
+  const kurz = (voll: string, knapp: string) => knopftext(kompakt, voll, knapp);
   const [neuerRaum, setNeuerRaum] = useState<readonly EntwurfWand[] | null>(null);
   const [raumdaten, setRaumdaten] = useState(false);
   const [hinweis, setHinweis] = useState<string | null>(null);
+  /** Panel und Maximierung - reine Ansicht (Phase 6c.0). */
+  const eigeneArbeitsflaeche = useArbeitsflaeche();
+  const af = arbeitsflaeche ?? eigeneArbeitsflaeche;
   // Wand- und Deckenansicht (Phase 4f): reine Sichten auf denselben Entwurf.
   const [wandansicht, setWandansicht] = useState<Wandziel | null>(null);
   // Woher die Wandansicht kam - bleibt über Seiten- und Wandwechsel erhalten.
@@ -1007,10 +1032,31 @@ function GrundrissEditorInhalt({
     else if (g?.wall_id != null) arbeitsflaecheWechseln({ art: "wand", raumId: start.raumId, wandId: g.wall_id });
   };
 
+  // --------------------------------------------------------------- Leitung hinzufügen (L1)
+
+  /**
+   * „Leitung hinzufügen“ oben in der Werkzeugleiste. **L1-Zwischenstand:** Mit offenem
+   * Leitungsentwurf wählt der Knopf das Werkzeug „Leitung“; ohne Entwurf öffnet er den
+   * **bestehenden** Einstieg – die Leitungsliste im Eigenschaftenpanel mit Stromkreiswahl
+   * und „Neue Leitung“. Der neue Zeichenablauf (Startgerät anklicken …) folgt mit L2.
+   */
+  const leitungHinzufuegenMoeglich = buildingId !== undefined && planung.darfLeitungen;
+  const leitungHinzufuegen = () => {
+    if (leitungAktiv) {
+      einstellung?.setWerkzeug("leitung");
+      return;
+    }
+    af.setEigenschaftenOffen(true);
+    // Nach dem Aufklappen: Fokus auf den Einstieg der Leitungsliste.
+    setTimeout(() => document.querySelector<HTMLElement>("[data-leitung-einstieg]")?.focus(), 0);
+  };
+
   // --------------------------------------------------------------- Tastatur
 
   const taste = (event: KeyboardEvent) => {
     if (document.querySelector("dialog[open]") !== null) return;
+    // Eine offene Wand- oder Deckenfläche führt ihre eigenen Tasten (L1: an Ort und Stelle statt Dialog).
+    if (wandansicht !== null || deckenansicht !== null) return;
     const strg = event.ctrlKey || event.metaKey;
     const k = event.key.toLowerCase();
     // Strg+S speichert auch aus einem Feld der Eigenschaften heraus - kein
@@ -1052,7 +1098,12 @@ function GrundrissEditorInhalt({
       case "Escape":
         if (zustand.ziehenAb !== null) dispatch({ typ: "ziehen-abbrechen" });
         else if (zustand.zeichnung.length > 0) dispatch({ typ: "zeichnung", punkte: [] });
-        else waehlen(null);
+        // Eine Wand, Ecke, Öffnung oder ein Gerät abwählen; die Raumauswahl eines offenen
+        // Entwurfs bleibt ohnehin bestehen.
+        else if (zustand.auswahl !== null && zustand.auswahl.art !== "raum") waehlen(null);
+        // Zuletzt: überlagerndes Eigenschaftenpanel, dann die Maximierung (Phase 6c.0) -
+        // erst danach wie bisher die Raumauswahl.
+        else if (!af.escape()) waehlen(null);
         return;
       case "Backspace":
       case "Delete":
@@ -1076,14 +1127,15 @@ function GrundrissEditorInhalt({
     const werkzeuge: Record<string, Werkzeug> = { v: "auswahl", h: "pan" };
     if (schreibbar) Object.assign(werkzeuge, { r: "rechteck", p: "polygon", o: "oeffnung" });
     // Tür (T), Fenster (N), Durchgang (D) - wie in der Wandansicht.
-    const arten: Record<string, Oeffnungsart> = { t: "door", n: "window", d: "passage" };
+    const arten: Record<string, Wandwahl> = { t: "door", n: "window", d: "passage", g: "geraet" };
     const w = werkzeuge[k];
     const art = schreibbar ? arten[k] : undefined;
     if (art !== undefined) {
-      setOeffnungsart(art);
+      setWandwahl(art);
       werkzeugWaehlen("oeffnung");
     } else if (w !== undefined) werkzeugWaehlen(w);
     else if (k === "f") einpassenAlle();
+    else if (k === "l" && leitungHinzufuegenMoeglich) leitungHinzufuegen();
   };
   const tastenRef = useRef(taste);
   useEffect(() => {
@@ -1101,6 +1153,16 @@ function GrundrissEditorInhalt({
 
   // ------------------------------------------------------------------ Ansicht
 
+  // Feste Rückrufe für die gemerkte Werkzeugleiste: Sie zeichnet nur bei sichtbaren
+  // Änderungen neu, nicht bei jeder Zeigerbewegung (L1).
+  const stabilWerkzeug = useStabil(werkzeugWaehlen);
+  const stabilRueckgaengig = useStabil(() => (leitungAktiv ? planung.dispatch({ typ: "rueckgaengig" }) : dispatch({ typ: "rueckgaengig" })));
+  const stabilWiederholen = useStabil(() => (leitungAktiv ? planung.dispatch({ typ: "wiederholen" }) : dispatch({ typ: "wiederholen" })));
+  const stabilZoom = useStabil(zoom);
+  const stabilEinpassen = useStabil(einpassenAlle);
+  const stabilHilfe = useStabil(() => setHilfe(true));
+  const stabilLeitung = useStabil(leitungHinzufuegen);
+
   if (plan.isPending) return <p className="text-muted">Grundriss wird geladen ...</p>;
   if (plan.isError) {
     return (
@@ -1114,8 +1176,11 @@ function GrundrissEditorInhalt({
   const aktiverName = zustand.basis?.raum.name;
 
   // Nur ein Leitungsfeld zugleich: Offene Wand- oder Deckenansichten führen ihr eigenes.
-  const leitungsfeld = wandansicht !== null || deckenansicht !== null ? null : (
-    <div className="flex flex-col gap-2" data-testid="grundriss-leitungen">
+  // Die Werkzeuge des Zeichnens (Ebene, Höhe, Steigwegwahl) stehen in der Kontextleiste,
+  // Liste und Angaben im Eigenschaftenpanel (Phase 6c.0).
+  const eigeneLeitungsflaeche = wandansicht === null && deckenansicht === null;
+  const leitungswerkzeuge = !eigeneLeitungsflaeche ? null : (
+    <div className="flex flex-col gap-2" data-testid="grundriss-leitungswerkzeuge">
       {einstellung !== null && <GrundrissLeitungsleiste k={leitungskontext} einstellung={einstellung} floorId={floorId} />}
       {gl.steigwahl !== null && (
         <Steigwegwahl
@@ -1126,6 +1191,10 @@ function GrundrissEditorInhalt({
           onGeschossWechseln={onGeschossWechseln}
         />
       )}
+    </div>
+  );
+  const leitungsfeld = !eigeneLeitungsflaeche ? null : (
+    <div className="flex flex-col gap-2" data-testid="grundriss-leitungen">
       <Leitungsbereich
         k={leitungskontext}
         flaeche={{ art: "grundriss", floorId }}
@@ -1139,103 +1208,186 @@ function GrundrissEditorInhalt({
 
   return (
     <div className="flex flex-col gap-2.5">
-      <Werkzeugleiste
-        werkzeug={zustand.werkzeug}
-        onWerkzeug={werkzeugWaehlen}
-        oeffnungsart={oeffnungsart}
-        onOeffnungsart={setOeffnungsart}
-        rasterMm={rasterMm}
-        onRaster={setRasterMm}
-        fangAktiv={fangAktiv}
-        onFang={setFangAktiv}
-        kannRueckgaengig={zustand.zurueck.length > 0}
-        kannWiederholen={zustand.vor.length > 0}
-        onRueckgaengig={() => dispatch({ typ: "rueckgaengig" })}
-        onWiederholen={() => dispatch({ typ: "wiederholen" })}
-        onZoom={zoom}
-        onEinpassen={einpassenAlle}
-        darfSchreiben={schreibbar}
-      />
-
-      <div className="flex min-h-10 flex-wrap items-center justify-between gap-3" role="status" aria-live="polite">
-        <span className={`font-semibold ${STATUS_FARBE[status]}`}>
-          {leitungAktiv || zuordnungAktiv
-            ? "Raumbearbeitung ruht, solange ein Leitungsentwurf oder eine Gerätezuordnung offen ist"
-            : !schreibbar
-            ? "Nur Ansicht - Bearbeiten ist hier nicht möglich"
-            : aktiverName === undefined
-              ? "Kein Raum in Bearbeitung"
-              : `${aktiverName}: ${STATUS_TEXT[status]}`}
-        </span>
-        {/* Immer vorhanden, nur deaktiviert: Die Leiste behält ihre Höhe, und
-            die Zeichenfläche springt beim Aktivieren eines Raums nicht. */}
-        {schreibbar && (
-          <span className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              className={knopf("primaer")}
-              disabled={!offen || status === "speichert"}
-              onClick={() => void speichern()}
-              title="Speichern (Strg+S)"
-            >
-              Speichern
-            </button>
-            <button type="button" className={knopf()} disabled={!offen || status === "speichert"} onClick={() => void verwerfen()}>
-              Änderungen verwerfen
-            </button>
-          </span>
-        )}
-      </div>
-
-      {(leitungAktiv || zuordnungAktiv) && (
-        <div className={`${meldungsflaeche("schlicht")} flex flex-wrap items-center justify-between gap-2`} role="status" data-testid="entwurf-offen">
-          <span>
-            {leitungAktiv
-              ? `Leitungsentwurf offen${planung.ungespeichert ? " – ungespeichert" : ""}. Geplant wird hier im Grundriss (Werkzeug „Leitung“) und in der Wand- und Deckenansicht.`
-              : `Gerätezuordnung offen${zuordnung.offen ? " – ungespeichert" : ""}. Zugeordnet wird in der Wand- und Deckenansicht.`}
-          </span>
-          <span className="flex flex-wrap gap-2">
-            {leitungAktiv && (
-              <>
-                <button type="button" className={knopf("neutral", { klein: true })} onClick={leitungFortsetzen}>
-                  Leitung weiter bearbeiten
+      {/* Während eine Wand- oder Deckenfläche offen ist, ist der Grundriss ausgehängt (L1): keine
+          versteckte Zeichenfläche, keine doppelten Tasten. Viewport und Größe hält der Editor. */}
+      {wandansicht === null && deckenansicht === null && (
+      <Planungsarbeitsflaeche
+        zustand={af}
+        name="Grundriss-Arbeitsfläche"
+        markierung={leitungAktiv ? "Leitung" : zuordnungAktiv ? "Zuordnung" : null}
+        kopf={
+          <div className="flex min-h-8 flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            {/* Schmal steht das Geschoss schon in der Ansichtszeile darüber – die Überschrift bleibt für Screenreader. */}
+            <h2 className={kompakt ? "sr-only" : "m-0 text-small font-semibold"}>
+              Grundriss <span className="font-normal text-muted">· {geschossLabel}</span>
+            </h2>
+            <span className={`text-small font-semibold ${STATUS_FARBE[status]}`} role="status" aria-live="polite">
+              {leitungAktiv || zuordnungAktiv
+                ? "Raumbearbeitung ruht"
+                : !schreibbar
+                ? "Nur Ansicht"
+                : aktiverName === undefined
+                  ? "Kein Raum in Bearbeitung"
+                  : `${aktiverName}: ${STATUS_TEXT[status]}`}
+            </span>
+            {/* Immer vorhanden, nur deaktiviert: Die Leiste behält ihre Höhe, und
+                die Zeichenfläche springt beim Aktivieren eines Raums nicht. */}
+            {schreibbar && (
+              <span className="ml-auto flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className={knopf("primaer", { klein: true })}
+                  disabled={!offen || status === "speichert"}
+                  onClick={() => void speichern()}
+                  title="Speichern (Strg+S)"
+                >
+                  Speichern
                 </button>
-                {onZurueckZuMengen !== undefined && (
-                  <button type="button" className={knopf("neutral", { klein: true })} onClick={onZurueckZuMengen}>
-                    Zurück zur Mengenübersicht
-                  </button>
-                )}
-                {rueckkehr3dAnbieten && onZurueck3d !== undefined && (
-                  <button type="button" className={knopf("neutral", { klein: true })} onClick={onZurueck3d}>
-                    Zurück zur 3D-Ansicht
-                  </button>
-                )}
-                <button type="button" className={knopf("primaer", { klein: true })} disabled={!planung.ungespeichert} onClick={() => void planung.speichern()}>
-                  Leitung speichern
+                <button
+                  type="button"
+                  className={knopf("neutral", { klein: true })}
+                  disabled={!offen || status === "speichert"}
+                  onClick={() => void verwerfen()}
+                  aria-label={kompakt ? "Änderungen verwerfen" : undefined}
+                >
+                  {kompakt ? "Verwerfen" : "Änderungen verwerfen"}
                 </button>
-                <button type="button" className={knopf("neutral", { klein: true })} onClick={() => void leitungSchliessen()}>
-                  Entwurf schließen
-                </button>
-              </>
+              </span>
             )}
-            {zuordnungAktiv && (
-              <>
-                <button type="button" className={knopf("primaer", { klein: true })} disabled={!zuordnung.offen} onClick={() => void zuordnung.speichern()}>
-                  Zuordnung speichern
-                </button>
-                <button type="button" className={knopf("neutral", { klein: true })} onClick={() => void zuordnungSchliessen()}>
-                  Zuordnung schließen
-                </button>
-              </>
-            )}
-          </span>
-        </div>
-      )}
+          </div>
 
-      <div className="grid grid-cols-1 gap-3 split:grid-cols-[minmax(0,1fr)_300px]">
+        }
+        werkzeuge={
+          <Werkzeugleiste
+            werkzeug={zustand.werkzeug}
+            onWerkzeug={stabilWerkzeug}
+            wandwahl={wandwahl}
+            onWandwahl={setWandwahl}
+            rasterMm={rasterMm}
+            onRaster={setRasterMm}
+            fangAktiv={fangAktiv}
+            onFang={setFangAktiv}
+            kannRueckgaengig={leitungAktiv ? (planung.entwurf?.zurueck.length ?? 0) > 0 : zustand.zurueck.length > 0}
+            kannWiederholen={leitungAktiv ? (planung.entwurf?.vor.length ?? 0) > 0 : zustand.vor.length > 0}
+            onRueckgaengig={stabilRueckgaengig}
+            onWiederholen={stabilWiederholen}
+            rueckgaengigBezug={leitungAktiv ? "im Leitungsentwurf" : undefined}
+            onZoom={stabilZoom}
+            onEinpassen={stabilEinpassen}
+            onHilfe={stabilHilfe}
+            leitungVorhanden={leitungHinzufuegenMoeglich}
+            leitungAktiv={leitungAktiv && einstellung?.werkzeug === "leitung"}
+            onLeitungHinzufuegen={stabilLeitung}
+            darfSchreiben={schreibbar}
+          />
+
+        }
+        kontext={
+          <div className="flex flex-col gap-2">
+            {/* Rückmeldungen des Servers stehen unter der Zeichenfläche an der Aktion:
+                Die Fläche bleibt an ihrem Platz, und das eingeklappte Panel verdeckt nichts. */}
+            <Raumrueckmeldung
+              fehler={zustand.serverFehler}
+              konflikt={status === "konflikt"}
+              onSchliessen={() => dispatch({ typ: "hinweis-schliessen" })}
+              onServerstand={() => void serverstandBestaetigen()}
+            />
+            {(leitungAktiv || zuordnungAktiv) && (
+              <div className={`${meldungsflaeche("schlicht")} flex flex-wrap items-center justify-between gap-2`} role="status" data-testid="entwurf-offen">
+                <span>
+                  {leitungAktiv
+                    ? `Leitungsentwurf offen${planung.ungespeichert ? " – ungespeichert" : ""}`
+                    : `Gerätezuordnung offen${zuordnung.offen ? " – ungespeichert" : ""}`}
+                </span>
+                <span className="flex flex-wrap gap-2">
+                  {!af.eigenschaftenOffen && (
+                    <button
+                      type="button"
+                      className={knopf("neutral", { klein: true })}
+                      onClick={() => af.setEigenschaftenOffen(true)}
+                      {...kurz(leitungAktiv ? "Angaben und Wegpunkte" : "Zugeordnete Geräte", leitungAktiv ? "Angaben" : "Geräte")}
+                    />
+                  )}
+                  {leitungAktiv && (
+                    <>
+                      <button type="button" className={knopf("neutral", { klein: true })} onClick={leitungFortsetzen} {...kurz("Leitung weiter bearbeiten", "Weiter")} />
+                      {onZurueckZuMengen !== undefined && (
+                        <button type="button" className={knopf("neutral", { klein: true })} onClick={onZurueckZuMengen}>
+                          Zurück zur Mengenübersicht
+                        </button>
+                      )}
+                      {rueckkehr3dAnbieten && onZurueck3d !== undefined && (
+                        <button type="button" className={knopf("neutral", { klein: true })} onClick={onZurueck3d}>
+                          Zurück zur 3D-Ansicht
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className={knopf("primaer", { klein: true })}
+                        disabled={!planung.ungespeichert}
+                        onClick={() => void planung.speichern()}
+                        {...kurz("Leitung speichern", "Speichern")}
+                      />
+                      <button type="button" className={knopf("neutral", { klein: true })} onClick={() => void leitungSchliessen()} {...kurz("Entwurf schließen", "Schließen")} />
+                    </>
+                  )}
+                  {zuordnungAktiv && (
+                    <>
+                      <button
+                        type="button"
+                        className={knopf("primaer", { klein: true })}
+                        disabled={!zuordnung.offen}
+                        onClick={() => void zuordnung.speichern()}
+                        {...kurz("Zuordnung speichern", "Speichern")}
+                      />
+                      <button type="button" className={knopf("neutral", { klein: true })} onClick={() => void zuordnungSchliessen()} {...kurz("Zuordnung schließen", "Schließen")} />
+                    </>
+                  )}
+                </span>
+                {buildingId !== undefined && !af.eigenschaftenOffen && (
+                  <Entwurfsfehler k={leitungskontext} onDetails={() => af.setEigenschaftenOffen(true)} />
+                )}
+              </div>
+            )}
+            {buildingId !== undefined && leitungswerkzeuge}
+          </div>
+        }
+        eigenschaften={
+          <div className="flex flex-col gap-2">
+            {buildingId !== undefined && leitungAktiv && leitungsfeld}
+            <Eigenschaften
+              zustand={zustand}
+              raeume={raeume}
+              darfSchreiben={schreibbar}
+              onAendern={aendern}
+              onWaehlen={waehlen}
+              onRaumBearbeiten={() => setRaumdaten(true)}
+              onWandansicht={(wandId, oeffnungId) => {
+                if (zustand.entwurf !== null) {
+                  void wandansichtOeffnen({ raumId: zustand.entwurf.roomId, wandId, ...(oeffnungId !== undefined ? { oeffnungId } : {}) });
+                }
+              }}
+              onDeckenansicht={() => {
+                if (zustand.entwurf !== null) void deckenansichtOeffnen({ raumId: zustand.entwurf.roomId });
+              }}
+              neueId={neueId}
+              einordnung={einordnung}
+              topologie={topologie}
+              raumName={raumName}
+              typen={typen}
+              geraetebefunde={geraeteBefunde}
+              kopplungen={planKopplungen}
+              kandidaten={planKandidaten}
+              onGeraetBearbeiten={(geraetId) => {
+                if (zustand.entwurf !== null) geraetBearbeiten(zustand.entwurf.roomId, geraetId);
+              }}
+            />
+            {buildingId !== undefined && !leitungAktiv && leitungsfeld}
+          </div>
+        }
+      >
         {/* Hinweise liegen über der Zeichenfläche statt darüber: Die Fläche
             darf nicht springen, während jemand zeichnet. */}
-        <div className="relative min-w-0">
         {hinweis !== null && (
           // Klicks gehen durch den Hinweis hindurch auf die Zeichenfläche - nur
           // das Schließen-Kreuz fängt sie ab. Sonst verdeckte er den oberen Zeichenrand.
@@ -1262,6 +1414,7 @@ function GrundrissEditorInhalt({
           viewport={viewport}
           setViewport={setViewport}
           onGroesse={groesseMerken}
+          anfangsGroesse={groesse.current}
           darfSchreiben={schreibbar}
           rasterMm={rasterMm}
           fangAktiv={fangAktiv}
@@ -1270,10 +1423,10 @@ function GrundrissEditorInhalt({
           onWaehlen={waehlen}
           onPolygonFertig={polygonFertig}
           onRechteckFertig={rechteckFertig}
-          onWandFuerOeffnung={(raumId, wandId) => void wandansichtOeffnen({ raumId, wandId, werkzeug: oeffnungsart })}
+          onWandFuerOeffnung={(raumId, wandId) => void wandansichtOeffnen({ raumId, wandId, werkzeug: wandwahl })}
           onOeffnungBearbeiten={(raumId, wandId, oeffnungId) => void wandansichtOeffnen({ raumId, wandId, oeffnungId })}
           onHinweis={setHinweis}
-          oeffnungsart={oeffnungsart}
+          oeffnungsart={wandwahl}
           geschossLabel={geschossLabel}
           topologie={topologie}
           einordnung={einordnung}
@@ -1282,82 +1435,26 @@ function GrundrissEditorInhalt({
           onGeraetBearbeiten={geraetBearbeiten}
           zusatz={buildingId !== undefined ? gl.zusatz : undefined}
         />
-        </div>
-        {/* Rückmeldungen des Servers stehen in der Seitenleiste: Die
-            Zeichenfläche bleibt an ihrem Platz, während korrigiert wird. */}
-        <div className="flex min-w-0 flex-col gap-2">
-        {zustand.serverFehler !== null && (
-          <div className={`${meldungsflaeche()} text-[0.88rem]`} role="alert">
-            <p>{zustand.serverFehler.meldung}</p>
-            {zustand.serverFehler.eintraege.length > 0 && (
-              <ul className="my-1 pl-[18px]">
-                {zustand.serverFehler.eintraege.map((e, i) => (
-                  <li key={`${e.code}-${i}`}>{e.meldung}</li>
-                ))}
-              </ul>
-            )}
-            <div className={KNOPFZEILE}>
-              {status === "konflikt" && (
-                <button
-                  type="button"
-                  className={knopf()}
-                  onClick={() => void serverstandBestaetigen()}
-                >
-                  Serverstand laden (lokale Änderungen verwerfen)
-                </button>
-              )}
-              <button type="button" className={knopf()} onClick={() => dispatch({ typ: "hinweis-schliessen" })}>
-                {status === "konflikt" ? "Entwurf vorerst behalten" : "Hinweis schließen"}
-              </button>
-            </div>
-          </div>
-        )}
-        {buildingId !== undefined && leitungAktiv && leitungsfeld}
-        <Eigenschaften
-          zustand={zustand}
-          raeume={raeume}
-          darfSchreiben={schreibbar}
-          onAendern={aendern}
-          onWaehlen={waehlen}
-          onRaumBearbeiten={() => setRaumdaten(true)}
-          onWandansicht={(wandId, oeffnungId) => {
-            if (zustand.entwurf !== null) {
-              void wandansichtOeffnen({ raumId: zustand.entwurf.roomId, wandId, ...(oeffnungId !== undefined ? { oeffnungId } : {}) });
-            }
-          }}
-          onDeckenansicht={() => {
-            if (zustand.entwurf !== null) void deckenansichtOeffnen({ raumId: zustand.entwurf.roomId });
-          }}
-          neueId={neueId}
-          einordnung={einordnung}
-          topologie={topologie}
-          raumName={raumName}
-          typen={typen}
-          geraetebefunde={geraeteBefunde}
-          kopplungen={planKopplungen}
-          kandidaten={planKandidaten}
-          onGeraetBearbeiten={(geraetId) => {
-            if (zustand.entwurf !== null) geraetBearbeiten(zustand.entwurf.roomId, geraetId);
-          }}
-        />
-        {buildingId !== undefined && !leitungAktiv && leitungsfeld}
-        </div>
-      </div>
+      </Planungsarbeitsflaeche>
+      )}
 
-      <details className="text-[0.88rem] text-muted">
-        <summary className="cursor-pointer">Bedienung und Tastenkürzel</summary>
-        <ul>
+      <HilfeDialog offen={hilfe} titel="Grundriss – Bedienung und Tastenkürzel" onClose={() => setHilfe(false)}>
+        <ul className="pl-[18px]">
           <li>Rechteckraum (R): erste Ecke klicken, gegenüberliegende Ecke klicken, Namen vergeben.</li>
           <li>Polygonraum (P): Punkte nacheinander klicken; Klick auf den Startpunkt, Doppelklick oder Enter schließt. Rücktaste oder Strg+Z entfernt den letzten Punkt, Escape bricht ab.</li>
-          <li>Tür (T), Fenster (N), Durchgang (D): Wand anklicken – ihre Wandansicht öffnet sich mit diesem Werkzeug, gesetzt wird dort. Der Klick im Grundriss legt noch keine Öffnung an. Bei einer gemeinsamen Wand zählt die Raumseite, auf die geklickt wurde. Eine vorhandene Öffnung mit dem Werkzeug anklicken oder doppelklicken: Sie wird in der Wandansicht bearbeitet. Im Auswahlwerkzeug lässt sie sich weiterhin entlang ihrer Wand ziehen.</li>
+          <li>Tür (T), Fenster (N), Durchgang (D), Gerät (G): Wand anklicken – ihre Wandfläche öffnet sich mit diesem Werkzeug, gesetzt wird dort. Der Klick im Grundriss legt noch keine Öffnung an. Bei einer gemeinsamen Wand zählt die Raumseite, auf die geklickt wurde. Eine vorhandene Öffnung mit dem Werkzeug anklicken oder doppelklicken: Sie wird in der Wandansicht bearbeitet. Im Auswahlwerkzeug lässt sie sich weiterhin entlang ihrer Wand ziehen.</li>
           <li>Eine Öffnung auf einer gemeinsamen Wand wird nur einmal gespeichert und gilt für beide Räume; im Nachbarraum erscheint sie gestrichelt als abgeleitete Darstellung.</li>
           <li>Geräte (Steckdosen, Schalter, Leuchten, Netzwerkdosen) werden in der Wandansicht (innen oder außen) bzw. in der Deckenansicht gesetzt und verschoben. Im Grundriss erscheinen sie als Symbol auf ihrer Montageseite; Klick wählt, Doppelklick öffnet die passende Ansicht.</li>
           <li>Eckpunkt ziehen verschiebt beide angrenzenden Wände. Alt beim Ziehen setzt den Fang aus.</li>
           <li>Mausrad zoomt um den Zeiger, mittlere Maustaste oder H verschiebt die Ansicht, F setzt die Ansicht zurück (ganzer Grundriss).</li>
           <li>Strg+Z / Strg+Y (oder Strg+Umschalt+Z): Rückgängig / Wiederholen · Strg+S: Speichern · Entf: Auswahl entfernen.</li>
+          <li>E: Eigenschaften ein- und ausklappen · M: Zeichenfläche maximieren bzw. zurück zur normalen Ansicht. Escape schließt zuletzt ein überlagerndes Eigenschaftenpanel und beendet dann die Maximierung. Zoom, Ausschnitt, Auswahl und Entwürfe bleiben dabei erhalten.</li>
           <li>Änderungen bleiben lokal, bis „Speichern“ gedrückt wird. Die Ansicht „Tabellen &amp; Details“ bietet dieselben Daten als Formular.</li>
+          <li>„Leitung hinzufügen“ (L): öffnet zurzeit die Leitungsliste in den Eigenschaften (Stromkreis wählen, „Neue Leitung“). Der neue Zeichenablauf ohne diese Vorauswahl folgt in einem späteren Schritt.</li>
         </ul>
-      </details>
+        <li className="list-none">Werkzeugleiste: Auswahl · Raum · Öffnung · Gerät · Leitung · Rückgängig/Wiederholen · Zoom · „Ansicht“ (Fang, Raster, diese Hilfe).</li>
+        <GrundrissLegende />
+      </HilfeDialog>
 
       {wandansicht !== null && (
         <Wandansicht
@@ -1389,10 +1486,14 @@ function GrundrissEditorInhalt({
           geraeteVon={geraeteVon}
           geraetebefunde={geraeteBefunde}
           leitungen={buildingId !== undefined ? leitungskontext : undefined}
+          arbeitsflaeche={af}
+          ansichten={flaechenansichten}
+          geschossLabel={geschossLabel}
         />
       )}
       {deckenansicht !== null && (
         <Deckenansicht
+          key={deckenansicht.raumId}
           raumId={deckenansicht.raumId}
           raumName={raumName(deckenansicht.raumId)}
           walls={waendeVon(deckenansicht.raumId)}
@@ -1423,6 +1524,10 @@ function GrundrissEditorInhalt({
           onVerwerfen={() => void verwerfen()}
           startGeraetId={deckenansicht.geraetId ?? null}
           leitungen={buildingId !== undefined ? leitungskontext : undefined}
+          arbeitsflaeche={af}
+          ansichten={flaechenansichten}
+          geschossLabel={geschossLabel}
+          zurueckZu3d={herkunft.current === "3d"}
         />
       )}
       {neuerRaum !== null && (

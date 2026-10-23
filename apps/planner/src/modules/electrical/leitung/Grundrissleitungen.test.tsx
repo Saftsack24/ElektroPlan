@@ -6,6 +6,7 @@ import { masseinheitSetzen } from "../../../core/ui/masseinheit";
 import { RueckfrageProvider } from "../../../core/ui/Rueckfrage";
 import { rechteck } from "../ansicht3d/testplan";
 import { GESCHOSS, KOPPLUNG, TYPEN, VERTEILUNG, leitung, stromkreis } from "./testdaten";
+import { eigenschaftenOeffnen } from "../arbeitsflaeche/testhilfe";
 
 /**
  * Leitung im Grundriss (Phase 6b.5) über den echten Editor - ersetzt werden nur
@@ -102,6 +103,8 @@ const hoehe = (wert: string) => fireEvent.change(within(leiste()).getByLabelText
 async function neueLeitung() {
   zeigen();
   await screen.findByRole("application", { name: /Grundriss/ });
+  // Die Leitungsliste steht im Eigenschaftenpanel (6c.0).
+  await eigenschaftenOeffnen();
   const feld = await screen.findByTestId("grundriss-leitungen");
   fireEvent.click(await within(feld).findByRole("button", { name: "Neue Leitung" }));
   await screen.findByRole("region", { name: "Leitung im Grundriss" });

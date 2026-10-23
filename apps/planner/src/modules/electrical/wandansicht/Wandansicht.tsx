@@ -1,9 +1,11 @@
+import type { LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, KeyboardEvent } from "react";
 
-import { Dialog } from "../../../core/ui/Dialog";
+import { AKTION } from "../../../core/ui/aktionssymbole";
+import { MitSymbol, Symbol } from "../../../core/ui/Symbol";
 import { useMasse } from "../../../core/ui/masseinheit";
-import { KNOPF_GRUND, eingabefeld, knopf, meldungsflaeche } from "../../../core/ui/stil";
+import { knopf, meldungsflaeche } from "../../../core/ui/stil";
 import type { EntwurfGeraet, EntwurfWand, Oeffnungsart, RaumImPlan } from "../editor/entwurf";
 import { geraetAendern, geraetEntfernen } from "../geraete/geraeteentwurf";
 import type { Geraetetypen } from "../geraete/katalog";
@@ -11,11 +13,9 @@ import { typenFuer } from "../geraete/katalog";
 import { Geraetelegende } from "../geraete/symbole";
 import { GeraetEigenschaften, TypAuswahl } from "./GeraetEigenschaften";
 import { flaecheDerSeite, geraeteInAnsicht, geraetLagePruefen } from "./wandgeraete";
-import { RASTERGROESSEN_MM } from "../editor/fang";
 import type { EditorEinordnung, EditorTopologie } from "../editor/platzierung";
 import { oeffnungAendern, oeffnungEntfernen } from "../editor/werkzeuge";
 import type { Aktion, EditorZustand } from "../editor/zustand";
-import { ANSICHT_ZURUECKSETZEN } from "../texte";
 import type { Gegenseite } from "./WandEigenschaften";
 import { WandEigenschaften } from "./WandEigenschaften";
 import type { Ansichtsrechteck } from "./wandbezug";
@@ -29,31 +29,38 @@ import { WandZeichenflaeche } from "./WandZeichenflaeche";
 import type { Leitungskontext } from "../leitung/kontext";
 import { Leitungsbereich } from "../leitung/Leitungsbereich";
 import { useWandleitungen } from "../leitung/Wandleitungen";
+import { Planungsarbeitsflaeche } from "../arbeitsflaeche/Planungsarbeitsflaeche";
+import type { Arbeitsflaechenzustand } from "../arbeitsflaeche/Planungsarbeitsflaeche";
+import { AnsichtMenue, HilfeDialog, LeitungHinzufuegenKnopf, Werkzeuggruppe, Werkzeugknopf, Werkzeugwahl, Zoomgruppe } from "../arbeitsflaeche/Werkzeuggruppen";
+import { useKompakt } from "../arbeitsflaeche/kompakt";
+import { WERKZEUGSYMBOL } from "../arbeitsflaeche/werkzeugsymbole";
+import type { Ansichtsgedaechtnis } from "../arbeitsflaeche/ansichtsgedaechtnis";
+import { wandSchluessel } from "../arbeitsflaeche/ansichtsgedaechtnis";
+import { useStabil } from "../arbeitsflaeche/stabil";
+import { Entwurfsleiste, Raumrueckmeldung, RueckgaengigKnoepfe } from "../arbeitsflaeche/Kontextleiste";
 
-const WERKZEUG = `${KNOPF_GRUND} border-control bg-surface px-2.5 py-[5px] text-fg disabled:cursor-not-allowed disabled:opacity-45`;
-const WERKZEUG_AKTIV = `${KNOPF_GRUND} border-accent bg-accent px-2.5 py-[5px] text-on-accent`;
 
-const WERKZEUGE: readonly { wert: Wandwerkzeug; label: string; taste: string; schreibend: boolean }[] = [
-  { wert: "auswahl", label: "Auswählen", taste: "V", schreibend: false },
-  { wert: "pan", label: "Ansicht verschieben", taste: "H", schreibend: false },
-  { wert: "door", label: "Tür", taste: "T", schreibend: true },
-  { wert: "window", label: "Fenster", taste: "N", schreibend: true },
-  { wert: "passage", label: "Durchgang", taste: "D", schreibend: true },
-  { wert: "geraet", label: "Gerät", taste: "G", schreibend: true },
+const WERKZEUGE: readonly { wert: Wandwerkzeug; label: string; taste: string; schreibend: boolean; icon: LucideIcon }[] = [
+  { wert: "auswahl", label: "Auswählen", taste: "V", schreibend: false, icon: WERKZEUGSYMBOL.auswaehlen },
+  { wert: "pan", label: "Ansicht verschieben", taste: "H", schreibend: false, icon: WERKZEUGSYMBOL.verschieben },
+  { wert: "door", label: "Tür", taste: "T", schreibend: true, icon: WERKZEUGSYMBOL.tuer },
+  { wert: "window", label: "Fenster", taste: "N", schreibend: true, icon: WERKZEUGSYMBOL.fenster },
+  { wert: "passage", label: "Durchgang", taste: "D", schreibend: true, icon: WERKZEUGSYMBOL.durchgang },
+  { wert: "geraet", label: "Gerät", taste: "G", schreibend: true, icon: WERKZEUGSYMBOL.geraet },
 ];
 
 /** Werkzeuge der Leitungsplanung (6b.4) - nur mit offenem Leitungs- bzw. Zuordnungsentwurf. */
-const LEITUNGSWERKZEUGE: readonly { wert: Wandwerkzeug; label: string; taste: string }[] = [
-  { wert: "leitung", label: "Leitung", taste: "L" },
-  { wert: "durchfuehrung", label: "Durchführung", taste: "U" },
-  { wert: "zuordnen", label: "Zuordnen", taste: "Z" },
+const LEITUNGSWERKZEUGE: readonly { wert: Wandwerkzeug; label: string; taste: string; icon: LucideIcon }[] = [
+  { wert: "leitung", label: "Leitung", taste: "L", icon: WERKZEUGSYMBOL.leitung },
+  { wert: "durchfuehrung", label: "Durchführung", taste: "U", icon: WERKZEUGSYMBOL.durchfuehrung },
+  { wert: "zuordnen", label: "Zuordnen", taste: "Z", icon: WERKZEUGSYMBOL.zuordnen },
 ];
 
 export interface Wandziel {
   readonly raumId: string;
   readonly wandId: string;
-  /** Beim Öffnen aktives Platzierungswerkzeug (Einstieg über Tür/Fenster/Durchgang). */
-  readonly werkzeug?: Oeffnungsart;
+  /** Beim Öffnen aktives Platzierungswerkzeug (Einstieg über Tür/Fenster/Durchgang oder Gerät). */
+  readonly werkzeug?: Oeffnungsart | "geraet";
   /** Beim Öffnen ausgewählte Öffnung (Einstieg über eine vorhandene Öffnung). */
   readonly oeffnungId?: string;
   /** Beim Öffnen ausgewähltes Gerät (Phase 5, etwa „An Wand bearbeiten“ aus 3D). */
@@ -102,6 +109,9 @@ export function Wandansicht({
   geraeteVon = () => [],
   geraetebefunde = new Map(),
   leitungen,
+  arbeitsflaeche,
+  ansichten,
+  geschossLabel,
 }: {
   ziel: Wandziel;
   zustand: EditorZustand;
@@ -134,9 +144,24 @@ export function Wandansicht({
   geraetebefunde?: ReadonlyMap<string, readonly string[]>;
   /** Phase 6b.4: Leitungsplanung und Gerätezuordnung des Planungskontexts. */
   leitungen?: Leitungskontext | undefined;
+  /** L1: Panel und Maximierung gehören der ganzen Planungsarbeitsfläche (geteilt mit dem Grundriss). */
+  arbeitsflaeche: Arbeitsflaechenzustand;
+  /** L1: Viewport je besuchter Fläche – beim Zurückkehren kein Einpassen. */
+  ansichten?: Ansichtsgedaechtnis;
+  /** Geschoss für den Pfad „Grundriss › Raum › Wand“. */
+  geschossLabel?: string;
 }) {
   const masse = useMasse();
   const [werkzeug, setWerkzeug] = useState<Wandwerkzeug>(ziel.werkzeug ?? "auswahl");
+  /** Panel und Maximierung – reine Ansicht (Phase 6c.0). */
+  const af = arbeitsflaeche;
+  const [hilfe, setHilfe] = useState(false);
+  // Beim Öffnen (und Wandwechsel) liegt der Fokus in der Fläche: Tasten wirken sofort.
+  useEffect(() => {
+    flaechenRef.current?.focus({ preventScroll: true });
+  }, [ziel.wandId, ziel.seite]);
+  const flaechenRef = useRef<HTMLElement>(null);
+  const kompakt = useKompakt();
   const [statuszeile, setStatuszeile] = useState("Eine Öffnung anklicken oder ein Werkzeug wählen.");
   const flaeche = useRef<ZeichenflaecheGriff>(null);
 
@@ -412,7 +437,8 @@ export function Wandansicht({
       waehlen(null);
       return true;
     }
-    return false;
+    // Zuletzt: überlagerndes Eigenschaftenpanel, dann die Maximierung (Phase 6c.0).
+    return af.escape();
   };
 
   const titel = `Wandansicht · Wand ${ergebnis.ok ? ergebnis.bezug.wandNummer : ""} · ${raumName(ziel.raumId)}${
@@ -425,178 +451,213 @@ export function Wandansicht({
   const gewaehlteOeffnung = gewaehltesGeraet === undefined ? gewaehlt : null;
   const seiteWechseln = () => onWechseln({ raumId: ziel.raumId, wandId: ziel.wandId, seite: seite === "innen" ? "aussen" : "innen", ...(ziel.herkunft !== undefined ? { herkunft: ziel.herkunft } : {}), ...(gewaehlteOeffnung !== null ? { oeffnungId: gewaehlteOeffnung } : {}) });
 
-  return (
-    <Dialog offen titel={titel} groesse="gross" onClose={onSchliessen} onEscape={escape}>
-      <div className="flex flex-col gap-2 split:h-full split:min-h-0" onKeyDown={taste}>
-        <div className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-2" role="status" aria-live="polite">
-          <span className="flex flex-wrap items-center gap-x-3">
-            <strong data-testid="wandseite">{seitenname}</strong>
-            <span className="text-muted">
-              {seite === "innen" ? `Blick aus Raum „${raumName(ziel.raumId)}“` : "Blick von außen auf die Wand"}
-              {ergebnis.ok ? ` · im Grundriss ${ergebnis.bezug.blick}` : ""}
-            </span>
-            {ergebnis.ok && (
-              <button type="button" className={knopf("neutral", { klein: true })} onClick={seiteWechseln}>
-                {seite === "innen" ? "Außenseite ansehen" : "Innenseite ansehen"}
-              </button>
+  const zurueckText = ziel.herkunft === "3d" ? "Zurück zur 3D-Ansicht" : "Zurück zum Grundriss";
+  const kopfzeile = (
+    <div className="flex min-h-8 shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
+      <h2 className="sr-only">{titel}</h2>
+      <nav className="flex flex-wrap items-center gap-1.5 text-small" aria-label="Pfad">
+        {/* Schmal nur das Symbol – Name und Hinweis bleiben („Zurück zum Grundriss“, Escape). */}
+        <button
+          type="button"
+          className={knopf("neutral", { klein: true })}
+          onClick={onSchliessen}
+          title={`${zurueckText} (Escape)`}
+          aria-label={kompakt ? zurueckText : undefined}
+        >
+          {kompakt ? <Symbol icon={AKTION.zurueck} /> : <MitSymbol icon={AKTION.zurueck}>{zurueckText}</MitSymbol>}
+        </button>
+        <span className="text-muted">{ziel.herkunft === "3d" ? "3D-Ansicht" : `Grundriss${geschossLabel !== undefined && !kompakt ? ` · ${geschossLabel}` : ""}`}</span>
+        <Symbol icon={AKTION.pfadTrenner} />
+        <span className="text-muted">{raumName(ziel.raumId)}</span>
+        <Symbol icon={AKTION.pfadTrenner} />
+        <span className="font-semibold" aria-current="page">
+          Wand {ergebnis.ok ? ergebnis.bezug.wandNummer : ""}
+        </span>
+      </nav>
+      <span className="flex flex-wrap items-center gap-x-3" role="status" aria-live="polite">
+        <strong data-testid="wandseite">{seitenname}</strong>
+        <span className={kompakt ? "sr-only" : "text-muted"}>
+          {seite === "innen" ? `Blick aus Raum „${raumName(ziel.raumId)}“` : "Blick von außen auf die Wand"}
+          {ergebnis.ok ? ` · im Grundriss ${ergebnis.bezug.blick}` : ""}
+        </span>
+        {ergebnis.ok && (
+          <button
+            type="button"
+            className={knopf("neutral", { klein: true })}
+            onClick={seiteWechseln}
+            aria-label={kompakt ? (seite === "innen" ? "Außenseite ansehen" : "Innenseite ansehen") : undefined}
+          >
+            {seite === "innen" ? (kompakt ? "Außenseite" : "Außenseite ansehen") : kompakt ? "Innenseite" : "Innenseite ansehen"}
+          </button>
+        )}
+        <span className={`text-small font-semibold ${status.farbe}`}>
+          {leitungsentwurf !== null
+            ? `Leitungsentwurf: ${leitungen?.planung.ungespeichert === true ? "ungespeichert" : "gespeichert"}`
+            : zuordnungsentwurf !== null
+              ? `Gerätezuordnung: ${leitungen?.zuordnung.offen === true ? "ungespeichert" : "gespeichert"}`
+              : editierbar
+                ? status.text
+                : "Nur Ansicht"}
+        </span>
+      </span>
+      {darfSchreiben && aktiverRaum !== null && (
+        <span className="flex flex-wrap gap-2">
+          <button type="button" className={knopf("primaer", { klein: true })} disabled={!offen || status.speichert} onClick={onSpeichern} title="Speichert den gemeinsamen Entwurf (Strg+S)">
+            Speichern
+          </button>
+          <button
+            type="button"
+            className={knopf("neutral", { klein: true })}
+            disabled={!offen || status.speichert}
+            onClick={onVerwerfen}
+            aria-label={kompakt ? "Änderungen verwerfen" : undefined}
+          >
+            {kompakt ? "Verwerfen" : "Änderungen verwerfen"}
+          </button>
+        </span>
+      )}
+    </div>
+  );
+  // „Leitung hinzufügen“ (L1): mit Entwurf das Werkzeug „Leitung“, sonst der bestehende Einstieg im Panel.
+  const leitungMoeglich = leitungen !== undefined && leitungen.planung.darfLeitungen && seite === "innen";
+  const leitungHinzufuegen = useStabil(() => {
+    if (leitungsentwurf !== null) {
+      setWerkzeug("leitung");
+      return;
+    }
+    af.setEigenschaftenOffen(true);
+    setTimeout(() => flaechenRef.current?.querySelector<HTMLElement>("[data-leitung-einstieg]")?.focus(), 0);
+  });
+  const rueckgaengig = useStabil(() => (leitungsentwurf !== null ? leitungen?.planung.dispatch({ typ: "rueckgaengig" }) : dispatch({ typ: "rueckgaengig" })));
+  const wiederholen = useStabil(() => (leitungsentwurf !== null ? leitungen?.planung.dispatch({ typ: "wiederholen" }) : dispatch({ typ: "wiederholen" })));
+  const kannZurueck = leitungsentwurf !== null ? leitungsentwurf.zurueck.length > 0 : zustand.zurueck.length > 0;
+  const kannVor = leitungsentwurf !== null ? leitungsentwurf.vor.length > 0 : zustand.vor.length > 0;
+  const hatLeitungsentwurf = leitungsentwurf !== null;
+  const hatZuordnungsentwurf = zuordnungsentwurf !== null;
+  const typKey = geraetetyp?.key ?? null;
+  const werkzeugknopf = (w: { wert: Wandwerkzeug; label: string; taste: string; icon: LucideIcon }) => (
+    <Werkzeugknopf key={w.wert} label={w.label} taste={w.taste} icon={w.icon} aktiv={werkzeug === w.wert} onClick={() => setWerkzeug(w.wert)} />
+  );
+  // Gemerkt (L1): Die Leiste zeichnet nur bei sichtbaren Änderungen neu, nicht bei jeder Zeigerbewegung.
+  const werkzeugleiste = useMemo(() => (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5" role="toolbar" aria-label="Werkzeuge der Wandansicht">
+      <Werkzeuggruppe label="Auswahl">{WERKZEUGE.filter((w) => !w.schreibend).map(werkzeugknopf)}</Werkzeuggruppe>
+      {editierbar && (
+        <>
+          <Werkzeugwahl
+            gruppe="Öffnung"
+            menueLabel="Öffnung setzen"
+            icon={WERKZEUGSYMBOL.tuer}
+            werkzeuge={WERKZEUGE.filter((w) => w.wert === "door" || w.wert === "window" || w.wert === "passage").map((w) => ({
+              label: w.label,
+              taste: w.taste,
+              icon: w.icon,
+              aktiv: werkzeug === w.wert,
+              onClick: () => setWerkzeug(w.wert),
+            }))}
+          />
+          <Werkzeuggruppe label="Gerät">
+            {WERKZEUGE.filter((w) => w.wert === "geraet").map(werkzeugknopf)}
+            {werkzeug === "geraet" && (
+              <div className="min-w-[200px]">
+                <TypAuswahl
+                  id="wand-werkzeug-typ"
+                  label={seite === "innen" ? "Gerät für die Innenseite" : "Gerät für die Fassade"}
+                  typen={typen}
+                  flaeche={flaecheDerSeite(seite)}
+                  wert={typKey}
+                  onWahl={setGeraetetypWahl}
+                />
+              </div>
             )}
-            <span className={`font-semibold ${status.farbe}`}>
-              {leitungsentwurf !== null
-                ? `Leitungsentwurf: ${leitungen?.planung.ungespeichert === true ? "ungespeichert" : "gespeichert"}`
-                : zuordnungsentwurf !== null
-                  ? `Gerätezuordnung: ${leitungen?.zuordnung.offen === true ? "ungespeichert" : "gespeichert"}`
-                  : editierbar
-                    ? status.text
-                    : "Nur Ansicht"}
-            </span>
-          </span>
-          {darfSchreiben && aktiverRaum !== null && (
-            <span className="flex flex-wrap gap-2">
-              <button type="button" className={knopf("primaer")} disabled={!offen || status.speichert} onClick={onSpeichern} title="Speichert den gemeinsamen Entwurf (Strg+S)">
-                Speichern
-              </button>
-              <button type="button" className={knopf()} disabled={!offen || status.speichert} onClick={onVerwerfen}>
-                Änderungen verwerfen
-              </button>
-            </span>
+          </Werkzeuggruppe>
+        </>
+      )}
+      {(leitungMoeglich || zuordnenErlaubt) && (
+        <Werkzeuggruppe label="Leitung">
+          {!hatLeitungsentwurf && !hatZuordnungsentwurf && leitungMoeglich && (
+            <LeitungHinzufuegenKnopf aktiv={false} gesperrtGrund={null} onClick={leitungHinzufuegen} />
           )}
-        </div>
+          {LEITUNGSWERKZEUGE.filter((w) => (w.wert === "zuordnen" ? zuordnenErlaubt : leitungErlaubt)).map(werkzeugknopf)}
+        </Werkzeuggruppe>
+      )}
+      {(hatLeitungsentwurf || editierbar) && (
+        <Werkzeuggruppe label="Verlauf">
+          <RueckgaengigKnoepfe
+            kannZurueck={kannZurueck}
+            kannVor={kannVor}
+            onZurueck={rueckgaengig}
+            onVor={wiederholen}
+            {...(hatLeitungsentwurf ? { bezug: "im Leitungsentwurf" } : {})}
+          />
+        </Werkzeuggruppe>
+      )}
+      <Zoomgruppe onZoom={(f) => flaeche.current?.zoom(f)} onGanz={() => flaeche.current?.ansichtZuruecksetzen()} ganzHinweis="Ganze Wand zeigen" />
+      <AnsichtMenue fangAktiv={fangAktiv} onFang={onFang} fangLabel="Einrasten" rasterMm={rasterMm} onRaster={onRaster} onHilfe={() => setHilfe(true)} />
+    </div>
+    // Rückrufe sind stabil (Zustandssetzer, `useStabil`); abhängig ist die Leiste nur von dem, was sie zeigt.
+  ), [werkzeug, editierbar, seite, typen, typKey, leitungMoeglich, hatLeitungsentwurf, hatZuordnungsentwurf, zuordnenErlaubt, leitungErlaubt, kannZurueck, kannVor, fangAktiv, rasterMm, onFang, onRaster]);
 
-        <div className="flex shrink-0 flex-wrap items-center gap-3" role="toolbar" aria-label="Werkzeuge der Wandansicht">
-          <div className="flex flex-wrap items-center gap-1">
-            {[
-              ...WERKZEUGE.filter((w) => editierbar || !w.schreibend),
-              ...LEITUNGSWERKZEUGE.filter((w) => (w.wert === "zuordnen" ? zuordnenErlaubt : leitungErlaubt)),
-            ].map((w) => (
-              <button
-                key={w.wert}
-                type="button"
-                className={werkzeug === w.wert ? WERKZEUG_AKTIV : WERKZEUG}
-                aria-pressed={werkzeug === w.wert}
-                title={`${w.label} (${w.taste})`}
-                onClick={() => setWerkzeug(w.wert)}
-              >
-                {w.label}
-              </button>
-            ))}
-          </div>
-          {editierbar && werkzeug === "geraet" && (
-            <div className="min-w-[220px]">
-              <TypAuswahl
-                id="wand-werkzeug-typ"
-                label={seite === "innen" ? "Gerät für die Innenseite" : "Gerät für die Fassade"}
-                typen={typen}
-                flaeche={flaecheDerSeite(seite)}
-                wert={geraetetyp?.key ?? null}
-                onWahl={setGeraetetypWahl}
-              />
-            </div>
-          )}
-          {leitungsentwurf !== null && leitungen !== undefined && (
-            <div className="flex flex-wrap items-center gap-1" aria-label="Rückgängig im Leitungsentwurf">
-              <button type="button" className={WERKZEUG} disabled={leitungsentwurf.zurueck.length === 0} title="Rückgängig im Leitungsentwurf (Strg+Z)" onClick={() => leitungen.planung.dispatch({ typ: "rueckgaengig" })}>
-                Rückgängig
-              </button>
-              <button type="button" className={WERKZEUG} disabled={leitungsentwurf.vor.length === 0} title="Wiederholen im Leitungsentwurf (Strg+Y)" onClick={() => leitungen.planung.dispatch({ typ: "wiederholen" })}>
-                Wiederholen
-              </button>
-            </div>
-          )}
-          {editierbar && (
-            <div className="flex flex-wrap items-center gap-1">
-              <button type="button" className={WERKZEUG} disabled={zustand.zurueck.length === 0} title="Rückgängig (Strg+Z)" onClick={() => dispatch({ typ: "rueckgaengig" })}>
-                Rückgängig
-              </button>
-              <button type="button" className={WERKZEUG} disabled={zustand.vor.length === 0} title="Wiederholen (Strg+Y)" onClick={() => dispatch({ typ: "wiederholen" })}>
-                Wiederholen
-              </button>
-            </div>
-          )}
-          <div className="flex flex-wrap items-center gap-1">
-            <button type="button" className={WERKZEUG} aria-label="Vergrößern" title="Vergrößern (+)" onClick={() => flaeche.current?.zoom(1.25)}>
-              +
-            </button>
-            <button type="button" className={WERKZEUG} aria-label="Verkleinern" title="Verkleinern (−)" onClick={() => flaeche.current?.zoom(0.8)}>
-              −
-            </button>
-            <button type="button" className={WERKZEUG} title="Ganze Wand zeigen (F)" onClick={() => flaeche.current?.ansichtZuruecksetzen()}>
-              {ANSICHT_ZURUECKSETZEN}
-            </button>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-1.5 text-small" title="Alt beim Ziehen setzt das Einrasten vorübergehend aus">
-              <input type="checkbox" checked={fangAktiv} onChange={(event) => onFang(event.target.checked)} />
-              Einrasten
-            </label>
-            <label className="flex items-center gap-1.5 text-small">
-              Raster
-              <select className={eingabefeld({ kompakt: true })} value={rasterMm} onChange={(event) => onRaster(Number(event.target.value))}>
-                {RASTERGROESSEN_MM.map((mm) => (
-                  <option key={mm} value={mm}>
-                    {masse.anzeigen(mm)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        </div>
+  const hilfeInhalt = (
+    <>
+      <ul className="pl-[18px]">
+        <li>Links und rechts gelten so, wie man vor der betrachteten Seite steht – innen im Raum, außen vor der Fassade. Ein Seitenwechsel verschiebt keine Öffnung.</li>
+        <li>Tür (T), Fenster (N), Durchgang (D): Vorschau folgt dem Zeiger, ein Klick setzt die Öffnung mit Standardmaßen.</li>
+        <li>Öffnung ziehen verschiebt sie (Fenster auch in der Höhe); die Griffe ändern Breite, Höhe und Brüstung.</li>
+        <li>Einrasten an Wandkanten, Wandmitte, Kanten und Mitten anderer Öffnungen, gleicher Brüstung und Oberkante, sonst am Raster. Alt hält es beim Ziehen aus.</li>
+        <li>Pfeiltasten verschieben die gewählte Öffnung um 1 cm, mit Umschalt um 10 cm. Entf entfernt sie, Escape bricht ab.</li>
+        <li>Gerät (G): Typ wählen, Vorschau folgt dem Zeiger, ein Klick setzt es auf genau dieser Seite. Ziehen verschiebt es; Pfeiltasten 1 cm, mit Umschalt 10 cm; Entf entfernt es. Eingerastet wird an Wandmitte, Kanten, Achsen anderer Geräte, der Standardhöhe des Typs, Boden und Decke.</li>
+        <li>Innen und außen sind getrennte Montageflächen: Ein Gerät außen bleibt außen, der Seitenwechsel der Ansicht ändert nichts.</li>
+        <li>Strg+Z / Strg+Y gelten für den gemeinsamen Entwurf mit dem Grundriss. Schließen behält alle Änderungen – gespeichert wird nur mit „Speichern“.</li>
+      </ul>
+      <p className="m-0">Escape beendet zuerst die laufende Bewegung, dann das Werkzeug und die Auswahl, schließt ein überlagerndes Panel, beendet die Maximierung und führt zuletzt zurück zum Grundriss.</p>
+      <h3 className="mt-3 text-small">Legende der Gerätesymbole</h3>
+      <Geraetelegende typen={typen} />
+    </>
+  );
 
+  return (
+    // L1: keine modale Oberfläche mehr – die Wandfläche steht an Ort und Stelle in der Arbeitsfläche.
+    <section ref={flaechenRef} aria-label={titel} tabIndex={-1} className="outline-none" data-flaeche="wand">
+      <div
+        className="flex flex-col gap-2"
+        onKeyDown={(event) => {
+          // Escape: Bewegung → Werkzeug → Auswahl → Panel/Maximierung → zurück. Eine Wirkung je Druck.
+          if (event.key === "Escape" && !event.defaultPrevented) {
+            event.preventDefault();
+            if (!escape()) onSchliessen();
+            return;
+          }
+          taste(event);
+        }}
+      >
         {!ergebnis.ok || modell === null ? (
+          <>
+            {kopfzeile}
+            {werkzeugleiste}
           <p className={meldungsflaeche()} role="alert">
             {ergebnis.ok ? "Diese Wand gibt es im aktuellen Stand nicht." : ergebnis.grund}
           </p>
+          </>
         ) : (
-          <div className="grid grid-cols-1 gap-3 split:min-h-0 split:flex-auto split:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="flex min-w-0 flex-col gap-1 split:min-h-0">
-              <div className="h-[55dvh] min-h-[300px] split:h-auto split:min-h-0 split:flex-auto">
-                <WandZeichenflaeche
-                  griff={flaeche}
-                  bezug={ergebnis.bezug}
-                  modell={modell}
-                  teilung={teilung}
-                  entwurf={editierbar ? zustand.entwurf : null}
-                  dispatch={dispatch}
-                  editierbar={editierbar}
-                  werkzeug={werkzeug}
-                  onWerkzeug={setWerkzeug}
-                  gewaehlt={gewaehlt}
-                  onWaehlen={waehlen}
-                  rasterMm={rasterMm}
-                  fangAktiv={fangAktiv}
-                  raumName={raumName}
-                  nachbarHoehe={nachbarHoehe}
-                  onStatus={setStatuszeile}
-                  geraete={geraete}
-                  geraetetyp={geraetetyp}
-                  zusatz={leitungen !== undefined ? wl.zusatz : undefined}
-                />
-              </div>
+          <Planungsarbeitsflaeche
+            zustand={af}
+            name="Arbeitsfläche Wand"
+            eigenschaftenTitel="Eigenschaften der Wand"
+            markierung={leitungsentwurf !== null ? "Leitung" : zuordnungsentwurf !== null ? "Zuordnung" : null}
+            kopf={kopfzeile}
+            werkzeuge={werkzeugleiste}
+            kontext={
+              <div className="flex flex-col gap-1.5">
               {/* Feste Höhe: Die Fläche springt nicht, wenn der Text wechselt. */}
               <p className="m-0 h-11 overflow-hidden text-[0.82rem] text-muted" aria-live="polite" data-testid="wand-statuszeile">
                 {statuszeile}
               </p>
-            </div>
-            <aside className="min-w-0 split:min-h-0 split:overflow-y-auto" aria-label="Eigenschaften der Wand">
-              {leitungen !== undefined && (
-                <div className="mb-2">
-                  {seite === "aussen" && leitungsentwurf !== null && (
-                    <p className={`${meldungsflaeche("schlicht")} m-0 mb-2`}>
-                      Leitungen werden innen geplant – Außenleitungen sind nicht vorgesehen. Mit „Innenseite ansehen“ weiterzeichnen.
-                    </p>
-                  )}
-                  <Leitungsbereich
-                    k={leitungen}
-                    flaeche={{ art: "wand", raumId: ziel.raumId, wandId: ziel.wandId, seite }}
-                    bezug={ergebnis.ok ? ergebnis.bezug : undefined}
-                    relevant={wl.relevant}
-                    gewaehlt={wl.gewaehlt}
-                    onWaehlen={wl.setGewaehlt}
-                    gewaehlteDurchfuehrung={wl.gewaehlteDurchfuehrung}
-                    onDurchfuehrung={wl.setDurchfuehrungId}
-                    onWerkzeug={(w) => setWerkzeug(w === "leitung" && seite === "aussen" ? "auswahl" : w)}
-                  />
-                </div>
-              )}
+                {seite === "aussen" && leitungsentwurf !== null && (
+                  <p className={`${meldungsflaeche("schlicht")} m-0 mb-2`}>
+                    Leitungen werden innen geplant – Außenleitungen sind nicht vorgesehen. Mit „Innenseite ansehen“ weiterzeichnen.
+                  </p>
+                )}
               {!editierbar && aktiverRaum !== ziel.raumId && (
                 <div className={`${meldungsflaeche("schlicht")} mb-2`}>
                   <p className="m-0">
@@ -610,62 +671,95 @@ export function Wandansicht({
                   )}
                 </div>
               )}
-              <GeraetEigenschaften
-                bezug={ergebnis.bezug}
-                geraete={geraete}
-                gewaehlt={gewaehlt}
-                typen={typen}
-                editierbar={editierbar}
-                andereSeite={andereSeite}
-                onWaehlen={waehlen}
-                onLage={(id, u, h) => geraetLageSetzen(id, u, h)}
-                onTyp={(id, key) => {
-                  const g = geraete.find((x) => x.id === id);
-                  return g === undefined ? "Gerät nicht gefunden." : geraetLageSetzen(id, g.u, g.h, key);
-                }}
-                onLabel={geraetLabelSetzen}
-                onEntfernen={geraetEntfernenAktion}
-              />
-              <WandEigenschaften
-                bezug={ergebnis.bezug}
-                modell={modell}
-                raumName={raumName}
-                editierbar={editierbar}
-                gewaehlt={gewaehlt}
-                onWaehlen={waehlen}
-                onRechteck={(id, r) => rechteckSetzen(id, r)}
-                onArt={artSetzen}
-                onEntfernen={entfernen}
-                einordnung={einordnung}
-                nachbarHoehe={nachbarHoehe}
-                gegenseiten={gegenseiten}
-                onGegenseite={(g) => {
-                  setLokal(null);
-                  onWechseln(g);
-                }}
-                onQuelle={quelle}
-              />
-              <details className="mt-2 text-[0.85rem] text-muted">
-                <summary className="cursor-pointer">Bedienung</summary>
-                <ul className="pl-[18px]">
-                  <li>Links und rechts gelten so, wie man vor der betrachteten Seite steht – innen im Raum, außen vor der Fassade. Ein Seitenwechsel verschiebt keine Öffnung.</li>
-                  <li>Tür (T), Fenster (N), Durchgang (D): Vorschau folgt dem Zeiger, ein Klick setzt die Öffnung mit Standardmaßen.</li>
-                  <li>Öffnung ziehen verschiebt sie (Fenster auch in der Höhe); die Griffe ändern Breite, Höhe und Brüstung.</li>
-                  <li>Einrasten an Wandkanten, Wandmitte, Kanten und Mitten anderer Öffnungen, gleicher Brüstung und Oberkante, sonst am Raster. Alt hält es beim Ziehen aus.</li>
-                  <li>Pfeiltasten verschieben die gewählte Öffnung um 1 cm, mit Umschalt um 10 cm. Entf entfernt sie, Escape bricht ab.</li>
-                  <li>Gerät (G): Typ wählen, Vorschau folgt dem Zeiger, ein Klick setzt es auf genau dieser Seite. Ziehen verschiebt es; Pfeiltasten 1 cm, mit Umschalt 10 cm; Entf entfernt es. Eingerastet wird an Wandmitte, Kanten, Achsen anderer Geräte, der Standardhöhe des Typs, Boden und Decke.</li>
-                  <li>Innen und außen sind getrennte Montageflächen: Ein Gerät außen bleibt außen, der Seitenwechsel der Ansicht ändert nichts.</li>
-                  <li>Strg+Z / Strg+Y gelten für den gemeinsamen Entwurf mit dem Grundriss. Schließen behält alle Änderungen – gespeichert wird nur mit „Speichern“.</li>
-                </ul>
-              </details>
-              <details className="mt-2 text-[0.85rem]">
-                <summary className="cursor-pointer text-muted">Legende der Gerätesymbole</summary>
-                <Geraetelegende typen={typen} />
-              </details>
-            </aside>
-          </div>
+                <Raumrueckmeldung fehler={zustand.serverFehler} konflikt={zustand.status === "konflikt"} onSchliessen={() => dispatch({ typ: "hinweis-schliessen" })} />
+                <Entwurfsleiste k={leitungen} panelOffen={af.eigenschaftenOffen} onDetails={() => af.setEigenschaftenOffen(true)} nachSchliessen={() => setWerkzeug("auswahl")} />
+              </div>
+            }
+            eigenschaften={
+              <>
+                {leitungen !== undefined && (
+                  <div className="mb-2">
+                    <Leitungsbereich
+                      k={leitungen}
+                      flaeche={{ art: "wand", raumId: ziel.raumId, wandId: ziel.wandId, seite }}
+                      bezug={ergebnis.ok ? ergebnis.bezug : undefined}
+                      relevant={wl.relevant}
+                      gewaehlt={wl.gewaehlt}
+                      onWaehlen={wl.setGewaehlt}
+                      gewaehlteDurchfuehrung={wl.gewaehlteDurchfuehrung}
+                      onDurchfuehrung={wl.setDurchfuehrungId}
+                      onWerkzeug={(w) => setWerkzeug(w === "leitung" && seite === "aussen" ? "auswahl" : w)}
+                    />
+                  </div>
+                )}
+                <GeraetEigenschaften
+                  bezug={ergebnis.bezug}
+                  geraete={geraete}
+                  gewaehlt={gewaehlt}
+                  typen={typen}
+                  editierbar={editierbar}
+                  andereSeite={andereSeite}
+                  onWaehlen={waehlen}
+                  onLage={(id, u, h) => geraetLageSetzen(id, u, h)}
+                  onTyp={(id, key) => {
+                    const g = geraete.find((x) => x.id === id);
+                    return g === undefined ? "Gerät nicht gefunden." : geraetLageSetzen(id, g.u, g.h, key);
+                  }}
+                  onLabel={geraetLabelSetzen}
+                  onEntfernen={geraetEntfernenAktion}
+                />
+                <WandEigenschaften
+                  bezug={ergebnis.bezug}
+                  modell={modell}
+                  raumName={raumName}
+                  editierbar={editierbar}
+                  gewaehlt={gewaehlt}
+                  onWaehlen={waehlen}
+                  onRechteck={(id, r) => rechteckSetzen(id, r)}
+                  onArt={artSetzen}
+                  onEntfernen={entfernen}
+                  einordnung={einordnung}
+                  nachbarHoehe={nachbarHoehe}
+                  gegenseiten={gegenseiten}
+                  onGegenseite={(g) => {
+                    setLokal(null);
+                    onWechseln(g);
+                  }}
+                  onQuelle={quelle}
+                />
+              </>
+            }
+          >
+            <WandZeichenflaeche
+              key={wandSchluessel(ziel.wandId, seite)}
+              gemerkt={ansichten?.lesen(wandSchluessel(ziel.wandId, seite)) ?? null}
+              onAnsicht={(ansicht) => ansichten?.merken(wandSchluessel(ziel.wandId, seite), ansicht)}
+              griff={flaeche}
+              bezug={ergebnis.bezug}
+              modell={modell}
+              teilung={teilung}
+              entwurf={editierbar ? zustand.entwurf : null}
+              dispatch={dispatch}
+              editierbar={editierbar}
+              werkzeug={werkzeug}
+              onWerkzeug={setWerkzeug}
+              gewaehlt={gewaehlt}
+              onWaehlen={waehlen}
+              rasterMm={rasterMm}
+              fangAktiv={fangAktiv}
+              raumName={raumName}
+              nachbarHoehe={nachbarHoehe}
+              onStatus={setStatuszeile}
+              geraete={geraete}
+              geraetetyp={geraetetyp}
+              zusatz={leitungen !== undefined ? wl.zusatz : undefined}
+            />
+          </Planungsarbeitsflaeche>
         )}
       </div>
-    </Dialog>
+      <HilfeDialog offen={hilfe} titel="Wandfläche – Bedienung und Legende" onClose={() => setHilfe(false)}>
+        {hilfeInhalt}
+      </HilfeDialog>
+    </section>
   );
 }

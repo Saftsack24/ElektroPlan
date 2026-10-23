@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { masseinheitSetzen } from "../../../core/ui/masseinheit";
 import { RueckfrageProvider } from "../../../core/ui/Rueckfrage";
 import { raum, rechteck } from "../ansicht3d/testplan";
+import { eigenschaftenOeffnen, raumInListe } from "../arbeitsflaeche/testhilfe";
 
 /**
  * Wand- und Deckenansicht über den echten Editor (Phase 4f). Ersetzt werden
@@ -61,10 +62,13 @@ function grundrissKlick(ziel: Element, x: number, y: number) {
 async function wandansichtOeffnen(raumKnopf = /0.01 Wohnzimmer/, wandId = "raum-1-w1", x = 5000, y = 2000) {
   zeigen();
   await screen.findByRole("application", { name: /Grundriss/ });
-  fireEvent.click(await screen.findByRole("button", { name: raumKnopf }));
+  fireEvent.click(await raumInListe(raumKnopf));
   grundrissKlick(await screen.findByTestId(`wand-${wandId}`), x, y);
   fireEvent.click(await screen.findByRole("button", { name: /^Wand (bearbeiten|ansehen)$/ }));
-  return screen.findByRole("dialog", { name: /Wandansicht/ });
+  const dialog = await screen.findByRole("region", { name: /Wandansicht/ });
+  // Die Wandeigenschaften (Maße, Öffnungen, Geräte) stehen im Eigenschaftenpanel (6c.0).
+  await eigenschaftenOeffnen(dialog);
+  return dialog;
 }
 
 // ------------------------------------------------------------ Wandansicht
@@ -86,7 +90,7 @@ function zeiger(ziel: Element, typ: string, u: number, h: number, extra: MouseEv
 }
 
 /** In jsdom bleibt der Hintergrund eines Dialogs zugänglich - deshalb immer im Dialog suchen. */
-const dlg = () => screen.getByRole("dialog", { name: /Wandansicht/ });
+const dlg = () => screen.getByRole("region", { name: /Wandansicht/ });
 const feld = (name: RegExp) => within(dlg()).getByRole<HTMLInputElement>("textbox", { name });
 const klasse = (e: Element) => e.getAttribute("class") ?? "";
 
@@ -139,7 +143,7 @@ describe("Einstieg und Blickrichtung", () => {
     plan = { ...plan, rooms: [raum("raum-1", "Wohnzimmer", [[0, 0], [5000, 0], [5000, 4000], [0, 4000]], { nummer: "0.01", offen: true })] };
     zeigen();
     await screen.findByRole("application", { name: /Grundriss/ });
-    fireEvent.click(await screen.findByRole("button", { name: /0.01 Wohnzimmer/ }));
+    fireEvent.click(await raumInListe(/0.01 Wohnzimmer/));
     grundrissKlick(await screen.findByTestId("wand-raum-1-w1"), 5000, 2000);
     expect(await screen.findByRole("button", { name: "Wand bearbeiten" })).toBeDisabled();
     expect(screen.getByText("Die Wandansicht braucht eine geschlossene Raumkontur.")).toBeInTheDocument();
@@ -188,14 +192,15 @@ describe("Öffnungen setzen, verschieben, Größe ändern", () => {
     expect(feld(/^Abstand von links/)).toHaveValue(nachher);
   });
 
-  it("Escape während des Ziehens bricht ab, statt den Dialog zu schließen", async () => {
-    const dialog = await wandansichtOeffnen();
+  it("Escape während des Ziehens bricht ab, statt die Wandansicht zu verlassen", async () => {
+    await wandansichtOeffnen();
     await tuerSetzen(2010);
     zeiger(oeffnungInAnsicht(), "pointerdown", 2000, 1000);
     zeiger(ansicht(), "pointermove", 3000, 1000);
     expect(feld(/^Abstand von links/)).not.toHaveValue("155,8");
-    fireEvent(dialog, new Event("cancel", { cancelable: true }));
-    expect(screen.getByRole("dialog", { name: /Wandansicht/ })).toBeInTheDocument();
+    // Seit L1 keine modale Oberfläche: Escape kommt als Taste in der Fläche an.
+    fireEvent.keyDown(ansicht(), { key: "Escape" });
+    expect(screen.getByRole("region", { name: /Wandansicht/ })).toBeInTheDocument();
     expect(feld(/^Abstand von links/)).toHaveValue("155,8");
     expect(screen.getByTestId("wand-statuszeile")).toHaveTextContent("Bewegung abgebrochen");
     // Spätere Bewegungen ändern nichts mehr.
@@ -270,8 +275,8 @@ describe("gemeinsamer Entwurf, Speichern und Verwerfen", () => {
   it("Schließen behält den Entwurf; Grundriss zeigt die Tür und kann sie rückgängig machen", async () => {
     await wandansichtOeffnen();
     await tuerSetzen(2010);
-    fireEvent.click(screen.getByRole("button", { name: "Dialog schließen" }));
-    expect(screen.queryByRole("dialog", { name: /Wandansicht/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Zurück zu(m Grundriss|r 3D-Ansicht)$/ }));
+    expect(screen.queryByRole("region", { name: /Wandansicht/ })).toBeNull();
     expect(screen.getByText(/0.01 Wohnzimmer: Ungespeicherte Änderungen|Wohnzimmer: Ungespeicherte Änderungen/)).toBeInTheDocument();
     expect(screen.getByText(/noch nicht gespeichert/)).toBeInTheDocument();
     expect(document.querySelectorAll("svg.grundriss__svg [data-oeffnung]")).toHaveLength(1);
@@ -307,7 +312,7 @@ describe("gemeinsamer Entwurf, Speichern und Verwerfen", () => {
     const frage = await screen.findByRole("dialog", { name: "Änderungen verwerfen?" });
     fireEvent.click(within(frage).getByRole("button", { name: "Änderungen verwerfen" }));
     await waitFor(() => expect(oeffnungInAnsicht() === null).toBe(true));
-    fireEvent.click(screen.getByRole("button", { name: "Dialog schließen" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Zurück zu(m Grundriss|r 3D-Ansicht)$/ }));
     expect(document.querySelectorAll("svg.grundriss__svg [data-oeffnung]")).toHaveLength(0);
     expect(api.put).not.toHaveBeenCalled();
   });
@@ -376,9 +381,9 @@ describe("Deckenansicht", () => {
   it("Rechteck: Raummaß, Deckenhöhe, Wandnummern", async () => {
     zeigen();
     await screen.findByRole("application", { name: /Grundriss/ });
-    fireEvent.click(await screen.findByRole("button", { name: /0.01 Wohnzimmer/ }));
+    fireEvent.click(await raumInListe(/0.01 Wohnzimmer/));
     fireEvent.click(await screen.findByRole("button", { name: "Deckenansicht" }));
-    const dialog = await screen.findByRole("dialog", { name: "Deckenansicht · 0.01 Wohnzimmer" });
+    const dialog = await screen.findByRole("region", { name: "Deckenansicht · 0.01 Wohnzimmer" });
     expect(within(dialog).getByText("Raummaß 500 cm × 400 cm")).toBeInTheDocument();
     expect(within(dialog).getByText(/Deckenhöhe 250 cm/)).toBeInTheDocument();
     expect(within(dialog).getByTestId("decke-wand-1")).toHaveTextContent("W1 · 500 cm");
@@ -391,9 +396,9 @@ describe("Deckenansicht", () => {
     };
     zeigen();
     await screen.findByRole("application", { name: /Grundriss/ });
-    fireEvent.click(await screen.findByRole("button", { name: /0.01 Flur L/ }));
+    fireEvent.click(await raumInListe(/0.01 Flur L/));
     fireEvent.click(await screen.findByRole("button", { name: "Deckenansicht" }));
-    const dialog = await screen.findByRole("dialog", { name: "Deckenansicht · 0.01 Flur L" });
+    const dialog = await screen.findByRole("region", { name: "Deckenansicht · 0.01 Flur L" });
     expect(within(dialog).queryByText(/Raummaß/)).toBeNull();
     expect(within(dialog).getByText("Kein Rechteck - Maße stehen an den einzelnen Wänden.")).toBeInTheDocument();
     expect(within(dialog).getAllByText(/^Wand \d: /)).toHaveLength(6);
@@ -420,7 +425,7 @@ describe("Einstieg aus der 3D-Ansicht", () => {
         </RueckfrageProvider>
       </QueryClientProvider>,
     );
-    const dialog = await screen.findByRole("dialog", { name: "Wandansicht · Wand 4 · 0.02 Flur" });
+    const dialog = await screen.findByRole("region", { name: "Wandansicht · Wand 4 · 0.02 Flur" });
     expect(within(dialog).getByText(/^400 cm breit/)).toBeInTheDocument();
     expect(verbraucht).toHaveBeenCalledTimes(1);
   });
@@ -443,7 +448,7 @@ describe("Innen- und Außenseite einer Außenwand (Phase 4f)", () => {
     expect(within(innen).getByText(/Fenster 1 · 349 cm von links/)).toBeInTheDocument();
 
     fireEvent.click(within(innen).getByRole("button", { name: "Außenseite ansehen" }));
-    const aussen = screen.getByRole("dialog", { name: "Wandansicht · Wand 1 · 0.01 Wohnzimmer · Außenseite" });
+    const aussen = screen.getByRole("region", { name: "Wandansicht · Wand 1 · 0.01 Wohnzimmer · Außenseite" });
     expect(within(aussen).getByTestId("wandseite")).toHaveTextContent("Außenseite – Fassade");
     expect(within(aussen).getByText(/Blick von außen auf die Wand · im Grundriss nach oben/)).toBeInTheDocument();
     // Von außen nach Norden blickend ist Westen links - dasselbe Fenster 50 cm von links.
@@ -499,11 +504,11 @@ describe("Schließen führt zur Ausgangsansicht zurück (Phase 4f)", () => {
 
   it("aus 3D geöffnet: Schließen meldet die Rückkehr - der Entwurf bleibt, nichts wird gespeichert", async () => {
     const zurueck = editor({ raumId: "raum-1", wandId: "raum-1-w1", herkunft: "3d" });
-    await screen.findByRole("dialog", { name: /Wandansicht/ });
+    await screen.findByRole("region", { name: /Wandansicht/ });
     await tuerSetzen(2010);
     // Seitenwechsel innerhalb der Wandansicht ändert die Herkunft nicht.
     fireEvent.click(within(dlg()).getByRole("button", { name: "Außenseite ansehen" }));
-    fireEvent.click(within(dlg()).getByRole("button", { name: "Dialog schließen" }));
+    fireEvent.click(within(dlg()).getByRole("button", { name: /^Zurück zu(m Grundriss|r 3D-Ansicht)$/ }));
     expect(zurueck).toHaveBeenCalledTimes(1);
     expect(document.querySelectorAll("svg.grundriss__svg [data-oeffnung]")).toHaveLength(1);
     expect(api.put).not.toHaveBeenCalled();
@@ -511,8 +516,8 @@ describe("Schließen führt zur Ausgangsansicht zurück (Phase 4f)", () => {
 
   it("aus 2D geöffnet: Schließen bleibt im Grundriss", async () => {
     const zurueck = editor({ raumId: "raum-1", wandId: "raum-1-w1" });
-    await screen.findByRole("dialog", { name: /Wandansicht/ });
-    fireEvent.click(within(dlg()).getByRole("button", { name: "Dialog schließen" }));
+    await screen.findByRole("region", { name: /Wandansicht/ });
+    fireEvent.click(within(dlg()).getByRole("button", { name: /^Zurück zu(m Grundriss|r 3D-Ansicht)$/ }));
     expect(zurueck).not.toHaveBeenCalled();
     expect(screen.getByRole("application", { name: /Grundriss/ })).toBeInTheDocument();
   });

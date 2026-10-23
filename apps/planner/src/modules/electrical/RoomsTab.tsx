@@ -9,7 +9,7 @@ import { useAuth, usePermission } from "../../core/auth/AuthProvider";
 import { Auswahl } from "../../core/ui/Feld";
 import { useMasse } from "../../core/ui/masseinheit";
 import { useRueckfrage, verwerfenOptionen } from "../../core/ui/Rueckfrage";
-import { KARTENKOPF, KARTENTITEL, KNOPFZEILE, STAPEL, TABELLE, karte, knopf, meldungsflaeche, reiter } from "../../core/ui/stil";
+import { KARTENKOPF, KARTENTITEL, KNOPFZEILE, STAPEL, TABELLE, eingabefeld, karte, knopf, meldungsflaeche, reiter } from "../../core/ui/stil";
 import { Ansicht3dLaden } from "./ansicht3d/Ansicht3dLaden";
 import { GrundrissEditor } from "./editor/GrundrissEditor";
 import type { Rueckkehr3d } from "./ansicht3d/Ansicht3d";
@@ -39,6 +39,9 @@ import type { Raumwerte } from "./RaumDialog";
 import { KONTURZUSTAND_LABEL, RAUMTYP_LABEL, flaecheAnzeigen, raumtypAusWert } from "./texte";
 import { AKTION } from "../../core/ui/aktionssymbole";
 import { MitSymbol } from "../../core/ui/Symbol";
+import { useKompakt } from "./arbeitsflaeche/kompakt";
+import { useArbeitsflaeche } from "./arbeitsflaeche/Planungsarbeitsflaeche";
+import { useArbeitsbereich } from "../../core/ui/arbeitsbereich";
 
 type Schemas = components["schemas"];
 type RoomOut = Schemas["RoomOut"];
@@ -138,6 +141,12 @@ export default function RoomsTab() {
   const [offenerRaum, setOffenerRaum] = useState<string | null>(null);
   const [fehler, setFehler] = useState<string | null>(null);
   const [ansicht, setAnsicht] = useState<Ansicht>(gemerkteAnsicht);
+  // Panel und Maximierung des Grundrisses (6c.0) - übersteht Geschoss- und Ansichtswechsel.
+  const grundrissArbeitsflaeche = useArbeitsflaeche();
+  // Grafische Planung (2D-Editor, 3D): die ganze Projektseite in der breiten Flucht (6c, L1).
+  const planungsansicht = ansicht === "editor" || ansicht === "3d";
+  const kompakt = useKompakt();
+  useArbeitsbereich(planungsansicht);
   // Aus der 3D-Auswahl angeforderte Wandansicht (Phase 4f) - der 2D-Editor öffnet sie nach dem
   // Laden. Kamera und Auswahl der 3D-Ansicht werden für die Rückkehr gemerkt (reine Ansicht).
   const [startWandansicht, setStartWandansicht] = useState<Wandziel | null>(null);
@@ -457,10 +466,23 @@ export default function RoomsTab() {
   const liste: RoomOut[] = raeume.data ?? [];
   const geoeffnet = liste.find((raum) => raum.id === offenerRaum) ?? null;
 
+  const geschossWaehlen = (id: string) => {
+    const zielEintrag = auswahl.find((eintrag) => eintrag.id === id);
+    const ziel = zielEintrag?.label ?? "";
+    // In der Steigwegverwaltung bleibt der Entwurf beim Wechsel innerhalb
+    // desselben Gebäudes erhalten - nur das Grundrissgeschoss wechselt.
+    const gleichesGebaeude = zielEintrag?.building_id === aktivesGeschoss?.building_id;
+    if (gebaeudebezogen(ansicht) && gleichesGebaeude) {
+      setGeschossId(id);
+      return;
+    }
+    void geschossWechseln(id, gleichesGebaeude, ziel);
+  };
+
   return (
-    <div className={STAPEL}>
-      <section className={karte()}>
-        <div className={KARTENKOPF}>
+    <div className={planungsansicht ? "flex flex-col gap-2" : STAPEL}>
+      <section className={planungsansicht ? "flex flex-col gap-1" : karte()} aria-label="Räume und Grundriss">
+        <div className={planungsansicht ? "sr-only" : KARTENKOPF}>
           <h2 className={KARTENTITEL}>Räume &amp; Grundriss</h2>
           {darfSchreiben && ansicht === "tabelle" && (
             <button
@@ -481,22 +503,65 @@ export default function RoomsTab() {
           </p>
         )}
 
+        {planungsansicht ? (
+          // Eine Zeile: Geschoss und Ansicht – platzsparend über der Arbeitsfläche.
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <label className="flex items-center gap-2 text-small" htmlFor="electrical-geschoss">
+              {/* Schmal sprechen Geschoss- und Ansichtsnamen für sich; die Beschriftung bleibt für Screenreader. */}
+              <span className={kompakt ? "sr-only" : "text-muted"}>Geschoss</span>
+              <select
+                id="electrical-geschoss"
+                className={eingabefeld({ kompakt: true })}
+                value={aktivesGeschoss?.id ?? ""}
+                onChange={(event) => geschossWaehlen(event.target.value)}
+              >
+                {auswahl.map((eintrag) => (
+                  <option key={eintrag.id} value={eintrag.id}>
+                    {eintrag.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {kompakt ? (
+              // Schmal eine Auswahl statt sechs umbrechender Reiter (Entwurf §18.2).
+              <label className="flex items-center gap-2 text-small" htmlFor="electrical-ansicht">
+                <span className="sr-only">Ansicht</span>
+                <select
+                  id="electrical-ansicht"
+                  className={eingabefeld({ kompakt: true })}
+                  value={ansicht}
+                  onChange={(event) => void ansichtWechseln(event.target.value as Ansicht)}
+                >
+                  {ANSICHTEN.map(({ wert, label }) => (
+                    <option key={wert} value={wert}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <div className="flex flex-wrap gap-1" role="group" aria-label="Ansicht">
+                {ANSICHTEN.map(({ wert, label }) => (
+                  <button
+                    key={wert}
+                    type="button"
+                    className={reiter(ansicht === wert)}
+                    aria-pressed={ansicht === wert}
+                    onClick={() => void ansichtWechseln(wert)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
         <Auswahl
           id="electrical-geschoss"
           label="Geschoss"
           value={aktivesGeschoss?.id ?? ""}
-          onChange={(id) => {
-            const zielEintrag = auswahl.find((eintrag) => eintrag.id === id);
-            const ziel = zielEintrag?.label ?? "";
-            // In der Steigwegverwaltung bleibt der Entwurf beim Wechsel innerhalb
-            // desselben Gebäudes erhalten - nur das Grundrissgeschoss wechselt.
-            const gleichesGebaeude = zielEintrag?.building_id === aktivesGeschoss?.building_id;
-            if (gebaeudebezogen(ansicht) && gleichesGebaeude) {
-              setGeschossId(id);
-              return;
-            }
-            void geschossWechseln(id, gleichesGebaeude, ziel);
-          }}
+          onChange={geschossWaehlen}
         >
           {auswahl.map((eintrag) => (
             <option key={eintrag.id} value={eintrag.id}>
@@ -518,6 +583,9 @@ export default function RoomsTab() {
             </button>
           ))}
         </div>
+
+          </>
+        )}
 
         {fehler !== null && (
           <p className={meldungsflaeche()} role="alert">
@@ -612,9 +680,11 @@ export default function RoomsTab() {
         onPlanung={planungMerken}
       >
       {ansicht === "editor" && aktivesGeschoss !== undefined && (
-        <section className={karte("kompakt")}>
+        // Die ganze Seite steht im Arbeitsbereich (6c, L1); die Arbeitsfläche hat keine eigene Karte.
+        <section aria-label="Grafische Planung">
           <GrundrissEditor
             key={aktivesGeschoss.id}
+            arbeitsflaeche={grundrissArbeitsflaeche}
             floorId={aktivesGeschoss.id}
             buildingId={aktivesGeschoss.building_id}
             geschossLabel={aktivesGeschoss.label}

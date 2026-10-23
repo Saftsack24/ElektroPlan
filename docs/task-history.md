@@ -3722,3 +3722,156 @@ keine Produktions- oder Echtdatenfreigabe.
 * **Docker:** Docker Desktop regulär gestartet, `docker compose up -d`, Backend-Image regulär neu
   gebaut, Container neu gestartet; keine Reparatur, keine Volumes oder Daten verändert.
 * **Prüfliste:** `docs/phase-6-pruefliste.md`.
+
+## Task 0051 – Entwurf Phase 6c: Bedienungsüberarbeitung, Planungsvorgaben, Verteilungsplanung
+
+**Datum:** 2026-10-15 · **Status:** nur Entwurf, **nicht freigegeben, nicht umgesetzt, nicht committet**;
+Phase 7 zurückgestellt; manuelle Gesamtprüfung Phase 6 weiterhin offen; 6b.6 unverändert uncommittet im
+Arbeitsbaum erhalten.
+
+* **Ziel:** Wünsche des Auftraggebers zu Bedienung, zentralen Vorgaben und Verteilungsaufbau als begrenzte,
+  prüfbare Phase 6c vor Phase 7 entwerfen.
+* **Ergebnis:** [`phase-6c-design.md`](phase-6c-design.md) mit Code-Befunden (u. a. 1 100-px-Seitenbreite und
+  300-px-Spalte begrenzen die Zeichenfläche; Viewport bleibt bei Größenänderung erhalten, solange die
+  Zeichenfläche nicht neu eingehängt wird; Lagegerät der Verteilung entsteht in zwei getrennten
+  Transaktionen; Endgerät einer Leitung ist Pflicht), Dialogrichtlinie, Arbeitsfläche, 3D-Schalter,
+  Platzierungsablauf mit atomarem Endpunkt, neuem Leitungsablauf, Vorgabenkette und Prozentreserve,
+  Verteilungsaufbau, Architektur/Rechte/Migrationen, Schritten 6c.0–6c.8, Abnahmekriterien, Rückfragen F1–F5.
+* **ADR-Entwürfe (proposed):** 0027 (Planungsvorgaben, Kabelvorlagen, Reserve; löst 0026 D5 ab), 0028 (Lage und
+  Aufbau einer Verteilung), 0029 (modulbezogene Anzeigeschalter; erweitert 0021).
+* **Dokumentation:** `current-status.md`, `roadmap.md`, `glossary.md` (Begriffe „Entwurf 6c“),
+  `decisions/README.md`.
+* **Tests:** keine (keine Codeänderung).
+* **Nächster Schritt:** Prüfung durch den Auftraggeber, Antworten F1–F5; empfohlen danach 6c.0
+  (Planungsarbeitsfläche, nur Frontend) – erst nach ausdrücklicher Freigabe und nach dem Checkpoint 6b.6.
+
+## Task 0052 – Entwurf 6c (2. Fassung), Checkpoint 6b.6, Umsetzung 6c.0
+
+**Datum:** 2026-10-15 · **Status:** 6b.6 als `1ac3661` committet (nicht gepusht); Entwurf und 6c.0
+**nicht committet**; 6c.0 technisch umgesetzt und automatisiert geprüft, **Browserprüfung ausstehend**;
+manuelle Gesamtprüfung Phase 6 offen; Phase 7 zurückgestellt.
+
+* **Entwurf:** F1 entschieden (Gerätetypvorlage Standard; Stromkreisvorgabe nur bei ausdrücklicher Aktivierung,
+  Migration ohne Aktivierung), F2–F5 bestätigt; `phase-6c-design.md`, ADR 0027–0029 angepasst.
+* **Checkpoint 6b.6:** Arbeitsbaum geprüft (`git diff --check` sauber, keine Secrets/Debug-Reste, keine
+  Migrationsänderung, keine abgeschwächten Prüfungen); gemeinsame Dokumente gezielt nur mit den 6b.6-Inhalten
+  gestaged, 6c-Dateien und -Abschnitte außerhalb. Grundlage der dokumentierte Lauf (1 331 Backend-, 1 140
+  Frontendtests).
+* **6c.0:** `Planungsarbeitsflaeche`, `Kontextleiste` (Undo/Redo, Entwurfsleiste, Raumrückmeldung),
+  `core/ui/SymbolKnopf`, Icons `Undo2`/`Redo2`/Panel/Maximieren; Umbau von Grundriss, Wand- und Deckenansicht;
+  Panelzustand im Projekt-Tab. Details: Entwurf §17.
+* **Tests:** 19 neue Frontendtests; Bestandstests öffnen das Panel jetzt wie ein Benutzer (Testhilfe). Frontend
+  1 159 Tests, Typecheck, ESLint, Modulgrenzen, Build, API-Drift grün; Backend unverändert, nicht gelaufen.
+* **Browser:** nicht ausgeführt – Anmeldung im lokalen Stack mit dem Konto aus `.env.example` abgelehnt; `.env`
+  bewusst nicht gelesen. Planner-Container regulär neu gestartet, keine Daten verändert.
+* **Nächster Schritt:** Browserprüfung 6c.0 (Entwurf §17.5), danach Abnahme und Commit nach Freigabe.
+* **Nachtrag Browserprüfung (2026-10-15):** Nach Anmeldung durch den Auftraggeber im laufenden Stack geprüft
+  (PR-2026-0010): Breite, Viewport-Erhalt (Maßstab und Mitte) in Grundriss, Wand- und Deckenansicht über alle
+  Layoutwechsel und einen Fenstergrößenwechsel, offener Leitungsentwurf, 375 px, dunkles Theme, Hinweise,
+  Rückfrage. Zwei Befunde behoben (Hinweis ragte links aus dem Fenster; maximierte Fläche schmal niedriger als
+  normal). Prüfentwurf über die Rückfrage verworfen, nichts gespeichert. Danach Frontend 1 159 Tests, Typecheck,
+  ESLint, Modulgrenzen, Build erneut grün. Details: Entwurf §17.5.
+
+## Task 0053 – 6c.0 nicht abgenommen: Analyse und Entwurf Planungslayout und Leitungsablauf
+
+**Datum:** 2026-10-16 · **Status:** nur Analyse und Entwurf; keine Produktivcodeänderung, keine Migration, kein
+Commit, kein Push. 6c.0 bleibt uncommittet im Arbeitsbaum, **nicht abgenommen, überarbeitungsbedürftig**.
+
+* **Rückmeldung des Auftraggebers:** Fläche gegenüber Kopf unverhältnismäßig groß, Menüs überladen, „Neue Leitung“
+  gehört in die obere Werkzeugleiste, kein Start über vorher gewähltes Gerät/Stromkreis, Zeichnen vorhersehbarer,
+  Abschluss im Dialog statt langem Seitenformular. 6c.1–6c.8 zurückgestellt.
+* **Analyse:** Einstiegspunkte und Ereignisabläufe im Code (Leitungsliste/`neueLeitung`, Wand-, Decken- und
+  Grundrisswerkzeug, Fang, `rechtwinkligeLagen`, Auswahl/Einfügen, Ebenenwahl, Flächenwechsel, Abschluss) und die
+  Messungen im Stack vom Vortag; 17 Befunde (Entwurf §18.1). Eine neue Browsersitzung war abgelaufen – nicht erneut
+  angemeldet.
+* **Entwurf §18:** gemeinsamer Arbeitsbereich (Breite, Fensterhöhe, einzeiliger Kopf), gruppierte Werkzeugleiste mit
+  „Leitung hinzufügen“, Menüs „Ansicht“/„Elektro“, Wand/Decke in der Arbeitsfläche, Ablauf A–G mit Schrittanzeige,
+  Gesten (Klick statt Loslassen, sichtbare L-Führung mit Umschalt, Anfügen am Ende, Doppelklick, Escape, Fang
+  sichtbar), Abschlussdialog, vorzuziehende Backendteile (V1), Reihenfolge L1 → L2 → V1 → L3 → P, Rückfragen F6–F8.
+* **Tests:** keine (keine Codeänderung).
+* **Nächster Schritt:** Beurteilung des Entwurfs, Antworten F6–F8, Freigabe L1.
+
+## Task 0054 – Phase 6c L1: Planungslayout und Werkzeugleiste
+
+**Datum:** 2026-10-16 · **Status:** technisch umgesetzt und automatisiert geprüft; **nicht committet, nicht gepusht**;
+Beurteilung des Layouts und manuelle Abnahme durch den Auftraggeber offen. Nur Frontend: kein Backend, kein Schema,
+keine Migration, OpenAPI unverändert.
+
+* **Entscheidungen:** F6 rechtwinklig (Bedienung erst in L2), F7 **V1 vor L2/L3** – Reihenfolge L1 → V1 → L2/L3 → P,
+  F8 Wand/Decke in derselben Arbeitsfläche (Entwurf §18.9).
+* **Umgesetzt (Entwurf §19):** Arbeitsbereich-Modus der Seite (gemeinsame Breite bis 120 rem nur in Planungsansichten),
+  einzeiliger Projektkopf mit Menü „Projekt“, Ansichtszeile Geschoss/Ansicht, gruppierte Werkzeugleiste (Auswahl,
+  Raum, Öffnung, Gerät, „Leitung hinzufügen“, Verlauf, Zoom, Menü „Ansicht“ mit Fang/Raster/Hilfe), Höhenregel
+  (Fensterhöhe, mindestens 220 px Zeichenfläche, sonst ein Seitenscroll), Wand und Decke als Fläche an Ort und Stelle
+  mit Pfad und Rückweg statt modaler Dialoge, Grundriss währenddessen ausgehängt, Ausschnitt je besuchter Fläche
+  (begrenzt), konsistente Escape-Kette, gemeinsames Panel und Maximieren. Neue Bausteine: `core/ui/Menue.tsx`,
+  `core/ui/arbeitsbereich.tsx`, `arbeitsflaeche/Werkzeuggruppen.tsx`, `ansichtsgedaechtnis.ts`, `stabil.ts`.
+* **Zwischenstand:** „Leitung hinzufügen“ öffnet bis L2 das Panel an der bestehenden Leitungsliste (Fokus
+  Stromkreiswahl); der bisherige Leitungsablauf ist unverändert funktionsfähig.
+* **Leistung:** Ein Vergleich mit dem Stand vor L1 zeigte langsamere Zeigerbewegungen (versteckter Grundriss,
+  Neuzeichnen der Leisten). Behoben durch Aushängen des Grundrisses, `memo` für Symbole und Leisten, stabile Rückrufe.
+* **Tests:** Frontend 1 179 Tests: Nach den Korrekturen aus der Browserprüfung lief die Suite unter Volllast der Maschine (CPU 100 %, fremde Anwendung) mit `--maxWorkers=4 --testTimeout=30000` – 1 178/1 179 grün; rot nur der bekannte lastabhängige 3D-Nachladetest (Task 0043), einzeln grün. Im Standardlauf unter dieser Last nur Zeitüberschreitungen. Vor der Browserprüfung im Standardlauf ohne Last 1 174/1 174 grün. Typecheck, ESLint, Modulgrenzen, Build, API-Drift-Check grün.
+  Neue Tests: Menü, Arbeitsbereich, Projektkopf, Ansichtsgedächtnis, Höhenregel, Flächenübergänge mit Pfad/Fokus/
+  Rückweg, Entwurf- und Undo-Erhalt, Escape-Kette, Maximieren, Decke, Benutzer-/Betriebswechsel.
+* **Browserprüfung (Entwurf §19.8):** fünf Fenstergrößen, hell/dunkel, Grundriss ↔ Wand mit Ausschnitt, Leitungsentwurf
+  über Flächenwechsel, Maximieren und Escape. Zwei Befunde behoben (gestauchter Kopf bei schmaler Breite; Ausschnitt
+  je Wand/Decke – Startwert überschrieb das Gedächtnis, verspätet gelesene Messmarke, StrictMode). Umgebung: Vite im
+  Container erkennt Dateiänderungen unter Windows nicht – Neustart des Containers nötig.
+* **Nächster Schritt:** Beurteilung L1 durch den Auftraggeber; danach V1 nach Freigabe.
+
+## Task 0055 – Phase 6c L1: Nacharbeiten (schmale Leiste, gesperrte Knöpfe, Decke/3D, Gesamtlauf)
+
+**Datum:** 2026-10-22 · **Status:** umgesetzt, **nicht technisch geprüft** (regulärer Frontend-Gesamtlauf nicht grün);
+nicht committet, nicht gepusht; Beurteilung des Layouts und manuelle Abnahme offen. Kein V1, kein L2/L3, kein Backend.
+
+* **Schmale Darstellung (Entwurf §19.9.1):** `arbeitsflaeche/kompakt.ts` (`useKompakt`, `knopftext`),
+  `werkzeugsymbole.ts`, `Werkzeugwahl` (Raum/Öffnung als Menü), Symbolknöpfe mit Hinweis (`SymbolKnopf.beschreibung`,
+  Hinweis am Menüknopf), „Leitung“ mit Text oben, Ansicht als Auswahl, gekürzte Kopf-/Pfad-/Kontexttexte mit vollem
+  Namen, Eigenschaften/Maximieren oben rechts neben den Werkzeugen, Höhenregel „Fenster füllen“. Bei 375 × 812:
+  3 statt 6 Werkzeugzeilen, 626 statt 220 px Zeichenfläche.
+* **Gesperrte Knöpfe (§19.9.2):** `core/ui/stil.ts` – gesperrt ohne Füllung, gedämpft, Zeiger „nicht erlaubt“; Hover nur
+  bedienbar. Hell/dunkel in Planung und Stammdaten-Formular geprüft.
+* **Browser (§19.9.4):** Grundriss ↔ Decke (Pfad, Fokus, Ausschnitt exakt, Escape je eine Wirkung, Entwurf über Decke,
+  Grundriss und 3D erhalten), 3D → Wand → 3D (Kamera, Zoom, Auswahl erhalten). 3D → Decke nicht im Browser (keine
+  Deckendaten im synthetischen Bestand). Befunde behoben: Menüeinträge mit Browser-Knopfdarstellung; Eigenschaften in
+  eigener Zeile.
+* **3D-Nachladetest:** Ursache belegt (Ladehinweis zum Abbruchzeitpunkt, kaltes Nachladen); synchronisiert wie Task 0043.
+* **Tests:** gezielt 993/993 grün; regulärer Gesamtlauf viermal mit 1–2 Zeitüberschreitungen (5 s) langer
+  Integrationstests, bester Lauf 1 187/1 188; HEAD scheitert unter denselben Bedingungen ebenso; A/B-Median L1
+  +10–26 % für diese Tests; genaue Quelle nicht belegt (kein Worker-Profil). Typprüfung, ESLint, Modulgrenzen, Build,
+  API-Drift, `git diff --check` grün.
+* **Nächster Schritt:** Entscheidung Renderkosten senken oder Tests teilen; dann regulärer Gesamtlauf; danach
+  Beurteilung L1.
+
+## Task 0056 – Phase 6c L1: Mehrkosten in den langen Integrationstests analysiert und gesenkt
+
+**Datum:** 2026-10-22 · **Status:** umgesetzt, **L1 technisch geprüft** (regulärer Gesamtlauf grün); nicht committet,
+nicht gepusht; Beurteilung des Layouts und manuelle Abnahme offen.
+
+* **Analyse (Entwurf §19.9.6):** CPU-Profil der Test-Worker (vorübergehende Setup-Datei, nicht im Repository) für
+  `Grundrissleitungen` und `WandansichtGeraete`, L1 gegen HEAD: +20 % aktive Zeit. Größter Posten der Testhelfer
+  `eigenschaftenOeffnen` (+3,2 s, davon 2,6 s `findByRole` über das ganze Dokument); Anwendung: Neuzeichnen von
+  Eigenschaften/Maximieren (+0,6 s je `Planungsarbeitsflaeche`/`SymbolKnopf`), geschlossener `HilfeDialog` (+0,17 s).
+* **Maßnahmen:** Testhelfer über feste Markierungen mit Namensprüfung; `HilfeDialog` erzeugt Inhalt nur offen;
+  `Flaechenknoepfe` gemerkt mit stabilen Rückrufen. Ergebnis +1,7 % gegenüber HEAD.
+* **Tests:** Typprüfung, ESLint, Modulgrenzen, Build, API-Drift, `git diff --check` grün; gezielter Lauf unter
+  Spiellast mit zwei Workern 991/993 (zwei Zeitüberschreitungen, je etwa 5 s) – nicht aussagekräftig.
+* **Regulärer Gesamtlauf (bei normaler Last, 26 %):** 1 188/1 188 Tests, 104 Dateien, 55 s; die früher kritischen
+  langen Tests 1,3–3,8 s. Danach Typprüfung, ESLint, Modulgrenzen, Build, API-Drift, `git diff --check` grün.
+  Hilfedialog und gemerkte Flächenknöpfe nur automatisiert geprüft (Browsersitzung abgelaufen).
+* **Nächster Schritt:** Beurteilung des Layouts und manuelle Abnahme L1 durch den Auftraggeber; Commit nach Freigabe;
+  V1 erst nach ausdrücklicher Freigabe.
+
+## Task 0057 – Checkpoint L1
+
+**Datum:** 2026-10-23 · **Status:** Checkpoint-Commit (nicht gepusht). Inhalt: 6c.0 Planungsarbeitsfläche, L1
+Planungslayout mit Nacharbeiten und Senkung der Mehrkosten, Entwurf 6c (3. Fassung), ADR 0027–0029 (*proposed*) und
+Statusdokumentation. **Technisch geprüft**, persönliche Layoutabnahme durch den Auftraggeber **offen**; die Freigabe
+von V1 ist keine nachträgliche Layoutabnahme.
+
+* **Grundlage:** regulärer Frontend-Gesamtlauf 1 188/1 188 (Task 0056) mit anschließend bestandenen Qualitätsschranken
+  (Typprüfung, ESLint, Modulgrenzen, Build, API-Drift); kein erneuter Gesamtlauf für den Checkpoint.
+* **Vorabprüfung:** keine Secrets, `.env`, Vorschaukonfiguration, Screenshots, Logs, Dumps, Caches oder
+  Scratchpad-Dateien; keine Instrumentierung, keine künstlichen Verzögerungen, kein `only`/`skip`, keine verlängerten
+  Fristen; keine Änderung an Architektur-, Sicherheits- oder Mandantenprüfungen (nur Frontend und Dokumentation);
+  `git diff --check` sauber. Nicht aufgenommen: eine unabhängige Datei unter `output/`.

@@ -10,6 +10,7 @@ import { masseinheitSetzen } from "../../../core/ui/masseinheit";
 import { RueckfrageProvider } from "../../../core/ui/Rueckfrage";
 import { rechteck } from "../ansicht3d/testplan";
 import { DIELE, DURCHFUEHRUNG, GESCHOSS, KUECHE, TYPEN, VERTEILUNG, geschossplan, leitung, stromkreis } from "./testdaten";
+import { eigenschaftenOeffnen, raumInListe } from "../arbeitsflaeche/testhilfe";
 
 /**
  * Leitungsplanung in Wand- und Deckenansicht (Phase 6b.4) über den echten
@@ -66,10 +67,12 @@ function grundrissKlick(ziel: Element, x: number, y: number) {
 /** Südwand der Diele in der Wandansicht öffnen. */
 async function wandOeffnen() {
   await screen.findByRole("application", { name: /Grundriss/ });
-  fireEvent.click(await screen.findByRole("button", { name: /0.01 Diele/ }));
+  fireEvent.click(await raumInListe(/0.01 Diele/));
   grundrissKlick(await screen.findByTestId("wand-diele-w0"), 2000, 0);
   fireEvent.click(await screen.findByRole("button", { name: /^Wand (bearbeiten|ansehen)$/ }));
-  const d = await screen.findByRole("dialog", { name: /Wandansicht/ });
+  const d = await screen.findByRole("region", { name: /Wandansicht/ });
+  // Leitungsliste und -formular stehen im Eigenschaftenpanel der Wandansicht (6c.0).
+  await eigenschaftenOeffnen(d);
   await within(d).findByRole("heading", { name: "Leitungen" });
   return d;
 }
@@ -125,6 +128,45 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+// ------------------------------------------------------------ Arbeitsfläche (6c.0)
+
+describe("Wandansicht mit eingeklapptem Eigenschaftenpanel (6c.0)", () => {
+  // Die Ablehnung gilt nur hier - auch wenn der Test vorzeitig endet.
+  afterEach(() => api.post.mockReset());
+
+  // Langer Ablauf durch Editor, Wandansicht und Leitungsentwurf: unter voller Testlast
+  // reichen die üblichen 5 s nicht immer.
+  it("Leitungsentwurf bleibt über Ein-/Ausklappen und Maximieren erhalten; Speichern und Fehler an der Aktion", { timeout: 20_000 }, async () => {
+    leitungen = [];
+    api.post.mockRejectedValue(problem(422, "validation-failed", [{ field: "end_device_id", code: "required", message: "Endgerät fehlt." }]));
+    zeigen();
+    const d = await wandOeffnen();
+    fireEvent.click(within(d).getByRole("button", { name: "Neue Leitung" }));
+    klicken(3700, 2210);
+    const flaeche = within(d).getByRole("region", { name: "Arbeitsfläche Wand" });
+    const svg = ansicht();
+    // Panel zu, maximieren, zurück: dieselbe Fläche, derselbe Entwurf mit einem Wegpunkt.
+    fireEvent.click(within(flaeche).getByRole("button", { name: "Eigenschaften" }));
+    fireEvent.click(within(flaeche).getByRole("button", { name: "Zeichenfläche maximieren" }));
+    expect(flaeche).toHaveAttribute("data-maximiert");
+    fireEvent.click(within(flaeche).getByRole("button", { name: "Normale Ansicht" }));
+    expect(ansicht()).toBe(svg);
+    const leiste = within(d).getByTestId("entwurfsleiste-leitung");
+    expect(leiste).toHaveTextContent("Leitungsentwurf: ungespeichert");
+    // Rückgängig wirkt auf den Leitungsentwurf und ist nicht gesperrt.
+    expect(within(flaeche).getByRole("group", { name: "Rückgängig und Wiederholen im Leitungsentwurf" })).toBeInTheDocument();
+    expect(within(flaeche).getByRole("button", { name: "Rückgängig" })).not.toHaveAttribute("aria-disabled");
+
+    // Speichern aus der Kontextleiste; der Fehler erscheint dort, nicht nur im verborgenen Panel.
+    fireEvent.click(within(leiste).getByRole("button", { name: "Leitung speichern" }));
+    expect(await within(leiste).findByRole("alert")).toHaveTextContent(/Leitung nicht gespeichert/);
+    fireEvent.click(within(leiste).getByRole("button", { name: "Details und Entscheidung" }));
+    expect(within(flaeche).getByRole("button", { name: "Eigenschaften" })).toHaveAttribute("aria-expanded", "true");
+    const entwurf = within(d).getByRole("region", { name: "Leitungsentwurf" });
+    expect(within(within(entwurf).getByRole("list", { name: "Wegpunkte" })).getAllByRole("listitem")).toHaveLength(1);
+  });
 });
 
 // ------------------------------------------------------------------ Neue Leitung
@@ -229,10 +271,11 @@ describe("Neue Durchführung in der Wandansicht (6b.5)", () => {
     leitungen = [];
     zeigen();
     await screen.findByRole("application", { name: /Grundriss/ });
-    fireEvent.click(await screen.findByRole("button", { name: /0.01 Diele/ }));
+    fireEvent.click(await raumInListe(/0.01 Diele/));
     grundrissKlick(await screen.findByTestId("wand-diele-w1"), 4200, 1500);
     fireEvent.click(await screen.findByRole("button", { name: /^Wand (bearbeiten|ansehen)$/ }));
-    const d = await screen.findByRole("dialog", { name: /Wandansicht/ });
+    const d = await screen.findByRole("region", { name: /Wandansicht/ });
+    await eigenschaftenOeffnen(d);
     fireEvent.click(await within(d).findByRole("button", { name: "Neue Leitung" }));
     const entwurf = within(d).getByRole("region", { name: "Leitungsentwurf" });
     // Ostwand der Diele (3 000 lang, Wandende links): Abstand 1 500 liegt bei u = 1 500.
@@ -248,7 +291,7 @@ describe("Neue Durchführung in der Wandansicht (6b.5)", () => {
     expect(api.post).not.toHaveBeenCalled();
 
     fireEvent.click(within(d).getByRole("button", { name: /Gegenseite aus „0.02 Küche“ ansehen/ }));
-    const k = await screen.findByRole("dialog", { name: /Wandansicht.*Küche|Küche.*Wandansicht/ });
+    const k = await screen.findByRole("region", { name: /Wandansicht.*Küche|Küche.*Wandansicht/ });
     // Küche.West läuft von (4200,3000) nach (4200,0); Gegenlage 3 000 − 1 500 = 1 500 ab Wandanfang.
     const marke = await within(k).findByTestId(/^durchfuehrung-neu-[0-9a-f]{32}$/);
     expect(marke.querySelector("circle")).toHaveAttribute("data-neu", "ja");
@@ -376,8 +419,9 @@ describe("Wand- und Deckenwechsel", () => {
     expect(within(d).getByText(/370 cm von links · 250 cm hoch/)).toBeInTheDocument();
     fireEvent.click(within(d).getByText("Arbeitsfläche wechseln (Entwurf bleibt erhalten)"));
     fireEvent.click(within(d).getByRole("button", { name: "Decke dieses Raums" }));
-    const decke = await screen.findByRole("dialog", { name: /Deckenansicht/ });
-    expect(screen.queryByRole("dialog", { name: /Wandansicht/ })).toBeNull();
+    const decke = await screen.findByRole("region", { name: /Deckenansicht/ });
+    await eigenschaftenOeffnen(decke);
+    expect(screen.queryByRole("region", { name: /Wandansicht/ })).toBeNull();
     const entwurf = within(decke).getByRole("region", { name: "Leitungsentwurf" });
     expect(within(within(entwurf).getByRole("list", { name: "Wegpunkte" })).getAllByRole("listitem")).toHaveLength(1);
     expect(api.post).not.toHaveBeenCalled();
@@ -446,7 +490,8 @@ describe("Loslassen nach schneller Bewegung übernimmt den letzten gültigen Pun
     klicken(3700, 2480);
     fireEvent.click(within(d).getByText("Arbeitsfläche wechseln (Entwurf bleibt erhalten)"));
     fireEvent.click(within(d).getByRole("button", { name: "Decke dieses Raums" }));
-    const decke = await screen.findByRole("dialog", { name: /Deckenansicht/ });
+    const decke = await screen.findByRole("region", { name: /Deckenansicht/ });
+    await eigenschaftenOeffnen(decke);
     fireEvent.click(within(decke).getByRole("button", { name: "Leitung" }));
     const flaeche = decke.querySelector("svg.ansicht__svg") as Element;
     ohneRendern([
@@ -547,10 +592,11 @@ describe("Durchführung verschieben", () => {
     api.patch.mockRejectedValueOnce(bruch).mockResolvedValueOnce({ ...DURCHFUEHRUNG, height_mm: 2000, version: 4 });
     zeigen();
     await screen.findByRole("application", { name: /Grundriss/ });
-    fireEvent.click(await screen.findByRole("button", { name: /0.01 Diele/ }));
+    fireEvent.click(await raumInListe(/0.01 Diele/));
     grundrissKlick(await screen.findByTestId("wand-diele-w1"), 4200, 1500);
     fireEvent.click(await screen.findByRole("button", { name: /^Wand (bearbeiten|ansehen)$/ }));
-    const d = await screen.findByRole("dialog", { name: /Wandansicht · Wand 2/ });
+    const d = await screen.findByRole("region", { name: /Wandansicht · Wand 2/ });
+    await eigenschaftenOeffnen(d);
     const marke = (await within(d).findByTestId("durchfuehrung-d1")).querySelector("circle") as Element;
     fireEvent(marke, new MouseEvent("pointerdown", { bubbles: true, cancelable: true, button: 0 }));
     fireEvent(marke, new MouseEvent("pointerup", { bubbles: true, cancelable: true, button: 0 }));
@@ -622,7 +668,7 @@ describe("Entwurfsschutz, Rechte und Sitzung", () => {
     const d = await wandOeffnen();
     fireEvent.click(within(d).getByRole("button", { name: "Neue Leitung" }));
     klicken(3700, 2200);
-    fireEvent.click(within(d).getByRole("button", { name: "Dialog schließen" }));
+    fireEvent.click(within(d).getByRole("button", { name: /^Zurück zu(m Grundriss|r 3D-Ansicht)$/ }));
     expect(await screen.findByTestId("entwurf-offen")).toHaveTextContent("Leitungsentwurf offen – ungespeichert");
     // 6b.5: Der Entwurf gehört zum Gebäude - ein Wechsel zu Tabellen und zurück fragt nicht und verliert nichts.
     fireEvent.click(screen.getByRole("button", { name: "Tabellen & Details" }));
@@ -639,7 +685,7 @@ describe("Entwurfsschutz, Rechte und Sitzung", () => {
     expect(screen.getByTestId("entwurf-offen")).toBeInTheDocument();
     // Weiter bearbeiten führt zurück an den letzten Punkt.
     fireEvent.click(screen.getByRole("button", { name: "Leitung weiter bearbeiten" }));
-    expect(await screen.findByRole("dialog", { name: /Wandansicht · Wand 1/ })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: /Wandansicht · Wand 1/ })).toBeInTheDocument();
   });
 
   it("ohne route.write keine Leitungsbearbeitung; ohne circuit.write keine Zuordnung", async () => {
@@ -700,15 +746,17 @@ describe("Rückkehr aus 3D", () => {
         </RueckfrageProvider>
       </QueryClientProvider>,
     );
-    const d = await screen.findByRole("dialog", { name: /Wandansicht · Wand 1/ });
+    const d = await screen.findByRole("region", { name: /Wandansicht · Wand 1/ });
+    await eigenschaftenOeffnen(d);
     fireEvent.click(await within(d).findByRole("button", { name: "Neue Leitung" }));
     fireEvent.click(within(d).getByText("Arbeitsfläche wechseln (Entwurf bleibt erhalten)"));
     fireEvent.click(within(d).getByRole("button", { name: "Decke dieses Raums" }));
-    const decke = await screen.findByRole("dialog", { name: /Deckenansicht/ });
+    const decke = await screen.findByRole("region", { name: /Deckenansicht/ });
+    await eigenschaftenOeffnen(decke);
     // Der Wechsel selbst führt nicht zurück und schließt nichts.
     expect(zurueck).not.toHaveBeenCalled();
     expect(within(decke).getByRole("region", { name: "Leitungsentwurf" })).toBeInTheDocument();
-    fireEvent.click(within(decke).getByRole("button", { name: "Dialog schließen" }));
+    fireEvent.click(within(decke).getByRole("button", { name: /^Zurück zu(m Grundriss|r 3D-Ansicht)$/ }));
     // Erst das Schließen führt zurück - die 3D-Ansicht fragt dann wie immer nach dem Entwurf.
     await waitFor(() => expect(zurueck).toHaveBeenCalledTimes(1));
   });
@@ -718,8 +766,9 @@ describe("Darstellung", () => {
   it("Kopfzeile und Werkzeugleiste der Wandansicht schrumpfen nicht (Überlagerung aus der Browserabnahme)", async () => {
     zeigen();
     const d = await wandOeffnen();
-    expect(within(d).getByRole("toolbar", { name: "Werkzeuge der Wandansicht" }).className).toMatch(/(^| )shrink-0( |$)/);
-    expect(within(d).getByTestId("wandseite").closest("[role=status]")?.className).toMatch(/(^| )shrink-0( |$)/);
+    // Seit L1 stehen Kopf und Werkzeugleiste in Zeilen der Arbeitsfläche, die nicht schrumpfen.
+    expect(within(d).getByRole("toolbar", { name: "Werkzeuge der Wandansicht" }).closest(".shrink-0")).not.toBeNull();
+    expect(within(d).getByTestId("wandseite").closest(".shrink-0")).not.toBeNull();
   });
 
   it("Leitungsfarbe ist für hell und dunkel als Token definiert", () => {

@@ -6,6 +6,7 @@ import { masseinheitSetzen } from "../../../core/ui/masseinheit";
 import { RueckfrageProvider } from "../../../core/ui/Rueckfrage";
 import { rechteck } from "../ansicht3d/testplan";
 import { RAUM } from "./testdaten";
+import { raumInListe } from "../arbeitsflaeche/testhilfe";
 
 /**
  * Wandzuordnung im Grundriss-Editor (Phase 6a) - Integration über den
@@ -84,7 +85,7 @@ function klick(ziel: Element, x: number, y: number) {
 
 async function wandW2Waehlen() {
   await screen.findByRole("application", { name: /Grundriss/ });
-  fireEvent.click(await screen.findByRole("button", { name: /0.01 Wohnzimmer/ }));
+  fireEvent.click(await raumInListe(/0.01 Wohnzimmer/));
   klick(await screen.findByTestId("wand-w2"), 4990, 2000);
   return screen.findByRole("region", { name: "Wandzuordnung" });
 }

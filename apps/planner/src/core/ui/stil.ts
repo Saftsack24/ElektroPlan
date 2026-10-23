@@ -25,15 +25,21 @@ export const KNOPF_GRUND = "cursor-pointer rounded-ep border";
 
 export type KnopfArt = "primaer" | "neutral" | "gewaehlt" | "gefahr" | "einfach";
 
+/**
+ * Gesperrt sieht jeder Knopf gleich aus: ohne Füllfarbe, gedämpfter Text und Rahmen, Zeiger
+ * „nicht erlaubt“ (L1). Eine blasse Akzentfarbe wirkte noch bedienbar. Hover wirkt nur an
+ * bedienbaren Knöpfen (`enabled:`). Die Semantik bleibt beim nativen `disabled`.
+ */
+const GESPERRT = "disabled:cursor-not-allowed disabled:border-line disabled:bg-transparent disabled:text-muted";
+
 const KNOPF_ART: Record<KnopfArt, string> = {
-  primaer:
-    "border-transparent bg-accent text-on-accent enabled:hover:bg-accent-hover disabled:cursor-progress disabled:opacity-60",
-  neutral: "border-control bg-transparent text-fg",
+  primaer: `border-transparent bg-accent text-on-accent enabled:hover:bg-accent-hover ${GESPERRT}`,
+  neutral: `border-control bg-transparent text-fg ${GESPERRT}`,
   // Wie `neutral`, der Rahmen markiert den gewählten Eintrag einer Liste.
-  gewaehlt: "border-selected bg-transparent text-fg",
-  gefahr: "border-transparent bg-danger text-surface disabled:cursor-progress disabled:opacity-60",
+  gewaehlt: `border-selected bg-transparent text-fg ${GESPERRT}`,
+  gefahr: `border-transparent bg-danger text-surface ${GESPERRT}`,
   // Browserdarstellung des Knopfs, nur mit gemeinsamer Form und Abstand.
-  einfach: "border-transparent",
+  einfach: "border-transparent disabled:cursor-not-allowed disabled:text-muted",
 };
 
 /**

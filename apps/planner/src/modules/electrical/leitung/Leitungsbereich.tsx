@@ -375,7 +375,7 @@ function Leitungsliste({
             <div className="flex flex-col gap-1.5 border-t border-line pt-2">
               <label className={FELD}>
                 <span className={FELD_BESCHRIFTUNG}>Stromkreis</span>
-                <select className={eingabefeld({ kompakt: true })} value={kreis?.id ?? ""} onChange={(event) => setKreisWahl(event.target.value)}>
+                <select className={eingabefeld({ kompakt: true })} value={kreis?.id ?? ""} data-leitung-einstieg="" onChange={(event) => setKreisWahl(event.target.value)}>
                   {p.kreise.map((kr) => (
                     <option key={kr.id} value={kr.id}>
                       {p.kreisName(kr)}

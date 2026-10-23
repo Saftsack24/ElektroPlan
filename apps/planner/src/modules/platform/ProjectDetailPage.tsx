@@ -9,7 +9,11 @@ import { useProjectTabs } from "../../core/modules/ProjectTabs";
 import { AKTION } from "../../core/ui/aktionssymbole";
 import { Bestaetigung } from "../../core/ui/Bestaetigung";
 import { useVerlassenBestaetigen } from "../../core/ui/Rueckfrage";
-import { MitSymbol } from "../../core/ui/Symbol";
+import { MitSymbol, Symbol } from "../../core/ui/Symbol";
+import { useArbeitsbereichAktiv } from "../../core/ui/arbeitsbereich";
+import { Marke } from "../../core/ui/Marke";
+import { Menue } from "../../core/ui/Menue";
+import type { Menuepunkt } from "../../core/ui/Menue";
 import { KNOPFZEILE, REITERLEISTE, STAPEL, karte, knopf, meldungsflaeche, reiter } from "../../core/ui/stil";
 import { aktionsfehler } from "./aktionsfehler";
 import { Bearbeitungsinfo } from "./Bearbeitungsinfo";
@@ -51,6 +55,8 @@ export default function ProjectDetailPage() {
   const modulTabs = useProjectTabs();
 
   const [aktiv, setAktivRoh] = useState<string>(EIGENE_TABS[0].id);
+  // Zeigt ein Tab gerade einen Arbeitsbereich (grafische Planung), wird der Kopf einzeilig (6c, L1).
+  const kompakt = useArbeitsbereichAktiv();
   const verlassen = useVerlassenBestaetigen();
   // Ein Tabwechsel entlaedt den bisherigen Tab. Haelt er ungespeicherte
   // Aenderungen, wird vorher gefragt (fachneutraler Core-Baustein).
@@ -116,8 +122,61 @@ export default function ProjectDetailPage() {
   // Die Oberflaeche spiegelt das, verspricht aber nichts darueber hinaus.
   const schreibgeschuetzt = istSchreibgeschuetzt(daten.status);
 
+  const zurueckZiel = daten.status === "completed" || daten.status === "archived" ? "/projects?ansicht=abgeschlossen" : "/projects";
+  const uebergaenge = darfSchreiben
+    ? UEBERGAENGE.filter((u) => (u.erlaubtAb === null ? daten.status !== "archived" : daten.status === u.erlaubtAb))
+    : [];
+  // Kompakter Kopf: die nächste Statusaktion als Knopf, alles Seltene im Menü.
+  const [hauptaktion, ...weitereUebergaenge] = uebergaenge;
+  const weitere: Menuepunkt[] = [
+    ...weitereUebergaenge.map((u) => ({
+      label: u.label,
+      gesperrt: wechseln.isPending,
+      onWahl: () => wechseln.mutate({ ziel: u.ziel, version: daten.version }),
+    })),
+    ...(darfWiedereroeffnen && istWiedereroeffenbar(daten.status) ? [{ label: "Wieder in Bearbeitung setzen …", onWahl: () => setWiederOffen(true) }] : []),
+    ...(darfLoeschen && istLoeschbar(daten.status) ? [{ label: "Projekt löschen …", onWahl: () => setLoeschenOffen(true) }] : []),
+    { label: "Stammdaten und Bearbeitungsinfo", onWahl: () => setAktiv("stammdaten") },
+  ];
+
   return (
-    <div className={STAPEL}>
+    <div className={kompakt ? "flex flex-col gap-2" : STAPEL}>
+      {kompakt ? (
+        <section className="flex flex-wrap items-center gap-x-3 gap-y-1" aria-label="Projekt" data-testid="projektkopf-kompakt">
+          <Link to={zurueckZiel} className={knopf("einfach", { klein: true })} aria-label="Alle Projekte" title="Alle Projekte">
+            <Symbol icon={AKTION.zurueck} />
+          </Link>
+          <h1 className="m-0 min-w-0 text-[1.15rem] wrap-anywhere">{daten.name}</h1>
+          <span className="text-small text-muted">
+            <code>{daten.project_number}</code> · {STATUS_LABEL[daten.status]}
+          </span>
+          {schreibgeschuetzt && <Marke art="warnung">schreibgeschützt</Marke>}
+          <span className="ml-auto flex flex-wrap items-center gap-2">
+            {hauptaktion !== undefined && (
+              <button
+                type="button"
+                className={knopf("neutral", { klein: true })}
+                disabled={wechseln.isPending}
+                onClick={() => wechseln.mutate({ ziel: hauptaktion.ziel, version: daten.version })}
+              >
+                {hauptaktion.label}
+              </button>
+            )}
+            <Menue label="Weitere Projektaktionen" text="Projekt" abschnitte={[{ punkte: weitere }]} amEnde />
+          </span>
+          {schreibgeschuetzt && (
+            <p className="m-0 w-full text-label text-muted">
+              {daten.status === "completed" ? "Abgeschlossen" : "Archiviert"} – Planung nur lesbar.
+            </p>
+          )}
+          {meldung && (
+            <p className={`${meldungsflaeche("erfolg")} m-0 w-full`} role="status">
+              {meldung}
+            </p>
+          )}
+          {fehler && <p className={`${meldungsflaeche()} m-0 w-full`}>{fehler}</p>}
+        </section>
+      ) : (
       <section className={karte()}>
         <p className="text-muted">
           <Link to={daten.status === "completed" || daten.status === "archived" ? "/projects?ansicht=abgeschlossen" : "/projects"}>
@@ -187,6 +246,7 @@ export default function ProjectDetailPage() {
           )}
         </div>
       </section>
+      )}
 
       {darfLoeschen && (
         <ProjektLoeschenDialog
@@ -236,7 +296,7 @@ export default function ProjectDetailPage() {
         </Bestaetigung>
       )}
 
-      <nav className={REITERLEISTE}>
+      <nav className={REITERLEISTE} aria-label="Bereiche des Projekts">
         {EIGENE_TABS.map((tab) => (
           <button
             key={tab.id}

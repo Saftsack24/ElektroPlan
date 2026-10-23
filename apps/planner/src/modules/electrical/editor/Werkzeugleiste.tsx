@@ -1,41 +1,34 @@
-import { useMasse } from "../../../core/ui/masseinheit";
-import { KNOPF_GRUND, eingabefeld } from "../../../core/ui/stil";
-import { ANSICHT_ZURUECKSETZEN, ANSICHT_ZURUECKSETZEN_2D } from "../texte";
+import { memo } from "react";
+
+import { AnsichtMenue, LeitungHinzufuegenKnopf, Werkzeuggruppe, Werkzeugknopf, Werkzeugwahl, Zoomgruppe } from "../arbeitsflaeche/Werkzeuggruppen";
+import { RueckgaengigKnoepfe } from "../arbeitsflaeche/Kontextleiste";
+import { WERKZEUGSYMBOL } from "../arbeitsflaeche/werkzeugsymbole";
+import { ANSICHT_ZURUECKSETZEN_2D } from "../texte";
 import type { Oeffnungsart } from "./entwurf";
-import { RASTERGROESSEN_MM } from "./fang";
 import type { Werkzeug } from "./zustand";
 
-const GRUPPE = "flex flex-wrap items-center gap-1";
-/** Werkzeugknopf: kleiner als ein Formularknopf, gesperrt deutlich blasser. */
-const WERKZEUG = `${KNOPF_GRUND} border-control bg-surface px-2.5 py-[5px] text-fg disabled:cursor-not-allowed disabled:opacity-45`;
-const WERKZEUG_AKTIV = `${KNOPF_GRUND} border-accent bg-accent px-2.5 py-[5px] text-on-accent disabled:cursor-not-allowed disabled:opacity-45`;
+/** Was ein Klick auf eine Wand im Grundriss öffnet: eine Öffnungsart oder das Gerätewerkzeug der Wandfläche. */
+export type Wandwahl = Oeffnungsart | "geraet";
 
-const WERKZEUGE: readonly { wert: Werkzeug; label: string; taste: string; schreibend: boolean }[] = [
-  { wert: "auswahl", label: "Auswählen", taste: "V", schreibend: false },
-  { wert: "pan", label: "Verschieben", taste: "H", schreibend: false },
-  { wert: "rechteck", label: "Rechteckraum", taste: "R", schreibend: true },
-  { wert: "polygon", label: "Polygonraum", taste: "P", schreibend: true },
-];
+const OEFFNUNGEN = [
+  { art: "door", label: "Tür", taste: "T", icon: WERKZEUGSYMBOL.tuer },
+  { art: "window", label: "Fenster", taste: "N", icon: WERKZEUGSYMBOL.fenster },
+  { art: "passage", label: "Durchgang", taste: "D", icon: WERKZEUGSYMBOL.durchgang },
+] as const satisfies readonly { art: Oeffnungsart; label: string; taste: string; icon: unknown }[];
 
 /**
- * Tür, Fenster, Durchgang (Phase 4f): Ein Klick auf eine Wand öffnet deren
- * Wandansicht mit diesem Werkzeug - gesetzt wird dort, nicht von oben.
+ * Werkzeugleiste des Grundrisses (Phase 6c, L1) – gruppiert: Auswahl · Raum ·
+ * Öffnung · Gerät · Leitung · Verlauf · Zoom · Ansicht. Jedes Werkzeug hat ein
+ * Kürzel; es steht im Hinweis und in der Hilfe („Ansicht ▾“).
+ *
+ * Tür, Fenster, Durchgang und Gerät werden an der Wand gesetzt: Ein Klick auf eine
+ * Wand öffnet deren Wandfläche mit diesem Werkzeug.
  */
-const OEFFNUNGSWERKZEUGE: readonly { art: Oeffnungsart; label: string; taste: string }[] = [
-  { art: "door", label: "Tür", taste: "T" },
-  { art: "window", label: "Fenster", taste: "N" },
-  { art: "passage", label: "Durchgang", taste: "D" },
-];
-
-/**
- * Kompakte Werkzeugleiste. Jedes Werkzeug hat ein Tastenkürzel; die Kürzel
- * stehen im Tooltip und in der Hilfe unter der Zeichenfläche.
- */
-export function Werkzeugleiste({
+export const Werkzeugleiste = memo(function Werkzeugleiste({
   werkzeug,
   onWerkzeug,
-  oeffnungsart,
-  onOeffnungsart,
+  wandwahl,
+  onWandwahl,
   rasterMm,
   onRaster,
   fangAktiv,
@@ -44,14 +37,19 @@ export function Werkzeugleiste({
   kannWiederholen,
   onRueckgaengig,
   onWiederholen,
+  rueckgaengigBezug,
   onZoom,
   onEinpassen,
+  onHilfe,
+  leitungVorhanden,
+  leitungAktiv,
+  onLeitungHinzufuegen,
   darfSchreiben,
 }: {
   werkzeug: Werkzeug;
   onWerkzeug: (w: Werkzeug) => void;
-  oeffnungsart: Oeffnungsart;
-  onOeffnungsart: (art: Oeffnungsart) => void;
+  wandwahl: Wandwahl;
+  onWandwahl: (w: Wandwahl) => void;
   rasterMm: number;
   onRaster: (mm: number) => void;
   fangAktiv: boolean;
@@ -60,102 +58,88 @@ export function Werkzeugleiste({
   kannWiederholen: boolean;
   onRueckgaengig: () => void;
   onWiederholen: () => void;
+  /** Schritte gelten gerade für einen anderen Entwurf als den Raum, etwa „im Leitungsentwurf“. */
+  rueckgaengigBezug?: string | undefined;
   onZoom: (faktor: number) => void;
   onEinpassen: () => void;
+  onHilfe: () => void;
+  /** „Leitung hinzufügen“ – nur mit Leitungsplanung im Gebäude und Recht. */
+  leitungVorhanden: boolean;
+  leitungAktiv: boolean;
+  onLeitungHinzufuegen: () => void;
   darfSchreiben: boolean;
 }) {
-  const masse = useMasse();
+  const wandwerkzeug = (w: Wandwahl) => {
+    onWandwahl(w);
+    onWerkzeug("oeffnung");
+  };
   return (
-    <div className="flex flex-wrap items-center gap-3.5" role="toolbar" aria-label="Werkzeuge des Grundrisseditors">
-      <div className={GRUPPE}>
-        {WERKZEUGE.filter((w) => darfSchreiben || !w.schreibend).map((w) => (
-          <button
-            key={w.wert}
-            type="button"
-            className={werkzeug === w.wert ? WERKZEUG_AKTIV : WERKZEUG}
-            aria-pressed={werkzeug === w.wert}
-            title={`${w.label} (${w.taste})`}
-            onClick={() => onWerkzeug(w.wert)}
-          >
-            {w.label}
-          </button>
-        ))}
-        {darfSchreiben &&
-          OEFFNUNGSWERKZEUGE.map((o) => {
-            const aktiv = werkzeug === "oeffnung" && oeffnungsart === o.art;
-            return (
-              <button
-                key={o.art}
-                type="button"
-                className={aktiv ? WERKZEUG_AKTIV : WERKZEUG}
-                aria-pressed={aktiv}
-                title={`${o.label} (${o.taste}): Wand anklicken – die Wandansicht öffnet sich zum Setzen`}
-                onClick={() => {
-                  onOeffnungsart(o.art);
-                  onWerkzeug("oeffnung");
-                }}
-              >
-                {o.label}
-              </button>
-            );
-          })}
-      </div>
-
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5" role="toolbar" aria-label="Werkzeuge des Grundrisseditors">
+      <Werkzeuggruppe label="Auswahl">
+        <Werkzeugknopf label="Auswählen" taste="V" icon={WERKZEUGSYMBOL.auswaehlen} aktiv={werkzeug === "auswahl"} onClick={() => onWerkzeug("auswahl")} />
+        <Werkzeugknopf
+          label="Verschieben"
+          taste="H"
+          hinweis="Ansicht verschieben"
+          icon={WERKZEUGSYMBOL.verschieben}
+          aktiv={werkzeug === "pan"}
+          onClick={() => onWerkzeug("pan")}
+        />
+      </Werkzeuggruppe>
       {darfSchreiben && (
-        <div className={GRUPPE}>
-          <button
-            type="button"
-            className={WERKZEUG}
-            disabled={!kannRueckgaengig}
-            title="Rückgängig (Strg+Z)"
-            onClick={onRueckgaengig}
-          >
-            Rückgängig
-          </button>
-          <button
-            type="button"
-            className={WERKZEUG}
-            disabled={!kannWiederholen}
-            title="Wiederholen (Strg+Y oder Strg+Umschalt+Z)"
-            onClick={onWiederholen}
-          >
-            Wiederholen
-          </button>
-        </div>
+        <>
+          <Werkzeugwahl
+            gruppe="Raum"
+            menueLabel="Raum zeichnen"
+            icon={WERKZEUGSYMBOL.rechteck}
+            werkzeuge={[
+              { label: "Rechteckraum", text: "Rechteck", taste: "R", icon: WERKZEUGSYMBOL.rechteck, aktiv: werkzeug === "rechteck", onClick: () => onWerkzeug("rechteck") },
+              { label: "Polygonraum", text: "Polygon", taste: "P", icon: WERKZEUGSYMBOL.polygon, aktiv: werkzeug === "polygon", onClick: () => onWerkzeug("polygon") },
+            ]}
+          />
+          <Werkzeugwahl
+            gruppe="Öffnung"
+            menueLabel="Öffnung setzen"
+            icon={WERKZEUGSYMBOL.tuer}
+            werkzeuge={OEFFNUNGEN.map((o) => ({
+              label: o.label,
+              taste: o.taste,
+              icon: o.icon,
+              hinweis: `${o.label}: Wand anklicken – die Wandansicht öffnet sich zum Setzen`,
+              aktiv: werkzeug === "oeffnung" && wandwahl === o.art,
+              onClick: () => wandwerkzeug(o.art),
+            }))}
+          />
+          <Werkzeuggruppe label="Gerät">
+            <Werkzeugknopf
+              label="Gerät"
+              taste="G"
+              icon={WERKZEUGSYMBOL.geraet}
+              hinweis="Gerät: Wand anklicken – die Wandansicht öffnet sich zum Setzen (Deckengeräte in der Deckenfläche)"
+              aktiv={werkzeug === "oeffnung" && wandwahl === "geraet"}
+              onClick={() => wandwerkzeug("geraet")}
+            />
+          </Werkzeuggruppe>
+        </>
       )}
-
-      <div className={GRUPPE}>
-        <button type="button" className={WERKZEUG} title="Vergrößern (+)" aria-label="Vergrößern" onClick={() => onZoom(1.25)}>
-          +
-        </button>
-        <button type="button" className={WERKZEUG} title="Verkleinern (−)" aria-label="Verkleinern" onClick={() => onZoom(0.8)}>
-          −
-        </button>
-        <button type="button" className={WERKZEUG} title={`${ANSICHT_ZURUECKSETZEN_2D} (F)`} onClick={onEinpassen}>
-          {ANSICHT_ZURUECKSETZEN}
-        </button>
-      </div>
-
-      <div className={GRUPPE}>
-        <label className="flex items-center gap-1.5 text-small">
-          <input type="checkbox" checked={fangAktiv} onChange={(event) => onFang(event.target.checked)} />
-          Fang
-        </label>
-        <label className="flex items-center gap-1.5 text-small">
-          Raster
-          <select
-            className={eingabefeld({ kompakt: true })}
-            value={rasterMm}
-            onChange={(event) => onRaster(Number(event.target.value))}
-          >
-            {RASTERGROESSEN_MM.map((mm) => (
-              <option key={mm} value={mm}>
-                {masse.anzeigen(mm)}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      {leitungVorhanden && (
+        <Werkzeuggruppe label="Leitung">
+          <LeitungHinzufuegenKnopf aktiv={leitungAktiv} gesperrtGrund={null} onClick={onLeitungHinzufuegen} />
+        </Werkzeuggruppe>
+      )}
+      {(darfSchreiben || rueckgaengigBezug !== undefined) && (
+        <Werkzeuggruppe label="Verlauf">
+          <RueckgaengigKnoepfe
+            kannZurueck={kannRueckgaengig}
+            kannVor={kannWiederholen}
+            onZurueck={onRueckgaengig}
+            onVor={onWiederholen}
+            {...(rueckgaengigBezug !== undefined ? { bezug: rueckgaengigBezug } : {})}
+          />
+        </Werkzeuggruppe>
+      )}
+      <Zoomgruppe onZoom={onZoom} onGanz={onEinpassen} ganzHinweis={ANSICHT_ZURUECKSETZEN_2D} />
+      <AnsichtMenue fangAktiv={fangAktiv} onFang={onFang} rasterMm={rasterMm} onRaster={onRaster} onHilfe={onHilfe} />
     </div>
   );
-}
+});

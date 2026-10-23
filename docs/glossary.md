@@ -83,7 +83,20 @@ Dokumentation und Oberfläche auf Deutsch, Code und API auf Englisch.
 | Fortsetzung (Leitung) | – (Oberfläche, abgeleitet) | ausdrückliche Markierung, wo eine Leitung über einen Steigweg in ein anderes Geschoss weitergeht – im Grundriss am Halt, in 3D an der Geschossgrenze – seit 6b.5 |
 | Neue Durchführung | `new_penetrations` | Durchführung, die nur im Leitungsentwurf besteht und atomar mit der Leitung entsteht; Verwerfen hinterlässt nichts – seit 6b.5 |
 | Hilfslinie | – (Oberfläche) | unverbindliche Planungshilfe für Leitungswege in der Wandansicht, ohne Prüfung oder Normaussage – seit 6b.4 |
-| Anschlusszugabe / Reserve | `start_allowance_mm`, `end_allowance_mm`, `reserve_mm` | ausdrücklich je Leitung eingetragene Zusatzlänge, nie still – **Entwurf 6b** |
+| Anschlusszugabe / Reserve | `start_allowance_mm`, `end_allowance_mm`, `reserve_mm` | ausdrücklich je Leitung eingetragene Zusatzlänge, nie still – **Entwurf 6b** (ab 6c: siehe Leitungsreserve, Planungsvorgabe) |
+| Planungsvorgabe | `planning_defaults` | vom Betrieb (Betriebsstandard) oder im Projekt (Projektvorgabe) hinterlegte Vorschlagswerte für neue Leitungen; keine Laufzeitvererbung – **Entwurf 6c** (ADR 0027) |
+| Betriebsstandard / Projektvorgabe | `planning_defaults` / `project_planning_defaults` | Vorgabe je Organisation bzw. je Projekt; leere Projektfelder übernehmen den Betriebsstandard – **Entwurf 6c** |
+| Kabelvorlage | `cable_template` | benannte technische Kabelangabe (Typ, Leiteranzahl, Querschnitt) ohne Preis, zuordenbar je Gerätetyp – **Entwurf 6c** |
+| Leitungsreserve | `reserve_mode`, `reserve_percent`, `reserve_mm` | Planungsreserve einer Leitung: Prozent der geometrischen Länge (aufgerundet auf ganze mm, nur bei vollständigem Weg) oder fest; getrennt vom Material-Verschnitt – **Entwurf 6c** |
+| Herkunft (einer Angabe) | `*_origin` | woher ein Leitungswert stammt: Stromkreisvorschlag, Vorlage, Projekt, Betrieb, abweichend, Altbestand – **Entwurf 6c** |
+| Abschlussdialog | – (Oberfläche) | Dialog nach dem Zeichnen einer Leitung mit vorbelegten Angaben, Herkunft und Ergebnis – **Entwurf 6c** |
+| Kontextleiste | – (Oberfläche) | kompakte Leiste an der Zeichenfläche mit Schritt, Status, Meldung und Primäraktion der laufenden Bearbeitung – **Entwurf 6c** |
+| Lagegerät | `placement_device_id` | Gerät `distribution_board`, das die räumliche Lage einer Verteilung angibt; entsteht nur über die Platzierung – **Entwurf 6c** (ADR 0028) |
+| Verteilungsaufbau | `board_rows`, `board_components` | Reihen und eingebaute Komponenten einer Verteilung; Planungsangabe, keine Auslegung – **Entwurf 6c** |
+| Teilungseinheit (TE) | `*_te` | Rastermaß der Einbauplätze einer Reihe; Kapazität, Platz und Breite in ganzen TE – **Entwurf 6c** |
+| Komponente (Verteilung) | `board_component` (`main_switch`, `rcd`, `mcb`, `rcbo`, `surge_protection`, `terminal`, `other`) | Hauptschalter, FI, LS, FI/LS, Überspannungsschutz, Klemme, Sonstiges – Angaben als Freitext, nicht ausgewertet – **Entwurf 6c** |
+| Aufbauvorlage / Komponentenvorgabe | `board_layout_template` / `board_component_preset` | wiederverwendbarer Aufbau bzw. Palettenbaustein des Betriebs, anfangs leer – **Entwurf 6c** |
+| Anzeigeschalter | `user_preference_flags` | modulbezogene Ja/Nein-Anzeigeeinstellung in den persönlichen Einstellungen, z. B. „3D: Leitungen anzeigen“ – **Entwurf 6c** (ADR 0029) |
 | Standard-Geschosshöhe | `default_ceiling_height_mm` | lichte Höhe in Millimetern |
 | Protokolleintrag | `audit_entry` | |
 | Statusgruppe | `status_group`: `current`, `closed` | Listenfilter: laufend (Entwurf + in Bearbeitung) bzw. abgeschlossen + archiviert |

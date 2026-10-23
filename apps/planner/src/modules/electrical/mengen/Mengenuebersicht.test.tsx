@@ -8,6 +8,7 @@ import { masseinheitSetzen } from "../../../core/ui/masseinheit";
 import { RueckfrageProvider } from "../../../core/ui/Rueckfrage";
 import { GESCHOSS, TYPEN, VERTEILUNG, geschossplan, leitung, stromkreis } from "../leitung/testdaten";
 import { angabenText, fehlendText, gruppenName } from "./daten";
+import { eigenschaftenOeffnen } from "../arbeitsflaeche/testhilfe";
 
 /**
  * Mengenübersicht (Phase 6b.6) über den echten Tab. Die Mengen rechnet der Server
@@ -208,6 +209,8 @@ describe("Mengenübersicht", () => {
     await screen.findByRole("application", { name: /Grundriss/ });
     expect(await screen.findByTestId("entwurf-offen")).toBeInTheDocument();
     expect(within(screen.getByRole("region", { name: "Leitung im Grundriss" })).getByRole("button", { name: "Leitung" })).toHaveAttribute("aria-pressed", "true");
+    // Angaben und Wegpunkte des Entwurfs stehen im Eigenschaftenpanel (6c.0).
+    await eigenschaftenOeffnen();
     expect(screen.getByRole("region", { name: "Leitungsentwurf" })).toHaveTextContent("Leitung L1");
     fireEvent.click(screen.getByRole("button", { name: "Zurück zur Mengenübersicht" }));
     // Zurück: Gruppe weiter aufgeklappt; der offene Entwurf ist benannt und bleibt erhalten.

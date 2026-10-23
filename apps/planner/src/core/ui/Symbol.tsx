@@ -1,4 +1,5 @@
 import type { LucideIcon } from "lucide-react";
+import { memo } from "react";
 import type { ReactNode } from "react";
 
 /**
@@ -24,8 +25,14 @@ import type { ReactNode } from "react";
 /** Einheitliche Icongröße in Pixeln; folgt über `1em` nicht der Schrift. */
 const GROESSE = 16;
 
-/** Dekoratives Icon - immer `aria-hidden`, nie fokussierbar. */
-export function Symbol({ icon: Icon }: { icon: LucideIcon }) {
+/**
+ * Dekoratives Icon - immer `aria-hidden`, nie fokussierbar.
+ *
+ * Gemerkt (`memo`): Ein Icon hängt nur von seiner Art ab. In Werkzeugleisten, die bei
+ * jeder Zeigerbewegung der Zeichenfläche mitgezeichnet werden, spart das das erneute
+ * Erzeugen der SVG-Pfade (Phase 6c, L1).
+ */
+export const Symbol = memo(function Symbol({ icon: Icon }: { icon: LucideIcon }) {
   return (
     <Icon
       size={GROESSE}
@@ -36,7 +43,7 @@ export function Symbol({ icon: Icon }: { icon: LucideIcon }) {
       data-symbol=""
     />
   );
-}
+});
 
 /**
  * Inhalt eines Knopfs oder Links: Icon und Text nebeneinander.

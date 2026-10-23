@@ -9,6 +9,7 @@ import { neueId } from "../editor/entwurf";
 import type { EditorWand } from "../editor/platzierung";
 import type { Bildpunkt, Groesse, Viewport } from "../editor/viewport";
 import { bildZuWelt, einpassen, groesseAendern, verschieben, weltZuBild, zoomen } from "../editor/viewport";
+import type { GemerkteAnsicht } from "../arbeitsflaeche/ansichtsgedaechtnis";
 import { OEFFNUNG_STANDARD, oeffnungAendern, oeffnungEinfuegen } from "../editor/werkzeuge";
 import type { Aktion } from "../editor/zustand";
 import type { Wandteilung } from "../topologie/wandtopologie";
@@ -118,6 +119,10 @@ interface Props {
   geraetetyp?: Geraetetyp | null;
   /** Phase 6b.4: Leitungsplanung als Zusatzebene (Wegpunkte, Endgeräte, Zuordnung). */
   zusatz?: Flaechenzusatz | undefined;
+  /** L1: zuletzt gezeigter Viewport dieser Fläche – statt Einpassen beim Wiederkommen. */
+  gemerkt?: GemerkteAnsicht | null;
+  /** L1: meldet Viewport und Größe, damit sie beim Verlassen erhalten bleiben. */
+  onAnsicht?: (ansicht: GemerkteAnsicht) => void;
 }
 
 const RUECKFALL: Groesse = { breite: 900, hoehe: 480 };
@@ -163,6 +168,18 @@ export function WandZeichenflaeche(props: Props) {
   const H = bezug.hoeheMm;
 
   const ansichtZuruecksetzen = () => setViewport(einpassenWand(bezug, groesseRef.current));
+  const gemerktRef = useRef(props.gemerkt ?? null);
+  // Der ungemessene Startwert (vor der ersten Messung) wird nie gemeldet: Er überschriebe den
+  // gemerkten Ausschnitt, und ein erneutes Einhängen (Laden, StrictMode) passte dann wieder ein.
+  const startwert = useRef(viewport);
+  const { onAnsicht } = props;
+  // Jeden Viewport melden – beim Verlassen ist der letzte gemerkt (nur Ansicht, nichts gespeichert).
+  useEffect(() => {
+    if (viewport === startwert.current) return;
+    const ansicht = { viewport, groesse: groesseRef.current };
+    gemerktRef.current = ansicht;
+    onAnsicht?.(ansicht);
+  }, [viewport, groesse, onAnsicht]);
 
   // Größe beobachten: Maßstab und Mitte bleiben, nichts springt.
   useEffect(() => {
@@ -176,7 +193,17 @@ export function WandZeichenflaeche(props: Props) {
       if (alt.breite === neu.breite && alt.hoehe === neu.hoehe && !erstesMal) return;
       groesseRef.current = neu;
       setGroesse(neu);
-      setViewport((v) => (erstesMal ? einpassenWand(bezug, neu) : groesseAendern(v, alt, neu)));
+      const gemerkt = gemerktRef.current;
+      // Den Wert jetzt festhalten: Der Updater läuft erst später, dann ist `erstesMal` schon false.
+      const erste = erstesMal;
+      setViewport((v) =>
+        erste
+          ? // Zurück auf einer besuchten Fläche: deren Ausschnitt, an die jetzige Größe angepasst – kein Einpassen.
+            gemerkt !== null
+            ? groesseAendern(gemerkt.viewport, gemerkt.groesse, neu)
+            : einpassenWand(bezug, neu)
+          : groesseAendern(v, alt, neu),
+      );
       erstesMal = false;
     };
     messen();
@@ -793,7 +820,7 @@ export function WandZeichenflaeche(props: Props) {
   const cursor = props.zusatz?.cursor ?? (werkzeug === "pan" ? "grab" : werkzeug === "auswahl" ? "default" : "crosshair");
 
   return (
-    <div ref={huelle} className="relative h-full min-h-[300px] touch-none overflow-hidden rounded-ep border border-line bg-canvas">
+    <div ref={huelle} className="relative h-full touch-none overflow-hidden rounded-ep border border-line bg-canvas">
       <svg
         ref={flaeche}
         className="ansicht__svg"

@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 
-import { Dialog } from "../../../core/ui/Dialog";
+import { AKTION } from "../../../core/ui/aktionssymbole";
+import { MitSymbol, Symbol } from "../../../core/ui/Symbol";
 import { useMasse } from "../../../core/ui/masseinheit";
-import { KNOPF_GRUND, eingabefeld, knopf, meldungsflaeche } from "../../../core/ui/stil";
+import { knopf, meldungsflaeche } from "../../../core/ui/stil";
 import "../darstellung.css";
 import "../wandansicht/wandansicht.css";
 import type { EntwurfGeraet, EntwurfWand } from "../editor/entwurf";
 import { neueId } from "../editor/entwurf";
-import { RASTERGROESSEN_MM } from "../editor/fang";
 import type { Bildpunkt, Groesse, Viewport } from "../editor/viewport";
 import { bildZuWelt, einpassen, grenzenVon, groesseAendern, sichtbareGrenzen, verschieben, weltZuBild, zoomen } from "../editor/viewport";
 import type { Aktion, EditorZustand } from "../editor/zustand";
@@ -17,7 +17,6 @@ import { geraetAendern, geraetEinfuegen, geraetEntfernen, neuesDeckengeraet } fr
 import type { Geraetetyp, Geraetetypen } from "../geraete/katalog";
 import { typenFuer } from "../geraete/katalog";
 import { Geraetelegende, Geraetesymbol, SymbolImPlan } from "../geraete/symbole";
-import { ANSICHT_ZURUECKSETZEN } from "../texte";
 import { flaecheText } from "../editor/Eigenschaften";
 import { BeschriftungsFeld, TypAuswahl } from "../wandansicht/GeraetEigenschaften";
 import { MassFeld } from "../wandansicht/WandEigenschaften";
@@ -28,9 +27,16 @@ import { deckenmodell, imRaum, naechsteWand } from "./deckenmodell";
 import { useDeckenleitungen } from "../leitung/Deckenleitungen";
 import type { Leitungskontext } from "../leitung/kontext";
 import { Leitungsbereich } from "../leitung/Leitungsbereich";
+import { Planungsarbeitsflaeche } from "../arbeitsflaeche/Planungsarbeitsflaeche";
+import type { Arbeitsflaechenzustand } from "../arbeitsflaeche/Planungsarbeitsflaeche";
+import { AnsichtMenue, HilfeDialog, LeitungHinzufuegenKnopf, Werkzeuggruppe, Werkzeugknopf, Zoomgruppe } from "../arbeitsflaeche/Werkzeuggruppen";
+import { useKompakt } from "../arbeitsflaeche/kompakt";
+import { WERKZEUGSYMBOL } from "../arbeitsflaeche/werkzeugsymbole";
+import type { Ansichtsgedaechtnis } from "../arbeitsflaeche/ansichtsgedaechtnis";
+import { deckenSchluessel } from "../arbeitsflaeche/ansichtsgedaechtnis";
+import { useStabil } from "../arbeitsflaeche/stabil";
+import { Entwurfsleiste, Raumrueckmeldung, RueckgaengigKnoepfe } from "../arbeitsflaeche/Kontextleiste";
 
-const WERKZEUG = `${KNOPF_GRUND} border-control bg-surface px-2.5 py-[5px] text-fg disabled:cursor-not-allowed disabled:opacity-45`;
-const WERKZEUG_AKTIV = `${KNOPF_GRUND} border-accent bg-accent px-2.5 py-[5px] text-on-accent`;
 const LISTENKNOPF = `${knopf()} w-full text-left`;
 const LISTENKNOPF_GEWAEHLT = `${knopf("gewaehlt")} w-full text-left`;
 const RUECKFALL: Groesse = { breite: 900, hoehe: 520 };
@@ -96,6 +102,10 @@ export function Deckenansicht({
   onVerwerfen,
   startGeraetId,
   leitungen,
+  arbeitsflaeche,
+  ansichten,
+  geschossLabel,
+  zurueckZu3d = false,
 }: {
   raumId?: string;
   raumName: string;
@@ -125,6 +135,13 @@ export function Deckenansicht({
   startGeraetId?: string | null;
   /** Phase 6b.4: Leitungsplanung und Gerätezuordnung des Planungskontexts. */
   leitungen?: Leitungskontext | undefined;
+  /** L1: Panel und Maximierung gehören der ganzen Planungsarbeitsfläche (geteilt mit dem Grundriss). */
+  arbeitsflaeche: Arbeitsflaechenzustand;
+  /** L1: Viewport je besuchter Fläche – beim Zurückkehren kein Einpassen. */
+  ansichten?: Ansichtsgedaechtnis;
+  geschossLabel?: string;
+  /** Aus 3D geöffnet: Der Rückweg führt dorthin. */
+  zurueckZu3d?: boolean;
 }) {
   const masse = useMasse();
   const huelle = useRef<HTMLDivElement>(null);
@@ -135,6 +152,17 @@ export function Deckenansicht({
   const [viewport, setViewport] = useState<Viewport>(() => einpassen(grenzen, RUECKFALL, 56));
   const [zeiger, setZeiger] = useState<string>("Zeiger über die Decke bewegen.");
   const [werkzeug, setWerkzeug] = useState<Deckenwerkzeug>("auswahl");
+  /** Panel und Maximierung – reine Ansicht (Phase 6c.0). */
+  const af = arbeitsflaeche;
+  const [hilfe, setHilfe] = useState(false);
+  const flaechenRef = useRef<HTMLElement>(null);
+  const kompakt = useKompakt();
+  const schluessel = deckenSchluessel(raumId ?? raumName);
+  const gemerktRef = useRef(ansichten?.lesen(schluessel) ?? null);
+  // Beim Öffnen liegt der Fokus in der Fläche: Tasten wirken sofort.
+  useEffect(() => {
+    flaechenRef.current?.focus({ preventScroll: true });
+  }, []);
   const [gewaehlt, setGewaehlt] = useState<string | null>(startGeraetId ?? null);
   const [vorschau, setVorschau] = useState<Vorschau | null>(null);
   const [typWahl, setTypWahl] = useState<string | null>(null);
@@ -149,6 +177,15 @@ export function Deckenansicht({
   const gewaehltesGeraet = deckengeraete.find((g) => g.id === gewaehlt);
 
   const zuruecksetzen = () => setViewport(einpassen(grenzen, groesseRef.current, 56));
+  // Jeden Viewport melden – beim Verlassen ist der letzte gemerkt (nur Ansicht). Nie den
+  // ungemessenen Startwert: Er überschriebe den gemerkten Ausschnitt (erneutes Einhängen, StrictMode).
+  const startwert = useRef(viewport);
+  useEffect(() => {
+    if (viewport === startwert.current) return;
+    const ansicht = { viewport, groesse: groesseRef.current };
+    gemerktRef.current = ansicht;
+    ansichten?.merken(schluessel, ansicht);
+  }, [viewport, groesse, ansichten, schluessel]);
 
   useEffect(() => {
     const element = huelle.current;
@@ -161,7 +198,18 @@ export function Deckenansicht({
       if (!erstesMal && alt.breite === neu.breite && alt.hoehe === neu.hoehe) return;
       groesseRef.current = neu;
       setGroesse(neu);
-      setViewport((v) => (erstesMal ? einpassen(grenzen, neu, 56) : groesseAendern(v, alt, neu)));
+      // Nicht verbrauchen: Im StrictMode läuft dieser Effekt beim Einhängen zweimal.
+      const gemerkt = gemerktRef.current;
+      // Den Wert jetzt festhalten: Der Updater läuft erst später, dann ist `erstesMal` schon false.
+      const erste = erstesMal;
+      setViewport((v) =>
+        erste
+          ? // Zurück auf einer besuchten Decke: deren Ausschnitt, an die jetzige Größe angepasst – kein Einpassen.
+            gemerkt !== null
+            ? groesseAendern(gemerkt.viewport, gemerkt.groesse, neu)
+            : einpassen(grenzen, neu, 56)
+          : groesseAendern(v, alt, neu),
+      );
       erstesMal = false;
     };
     messen();
@@ -508,7 +556,8 @@ export function Deckenansicht({
       waehlen(null);
       return true;
     }
-    return false;
+    // Zuletzt: überlagerndes Eigenschaftenpanel, dann die Maximierung (Phase 6c.0).
+    return af.escape();
   };
 
   // Raster über die sichtbare Fläche - wie im Grundriss vergröbert, damit es lesbar bleibt.
@@ -555,252 +604,302 @@ export function Deckenansicht({
     );
   });
 
+  const zurueckText = zurueckZu3d ? "Zurück zur 3D-Ansicht" : "Zurück zum Grundriss";
+  const kopfzeile = (
+    <div className="flex min-h-8 shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
+      <h2 className="sr-only">Deckenansicht · {raumName}</h2>
+      <nav className="flex flex-wrap items-center gap-1.5 text-small" aria-label="Pfad">
+        {/* Schmal nur das Symbol – Name und Hinweis bleiben („Zurück zum Grundriss“, Escape). */}
+        <button
+          type="button"
+          className={knopf("neutral", { klein: true })}
+          onClick={onSchliessen}
+          title={`${zurueckText} (Escape)`}
+          aria-label={kompakt ? zurueckText : undefined}
+        >
+          {kompakt ? <Symbol icon={AKTION.zurueck} /> : <MitSymbol icon={AKTION.zurueck}>{zurueckText}</MitSymbol>}
+        </button>
+        <span className="text-muted">{zurueckZu3d ? "3D-Ansicht" : `Grundriss${geschossLabel !== undefined && !kompakt ? ` · ${geschossLabel}` : ""}`}</span>
+        <Symbol icon={AKTION.pfadTrenner} />
+        <span className="text-muted">{raumName}</span>
+        <Symbol icon={AKTION.pfadTrenner} />
+        <span className="font-semibold" aria-current="page">
+          Decke
+        </span>
+      </nav>
+      <span className="text-small" role="status" aria-live="polite">
+        <strong className={kompakt ? "sr-only" : undefined}>Deckenansicht „{raumName}“ · </strong>Deckenhöhe {masse.anzeigen(deckenhoeheMm)}
+        {eigeneHoehe ? "" : " (Standard des Geschosses)"}
+        {status !== undefined && (
+          <span className={`ml-3 font-semibold ${status.farbe}`}>
+            {leitungsentwurf !== null
+              ? `Leitungsentwurf: ${leitungen?.planung.ungespeichert === true ? "ungespeichert" : "gespeichert"}`
+              : zuordnungsentwurf !== null
+                ? `Gerätezuordnung: ${leitungen?.zuordnung.offen === true ? "ungespeichert" : "gespeichert"}`
+                : darfAendern
+                  ? status.text
+                  : "Nur Ansicht"}
+          </span>
+        )}
+      </span>
+      {darfAendern && onSpeichern !== undefined && (
+        <span className="flex flex-wrap gap-2">
+          <button type="button" className={knopf("primaer", { klein: true })} disabled={!offen || status?.speichert === true} onClick={onSpeichern} title="Speichert den gemeinsamen Entwurf (Strg+S)">
+            Speichern
+          </button>
+          <button
+            type="button"
+            className={knopf("neutral", { klein: true })}
+            disabled={!offen || status?.speichert === true}
+            onClick={onVerwerfen}
+            aria-label={kompakt ? "Änderungen verwerfen" : undefined}
+          >
+            {kompakt ? "Verwerfen" : "Änderungen verwerfen"}
+          </button>
+        </span>
+      )}
+    </div>
+  );
+  // „Leitung hinzufügen“ (L1): mit Entwurf das Werkzeug „Leitung“, sonst der bestehende Einstieg im Panel.
+  const leitungMoeglich = leitungen !== undefined && leitungen.planung.darfLeitungen;
+  const leitungHinzufuegen = useStabil(() => {
+    if (leitungsentwurf !== null) {
+      setWerkzeug("leitung");
+      return;
+    }
+    af.setEigenschaftenOffen(true);
+    setTimeout(() => flaechenRef.current?.querySelector<HTMLElement>("[data-leitung-einstieg]")?.focus(), 0);
+  });
+  const rueckgaengig = useStabil(() => (leitungsentwurf !== null ? leitungen?.planung.dispatch({ typ: "rueckgaengig" }) : dispatch?.({ typ: "rueckgaengig" })));
+  const wiederholen = useStabil(() => (leitungsentwurf !== null ? leitungen?.planung.dispatch({ typ: "wiederholen" }) : dispatch?.({ typ: "wiederholen" })));
+  const zoomStabil = useStabil(zoom);
+  const ganzStabil = useStabil(zuruecksetzen);
+  const fangStabil = useStabil((x: boolean) => onFang?.(x));
+  const kannZurueck = leitungsentwurf !== null ? leitungsentwurf.zurueck.length > 0 : (zustand?.zurueck.length ?? 0) > 0;
+  const kannVor = leitungsentwurf !== null ? leitungsentwurf.vor.length > 0 : (zustand?.vor.length ?? 0) > 0;
+  const hatLeitungsentwurf = leitungsentwurf !== null;
+  const hatZuordnungsentwurf = zuordnungsentwurf !== null;
+  const typKey = geraetetyp?.key ?? null;
+  // Gemerkt (L1): Die Leiste zeichnet nur bei sichtbaren Änderungen neu, nicht bei jeder Zeigerbewegung.
+  const werkzeugleiste = useMemo(() => (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5" role="toolbar" aria-label="Werkzeuge der Deckenansicht">
+      <Werkzeuggruppe label="Auswahl">
+        <Werkzeugknopf label="Auswählen" taste="V" icon={WERKZEUGSYMBOL.auswaehlen} aktiv={werkzeug === "auswahl"} onClick={() => setWerkzeug("auswahl")} />
+        <Werkzeugknopf label="Ansicht verschieben" taste="H" icon={WERKZEUGSYMBOL.verschieben} aktiv={werkzeug === "pan"} onClick={() => setWerkzeug("pan")} />
+      </Werkzeuggruppe>
+      {darfAendern && (
+        <Werkzeuggruppe label="Gerät">
+          <Werkzeugknopf label="Gerät" taste="G" hinweis="Deckengerät setzen" icon={WERKZEUGSYMBOL.geraet} aktiv={werkzeug === "geraet"} onClick={() => setWerkzeug("geraet")} />
+          {werkzeug === "geraet" && (
+            <div className="min-w-[200px]">
+              <TypAuswahl id="decke-werkzeug-typ" label="Deckengerät" typen={typen} flaeche="ceiling" wert={typKey} onWahl={setTypWahl} />
+            </div>
+          )}
+        </Werkzeuggruppe>
+      )}
+      {(leitungMoeglich || zuordnenErlaubt) && (
+        <Werkzeuggruppe label="Leitung">
+          {!hatLeitungsentwurf && !hatZuordnungsentwurf && leitungMoeglich && (
+            <LeitungHinzufuegenKnopf aktiv={false} gesperrtGrund={null} onClick={leitungHinzufuegen} />
+          )}
+          {leitungErlaubt && <Werkzeugknopf label="Leitung" taste="L" icon={WERKZEUGSYMBOL.leitung} aktiv={werkzeug === "leitung"} onClick={() => setWerkzeug("leitung")} />}
+          {zuordnenErlaubt && <Werkzeugknopf label="Zuordnen" taste="Z" icon={WERKZEUGSYMBOL.zuordnen} aktiv={werkzeug === "zuordnen"} onClick={() => setWerkzeug("zuordnen")} />}
+        </Werkzeuggruppe>
+      )}
+      {(hatLeitungsentwurf || darfAendern) && (
+        <Werkzeuggruppe label="Verlauf">
+          <RueckgaengigKnoepfe
+            kannZurueck={kannZurueck}
+            kannVor={kannVor}
+            onZurueck={rueckgaengig}
+            onVor={wiederholen}
+            {...(hatLeitungsentwurf ? { bezug: "im Leitungsentwurf" } : {})}
+          />
+        </Werkzeuggruppe>
+      )}
+      <Zoomgruppe onZoom={zoomStabil} onGanz={ganzStabil} ganzHinweis="Ganzen Raum zeigen" />
+      <AnsichtMenue fangAktiv={fangAktiv} onFang={fangStabil} fangLabel="Einrasten" rasterMm={rasterMm} onRaster={onRaster} onHilfe={() => setHilfe(true)} />
+    </div>
+    // Rückrufe sind stabil (Zustandssetzer, `useStabil`); abhängig ist die Leiste nur von dem, was sie zeigt.
+  ), [werkzeug, darfAendern, typen, typKey, leitungMoeglich, hatLeitungsentwurf, hatZuordnungsentwurf, zuordnenErlaubt, leitungErlaubt, kannZurueck, kannVor, fangAktiv, rasterMm, onRaster, leitungHinzufuegen, rueckgaengig, wiederholen, zoomStabil, ganzStabil, fangStabil]);
+
+  const hilfeInhalt = (
+    <>
+      <ul className="pl-[18px] text-muted">
+        <li>Gerät (G): Typ wählen, Vorschau folgt dem Zeiger, ein Klick setzt es. Ziehen verschiebt es; Pfeiltasten 1 cm, mit Umschalt 10 cm; Entf entfernt es.</li>
+        <li>Eingerastet wird bündig an achsparallelen Wänden, in der Flucht anderer Deckengeräte, sonst am Raster. Alt hält es beim Ziehen aus.</li>
+        <li>Die Maße gehen von der Gerätemitte bis zur ersten tatsächlichen Wand in jeder Richtung – auch in L-förmigen Räumen.</li>
+        <li>Strg+Z / Strg+Y gelten für den gemeinsamen Entwurf mit dem Grundriss. Schließen behält alle Änderungen – gespeichert wird nur mit „Speichern“.</li>
+      </ul>
+      <p className="m-0">Escape beendet zuerst die laufende Bewegung, dann das Werkzeug und die Auswahl, schließt ein überlagerndes Panel, beendet die Maximierung und führt zuletzt zurück.</p>
+      <h3 className="mt-3 text-small">Legende der Gerätesymbole</h3>
+      <Geraetelegende typen={typen} />
+    </>
+  );
+
   return (
-    <Dialog offen titel={`Deckenansicht · ${raumName}`} groesse="gross" onClose={onSchliessen} onEscape={escape}>
-      <div className="flex flex-col gap-2 split:h-full split:min-h-0" onKeyDown={taste}>
-        <div className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-2" role="status" aria-live="polite">
-          <span>
-            <strong>Deckenansicht „{raumName}“</strong> · Deckenhöhe {masse.anzeigen(deckenhoeheMm)}
-            {eigeneHoehe ? "" : " (Standard des Geschosses)"}
-            {status !== undefined && (
-              <span className={`ml-3 font-semibold ${status.farbe}`}>
-                {leitungsentwurf !== null
-                  ? `Leitungsentwurf: ${leitungen?.planung.ungespeichert === true ? "ungespeichert" : "gespeichert"}`
-                  : zuordnungsentwurf !== null
-                    ? `Gerätezuordnung: ${leitungen?.zuordnung.offen === true ? "ungespeichert" : "gespeichert"}`
-                    : darfAendern
-                      ? status.text
-                      : "Nur Ansicht"}
-              </span>
-            )}
-          </span>
-          {darfAendern && onSpeichern !== undefined && (
-            <span className="flex flex-wrap gap-2">
-              <button type="button" className={knopf("primaer")} disabled={!offen || status?.speichert === true} onClick={onSpeichern} title="Speichert den gemeinsamen Entwurf (Strg+S)">
-                Speichern
-              </button>
-              <button type="button" className={knopf()} disabled={!offen || status?.speichert === true} onClick={onVerwerfen}>
-                Änderungen verwerfen
-              </button>
-            </span>
-          )}
-        </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-3" role="toolbar" aria-label="Werkzeuge der Deckenansicht">
-          <span className="flex flex-wrap items-center gap-1">
-            <button type="button" className={werkzeug === "auswahl" ? WERKZEUG_AKTIV : WERKZEUG} aria-pressed={werkzeug === "auswahl"} title="Auswählen (V)" onClick={() => setWerkzeug("auswahl")}>
-              Auswählen
-            </button>
-            <button type="button" className={werkzeug === "pan" ? WERKZEUG_AKTIV : WERKZEUG} aria-pressed={werkzeug === "pan"} title="Ansicht verschieben (H)" onClick={() => setWerkzeug("pan")}>
-              Ansicht verschieben
-            </button>
-            {darfAendern && (
-              <button type="button" className={werkzeug === "geraet" ? WERKZEUG_AKTIV : WERKZEUG} aria-pressed={werkzeug === "geraet"} title="Deckengerät setzen (G)" onClick={() => setWerkzeug("geraet")}>
-                Gerät
-              </button>
-            )}
-            {leitungErlaubt && (
-              <button type="button" className={werkzeug === "leitung" ? WERKZEUG_AKTIV : WERKZEUG} aria-pressed={werkzeug === "leitung"} title="Leitung (L)" onClick={() => setWerkzeug("leitung")}>
-                Leitung
-              </button>
-            )}
-            {zuordnenErlaubt && (
-              <button type="button" className={werkzeug === "zuordnen" ? WERKZEUG_AKTIV : WERKZEUG} aria-pressed={werkzeug === "zuordnen"} title="Zuordnen (Z)" onClick={() => setWerkzeug("zuordnen")}>
-                Zuordnen
-              </button>
-            )}
-          </span>
-          {darfAendern && werkzeug === "geraet" && (
-            <div className="min-w-[220px]">
-              <TypAuswahl id="decke-werkzeug-typ" label="Deckengerät" typen={typen} flaeche="ceiling" wert={geraetetyp?.key ?? null} onWahl={setTypWahl} />
-            </div>
-          )}
-          {leitungsentwurf !== null && leitungen !== undefined && (
-            <span className="flex flex-wrap items-center gap-1" aria-label="Rückgängig im Leitungsentwurf">
-              <button type="button" className={WERKZEUG} disabled={leitungsentwurf.zurueck.length === 0} title="Rückgängig im Leitungsentwurf (Strg+Z)" onClick={() => leitungen.planung.dispatch({ typ: "rueckgaengig" })}>
-                Rückgängig
-              </button>
-              <button type="button" className={WERKZEUG} disabled={leitungsentwurf.vor.length === 0} title="Wiederholen im Leitungsentwurf (Strg+Y)" onClick={() => leitungen.planung.dispatch({ typ: "wiederholen" })}>
-                Wiederholen
-              </button>
-            </span>
-          )}
-          {darfAendern && (
-            <span className="flex flex-wrap items-center gap-1">
-              <button type="button" className={WERKZEUG} disabled={(zustand?.zurueck.length ?? 0) === 0} title="Rückgängig (Strg+Z)" onClick={() => dispatch?.({ typ: "rueckgaengig" })}>
-                Rückgängig
-              </button>
-              <button type="button" className={WERKZEUG} disabled={(zustand?.vor.length ?? 0) === 0} title="Wiederholen (Strg+Y)" onClick={() => dispatch?.({ typ: "wiederholen" })}>
-                Wiederholen
-              </button>
-            </span>
-          )}
-          <span className="flex flex-wrap items-center gap-1">
-            <button type="button" className={WERKZEUG} aria-label="Vergrößern" title="Vergrößern (+)" onClick={() => zoom(1.25)}>
-              +
-            </button>
-            <button type="button" className={WERKZEUG} aria-label="Verkleinern" title="Verkleinern (−)" onClick={() => zoom(0.8)}>
-              −
-            </button>
-            <button type="button" className={WERKZEUG} title="Ganzen Raum zeigen (F)" onClick={zuruecksetzen}>
-              {ANSICHT_ZURUECKSETZEN}
-            </button>
-          </span>
-          {onFang !== undefined && (
-            <label className="flex items-center gap-1.5 text-small" title="Alt beim Ziehen setzt das Einrasten vorübergehend aus">
-              <input type="checkbox" checked={fangAktiv} onChange={(event) => onFang(event.target.checked)} />
-              Einrasten
-            </label>
-          )}
-          <label className="flex items-center gap-1.5 text-small">
-            Raster
-            <select className={eingabefeld({ kompakt: true })} value={rasterMm} onChange={(event) => onRaster(Number(event.target.value))}>
-              {RASTERGROESSEN_MM.map((mm) => (
-                <option key={mm} value={mm}>
-                  {masse.anzeigen(mm)}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+    // L1: keine modale Oberfläche mehr – die Deckenfläche steht an Ort und Stelle in der Arbeitsfläche.
+    <section ref={flaechenRef} aria-label={`Deckenansicht · ${raumName}`} tabIndex={-1} className="outline-none" data-flaeche="decke">
+      <div
+        className="flex flex-col gap-2"
+        onKeyDown={(event) => {
+          // Escape: Bewegung → Werkzeug → Auswahl → Panel/Maximierung → zurück. Eine Wirkung je Druck.
+          if (event.key === "Escape" && !event.defaultPrevented) {
+            event.preventDefault();
+            if (!escape()) onSchliessen();
+            return;
+          }
+          taste(event);
+        }}
+      >
         {!modell.geschlossen ? (
-          <p className={meldungsflaeche()} role="alert">
-            Die Raumkontur ist nicht geschlossen - eine Deckenansicht braucht eine geschlossene Kontur.
-          </p>
+          <>
+            {kopfzeile}
+            {werkzeugleiste}
+            <p className={meldungsflaeche()} role="alert">
+              Die Raumkontur ist nicht geschlossen - eine Deckenansicht braucht eine geschlossene Kontur.
+            </p>
+          </>
         ) : (
-          <div className="grid grid-cols-1 gap-3 split:min-h-0 split:flex-auto split:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="flex min-w-0 flex-col gap-1 split:min-h-0">
-              <div ref={huelle} className="relative h-[55dvh] min-h-[300px] touch-none overflow-hidden rounded-ep border border-line bg-canvas split:h-auto split:min-h-0 split:flex-auto">
-                <svg
-                  ref={flaeche}
-                  className="ansicht__svg"
-                  role="application"
-                  aria-label={`Deckenansicht ${raumName}, Ausrichtung wie im Grundriss`}
-                  tabIndex={0}
-                  width={groesse.breite}
-                  height={groesse.hoehe}
-                  style={{ cursor: zusatz?.cursor ?? (werkzeug === "geraet" ? "crosshair" : "grab") }}
-                  onPointerDown={druecken}
-                  onPointerMove={bewegen}
-                  onPointerUp={loslassen}
-                  onPointerCancel={() => abbrechen()}
-                  onLostPointerCapture={() => {
-                    if (laufend.current !== null && laufend.current.art !== "pan") abbrechen();
-                  }}
-                  onPointerLeave={() => {
-                    if (laufend.current === null) {
-                      setVorschau(null);
-                      zusatz?.abbrechen();
-                    }
-                  }}
-                >
-                  <path d={raster.join("")} className="ansicht__raster" aria-hidden="true" />
-                  <polygon points={punkte} className="ansicht__decke-flaeche" data-testid="deckenkontur" />
-                  {modell.waende.map((w) => {
-                    const p = weltZuBild(viewport, w.beschriftung);
-                    return (
-                      <text key={w.id} x={p.x} y={p.y + 4} textAnchor="middle" className="ansicht__masstext" data-testid={`decke-wand-${w.nummer}`}>
-                        {`W${w.nummer} · ${masse.anzeigen(w.laengeMm)}`}
-                      </text>
-                    );
-                  })}
-                  {geraeteElemente}
-                  {vorschau !== null && (
-                    <g data-testid="decke-vorschau" data-gueltig={vorschau.ok ? "ja" : "nein"} className={vorschau.ok ? "ansicht__geraet-vorschau" : "ansicht__geraet-vorschau ansicht__geraet-vorschau--fehler"}>
-                      {(() => {
-                        const r = deckenRechteckBild(viewport, vorschau.x, vorschau.y, vorschau.typ);
-                        const m = weltZuBild(viewport, { x: vorschau.x, y: vorschau.y });
-                        return (
-                          <>
-                            <rect x={r.x} y={r.y} width={r.breite} height={r.hoehe} className="ansicht__vorschau" />
-                            <SymbolImPlan typ={vorschau.typ} x={m.x} y={m.y} groesse={22} />
-                            {!vorschau.ok && (
-                              <text x={m.x} y={m.y - 16} textAnchor="middle" className="ansicht__text ansicht__masstext--ueberschneidung">
-                                nicht möglich
-                              </text>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </g>
-                  )}
-                  {zusatz?.zeichnen((x, y) => weltZuBild(viewport, { x, y }))}
-                  {massMitte !== null && treffer !== null && <Wandmasse mitte={massMitte} treffer={treffer} viewport={viewport} mm={masse.anzeigen} />}
-                  <text x={groesse.breite - 10} y={20} textAnchor="end" className="ansicht__text ansicht__text--klein">
-                    ↑ oben wie im Grundriss
-                  </text>
-                </svg>
-              </div>
-              <p className="m-0 h-6 overflow-hidden text-[0.82rem] text-muted" aria-live="polite" data-testid="decke-zeiger">
-                {zeiger}
-              </p>
-            </div>
-            <aside className="flex min-w-0 flex-col gap-2 text-small split:min-h-0 split:overflow-y-auto" aria-label="Raumangaben und Deckengeräte">
-              {leitungen !== undefined && raumId !== undefined && (
-                <Leitungsbereich
-                  k={leitungen}
-                  flaeche={{ art: "decke", raumId }}
-                  relevant={dl.relevant}
-                  gewaehlt={dl.gewaehlt}
-                  onWaehlen={dl.setGewaehlt}
-                  onWerkzeug={setWerkzeug}
-                />
-              )}
-              <div>
-                <p className="m-0">
-                  Fläche {flaecheText(modell.flaecheMm2)} · Umfang {masse.anzeigenOptional(modell.umfangMm)}
+          <Planungsarbeitsflaeche
+            zustand={af}
+            name="Arbeitsfläche Decke"
+            eigenschaftenTitel="Raumangaben und Deckengeräte"
+            markierung={leitungsentwurf !== null ? "Leitung" : zuordnungsentwurf !== null ? "Zuordnung" : null}
+            kopf={kopfzeile}
+            werkzeuge={werkzeugleiste}
+            kontext={
+              <div className="flex flex-col gap-1.5">
+                <p className="m-0 h-6 overflow-hidden text-[0.82rem] text-muted" aria-live="polite" data-testid="decke-zeiger">
+                  {zeiger}
                 </p>
-                {modell.rechteck !== null ? (
-                  <p className="m-0">
-                    Raummaß {masse.anzeigen(modell.rechteck.breiteMm)} × {masse.anzeigen(modell.rechteck.tiefeMm)}
-                  </p>
-                ) : (
-                  <p className="m-0 text-muted">Kein Rechteck - Maße stehen an den einzelnen Wänden.</p>
+                {zustand !== undefined && dispatch !== undefined && (
+                  <Raumrueckmeldung fehler={zustand.serverFehler} konflikt={zustand.status === "konflikt"} onSchliessen={() => dispatch({ typ: "hinweis-schliessen" })} />
                 )}
-                <ul className="my-1 pl-[18px]" aria-label="Wände">
-                  {modell.waende.map((w) => (
-                    <li key={w.id}>
-                      Wand {w.nummer}: {masse.anzeigen(w.laengeMm)}
-                    </li>
-                  ))}
-                </ul>
+                <Entwurfsleiste k={leitungen} panelOffen={af.eigenschaftenOffen} onDetails={() => af.setEigenschaftenOffen(true)} nachSchliessen={() => setWerkzeug("auswahl")} />
               </div>
-              <Deckengeraeteliste
-                geraete={deckengeraete}
-                gewaehlt={gewaehlt}
-                typen={typen}
-                darfAendern={darfAendern}
-                deckenhoeheMm={deckenhoeheMm}
-                treffer={treffer}
-                onWaehlen={waehlen}
-                onLage={lageSetzen}
-                onLabel={(id, label) => {
-                  if (entwurf !== null && darfAendern) dispatch?.({ typ: "aendern", entwurf: geraetAendern(entwurf, id, { label }) });
+            }
+            eigenschaften={
+              <div className="flex flex-col gap-2 text-small">
+                {leitungen !== undefined && raumId !== undefined && (
+                  <Leitungsbereich
+                    k={leitungen}
+                    flaeche={{ art: "decke", raumId }}
+                    relevant={dl.relevant}
+                    gewaehlt={dl.gewaehlt}
+                    onWaehlen={dl.setGewaehlt}
+                    onWerkzeug={setWerkzeug}
+                  />
+                )}
+                <div>
+                  <p className="m-0">
+                    Fläche {flaecheText(modell.flaecheMm2)} · Umfang {masse.anzeigenOptional(modell.umfangMm)}
+                  </p>
+                  {modell.rechteck !== null ? (
+                    <p className="m-0">
+                      Raummaß {masse.anzeigen(modell.rechteck.breiteMm)} × {masse.anzeigen(modell.rechteck.tiefeMm)}
+                    </p>
+                  ) : (
+                    <p className="m-0 text-muted">Kein Rechteck - Maße stehen an den einzelnen Wänden.</p>
+                  )}
+                  <ul className="my-1 pl-[18px]" aria-label="Wände">
+                    {modell.waende.map((w) => (
+                      <li key={w.id}>
+                        Wand {w.nummer}: {masse.anzeigen(w.laengeMm)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <Deckengeraeteliste
+                  geraete={deckengeraete}
+                  gewaehlt={gewaehlt}
+                  typen={typen}
+                  darfAendern={darfAendern}
+                  deckenhoeheMm={deckenhoeheMm}
+                  treffer={treffer}
+                  onWaehlen={waehlen}
+                  onLage={lageSetzen}
+                  onLabel={(id, label) => {
+                    if (entwurf !== null && darfAendern) dispatch?.({ typ: "aendern", entwurf: geraetAendern(entwurf, id, { label }) });
+                  }}
+                  onEntfernen={entfernen}
+                />
+                <p className="m-0 text-muted">
+                  Ausrichtung wie im Grundriss (Deckenspiegel): die Decke so, wie sie sich in einem Spiegel auf dem Fußboden zeigt –
+                  nicht seitenverkehrt. Was hier links oben liegt, liegt auch im Grundriss links oben. Ziehen auf freier Fläche
+                  verschiebt die Ansicht, das Mausrad zoomt.
+                </p>
+              </div>
+            }
+          >
+            <div ref={huelle} className="relative h-full touch-none overflow-hidden rounded-ep border border-line bg-canvas">
+              <svg
+                ref={flaeche}
+                className="ansicht__svg"
+                role="application"
+                aria-label={`Deckenansicht ${raumName}, Ausrichtung wie im Grundriss`}
+                tabIndex={0}
+                width={groesse.breite}
+                height={groesse.hoehe}
+                style={{ cursor: zusatz?.cursor ?? (werkzeug === "geraet" ? "crosshair" : "grab") }}
+                onPointerDown={druecken}
+                onPointerMove={bewegen}
+                onPointerUp={loslassen}
+                onPointerCancel={() => abbrechen()}
+                onLostPointerCapture={() => {
+                  if (laufend.current !== null && laufend.current.art !== "pan") abbrechen();
                 }}
-                onEntfernen={entfernen}
-              />
-              <p className="m-0 text-muted">
-                Ausrichtung wie im Grundriss (Deckenspiegel): die Decke so, wie sie sich in einem Spiegel auf dem Fußboden zeigt –
-                nicht seitenverkehrt. Was hier links oben liegt, liegt auch im Grundriss links oben. Ziehen auf freier Fläche
-                verschiebt die Ansicht, das Mausrad zoomt.
-              </p>
-              <details className="text-[0.85rem]">
-                <summary className="cursor-pointer text-muted">Bedienung</summary>
-                <ul className="pl-[18px] text-muted">
-                  <li>Gerät (G): Typ wählen, Vorschau folgt dem Zeiger, ein Klick setzt es. Ziehen verschiebt es; Pfeiltasten 1 cm, mit Umschalt 10 cm; Entf entfernt es.</li>
-                  <li>Eingerastet wird bündig an achsparallelen Wänden, in der Flucht anderer Deckengeräte, sonst am Raster. Alt hält es beim Ziehen aus.</li>
-                  <li>Die Maße gehen von der Gerätemitte bis zur ersten tatsächlichen Wand in jeder Richtung – auch in L-förmigen Räumen.</li>
-                  <li>Strg+Z / Strg+Y gelten für den gemeinsamen Entwurf mit dem Grundriss. Schließen behält alle Änderungen – gespeichert wird nur mit „Speichern“.</li>
-                </ul>
-              </details>
-              <details className="text-[0.85rem]">
-                <summary className="cursor-pointer text-muted">Legende der Gerätesymbole</summary>
-                <Geraetelegende typen={typen} />
-              </details>
-            </aside>
-          </div>
+                onPointerLeave={() => {
+                  if (laufend.current === null) {
+                    setVorschau(null);
+                    zusatz?.abbrechen();
+                  }
+                }}
+              >
+                <path d={raster.join("")} className="ansicht__raster" aria-hidden="true" />
+                <polygon points={punkte} className="ansicht__decke-flaeche" data-testid="deckenkontur" />
+                {modell.waende.map((w) => {
+                  const p = weltZuBild(viewport, w.beschriftung);
+                  return (
+                    <text key={w.id} x={p.x} y={p.y + 4} textAnchor="middle" className="ansicht__masstext" data-testid={`decke-wand-${w.nummer}`}>
+                      {`W${w.nummer} · ${masse.anzeigen(w.laengeMm)}`}
+                    </text>
+                  );
+                })}
+                {geraeteElemente}
+                {vorschau !== null && (
+                  <g data-testid="decke-vorschau" data-gueltig={vorschau.ok ? "ja" : "nein"} className={vorschau.ok ? "ansicht__geraet-vorschau" : "ansicht__geraet-vorschau ansicht__geraet-vorschau--fehler"}>
+                    {(() => {
+                      const r = deckenRechteckBild(viewport, vorschau.x, vorschau.y, vorschau.typ);
+                      const m = weltZuBild(viewport, { x: vorschau.x, y: vorschau.y });
+                      return (
+                        <>
+                          <rect x={r.x} y={r.y} width={r.breite} height={r.hoehe} className="ansicht__vorschau" />
+                          <SymbolImPlan typ={vorschau.typ} x={m.x} y={m.y} groesse={22} />
+                          {!vorschau.ok && (
+                            <text x={m.x} y={m.y - 16} textAnchor="middle" className="ansicht__text ansicht__masstext--ueberschneidung">
+                              nicht möglich
+                            </text>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </g>
+                )}
+                {zusatz?.zeichnen((x, y) => weltZuBild(viewport, { x, y }))}
+                {massMitte !== null && treffer !== null && <Wandmasse mitte={massMitte} treffer={treffer} viewport={viewport} mm={masse.anzeigen} />}
+                <text x={groesse.breite - 10} y={20} textAnchor="end" className="ansicht__text ansicht__text--klein">
+                  ↑ oben wie im Grundriss
+                </text>
+              </svg>
+            </div>
+          </Planungsarbeitsflaeche>
         )}
       </div>
-    </Dialog>
+      <HilfeDialog offen={hilfe} titel="Deckenfläche – Bedienung und Legende" onClose={() => setHilfe(false)}>
+        {hilfeInhalt}
+      </HilfeDialog>
+    </section>
   );
 }
 

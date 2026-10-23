@@ -43,7 +43,7 @@ export function GrundrissLeitungsleiste({ k, einstellung, floorId }: { k: Leitun
   // Steighalte dieses Geschosses als Text - im Plan stehen sie bei kleinem Maßstab nur als Quadrat.
   const halte = p.steigwege.filter((s) => s.stops.some((h) => h.floor_id === floorId)).map((s) => s.name);
   return (
-    <section aria-label="Leitung im Grundriss" className="flex flex-col gap-2 text-small">
+    <section aria-label="Leitung im Grundriss" className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-small">
       <div className="flex flex-wrap gap-1" role="toolbar" aria-label="Leitungswerkzeuge im Grundriss">
         {WERKZEUGE.map((w) => (
           <button
@@ -61,8 +61,8 @@ export function GrundrissLeitungsleiste({ k, einstellung, floorId }: { k: Leitun
       </div>
       {einstellung.werkzeug !== "aus" && (
         <>
-          <fieldset className="m-0 flex flex-wrap items-center gap-1 rounded-ep border border-line p-2">
-            <legend className="px-1 text-label text-muted">Ebene für neue Punkte</legend>
+          <fieldset className="m-0 flex flex-wrap items-center gap-1 border-0 p-0" title="Die Ebene gilt nur für neue Punkte; vorhandene Wegpunkte behalten ihre Art.">
+            <legend className="float-left mr-1 p-0 text-label text-muted">Ebene für neue Punkte</legend>
             {EBENEN.map((x) => (
               <button
                 key={x.wert}
@@ -76,10 +76,9 @@ export function GrundrissLeitungsleiste({ k, einstellung, floorId }: { k: Leitun
                 {EBENE_LABEL[x.wert]}
               </button>
             ))}
-            <span className="w-full text-muted">Vorhandene Wegpunkte behalten ihre Art – die Wahl gilt nur für neue.</span>
           </fieldset>
           {(einstellung.ebene === "wand" || einstellung.werkzeug === "durchfuehrung") && (
-            <label className={FELD}>
+            <label className="flex items-center gap-1.5">
               <span className={FELD_BESCHRIFTUNG}>{einstellung.werkzeug === "durchfuehrung" ? "Höhe der Durchführung" : "Höhe neuer Wandpunkte"}</span>
               <select
                 className={eingabefeld({ kompakt: true })}
@@ -98,12 +97,11 @@ export function GrundrissLeitungsleiste({ k, einstellung, floorId }: { k: Leitun
             </label>
           )}
           {einstellung.werkzeug === "leitung" && halte.length > 0 && (
-            <p className="m-0 text-muted" data-testid="grundriss-steighalte">
-              Steighalte auf diesem Geschoss (Quadrat im Plan): {halte.join(", ")}. Fortsetzungen in andere Geschosse stehen
-              ausgeschrieben in der Wegpunktliste und am gewählten Wegpunkt.
+            <p className="m-0 w-full text-muted" data-testid="grundriss-steighalte">
+              Steighalte auf diesem Geschoss (Quadrat im Plan): {halte.join(", ")}
             </p>
           )}
-          <p className="m-0 text-muted" data-testid="grundriss-leitung-hilfe">
+          <p className="m-0 w-full text-muted" data-testid="grundriss-leitung-hilfe">
             {einstellung.werkzeug === "durchfuehrung"
               ? "Klick auf eine gemeinsame Bauwand legt dort eine neue Durchführung an – sie entsteht erst beim Speichern der Leitung."
               : einstellung.ebene === "fussboden"
@@ -114,23 +112,6 @@ export function GrundrissLeitungsleiste({ k, einstellung, floorId }: { k: Leitun
           </p>
         </>
       )}
-      <details className="text-[0.85rem] text-muted">
-        <summary className="cursor-pointer">Legende und Modellgrenzen</summary>
-        <svg width="210" height="54" aria-hidden="true" className="mt-1 block">
-          <line x1="4" y1="9" x2="60" y2="9" className="leitung-plan leitung-plan--wand" />
-          <text x="68" y="13" className="leitung-plan-text">Wand (an der Raumseite)</text>
-          <line x1="4" y1="27" x2="60" y2="27" className="leitung-plan leitung-plan--decke" />
-          <text x="68" y="31" className="leitung-plan-text">Decke</text>
-          <line x1="4" y1="45" x2="60" y2="45" className="leitung-plan leitung-plan--fussboden" />
-          <text x="68" y="49" className="leitung-plan-text">Fußboden</text>
-        </svg>
-        <p className="m-0">
-          Farbe und Text nennen den Status (bestätigt, unvollständig, Konflikt). Fußbodenwege liegen modellhaft auf Höhe des
-          Fertigfußbodens. Aufbau, Estrichdicke, Leerrohre und tatsächliche Lage unter dem Belag sind nicht abgebildet; der Übergang
-          in den Nachbarraum ist nur an einer Tür, einem Durchgang oder einer Durchführung geplant – keine Aussage über
-          Ausführbarkeit. Keine Wegfindung: Jeder Punkt wird ausdrücklich gesetzt.
-        </p>
-      </details>
     </section>
   );
 }
@@ -141,6 +122,29 @@ export function GrundrissLeitungsleiste({ k, einstellung, floorId }: { k: Leitun
  * Unbestätigte oder widersprüchliche Geschosshöhen werden wie im Server
  * gemeldet - nie still als Länge gezählt.
  */
+/** Legende der Leitungsdarstellung im Grundriss – in der Hilfe (L1) statt dauerhaft in der Kontextleiste. */
+export function GrundrissLegende() {
+  return (
+    <section aria-label="Legende der Leitungen" className="mt-2 text-[0.85rem] text-muted">
+      <h3 className="m-0 text-small text-fg">Legende und Modellgrenzen der Leitungen</h3>
+        <svg width="210" height="54" aria-hidden="true" className="mt-1 block">
+        <line x1="4" y1="9" x2="60" y2="9" className="leitung-plan leitung-plan--wand" />
+        <text x="68" y="13" className="leitung-plan-text">Wand (an der Raumseite)</text>
+        <line x1="4" y1="27" x2="60" y2="27" className="leitung-plan leitung-plan--decke" />
+        <text x="68" y="31" className="leitung-plan-text">Decke</text>
+        <line x1="4" y1="45" x2="60" y2="45" className="leitung-plan leitung-plan--fussboden" />
+        <text x="68" y="49" className="leitung-plan-text">Fußboden</text>
+      </svg>
+      <p className="m-0">
+        Farbe und Text nennen den Status (bestätigt, unvollständig, Konflikt). Fußbodenwege liegen modellhaft auf Höhe des
+        Fertigfußbodens. Aufbau, Estrichdicke, Leerrohre und tatsächliche Lage unter dem Belag sind nicht abgebildet; der Übergang
+        in den Nachbarraum ist nur an einer Tür, einem Durchgang oder einer Durchführung geplant – keine Aussage über
+        Ausführbarkeit. Keine Wegfindung: Jeder Punkt wird ausdrücklich gesetzt.
+      </p>
+    </section>
+  );
+}
+
 export function Steigwegwahl({
   k,
   wahl,

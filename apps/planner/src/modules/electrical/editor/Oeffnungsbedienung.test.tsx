@@ -6,6 +6,7 @@ import { masseinheitSetzen } from "../../../core/ui/masseinheit";
 import { RueckfrageProvider } from "../../../core/ui/Rueckfrage";
 import { rechteck } from "../ansicht3d/testplan";
 import { RAUM } from "./testdaten";
+import { eigenschaftenOeffnen, raumInListe } from "../arbeitsflaeche/testhilfe";
 
 /**
  * Türen direkt mit der Maus platzieren und verschieben (Phase 4b.2) -
@@ -71,7 +72,7 @@ async function bereit() {
 async function wohnzimmerMitTuerwerkzeug() {
   zeigen();
   await bereit();
-  fireEvent.click(await screen.findByRole("button", { name: /0.01 Wohnzimmer/ }));
+  fireEvent.click(await raumInListe(/0.01 Wohnzimmer/));
   taste("t");
 }
 
@@ -88,12 +89,12 @@ async function tuerAufGemeinsamerWand(weitere: ReturnType<typeof tuer>[] = []) {
   plan = { ...plan, rooms: [wohnzimmerMit(tuer("tuer-1", 1550), ...weitere), plan.rooms[1]] };
   zeigen();
   await bereit();
-  fireEvent.click(await screen.findByRole("button", { name: /0.01 Wohnzimmer/ }));
+  fireEvent.click(await raumInListe(/0.01 Wohnzimmer/));
   klick(5000, 2000, await screen.findByTestId("oeffnung-tuer-1"));
   await screen.findByText(/Tür in Wand 2/);
 }
 
-const wandansicht = () => screen.queryByRole("dialog", { name: /Wandansicht/ });
+const wandansicht = () => screen.queryByRole("region", { name: /Wandansicht/ });
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -134,7 +135,7 @@ describe("Tür, Fenster, Durchgang: Standardweg über die Wandansicht (Phase 4f)
   it("Klick wählt nur die Wand und öffnet ihre Wandansicht mit Tür-Werkzeug - keine Öffnung entsteht", async () => {
     await wohnzimmerMitTuerwerkzeug();
     klick(4980, 2000);
-    const dialog = await screen.findByRole("dialog", { name: "Wandansicht · Wand 2 · 0.01 Wohnzimmer" });
+    const dialog = await screen.findByRole("region", { name: "Wandansicht · Wand 2 · 0.01 Wohnzimmer" });
     expect(within(dialog).getByRole("button", { name: "Tür" })).toHaveAttribute("aria-pressed", "true");
     // Die ganze Wand des Raums: 400 cm, nicht ein Abschnitt hinter dem Nachbarn.
     expect(within(dialog).getByText(/^400 cm breit/)).toBeInTheDocument();
@@ -145,26 +146,26 @@ describe("Tür, Fenster, Durchgang: Standardweg über die Wandansicht (Phase 4f)
   it("Fenster (N) und Durchgang (D) öffnen die Wandansicht mit ihrem Werkzeug", async () => {
     zeigen();
     await bereit();
-    fireEvent.click(await screen.findByRole("button", { name: /0.01 Wohnzimmer/ }));
+    fireEvent.click(await raumInListe(/0.01 Wohnzimmer/));
     taste("n");
     klick(2500, 20);
-    let dialog = await screen.findByRole("dialog", { name: "Wandansicht · Wand 1 · 0.01 Wohnzimmer" });
+    let dialog = await screen.findByRole("region", { name: "Wandansicht · Wand 1 · 0.01 Wohnzimmer" });
     expect(within(dialog).getByRole("button", { name: "Fenster" })).toHaveAttribute("aria-pressed", "true");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Dialog schließen" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: /^Zurück zu(m Grundriss|r 3D-Ansicht)$/ }));
     taste("d");
     klick(2500, 20);
-    dialog = await screen.findByRole("dialog", { name: "Wandansicht · Wand 1 · 0.01 Wohnzimmer" });
+    dialog = await screen.findByRole("region", { name: "Wandansicht · Wand 1 · 0.01 Wohnzimmer" });
     expect(within(dialog).getByRole("button", { name: "Durchgang" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("Abbrechen ohne Platzierung legt nichts an", async () => {
     await wohnzimmerMitTuerwerkzeug();
     klick(4980, 2000);
-    const dialog = await screen.findByRole("dialog", { name: /Wandansicht/ });
-    // Escape: zuerst das Werkzeug, dann schließen.
-    fireEvent(dialog, new Event("cancel", { cancelable: true }));
+    const dialog = await screen.findByRole("region", { name: /Wandansicht/ });
+    // Escape (seit L1 als Taste in der Fläche): zuerst das Werkzeug, dann zurück zum Grundriss.
+    fireEvent.keyDown(dialog.querySelector("svg.ansicht__svg") as Element, { key: "Escape" });
     expect(within(dialog).getByRole("button", { name: "Auswählen" })).toHaveAttribute("aria-pressed", "true");
-    fireEvent(dialog, new Event("cancel", { cancelable: true }));
+    fireEvent.keyDown(dialog.querySelector("svg.ansicht__svg") as Element, { key: "Escape" });
     expect(wandansicht()).toBeNull();
     expect(oeffnungen()).toHaveLength(0);
     expect(screen.getByText(/Keine ungespeicherten Änderungen/)).toBeInTheDocument();
@@ -174,7 +175,7 @@ describe("Tür, Fenster, Durchgang: Standardweg über die Wandansicht (Phase 4f)
   it("Klick von der Flurseite wechselt in den Flur und öffnet dessen Wand", async () => {
     await wohnzimmerMitTuerwerkzeug();
     klick(5020, 2000);
-    expect(await screen.findByRole("dialog", { name: "Wandansicht · Wand 4 · 0.02 Flur" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Wandansicht · Wand 4 · 0.02 Flur" })).toBeInTheDocument();
   });
 
   it("mit ungespeicherten Änderungen fragt der Wechsel zur anderen Raumseite nach", async () => {
@@ -195,7 +196,7 @@ describe("Tür, Fenster, Durchgang: Standardweg über die Wandansicht (Phase 4f)
     api.put.mockImplementation((_pfad: string, optionen: { body: unknown }) => Promise.resolve({ ...RAUM, version: 6, ...(optionen.body as object) }));
     await wohnzimmerMitTuerwerkzeug();
     klick(4980, 2000);
-    const dialog = await screen.findByRole("dialog", { name: /Wandansicht/ });
+    const dialog = await screen.findByRole("region", { name: /Wandansicht/ });
     const wand = within(dialog).getByTestId("wandflaeche");
     const x = Number(wand.getAttribute("x")) + Number(wand.getAttribute("width")) / 2;
     const y = Number(wand.getAttribute("y")) + Number(wand.getAttribute("height")) / 2;
@@ -204,7 +205,7 @@ describe("Tür, Fenster, Durchgang: Standardweg über die Wandansicht (Phase 4f)
       fireEvent(svg, new MouseEvent(typ, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y }));
     }
     await within(dialog).findByText(/Tür gesetzt/);
-    fireEvent.click(within(dialog).getByRole("button", { name: "Dialog schließen" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: /^Zurück zu(m Grundriss|r 3D-Ansicht)$/ }));
     expect(oeffnungen()).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "Rückgängig" }));
     expect(oeffnungen()).toHaveLength(0);
@@ -222,7 +223,8 @@ describe("Tür, Fenster, Durchgang: Standardweg über die Wandansicht (Phase 4f)
     plan = { ...plan, rooms: [wohnzimmerMit(tuer("tuer-1", 1550)), FLUR] };
     await wohnzimmerMitTuerwerkzeug();
     klick(5000, 2000, await screen.findByTestId("oeffnung-tuer-1"));
-    const dialog = await screen.findByRole("dialog", { name: "Wandansicht · Wand 2 · 0.01 Wohnzimmer" });
+    const dialog = await screen.findByRole("region", { name: "Wandansicht · Wand 2 · 0.01 Wohnzimmer" });
+    await eigenschaftenOeffnen(dialog);
     expect(within(dialog).getByRole("textbox", { name: /^Abstand von links/ })).toHaveValue("156,5");
     expect(within(dialog).getByRole("button", { name: "Auswählen" })).toHaveAttribute("aria-pressed", "true");
   });
@@ -231,7 +233,7 @@ describe("Tür, Fenster, Durchgang: Standardweg über die Wandansicht (Phase 4f)
     await tuerAufGemeinsamerWand();
     expect(screen.getByRole("button", { name: "In der Wandansicht bearbeiten" })).toBeInTheDocument();
     zeiger(screen.getByTestId("oeffnung-tuer-1"), "dblclick", 5000, 2000);
-    expect(await screen.findByRole("dialog", { name: "Wandansicht · Wand 2 · 0.01 Wohnzimmer" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Wandansicht · Wand 2 · 0.01 Wohnzimmer" })).toBeInTheDocument();
   });
 
   it("die Einheit mm folgt auch in der Wandansicht - gespeichert bleibt der Abstand ab Wandanfang", async () => {
@@ -239,7 +241,8 @@ describe("Tür, Fenster, Durchgang: Standardweg über die Wandansicht (Phase 4f)
     plan = { ...plan, rooms: [wohnzimmerMit(tuer("tuer-1", 1550)), FLUR] };
     await wohnzimmerMitTuerwerkzeug();
     klick(5000, 2000, await screen.findByTestId("oeffnung-tuer-1"));
-    const dialog = await screen.findByRole("dialog", { name: /Wandansicht/ });
+    const dialog = await screen.findByRole("region", { name: /Wandansicht/ });
+    await eigenschaftenOeffnen(dialog);
     // Blick nach Osten: links ist Norden - 4000 − 1550 − 885 = 1565 mm.
     expect(within(dialog).getByRole("textbox", { name: "Abstand von links (mm)" })).toHaveValue("1565");
     act(() => masseinheitSetzen("cm"));
@@ -329,7 +332,7 @@ describe("Tür per Maus verschieben", () => {
     plan = { ...plan, rooms: [wohnzimmerMit(tuer("tuer-1", 550)), rechteck("raum-2", "Flur", [5000, 0], [7000, 2000], { nummer: "0.02" })] };
     zeigen();
     await bereit();
-    fireEvent.click(await screen.findByRole("button", { name: /0.01 Wohnzimmer/ }));
+    fireEvent.click(await raumInListe(/0.01 Wohnzimmer/));
     klick(5000, 1000, await screen.findByTestId("oeffnung-tuer-1"));
     await screen.findByText(/Tür in Wand 2/);
     expect(screen.getByText("Verbindet „0.01 Wohnzimmer“ und „0.02 Flur“")).toBeInTheDocument();
@@ -346,7 +349,7 @@ describe("Tür per Maus verschieben", () => {
     zeiger(flaeche(), "pointermove", 5000, 2600);
     zeiger(flaeche(), "pointerup", 5000, 2600);
     expect(screen.getByText(/Ungespeicherte Änderungen/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /0.02 Flur/ }));
+    fireEvent.click(await raumInListe(/0.02 Flur/));
     expect(await screen.findByRole("dialog", { name: "Raum wechseln?" })).toBeInTheDocument();
   });
 });
@@ -365,7 +368,7 @@ describe("Abgeleitete Darstellung im Nachbarraum", () => {
     plan = { ...plan, rooms: [MIT_TUER, FLUR] };
     zeigen();
     await bereit();
-    fireEvent.click(await screen.findByRole("button", { name: /0.02 Flur/ }));
+    fireEvent.click(await raumInListe(/0.02 Flur/));
     const tuer = await screen.findByTestId("oeffnung-tuer-1");
     expect(oeffnungen()).toHaveLength(1); // einmal gezeichnet, nicht je Raumseite
     expect(tuer).toHaveAttribute("data-abgeleitet", "ja");
@@ -385,7 +388,7 @@ describe("Abgeleitete Darstellung im Nachbarraum", () => {
     plan = { ...plan, rooms: [MIT_TUER, FLUR] };
     zeigen();
     await bereit();
-    fireEvent.click(await screen.findByRole("button", { name: /0.02 Flur/ }));
+    fireEvent.click(await raumInListe(/0.02 Flur/));
     klick(5000, 3500, await screen.findByTestId("wand-raum-2-w3"));
     await screen.findByText(/Abgeleitet aus dem Nachbarraum/);
     // Die Flurwand trägt selbst keine Öffnung - Entfernen betrifft nur eigene Öffnungen.

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Ansicht3dLaden } from "./ansicht3d/Ansicht3dLaden";
 import { einfamilienhaus, plan, rechteck } from "./ansicht3d/testplan";
 import { RueckfrageProvider } from "../../core/ui/Rueckfrage";
+import { raumInListe } from "./arbeitsflaeche/testhilfe";
 
 /**
  * Drei Ansichten im Tab „Räume & Grundriss" (Phase 4b).
@@ -146,7 +147,7 @@ describe("Ansichtswahl", () => {
     fireEvent.click(knopf("3D-Ansicht"));
     await screen.findByText(/7 von 7 Räumen dargestellt/);
     fireEvent.click(knopf("2D-Editor"));
-    expect(await screen.findByRole("button", { name: /0.03 Flur/ })).toBeInTheDocument();
+    expect(await raumInListe(/0.03 Flur/)).toBeInTheDocument();
     expect(frage).not.toHaveBeenCalled();
     // 3D verlassen: kein Canvas bleibt zurück.
     expect(document.querySelectorAll("canvas")).toHaveLength(0);

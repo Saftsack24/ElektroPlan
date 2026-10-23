@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { masseinheitSetzen } from "../../../core/ui/masseinheit";
 import { RueckfrageProvider } from "../../../core/ui/Rueckfrage";
 import { rechteck } from "../ansicht3d/testplan";
+import { eigenschaftenOeffnen, raumInListe } from "../arbeitsflaeche/testhilfe";
 
 /**
  * Geräte in Wand- und Deckenansicht über den echten Editor (Phase 5).
@@ -84,10 +85,13 @@ function grundrissKlick(ziel: Element, x: number, y: number) {
 async function wandansicht() {
   zeigen();
   await screen.findByRole("application", { name: /Grundriss/ });
-  fireEvent.click(await screen.findByRole("button", { name: /0.01 Wohnzimmer/ }));
+  fireEvent.click(await raumInListe(/0.01 Wohnzimmer/));
   grundrissKlick(await screen.findByTestId("wand-raum-1-w1"), 5000, 2000);
   fireEvent.click(await screen.findByRole("button", { name: /^Wand bearbeiten$/ }));
-  return screen.findByRole("dialog", { name: /Wandansicht/ });
+  const dialog = await screen.findByRole("region", { name: /Wandansicht/ });
+  // Lage und Typ des gewählten Geräts stehen im Eigenschaftenpanel (6c.0).
+  await eigenschaftenOeffnen(dialog);
+  return dialog;
 }
 
 const ansicht = () => document.querySelector<SVGSVGElement>("svg.ansicht__svg")!;
@@ -99,7 +103,7 @@ function bild(u: number, h: number) {
 function zeiger(ziel: Element, t: string, u: number, h: number) {
   fireEvent(ziel, new MouseEvent(t, { bubbles: true, cancelable: true, button: 0, ...bild(u, h) }));
 }
-const dlg = () => screen.getByRole("dialog", { name: /Wandansicht/ });
+const dlg = () => screen.getByRole("region", { name: /Wandansicht/ });
 
 describe("Geräte in der Wandansicht (Phase 5)", () => {
   it("setzen per Zeiger, Ziehen als ein Rückgängig-Schritt, Speichern mit der Gerätemitte ab Wandanfang", async () => {

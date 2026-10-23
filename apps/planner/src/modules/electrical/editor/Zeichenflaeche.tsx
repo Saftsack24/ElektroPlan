@@ -92,6 +92,8 @@ interface Props {
   viewport: Viewport;
   setViewport: Dispatch<SetStateAction<Viewport>>;
   onGroesse: (groesse: Groesse) => void;
+  /** Zuletzt gemessene Größe, zu der der Viewport gehört (beim Wiedereinhängen). */
+  anfangsGroesse?: Groesse;
   darfSchreiben: boolean;
   rasterMm: number;
   fangAktiv: boolean;
@@ -109,7 +111,8 @@ interface Props {
   onOeffnungBearbeiten: (raumId: string, wandId: string, oeffnungId: string) => void;
   /** Kurzer Hinweis über der Zeichenfläche; `null` räumt ihn. */
   onHinweis: (text: string | null) => void;
-  oeffnungsart: Oeffnungsart;
+  /** Was ein Klick auf eine Wand öffnet (L1: auch das Gerätewerkzeug). */
+  oeffnungsart: Oeffnungsart | "geraet";
   geschossLabel: string;
   /** Gemeinsame Wandtopologie und abgeleitete Raumverbindungen (Phase 4b.2). */
   topologie: EditorTopologie;
@@ -187,7 +190,9 @@ export function Zeichenflaeche(props: Props) {
   const masse = useMasse();
   const huelle = useRef<HTMLDivElement>(null);
   const flaeche = useRef<SVGSVGElement>(null);
-  const [groesse, setGroesse] = useState<Groesse>(RUECKFALL_GROESSE);
+  // Wieder eingehängt (L1: nach einer Wand- oder Deckenfläche) beginnt die Fläche mit der zuletzt
+  // gemessenen Größe – so passt `groesseAendern` den behaltenen Viewport ohne Sprung an.
+  const [groesse, setGroesse] = useState<Groesse>(props.anfangsGroesse ?? RUECKFALL_GROESSE);
   const [zeiger, setZeiger] = useState<{ punkt: Punkt; ziel: Fangziel } | null>(null);
   const [vorschau, setVorschau] = useState<Oeffnungsvorschau | null>(null);
   const [wandvorschau, setWandvorschau] = useState<Wandvorschau | null>(null);
@@ -303,7 +308,7 @@ export function Zeichenflaeche(props: Props) {
     return {
       wandId: e.treffer.wandId,
       ok: true,
-      text: `Wand ${nummer} von „${props.raumName(e.treffer.raumId)}“ – Klick öffnet die Wandansicht (${OEFFNUNGSART_LABEL[props.oeffnungsart]} setzen)`,
+      text: `Wand ${nummer} von „${props.raumName(e.treffer.raumId)}“ – Klick öffnet die Wandansicht (${props.oeffnungsart === "geraet" ? "Gerät" : OEFFNUNGSART_LABEL[props.oeffnungsart]} setzen)`,
     };
   };
 
@@ -591,7 +596,7 @@ export function Zeichenflaeche(props: Props) {
 
   return (
     <div
-      className="relative h-[62vh] min-h-[420px] touch-none overflow-hidden rounded-ep border border-line bg-canvas"
+      className="relative h-full touch-none overflow-hidden rounded-ep border border-line bg-canvas"
       ref={huelle}
     >
       <svg

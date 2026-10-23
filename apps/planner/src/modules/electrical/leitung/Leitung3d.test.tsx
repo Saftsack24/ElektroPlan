@@ -6,6 +6,7 @@ import { masseinheitSetzen } from "../../../core/ui/masseinheit";
 import { RueckfrageProvider } from "../../../core/ui/Rueckfrage";
 import { Grundrissszene } from "../ansicht3d/szene";
 import { GESCHOSS, KUECHE, DIELE, KOPPLUNG, TYPEN, VERTEILUNG, leitung, stromkreis } from "./testdaten";
+import { raumInListe } from "../arbeitsflaeche/testhilfe";
 
 /**
  * Leitungen in der 3D-Ansicht (Phase 6b.5) über den echten Tab: Auswahl öffnet
@@ -121,7 +122,7 @@ describe("Leitung in 3D", () => {
     await screen.findAllByTestId("plan-leitung-l1");
     // Ohne Raumbearbeitung ist die Leitung wählbar ...
     for (const t of treffer()) expect(t).not.toHaveStyle({ pointerEvents: "none" });
-    fireEvent.click(await screen.findByRole("button", { name: /0.01 Diele/ }));
+    fireEvent.click(await raumInListe(/0.01 Diele/));
     // ... während ein Raum bearbeitet wird, lässt sie Klicks zu Wand und Öffnung durch (Abnahme 6b.6).
     await waitFor(() => {
       for (const t of treffer()) expect(t).toHaveStyle({ pointerEvents: "none" });

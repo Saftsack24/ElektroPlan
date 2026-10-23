@@ -8,6 +8,7 @@ import { knopf } from "../core/ui/stil";
 import { moduleRegistry } from "../modules";
 import { AKTION } from "../core/ui/aktionssymbole";
 import { MitSymbol } from "../core/ui/Symbol";
+import { ArbeitsbereichProvider, useArbeitsbereichAktiv } from "../core/ui/arbeitsbereich";
 
 /** Eintrag der Hauptnavigation; der aktive ist hervorgehoben. */
 function navigationslink({ isActive }: { isActive: boolean }): string {
@@ -17,6 +18,16 @@ function navigationslink({ isActive }: { isActive: boolean }): string {
 }
 
 export function Layout() {
+  return (
+    <ArbeitsbereichProvider>
+      <LayoutInhalt />
+    </ArbeitsbereichProvider>
+  );
+}
+
+function LayoutInhalt() {
+  // Arbeitsbereich (etwa die grafische Planung): die ganze Seite in einer breiteren Flucht.
+  const arbeitsbereich = useArbeitsbereichAktiv();
   const { me, logout, activeModuleIds, permissions } = useAuth();
   const navigation = moduleRegistry.navigation({ activeModuleIds, permissions });
   const verlassen = useVerlassenBestaetigen();
@@ -55,7 +66,14 @@ export function Layout() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-[1100px] min-w-0 px-5 py-6">
+      <main
+        className={
+          arbeitsbereich
+            ? "mx-auto w-full max-w-[120rem] min-w-0 px-5 py-3 max-sm:px-3"
+            : "mx-auto w-full max-w-[1100px] min-w-0 px-5 py-6"
+        }
+        data-arbeitsbereich={arbeitsbereich ? "" : undefined}
+      >
         <Suspense fallback={<p className="text-muted">Wird geladen ...</p>}>
           <Outlet />
         </Suspense>

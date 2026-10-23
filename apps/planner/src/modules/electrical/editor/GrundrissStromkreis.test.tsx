@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { masseinheitSetzen } from "../../../core/ui/masseinheit";
 import { RueckfrageProvider } from "../../../core/ui/Rueckfrage";
 import { rechteck } from "../ansicht3d/testplan";
+import { eigenschaftenOeffnen } from "../arbeitsflaeche/testhilfe";
 
 /**
  * Raumentwurf und Stromkreiszuordnung (Phase 6b.1): Wer ein zugeordnetes Gerät
@@ -85,6 +86,7 @@ describe("Zugeordnetes Gerät entfernen", () => {
     );
     const geraet = await screen.findByTestId("grundriss-geraet-steckdose");
     druecken(geraet.querySelector("rect.grundriss__geraet-treffer") as Element);
+    await eigenschaftenOeffnen();
     fireEvent.click(await screen.findByRole("button", { name: "Gerät entfernen" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Speichern" })).toBeEnabled());
     // Stromkreise müssen geladen sein, bevor gespeichert wird.

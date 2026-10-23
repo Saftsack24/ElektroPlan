@@ -5,6 +5,33 @@ Einträge entstehen nach relevanten Änderungen, nicht nach jedem Commit.
 
 ---
 
+## 2026-10-22 — Phase 6c L1: Nacharbeiten (nicht committet)
+
+Nur Oberfläche, keine API-Änderung. In schmalen Fenstern stehen die Planungswerkzeuge als Symbolknöpfe mit Hinweis
+da, Raum und Öffnung als Menü; „Leitung hinzufügen“ bleibt mit Text oben. Geschoss und Ansicht sind dort zwei
+Auswahlfelder, Kopf und Pfad gekürzt; die Zeichenfläche füllt nach einem Scroll das Fenster. Eigenschaften und
+Maximieren stehen oben rechts neben den Werkzeugen. Gesperrte Knöpfe sind in der ganzen Anwendung eindeutig als
+gesperrt erkennbar (ohne Füllfarbe, gedämpft). Menüeinträge erscheinen als Menüzeilen statt als Knöpfe.
+
+## 2026-10-16 — Phase 6c L1: Planungslayout (nicht committet)
+
+Nur Oberfläche, keine Migration, keine API-Änderung. In der grafischen Planung bilden Projektkopf, Reiter,
+Geschoss-/Ansichtszeile, Werkzeugleiste und Zeichenfläche eine gemeinsame Arbeitsfläche, die die Fensterhöhe nutzt.
+Der Projektkopf ist dort einzeilig (Seltenes im Menü „Projekt“). Die Werkzeugleiste ist gruppiert – Auswahl, Raum,
+Öffnung, Gerät, **„Leitung hinzufügen“**, Rückgängig/Wiederholen, Zoom –, Fang, Raster und Hilfe stehen im Menü
+„Ansicht“. Wand- und Deckenansicht öffnen sich nicht mehr als Dialog, sondern in derselben Arbeitsfläche mit Pfad
+und „Zurück zum Grundriss“; jede Fläche behält ihren Ausschnitt. „Leitung hinzufügen“ führt bis zum neuen
+Zeichenablauf (L2) in die bestehende Leitungsliste.
+
+## 2026-10-15 — Phase 6c.0: Planungsarbeitsfläche (nicht committet)
+
+Nur Oberfläche, keine Migration, keine API-Änderung. Grundriss, Wand- und Deckenansicht teilen eine
+Arbeitsfläche: Eigenschaften standardmäßig eingeklappt (Knopf „Eigenschaften“, Taste E), schmal als
+überlagerndes Panel; „Zeichenfläche maximieren“ (M) mit Rückweg „Normale Ansicht“; der Grundriss nutzt die
+Fensterbreite. Speicherfehler, Konflikte und offene Leitungs-/Zuordnungsentwürfe stehen in einer Kontextleiste
+unter der Fläche. Rückgängig/Wiederholen als gebogene Pfeile mit Hinweis und Tastenkürzel, gesperrt erkennbar.
+Zoom, Ausschnitt, Auswahl und Entwürfe bleiben bei allen Layoutwechseln erhalten (im laufenden Stack gemessen).
+
 ## 2026-10-14 — Phase 6b.6: Mengenübersicht (Checkpoint vom 2026-10-15)
 
 Keine Migration. Neuer Lese-Endpunkt `GET /api/v1/modules/electrical/buildings/{building_id}/cabling-summary`

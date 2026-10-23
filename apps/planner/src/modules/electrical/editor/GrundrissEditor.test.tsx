@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RAUM } from "./testdaten";
 import { masseinheitSetzen } from "../../../core/ui/masseinheit";
 import { RueckfrageProvider } from "../../../core/ui/Rueckfrage";
+import { raumInListe } from "../arbeitsflaeche/testhilfe";
 
 /**
  * Grafischer Editor im Projekt-Tab (Phase 4a) - Integration.
@@ -24,6 +25,15 @@ vi.mock("../../../core/auth/AuthProvider", () => ({
   usePermission: (permission: string) => (permission === "electrical.plan.write" ? darfSchreiben : true),
 }));
 vi.mock("react-router-dom", () => ({ useParams: () => ({ projectId: "projekt-1" }) }));
+
+// Hält das Nachladen der 3D-Ansicht fest (wie `ansichten.test.tsx`, Task 0043): In dieser Datei
+// lädt nur ein Test die 3D-Ansicht – kalt, Vitest transformiert dann erst den 3D-Modulgraphen.
+// Das dauerte unter Last länger als die Suchfrist; der Test wartet deshalb auf das Nachladen selbst.
+const dreiD = vi.hoisted(() => ({ modul: null as Promise<unknown> | null }));
+vi.mock("../ansicht3d/Ansicht3d", async () => {
+  dreiD.modul = vi.importActual("../ansicht3d/Ansicht3d");
+  return await dreiD.modul;
+});
 
 const { default: RoomsTab } = await import("../RoomsTab");
 
@@ -127,7 +137,7 @@ describe("Grafischer Editor", () => {
   it("wählt einen Raum aus und macht ihn bearbeitbar", async () => {
     zeigen();
     await editorBereit();
-    fireEvent.click(await screen.findByRole("button", { name: /0.01 Wohnzimmer · Geschlossen/ }));
+    fireEvent.click(await raumInListe(/0.01 Wohnzimmer · Geschlossen/));
     expect(await screen.findByText(/Wohnzimmer: Keine ungespeicherten Änderungen/)).toBeInTheDocument();
     expect(document.querySelectorAll(".grundriss__ecke")).toHaveLength(4);
   });
@@ -180,7 +190,7 @@ describe("Grafischer Editor", () => {
     api.put.mockResolvedValue(gespeichert);
     zeigen();
     await editorBereit();
-    fireEvent.click(await screen.findByRole("button", { name: /0.01 Wohnzimmer/ }));
+    fireEvent.click(await raumInListe(/0.01 Wohnzimmer/));
     const ecke = await screen.findByTestId("ecke-5000,4000");
     zeiger(ecke, "pointerdown", 5000, 4000);
     for (const x of [5200, 5500, 5800, 6000]) zeiger(flaeche(), "pointermove", x, 4000);
@@ -211,7 +221,7 @@ describe("Grafischer Editor", () => {
   it("macht Änderungen mit Strg+Z rückgängig - aber nicht, solange ein Eingabefeld sie braucht", async () => {
     zeigen();
     await editorBereit();
-    fireEvent.click(await screen.findByRole("button", { name: /0.01 Wohnzimmer/ }));
+    fireEvent.click(await raumInListe(/0.01 Wohnzimmer/));
     zeiger(await screen.findByTestId("ecke-5000,4000"), "pointerdown", 5000, 4000);
     zeiger(flaeche(), "pointermove", 6000, 4000);
     zeiger(flaeche(), "pointerup", 6000, 4000);
@@ -231,7 +241,7 @@ describe("Grafischer Editor", () => {
     api.put.mockRejectedValue(problem(409, "version-conflict"));
     zeigen();
     await editorBereit();
-    fireEvent.click(await screen.findByRole("button", { name: /0.01 Wohnzimmer/ }));
+    fireEvent.click(await raumInListe(/0.01 Wohnzimmer/));
     zeiger(await screen.findByTestId("ecke-5000,4000"), "pointerdown", 5000, 4000);
     zeiger(flaeche(), "pointermove", 6000, 4000);
     zeiger(flaeche(), "pointerup", 6000, 4000);
@@ -253,7 +263,10 @@ describe("Grafischer Editor", () => {
     act(() => masseinheitSetzen("mm"));
 
     expect(screen.getAllByText("5.000 mm")).toHaveLength(2);
-    expect(screen.getByRole("option", { name: "100 mm" })).toBeInTheDocument(); // Raster
+    // Raster im Menü „Ansicht“ (6c, L1) - ebenfalls in der persönlichen Einheit.
+    fireEvent.click(screen.getByRole("button", { name: "Ansicht und Hilfe" }));
+    expect(screen.getByRole("menuitemradio", { name: "Raster 100 mm" })).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
     // Die SVG-Geometrie bleibt in Millimetern - unverändert.
     expect(document.querySelector("svg.grundriss__svg g[transform]")?.innerHTML).toBe(geometrie);
   });
@@ -272,7 +285,7 @@ describe("Grafischer Editor", () => {
     const frage = vi.spyOn(window, "confirm");
     zeigen();
     await editorBereit();
-    fireEvent.click(await screen.findByRole("button", { name: /0.01 Wohnzimmer/ }));
+    fireEvent.click(await raumInListe(/0.01 Wohnzimmer/));
     zeiger(await screen.findByTestId("ecke-5000,4000"), "pointerdown", 5000, 4000);
     zeiger(flaeche(), "pointermove", 6000, 4000);
     zeiger(flaeche(), "pointerup", 6000, 4000);
@@ -300,7 +313,7 @@ describe("Grafischer Editor", () => {
     );
     zeigen();
     await editorBereit();
-    fireEvent.click(await screen.findByRole("button", { name: /0.01 Wohnzimmer/ }));
+    fireEvent.click(await raumInListe(/0.01 Wohnzimmer/));
     zeiger(await screen.findByTestId("ecke-5000,4000"), "pointerdown", 5000, 4000);
     zeiger(flaeche(), "pointermove", 6000, 4000);
     zeiger(flaeche(), "pointerup", 6000, 4000);
@@ -318,7 +331,7 @@ describe("Grafischer Editor", () => {
     await editorBereit();
     taste("t");
     klick(1500, 20, await screen.findByTestId("wand-w1"));
-    const dialog = await screen.findByRole("dialog", { name: /Wandansicht · Wand 1/ });
+    const dialog = await screen.findByRole("region", { name: /Wandansicht · Wand 1/ });
     expect(within(dialog).getByRole("button", { name: "Tür" })).toHaveAttribute("aria-pressed", "true");
     expect(document.querySelectorAll("svg.grundriss__svg [data-oeffnung]")).toHaveLength(0);
   });
@@ -327,7 +340,7 @@ describe("Grafischer Editor", () => {
     const frage = vi.spyOn(window, "confirm");
     zeigen();
     await editorBereit();
-    fireEvent.click(await screen.findByRole("button", { name: /0.01 Wohnzimmer/ }));
+    fireEvent.click(await raumInListe(/0.01 Wohnzimmer/));
     zeiger(await screen.findByTestId("ecke-5000,4000"), "pointerdown", 5000, 4000);
     zeiger(flaeche(), "pointermove", 6000, 4000);
     zeiger(flaeche(), "pointerup", 6000, 4000);
@@ -355,7 +368,7 @@ describe("Grafischer Editor", () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
     zeigen();
     await editorBereit();
-    fireEvent.click(await screen.findByRole("button", { name: /0.01 Wohnzimmer/ }));
+    fireEvent.click(await raumInListe(/0.01 Wohnzimmer/));
     zeiger(await screen.findByTestId("ecke-5000,4000"), "pointerdown", 5000, 4000);
     zeiger(flaeche(), "pointermove", 6000, 4000);
     zeiger(flaeche(), "pointerup", 6000, 4000);
@@ -377,6 +390,9 @@ describe("Grafischer Editor", () => {
     fireEvent.click(screen.getByRole("button", { name: "3D-Ansicht" }));
     const zweiter = await rueckfrage("Ansicht wechseln?");
     fireEvent.click(within(zweiter).getByRole("button", { name: "Änderungen verwerfen und fortfahren" }));
+    // Erst die bestätigte Wahl stößt das Nachladen an; bis es fertig ist, steht der Ladehinweis.
+    await waitFor(() => expect(dreiD.modul).not.toBeNull());
+    await dreiD.modul;
     expect(await screen.findByText(/in diesem Browser nicht verfügbar/)).toBeInTheDocument();
     expect(api.put).not.toHaveBeenCalled();
   });
@@ -393,14 +409,14 @@ describe("Grafischer Editor", () => {
     api.put.mockResolvedValue({ ...RAUM, version: 6 });
     zeigen();
     await editorBereit();
-    fireEvent.click(await screen.findByRole("button", { name: /0.01 Wohnzimmer/ }));
+    fireEvent.click(await raumInListe(/0.01 Wohnzimmer/));
     zeiger(await screen.findByTestId("ecke-5000,4000"), "pointerdown", 5000, 4000);
     zeiger(flaeche(), "pointermove", 5500, 4000);
     zeiger(flaeche(), "pointerup", 5500, 4000);
     await screen.findByText(/Wohnzimmer: Ungespeicherte Änderungen/);
 
     // Abgelehnt: Der Entwurf bleibt, der Raum bleibt aktiv.
-    fireEvent.click(screen.getByRole("button", { name: /0.02 Flur/ }));
+    fireEvent.click(await raumInListe(/0.02 Flur/));
     const dialog = await rueckfrage("Raum wechseln?");
     fireEvent.click(within(dialog).getByRole("button", { name: "Beim Raum bleiben" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -408,7 +424,7 @@ describe("Grafischer Editor", () => {
     expect(api.put).not.toHaveBeenCalled();
 
     // Speichern und wechseln: erst speichern, dann wechseln - genau einmal.
-    fireEvent.click(screen.getByRole("button", { name: /0.02 Flur/ }));
+    fireEvent.click(await raumInListe(/0.02 Flur/));
     const nochmal = await rueckfrage("Raum wechseln?");
     fireEvent.click(within(nochmal).getByRole("button", { name: "Speichern und wechseln" }));
     expect(await screen.findByText(/Flur: Keine ungespeicherten Änderungen/)).toBeInTheDocument();
@@ -426,13 +442,13 @@ describe("Grafischer Editor", () => {
     plan = { ...plan, rooms: [RAUM, zweiter] };
     zeigen();
     await editorBereit();
-    fireEvent.click(await screen.findByRole("button", { name: /0.01 Wohnzimmer/ }));
+    fireEvent.click(await raumInListe(/0.01 Wohnzimmer/));
     zeiger(await screen.findByTestId("ecke-5000,4000"), "pointerdown", 5000, 4000);
     zeiger(flaeche(), "pointermove", 5500, 4000);
     zeiger(flaeche(), "pointerup", 5500, 4000);
     await screen.findByText(/Wohnzimmer: Ungespeicherte Änderungen/);
 
-    fireEvent.click(screen.getByRole("button", { name: /0.02 Flur/ }));
+    fireEvent.click(await raumInListe(/0.02 Flur/));
     const dialog = await rueckfrage("Raum wechseln?");
     fireEvent.click(within(dialog).getByRole("button", { name: "Änderungen verwerfen und fortfahren" }));
     expect(await screen.findByText(/Flur: Keine ungespeicherten Änderungen/)).toBeInTheDocument();
@@ -442,7 +458,7 @@ describe("Grafischer Editor", () => {
   it("warnt beim Neuladen oder Schließen des Browsers", async () => {
     zeigen();
     await editorBereit();
-    fireEvent.click(await screen.findByRole("button", { name: /0.01 Wohnzimmer/ }));
+    fireEvent.click(await raumInListe(/0.01 Wohnzimmer/));
     zeiger(await screen.findByTestId("ecke-5000,4000"), "pointerdown", 5000, 4000);
     zeiger(flaeche(), "pointermove", 6000, 4000);
     zeiger(flaeche(), "pointerup", 6000, 4000);
@@ -458,7 +474,7 @@ describe("Grafischer Editor", () => {
     projekt = { ...PROJEKT, status: "archived" };
     zeigen();
     await editorBereit();
-    fireEvent.click(await screen.findByRole("button", { name: /0.01 Wohnzimmer/ }));
+    fireEvent.click(await raumInListe(/0.01 Wohnzimmer/));
     expect(await screen.findByText(/Nur Ansicht/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Rechteckraum/ })).toBeNull();
     expect(screen.queryByRole("button", { name: "Speichern" })).toBeNull();
