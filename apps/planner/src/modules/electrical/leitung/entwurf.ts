@@ -32,6 +32,8 @@ export interface Leitungswerte {
   readonly startzugabeMm: number;
   readonly endzugabeMm: number;
   readonly reserveMm: number;
+  /** Prozentreserve (Phase 6c V1) - `null` = feste Reserve `reserveMm`. Wird unverändert mitgespeichert. */
+  readonly reserveProzent: string | null;
   readonly wegpunkte: readonly Wegpunkt[];
   /**
    * Phase 6b.5: Durchführungen, die erst mit dieser Leitung entstehen. Teil der Werte -
@@ -101,6 +103,7 @@ export function gleicheWerte(a: Leitungswerte, b: Leitungswerte): boolean {
     a.startzugabeMm === b.startzugabeMm &&
     a.endzugabeMm === b.endzugabeMm &&
     a.reserveMm === b.reserveMm &&
+    a.reserveProzent === b.reserveProzent &&
     gleicheWegpunkte(a.wegpunkte, b.wegpunkte) &&
     JSON.stringify(a.neueDurchfuehrungen) === JSON.stringify(b.neueDurchfuehrungen)
   );

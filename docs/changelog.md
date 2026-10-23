@@ -5,6 +5,18 @@ Einträge entstehen nach relevanten Änderungen, nicht nach jedem Commit.
 
 ---
 
+## 2026-10-23 — Phase 6c V1: Planungsvorgaben, Kabelvorlagen, Prozentreserve – Backend (nicht committet)
+
+**API (neu, `/api/v1/modules/electrical`):** `cable-templates` (Lesen, Anlegen, Ändern, Löschen nur ungenutzt),
+`planning-defaults` (Betriebsstandard), `projects/{id}/planning-defaults` und `…/effective` (wirksame Werte mit
+Herkunft und Vorgabenbasis). **Erweitert:** Leitungen ohne Endgerät (offen, „Endgerät fehlt“), Reserve in Prozent
+der geometrischen Länge (aufgerundet, nur bei vollständigem Weg), Herkunft je Wertegruppe, Vorgabenbasis mit
+`409 planning-defaults-changed`, ausdrückliche Zuordnung des Endgeräts beim Speichern; Stromkreis mit
+`proposal_overrides_templates`; Mengenübersicht mit getrennter Reserve. **Recht** `electrical.defaults.manage`
+(nur Administrator). **Migration `0014`:** Bestand unverändert (`fixed`, Herkunft `legacy`, Vorrang aus) – danach
+den Seed ausführen. **Oberfläche:** keine neue; der Leitungseditor behält eine Prozentreserve beim Speichern und
+zeigt sie als Text. Keine ausgelieferten Vorlagen oder Standardwerte.
+
 ## 2026-10-22 — Phase 6c L1: Nacharbeiten (nicht committet)
 
 Nur Oberfläche, keine API-Änderung. In schmalen Fenstern stehen die Planungswerkzeuge als Symbolknöpfe mit Hinweis

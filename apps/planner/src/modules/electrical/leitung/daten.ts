@@ -231,6 +231,7 @@ export function leitungAusServer(l: LeitungAusServer): { leitung: Leitung; unles
       startzugabeMm: l.start_allowance_mm,
       endzugabeMm: l.end_allowance_mm,
       reserveMm: l.reserve_mm,
+      reserveProzent: l.reserve_mode === "percent" ? l.reserve_percent : null,
       kabeltyp: l.cable_type,
       leiterzahl: l.conductor_count,
       querschnittMm2: l.cross_section_mm2,

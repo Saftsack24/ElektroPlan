@@ -37,6 +37,7 @@ from app.modules.electrical.cable_length import (
     Waypoint,
     analyse_cable,
     analyse_cables,
+    percent_reserve_mm,
     prepare_plan,
     rounded_position,
     segment_inside_contour,
@@ -162,6 +163,7 @@ def _wegpunkt(roh: list[Any]) -> Waypoint:
 def _leitung(roh: dict[str, Any]) -> Cable:
     zugaben = roh.get("zugaben", [0, 0, 0])
     kabel = roh.get("kabel", [None, None, None])
+    prozent = roh.get("reserve_prozent")
     return Cable(
         id=roh["id"],
         start_device_id=roh["start"],
@@ -173,6 +175,8 @@ def _leitung(roh: dict[str, Any]) -> Cable:
         cable_type=kabel[0],
         conductor_count=kabel[1],
         cross_section_mm2=None if kabel[2] is None else Decimal(kabel[2]),
+        reserve_mode="fixed" if prozent is None else "percent",
+        reserve_percent=None if prozent is None else Decimal(prozent),
     )
 
 
@@ -192,6 +196,7 @@ def test_leitungen_und_trassen(fall: dict[str, Any]) -> None:
     plan = _plan(fall["plan"])
     cables = [_leitung(roh) for roh in fall["leitungen"]]
     results = analyse_cables(plan, cables)
+    roh_je_id = {roh["id"]: roh for roh in fall["leitungen"]}
     soll_alle = fall["erwartet"]["leitungen"]
     assert [r.cable_id for r in results] == list(soll_alle)
     for result in results:
@@ -214,6 +219,14 @@ def test_leitungen_und_trassen(fall: dict[str, Any]) -> None:
         # Ungueltig ist nie eine gueltige Null: Laenge nur bei ``confirmed``.
         assert (result.length_mm is not None) == (result.status is CableStatus.CONFIRMED)
         assert result.known_mm == result.geometric_mm + result.allowance_mm
+        # Reserve getrennt (V1): ohne Angabe in der Fixture gilt die feste Bestandsreserve.
+        zugaben = roh_je_id[result.cable_id].get("zugaben", [0, 0, 0])
+        assert result.connection_allowance_mm == soll.get(
+            "anschlusszugaben", zugaben[0] + zugaben[1]
+        )
+        assert result.reserve_mm == soll.get("reserve", zugaben[2])
+        assert result.reserve_pending is soll.get("reserve_offen", False)
+        assert result.allowance_mm == result.connection_allowance_mm + (result.reserve_mm or 0)
 
     if "trassen" in fall["erwartet"]:
         soll_t = fall["erwartet"]["trassen"]
@@ -234,6 +247,20 @@ def test_leitungen_und_trassen(fall: dict[str, Any]) -> None:
             ]
             for t in summary.traces
         ] == soll_t["liste"]
+
+
+@pytest.mark.parametrize(
+    "fall", DATEN["reserve"], ids=lambda fall: f"{fall['geometrisch']}@{fall['prozent']}"
+)
+def test_prozentreserve_aufgerundet(fall: dict[str, Any]) -> None:
+    """Gemeinsame Rundungsfaelle (Entwurf §8.7, F2): ganze mm, aufgerundet, ganzzahlig."""
+    assert percent_reserve_mm(fall["geometrisch"], Decimal(fall["prozent"])) == fall["erwartet"]
+
+
+def test_prozentreserve_lehnt_mehr_als_zwei_stellen_und_ausserhalb_ab() -> None:
+    for prozent in ("12.345", "-1", "100.01"):
+        with pytest.raises(ValueError, match="Prozentsatz"):
+            percent_reserve_mm(1_000, Decimal(prozent))
 
 
 @pytest.mark.parametrize("fall", DATEN["gegenlagen"], ids=lambda fall: fall["name"])

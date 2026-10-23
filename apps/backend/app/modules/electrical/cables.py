@@ -26,6 +26,19 @@ bleibt ``conflict``. Bleiben Weg und Endgeraete einer bestehenden Leitung
 unveraendert (etwa nur Kabelangaben geaendert), gilt nur: **kein neuer**
 Konfliktbefund - ein bestehender Konflikt nach bestaetigter Wandaenderung wird
 nicht still repariert und blockiert das Bearbeiten der Angaben nicht.
+
+**Vorgaben und Herkunft** (Phase 6c, V1, ADR 0027): Je Wertegruppe (Kabelangaben,
+Reserve, Anschlusszugaben) speichert die Leitung ihre tatsaechlichen Werte und deren
+Herkunft. Mit ``*_source = defaults`` loest der Server die Vorgabenkette selbst auf
+(:mod:`defaults_chain`); die gesendeten Werte und die Vorgabenbasis muessen dem aktuellen
+Stand gleichen, sonst ``409 planning-defaults-changed`` - nichts gespeichert. Die Herkunft
+wird nie ungeprueft aus der Anfrage uebernommen. Sperren: Projekt -> Vorgabensperre
+(geteilt, :func:`planning_defaults.lock_defaults`) -> Stromkreis -> Leitung.
+
+**Ausdrueckliche Zuordnung beim Speichern** (``assign_devices``): Endgeraete dieser
+Leitung, die noch keinem Stromkreis zugeordnet sind, werden in derselben Transaktion
+diesem Stromkreis zugeordnet - mit Pruefung der Stromkreisversion, nie umgehaengt. Eine
+reine Leitungsaenderung aendert keine Zuordnung.
 """
 
 from __future__ import annotations
@@ -38,7 +51,7 @@ from decimal import Decimal
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from app.core.persistence import CONCURRENT_UPDATE_DETAIL, flush
+from app.core.persistence import CONCURRENT_UPDATE_DETAIL, flush, unique_violation_translated
 from app.core.preconditions import check_version
 from app.core.projects.planning import BuildingPlanningContext, FloorPlanningAccess
 from app.core.tenancy.repository import TenantRepository
@@ -81,17 +94,30 @@ from app.modules.electrical.cable_rules import (
     to_waypoint,
 )
 from app.modules.electrical.cabling_summary import CablingSummary, summarize
-from app.modules.electrical.catalog import MountingSurface
+from app.modules.electrical.catalog import ASSIGNABLE_CATEGORIES, MountingSurface
+from app.modules.electrical.defaults_chain import (
+    Endpoint,
+    resolve_allowances,
+    resolve_reserve,
+    resolve_spec,
+)
 from app.modules.electrical.distribution import circuits_of_devices
 from app.modules.electrical.models import (
+    CIRCUIT_DEVICE_PK,
     ElectricalCable,
     ElectricalCableWaypoint,
     ElectricalCircuit,
+    ElectricalCircuitDevice,
     ElectricalDistributionBoard,
     ElectricalRoom,
     ElectricalWall,
     ElectricalWallLink,
     ElectricalWallPenetration,
+)
+from app.modules.electrical.planning_defaults import (
+    PlanningDefaultsChangedError,
+    PlanningDefaultsService,
+    circuit_proposal,
 )
 from app.modules.electrical.schemas import (
     MAX_CABLES_PER_CIRCUIT,
@@ -109,6 +135,38 @@ from app.modules.electrical.topology import Position, transfer
 
 #: Befund der Geschossdaten, nicht des Wegs - blockiert das Speichern nicht.
 NOT_ROUTE_CODES = frozenset({"riser-elevation-inconsistent"})
+#: Herkuenfte aus der Vorgabenkette (alles ausser ``manual`` und ``legacy``).
+DEFAULTS_ORIGINS = frozenset(
+    {
+        "circuit_override",
+        "device_type_template",
+        "default_template",
+        "project_default",
+        "office_default",
+        "none",
+    }
+)
+
+
+@dataclass(frozen=True, slots=True)
+class StoredValues:
+    """Was an der Leitung gespeichert wird: Werte je Gruppe, Herkunft, Vorgabenbasis."""
+
+    cable_type: str | None
+    conductor_count: int | None
+    cross_section_mm2: Decimal | None
+    spec_origin: str
+    cable_template_id: uuid.UUID | None
+    cable_template_version: int | None
+    reserve_mode: str
+    reserve_mm: int
+    reserve_percent: Decimal | None
+    reserve_origin: str
+    start_allowance_mm: int
+    end_allowance_mm: int
+    allowance_origin: str
+    defaults_office_version: int | None
+    defaults_project_version: int | None
 
 
 class CableRepository(TenantRepository[ElectricalCable]):
@@ -275,8 +333,10 @@ class CableService:
             )
         state = self.loader.load(context.building_id)
         cable_id = uuid.uuid4()
+        assigning = self._assignments(state, circuit, payload)
+        values = self._values(context, state, circuit, payload, stored=None)
         _, new_penetrations = self._validated_target(
-            state, circuit, cable_id, payload, previous=None
+            state, circuit, cable_id, payload, values, previous=None, assigning=assigning
         )
         cable = ElectricalCable(
             id=cable_id,
@@ -284,7 +344,8 @@ class CableService:
             circuit_id=circuit.id,
             end_device_id=payload.end_device_id,
         )
-        self._assign(cable, payload)
+        self._assign(cable, payload, values)
+        self._assign_devices(circuit, assigning)
         # Neue Durchfuehrungen und ihre erste Leitung in derselben Transaktion.
         self.session.add_all(row for _, row in new_penetrations)
         flush(self.session)
@@ -302,11 +363,19 @@ class CableService:
             cable.circuit_id, missing=VersionConflictError(CONCURRENT_UPDATE_DETAIL)
         )
         state = self.loader.load(context.building_id)
+        assigning = self._assignments(state, circuit, payload)
+        values = self._values(context, state, circuit, payload, stored=cable)
         target, new_penetrations = self._validated_target(
-            state, circuit, cable.id, payload, previous=cable.id
+            state, circuit, cable.id, payload, values, previous=cable.id, assigning=assigning
         )
         stored = to_cable(cable, [to_waypoint(wp) for wp in state.waypoints[cable.id]])
-        if target == stored and not new_penetrations and cable.label == payload.label:
+        if (
+            target == stored
+            and not new_penetrations
+            and not assigning
+            and cable.label == payload.label
+            and _stored_values(cable) == values
+        ):
             return cable_view(state, cable.id), CableWriteResult(context=context, changed=False)
         self.session.add_all(row for _, row in new_penetrations)
         flush(self.session)
@@ -320,7 +389,8 @@ class CableService:
             )
             .execution_options(synchronize_session=False)
         )
-        self._assign(cable, payload)
+        self._assign(cable, payload, values)
+        self._assign_devices(circuit, assigning)
         # Wegpunkte stehen unter der Leitungsversion.
         cable.updated_at = utcnow()
         self.session.add_all(self._rows(cable.id, payload.waypoints, dict(_keys(new_penetrations))))
@@ -381,6 +451,10 @@ class CableService:
         changed = _spec(locked) != proposal
         if changed:
             locked.cable_type, locked.conductor_count, locked.cross_section_mm2 = proposal
+            # Ausdrueckliche Einzelaktion (6b): die Angaben sind damit bewusst gewaehlt.
+            locked.spec_origin = "manual"
+            locked.cable_template_id = None
+            locked.cable_template_version = None
             locked.updated_at = utcnow()
             flush(self.session)
         return self._reloaded_view(context.building_id, locked.id), CableWriteResult(
@@ -452,11 +526,13 @@ class CableService:
         circuit: ElectricalCircuit,
         cable_id: uuid.UUID,
         payload: CableIn,
+        values: StoredValues,
         *,
         previous: uuid.UUID | None,
+        assigning: Sequence[uuid.UUID] = (),
     ) -> tuple[Cable, list[tuple[str, ElectricalWallPenetration]]]:
         """Endgeraete, Bezuege, neue Durchfuehrungen und Weg - vor jedem Schreiben."""
-        self._require_endpoints(state, circuit, payload)
+        self._require_endpoints(state, circuit, payload, assigning)
         new_rows = self._new_penetrations(state, payload)
         self._require_references(state, payload)
         rows = [row for _, row in new_rows]
@@ -496,16 +572,16 @@ class CableService:
             start_device_id=None
             if payload.start_device_id is None
             else str(payload.start_device_id),
-            end_device_id=str(payload.end_device_id),
+            end_device_id=None if payload.end_device_id is None else str(payload.end_device_id),
             waypoints=tuple(_pure_waypoint(wp, keys) for wp in payload.waypoints),
-            start_allowance_mm=payload.start_allowance_mm,
-            end_allowance_mm=payload.end_allowance_mm,
-            reserve_mm=payload.reserve_mm,
-            cable_type=payload.cable_type,
-            conductor_count=payload.conductor_count,
-            cross_section_mm2=None
-            if payload.cross_section_mm2 is None
-            else Decimal(payload.cross_section_mm2),
+            start_allowance_mm=values.start_allowance_mm,
+            end_allowance_mm=values.end_allowance_mm,
+            reserve_mm=values.reserve_mm,
+            cable_type=values.cable_type,
+            conductor_count=values.conductor_count,
+            cross_section_mm2=values.cross_section_mm2,
+            reserve_mode=values.reserve_mode,
+            reserve_percent=values.reserve_percent,
         )
         result = analyse_cable(prepared, target)
         conflicts = [
@@ -516,7 +592,8 @@ class CableService:
         if previous is not None:
             stored = state.cables[previous]
             unchanged_route = (
-                str(stored.end_device_id) == target.end_device_id
+                (None if stored.end_device_id is None else str(stored.end_device_id))
+                == target.end_device_id
                 and (None if stored.start_device_id is None else str(stored.start_device_id))
                 == target.start_device_id
                 and tuple(to_waypoint(wp) for wp in state.waypoints[previous]) == target.waypoints
@@ -541,7 +618,11 @@ class CableService:
         return target, new_rows
 
     def _require_endpoints(
-        self, state: BuildingCableState, circuit: ElectricalCircuit, payload: CableIn
+        self,
+        state: BuildingCableState,
+        circuit: ElectricalCircuit,
+        payload: CableIn,
+        assigning: Sequence[uuid.UUID] = (),
     ) -> None:
         board = state.boards.get(circuit.board_id)
         placement = None if board is None else board.placement_device_id
@@ -575,7 +656,9 @@ class CableService:
             )
         assigned = circuits_of_devices(self.session, self.organization_id, endpoints)
         foreign = [
-            item for item in endpoints if item != placement and assigned.get(item) != circuit.id
+            item
+            for item in endpoints
+            if item != placement and assigned.get(item) != circuit.id and item not in assigning
         ]
         if foreign:
             raise _invalid(
@@ -703,18 +786,288 @@ class CableService:
 
     # ---------------------------------------------------------------- Helfer
 
-    def _assign(self, cable: ElectricalCable, payload: CableIn) -> None:
+    def _assign(self, cable: ElectricalCable, payload: CableIn, values: StoredValues) -> None:
         cable.label = payload.label
         cable.start_device_id = payload.start_device_id
         cable.end_device_id = payload.end_device_id
-        cable.cable_type = payload.cable_type
-        cable.conductor_count = payload.conductor_count
-        cable.cross_section_mm2 = (
-            None if payload.cross_section_mm2 is None else Decimal(payload.cross_section_mm2)
+        cable.cable_type = values.cable_type
+        cable.conductor_count = values.conductor_count
+        cable.cross_section_mm2 = values.cross_section_mm2
+        cable.spec_origin = values.spec_origin
+        cable.cable_template_id = values.cable_template_id
+        cable.cable_template_version = values.cable_template_version
+        cable.reserve_mode = values.reserve_mode
+        cable.reserve_mm = values.reserve_mm
+        cable.reserve_percent = values.reserve_percent
+        cable.reserve_origin = values.reserve_origin
+        cable.start_allowance_mm = values.start_allowance_mm
+        cable.end_allowance_mm = values.end_allowance_mm
+        cable.allowance_origin = values.allowance_origin
+        cable.defaults_office_version = values.defaults_office_version
+        cable.defaults_project_version = values.defaults_project_version
+
+    # ------------------------------------------------- Vorgaben und Zuordnung (6c, V1)
+
+    def _values(
+        self,
+        context: BuildingPlanningContext,
+        state: BuildingCableState,
+        circuit: ElectricalCircuit,
+        payload: CableIn,
+        *,
+        stored: ElectricalCable | None,
+    ) -> StoredValues:
+        """Werte und Herkunft je Gruppe - mit Vorgabenherkunft gegen den aktuellen Stand geprueft.
+
+        ``defaults``: Der Server loest die Kette auf; gesendete Werte und Vorgabenbasis
+        muessen gleichen, sonst ``409 planning-defaults-changed``. ``manual``: die Werte der
+        Anfrage, Herkunft ``manual``. Ohne Angabe (bisherige Clients): unveraenderte Werte
+        behalten ihre gespeicherte Herkunft (``legacy`` bleibt ``legacy``), geaenderte
+        werden ``manual``.
+        """
+        cross = None if payload.cross_section_mm2 is None else Decimal(payload.cross_section_mm2)
+        spec_in = (payload.cable_type, payload.conductor_count, cross)
+        percent_in = None if payload.reserve_percent is None else Decimal(payload.reserve_percent)
+        reserve_in = (payload.reserve_mode, payload.reserve_mm, percent_in)
+        allowance_in = (payload.start_allowance_mm, payload.end_allowance_mm)
+        sources = (payload.spec_source, payload.reserve_source, payload.allowance_source)
+
+        # Gespeicherter Stand je Gruppe (nur beim Ersetzen).
+        stored_spec = None if stored is None else _spec(stored)
+        stored_reserve = (
+            None
+            if stored is None
+            else (stored.reserve_mode, stored.reserve_mm, stored.reserve_percent)
         )
-        cable.start_allowance_mm = payload.start_allowance_mm
-        cable.end_allowance_mm = payload.end_allowance_mm
-        cable.reserve_mm = payload.reserve_mm
+        stored_allowance = (
+            None if stored is None else (stored.start_allowance_mm, stored.end_allowance_mm)
+        )
+
+        def kept(source: str | None, current: object, before: object) -> bool:
+            return source is None and stored is not None and current == before
+
+        spec_origin = "manual"
+        template_id: uuid.UUID | None = None
+        template_version: int | None = None
+        reserve_origin = "manual"
+        allowance_origin = "manual"
+        office_version: int | None = None
+        project_version: int | None = None
+
+        if stored is not None and kept(payload.spec_source, spec_in, stored_spec):
+            spec_origin = stored.spec_origin
+            template_id, template_version = stored.cable_template_id, stored.cable_template_version
+        if stored is not None and kept(payload.reserve_source, reserve_in, stored_reserve):
+            reserve_origin = stored.reserve_origin
+        if stored is not None and kept(payload.allowance_source, allowance_in, stored_allowance):
+            allowance_origin = stored.allowance_origin
+
+        if "defaults" in sources:
+            basis = payload.defaults_basis
+            assert basis is not None  # Schema: Pflicht bei Vorgabenherkunft
+            office, project, data = PlanningDefaultsService(
+                self.session, self.organization_id
+            ).locked_input(context.project_id)
+            errors: list[ProblemFieldError] = []
+            if basis.office_version != office.version:
+                errors.append(
+                    _problem(
+                        "defaults_basis.office_version",
+                        "planning-defaults-changed",
+                        f"Betriebsstandard geaendert (gelesen {basis.office_version}, "
+                        f"jetzt {office.version}).",
+                    )
+                )
+            if basis.project_version != project.version:
+                errors.append(
+                    _problem(
+                        "defaults_basis.project_version",
+                        "planning-defaults-changed",
+                        f"Projektvorgabe geaendert (gelesen {basis.project_version}, "
+                        f"jetzt {project.version}).",
+                    )
+                )
+            start = _endpoint(state, payload.start_device_id)
+            end = _endpoint(state, payload.end_device_id)
+            if payload.spec_source == "defaults":
+                spec = resolve_spec(data, circuit_proposal(circuit), start, end)
+                if spec.values != spec_in:
+                    errors.append(
+                        _problem(
+                            "cable_type",
+                            "planning-defaults-changed",
+                            f"Kabelangaben aus Vorgaben jetzt: {_spec_text(*spec.values)}.",
+                        )
+                    )
+                used = spec.template
+                if (basis.cable_template_id, basis.cable_template_version) != (
+                    None if used is None else used.id,
+                    None if used is None else used.version,
+                ):
+                    errors.append(
+                        _problem(
+                            "defaults_basis.cable_template_version",
+                            "planning-defaults-changed",
+                            "Die Kabelvorlage der Vorgabe wurde geaendert oder ist eine andere.",
+                            *([] if used is None else [used.id]),
+                        )
+                    )
+                if spec.origin == "circuit_override" and basis.circuit_version != circuit.version:
+                    errors.append(
+                        _problem(
+                            "defaults_basis.circuit_version",
+                            "planning-defaults-changed",
+                            "Die aktivierte Stromkreisvorgabe wurde geaendert.",
+                            circuit.id,
+                        )
+                    )
+                spec_origin = spec.origin
+                template_id = None if used is None else used.id
+                template_version = None if used is None else used.version
+            if payload.reserve_source == "defaults":
+                reserve = resolve_reserve(data)
+                if reserve_in != ("percent", 0, reserve.percent):
+                    errors.append(
+                        _problem(
+                            "reserve_percent",
+                            "planning-defaults-changed",
+                            f"Reserve aus Vorgaben jetzt: {reserve.percent} %.",
+                        )
+                    )
+                reserve_origin = reserve.origin
+            if payload.allowance_source == "defaults":
+                allowance = resolve_allowances(data, start, end)
+                if allowance_in != (allowance.start_mm, allowance.end_mm):
+                    errors.append(
+                        _problem(
+                            "start_allowance_mm",
+                            "planning-defaults-changed",
+                            f"Anschlusszugaben aus Vorgaben jetzt: Start {allowance.start_mm} mm, "
+                            f"Ende {allowance.end_mm} mm.",
+                        )
+                    )
+                allowance_origin = allowance.origin
+            if errors:
+                raise PlanningDefaultsChangedError(
+                    "Die Planungsvorgaben wurden seit dem Lesen geaendert. Bitte die neuen "
+                    "Vorgaben uebernehmen oder die bisherigen Werte als Abweichung behalten. Es "
+                    "wurde nichts gespeichert.",
+                    errors=errors,
+                )
+            office_version, project_version = office.version, project.version
+        elif (
+            stored is not None
+            and {spec_origin, reserve_origin, allowance_origin} & DEFAULTS_ORIGINS
+        ):
+            # Unveraenderte Gruppen aus Vorgaben behalten die Basis, mit der sie entstanden.
+            office_version = stored.defaults_office_version
+            project_version = stored.defaults_project_version
+
+        if payload.spec_source == "manual":
+            spec_origin, template_id, template_version = "manual", None, None
+        if payload.reserve_source == "manual":
+            reserve_origin = "manual"
+        if payload.allowance_source == "manual":
+            allowance_origin = "manual"
+        return StoredValues(
+            cable_type=spec_in[0],
+            conductor_count=spec_in[1],
+            cross_section_mm2=spec_in[2],
+            spec_origin=spec_origin,
+            cable_template_id=template_id,
+            cable_template_version=template_version,
+            reserve_mode=payload.reserve_mode,
+            reserve_mm=payload.reserve_mm,
+            reserve_percent=percent_in,
+            reserve_origin=reserve_origin,
+            start_allowance_mm=payload.start_allowance_mm,
+            end_allowance_mm=payload.end_allowance_mm,
+            allowance_origin=allowance_origin,
+            defaults_office_version=office_version,
+            defaults_project_version=project_version,
+        )
+
+    def _assignments(
+        self, state: BuildingCableState, circuit: ElectricalCircuit, payload: CableIn
+    ) -> list[uuid.UUID]:
+        """Ausdrueckliche Zuordnung beim Speichern: Pruefung vor jedem Schreiben.
+
+        Nur Endgeraete dieser Leitung, im Gebaeude, zuordenbare Kategorie, noch keinem
+        anderen Stromkreis zugeordnet; Stromkreisversion wie gelesen. Liefert die Geraete,
+        die tatsaechlich neu zugeordnet werden (bereits diesem Stromkreis zugeordnete nicht).
+        """
+        wanted = list(payload.assign_devices)
+        if not wanted:
+            return []
+        if circuit.version != payload.expected_circuit_version:
+            raise ConflictError(
+                "Der Stromkreis wurde inzwischen geaendert. Bitte neu laden; es wurde nichts "
+                "gespeichert und nichts zugeordnet.",
+                errors=[
+                    _problem(
+                        "expected_circuit_version",
+                        "circuit-version-changed",
+                        "Stromkreis geaendert.",
+                        circuit.id,
+                    )
+                ],
+            )
+        endpoints = {payload.start_device_id, payload.end_device_id} - {None}
+        not_endpoint = [item for item in wanted if item not in endpoints]
+        if not_endpoint:
+            raise _invalid(
+                "Zugeordnet werden beim Speichern nur Endgeraete dieser Leitung.",
+                "assign_devices",
+                "assign-device-not-endpoint",
+                "Geraet ist kein Endgeraet dieser Leitung.",
+                *not_endpoint,
+            )
+        unknown = [item for item in wanted if item not in state.devices]
+        if unknown:
+            raise _invalid(
+                "Ein Endgeraet gehoert nicht zu diesem Gebaeude. Es wurde nichts gespeichert.",
+                "assign_devices",
+                "cable-endpoint-not-in-building",
+                "Endgeraet nicht in diesem Gebaeude.",
+                *unknown,
+            )
+        not_assignable = [
+            item
+            for item in wanted
+            if (kind := state.types.get(state.devices[item].device_type_key)) is None
+            or kind.category not in ASSIGNABLE_CATEGORIES
+        ]
+        if not_assignable:
+            raise _invalid(
+                "Nur Steckdosen, Schalter, Leuchten und Abzweigdosen lassen sich einem "
+                "Stromkreis zuordnen - keine Datendosen und nicht das Lagegeraet einer "
+                "Verteilung. Es wurde nichts gespeichert.",
+                "assign_devices",
+                "circuit-device-not-assignable",
+                "Geraetetyp nicht zuordenbar.",
+                *not_assignable,
+            )
+        current = circuits_of_devices(self.session, self.organization_id, wanted)
+        elsewhere = [item for item in wanted if current.get(item, circuit.id) != circuit.id]
+        if elsewhere:
+            raise _assigned_elsewhere(*elsewhere)
+        return [item for item in wanted if item not in current]
+
+    def _assign_devices(self, circuit: ElectricalCircuit, devices: Sequence[uuid.UUID]) -> None:
+        if not devices:
+            return
+        self.session.add_all(
+            ElectricalCircuitDevice(
+                organization_id=self.organization_id, device_id=device_id, circuit_id=circuit.id
+            )
+            for device_id in sorted(devices, key=str)
+        )
+        # Die Zuordnung steht unter der Stromkreisversion.
+        circuit.updated_at = utcnow()
+        with unique_violation_translated(
+            self.session, constraint=CIRCUIT_DEVICE_PK, error=_assigned_elsewhere(*devices)
+        ):
+            flush(self.session)
 
     def _rows(
         self,
@@ -862,6 +1215,62 @@ class CableService:
             problem_code=state.penetration_codes.get(penetration_id),
             cable_ids=users,
         )
+
+
+def _stored_values(cable: ElectricalCable) -> StoredValues:
+    return StoredValues(
+        cable_type=cable.cable_type,
+        conductor_count=cable.conductor_count,
+        cross_section_mm2=cable.cross_section_mm2,
+        spec_origin=cable.spec_origin,
+        cable_template_id=cable.cable_template_id,
+        cable_template_version=cable.cable_template_version,
+        reserve_mode=cable.reserve_mode,
+        reserve_mm=cable.reserve_mm,
+        reserve_percent=cable.reserve_percent,
+        reserve_origin=cable.reserve_origin,
+        start_allowance_mm=cable.start_allowance_mm,
+        end_allowance_mm=cable.end_allowance_mm,
+        allowance_origin=cable.allowance_origin,
+        defaults_office_version=cable.defaults_office_version,
+        defaults_project_version=cable.defaults_project_version,
+    )
+
+
+def _endpoint(state: BuildingCableState, device_id: uuid.UUID | None) -> Endpoint | None:
+    """Endgeraet als Endpunkt der Vorgabenkette (unbekannt: ``None``, Pruefung folgt)."""
+    if device_id is None:
+        return None
+    device = state.devices.get(device_id)
+    if device is None:
+        return None
+    kind = state.types.get(device.device_type_key)
+    return Endpoint(device_id, device.device_type_key, "" if kind is None else kind.category)
+
+
+def _spec_text(cable_type: str | None, count: int | None, cross: Decimal | None) -> str:
+    if cable_type is None and count is None and cross is None:
+        return "keine Angaben"
+    parts = [
+        cable_type or "?",
+        f"{count if count is not None else '?'}x{cross if cross is not None else '?'}",
+    ]
+    return " ".join(parts)
+
+
+def _assigned_elsewhere(*keys: uuid.UUID) -> ConflictError:
+    return ConflictError(
+        "Mindestens ein Geraet ist bereits einem anderen Stromkreis zugeordnet. Es wird nicht "
+        "still umgehaengt - bitte dort zuerst entfernen. Es wurde nichts gespeichert.",
+        errors=[
+            _problem(
+                "assign_devices",
+                "device-assigned-elsewhere",
+                "Geraet ist einem anderen Stromkreis zugeordnet.",
+                *keys,
+            )
+        ],
+    )
 
 
 def _keys(

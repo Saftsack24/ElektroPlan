@@ -25,7 +25,7 @@ const v = vorbereitet();
 const grundMit = (muster: RegExp): unknown => expect.stringMatching(muster);
 
 function mitWeg(wegpunkte: Wegpunkt[]): Leitung {
-  return { id: "neu", startGeraetId: "uv1", endGeraetId: null, wegpunkte, startzugabeMm: 0, endzugabeMm: 0, reserveMm: 0, kabeltyp: null, leiterzahl: null, querschnittMm2: null };
+  return { id: "neu", startGeraetId: "uv1", endGeraetId: null, wegpunkte, startzugabeMm: 0, endzugabeMm: 0, reserveMm: 0, reserveProzent: null, kabeltyp: null, leiterzahl: null, querschnittMm2: null };
 }
 
 describe("Achse und Raum", () => {

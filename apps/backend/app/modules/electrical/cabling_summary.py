@@ -19,6 +19,14 @@ Zaehlweise (verbindlich, Entwurf §20/§21):
   **Konflikt** (``conflict``) mit der bekannten Teilsumme (``known_mm``,
   geometrisch und Zugaben getrennt). Offene und konflikthafte Mengen fliessen
   nie in die bestaetigte Summe. Zugaben zaehlen genau einmal je Leitung.
+* **Reserve getrennt** (Phase 6c, V1, ADR 0027): je Bereich Anschlusszugaben
+  (``connection_allowance_mm``) und wirksame Reserve (``reserve_mm``) getrennt;
+  ``allowance_mm`` ist ihre Summe. Jede Leitung hat **eine** Reserveform - feste
+  Bestandsreserve *oder* Prozentreserve (Datenbank-CHECK) -, gezaehlt genau einmal; eine
+  Prozentreserve, die auf einen bestaetigten Weg wartet, steht in keiner Summe
+  (``reserve_pending_count``). Uebergabe an Phase 7/8 (Entwurf §8.10): Bedarf (Weg +
+  Anschlusszugaben) und Planungsreserve getrennt; Verschnitt und Verpackung sind Sache von
+  ``materials`` und werden hier nicht gerechnet.
 * **Trassen** zweimal abgeleitet: aus den bestaetigten Leitungen
   (``confirmed``) und aus allen gueltigen Teilstrecken aller Leitungen
   (``with_provisional``). Die Differenz ist ausdruecklich vorlaeufig. Zugaben
@@ -65,6 +73,9 @@ class StatusBucket:
     #: Beides geometrisch + Zugaben.
     total_mm: int
     cable_ids: tuple[uuid.UUID, ...]
+    connection_allowance_mm: int = 0
+    reserve_mm: int = 0
+    reserve_pending_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,6 +172,9 @@ def _bucket(lines: list[CableLine], status: str) -> StatusBucket:
             for line in chosen
         ),
         cable_ids=tuple(line.cable.id for line in chosen),
+        connection_allowance_mm=sum(line.result.connection_allowance_mm for line in chosen),
+        reserve_mm=sum(line.result.reserve_mm or 0 for line in chosen),
+        reserve_pending_count=sum(1 for line in chosen if line.result.reserve_pending),
     )
 
 
@@ -257,9 +271,9 @@ def summarize(state: BuildingCableState, assignments: dict[uuid.UUID, uuid.UUID]
     # Geraete: je Stromkreis und Typ; "ohne Leitung" = kein Start- oder Endgeraet einer Leitung.
     connected: set[uuid.UUID] = set()
     for cable in state.cables.values():
-        connected.add(cable.end_device_id)
-        if cable.start_device_id is not None:
-            connected.add(cable.start_device_id)
+        for device_id in (cable.start_device_id, cable.end_device_id):
+            if device_id is not None:
+                connected.add(device_id)
     per_circuit: dict[uuid.UUID, list[uuid.UUID]] = defaultdict(list)
     for device_id, circuit_id in assignments.items():
         if device_id in state.devices and circuit_id in state.circuits:

@@ -354,6 +354,9 @@ class DistributionService:
             rcd_group=values["rcd_group"],
             phase_count=values["phase_count"],
             note=values["note"],
+            # Neu und Bestand: der Vorschlag ist nur Information, bis er ausdruecklich
+            # aktiviert wird (F1, ADR 0027).
+            proposal_overrides_templates=bool(values["proposal_overrides_templates"]),
         )
         self.circuits.add(circuit)
         self._flush_circuit()

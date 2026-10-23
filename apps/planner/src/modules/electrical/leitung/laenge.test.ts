@@ -16,6 +16,7 @@ import {
   leitungAuswerten,
   leitungenAuswerten,
   planVorbereiten,
+  prozentReserveMm,
   streckeInKontur,
 } from "./laenge";
 import { trassenAbleiten } from "./trassen";
@@ -43,6 +44,7 @@ interface Fixture {
       start: string | null;
       ende: string | null;
       zugaben?: [number, number, number];
+      reserve_prozent?: string;
       kabel?: [string | null, number | null, string | null];
       wegpunkte: unknown[][];
     }[];
@@ -53,6 +55,9 @@ interface Fixture {
           status: string;
           geometrisch: number;
           zugaben: number;
+          anschlusszugaben?: number;
+          reserve?: number | null;
+          reserve_offen?: boolean;
           laenge: number | null;
           bekannt: number;
           spezifiziert: boolean;
@@ -79,6 +84,7 @@ interface Fixture {
     erwartet: { lage: [number, number]; gerundet: number } | null;
   }[];
   rundung: { lage: [number, number]; m: number; erwartet: number }[];
+  reserve: { geometrisch: number; prozent: string; erwartet: number }[];
 }
 
 const pfad = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../../../testdata/geometry/leitung.v1.json");
@@ -206,6 +212,7 @@ function leitungAus(roh: Fixture["faelle"][number]["leitungen"][number]): Leitun
     startzugabeMm: s,
     endzugabeMm: e,
     reserveMm: r,
+    reserveProzent: roh.reserve_prozent ?? null,
     kabeltyp: typ,
     leiterzahl: leiter,
     querschnittMm2: querschnitt,
@@ -229,6 +236,12 @@ describe("Leitungslänge - Parität zur Serverreferenz", () => {
       expect(e.befunde.map((b) => [b.code, b.art, b.ort])).toEqual(soll.befunde);
       expect(e.geometrischMm).toBe(soll.geometrisch);
       expect(e.zugabenMm).toBe(soll.zugaben);
+      // Reserve getrennt (V1): ohne Angabe in der Fixture gilt die feste Bestandsreserve.
+      const [zs, ze, zr] = fall.leitungen.find((l) => l.id === e.leitungId)?.zugaben ?? [0, 0, 0];
+      expect(e.anschlusszugabenMm).toBe(soll.anschlusszugaben ?? zs + ze);
+      expect(e.reserveMm).toBe(soll.reserve === undefined ? zr : soll.reserve);
+      expect(e.reserveOffen).toBe(soll.reserve_offen ?? false);
+      expect(e.zugabenMm).toBe(e.anschlusszugabenMm + (e.reserveMm ?? 0));
       expect(e.laengeMm).toBe(soll.laenge);
       expect(e.bekanntMm).toBe(soll.bekannt);
       expect(e.vollstaendigSpezifiziert).toBe(soll.spezifiziert);
@@ -305,6 +318,14 @@ describe("Leitungslänge - Parität zur Serverreferenz", () => {
   it.each(daten.rundung.map((fall) => [JSON.stringify(fall.lage), fall] as const))("Rundung %s", (_name, fall) => {
     const mass = linienmass(fall.m);
     expect(gerundeteLage({ ganz: fall.lage[0], stufen: fall.lage[1] }, mass)).toBe(fall.erwartet);
+  });
+
+  it.each(daten.reserve.map((fall) => [`${fall.geometrisch}@${fall.prozent}`, fall] as const))("Prozentreserve %s", (_name, fall) => {
+    expect(prozentReserveMm(fall.geometrisch, fall.prozent)).toBe(fall.erwartet);
+  });
+
+  it("lehnt Prozentsätze mit mehr als zwei Stellen und außerhalb 0–100 ab", () => {
+    for (const prozent of ["12.345", "-1", "100.01", "1e1", ""]) expect(() => prozentReserveMm(1_000, prozent)).toThrow(RangeError);
   });
 });
 

@@ -53,9 +53,17 @@ from app.modules.electrical.link_rules import LinkCandidate
 from app.modules.electrical.models import ElectricalOpening
 from app.modules.electrical.permissions import (
     CIRCUIT_WRITE,
+    DEFAULTS_MANAGE,
     PLAN_READ,
     PLAN_WRITE,
     ROUTE_WRITE,
+)
+from app.modules.electrical.planning_defaults import (
+    DefaultsView,
+    EffectiveView,
+    PlanningDefaultsService,
+    TemplateView,
+    percent_out,
 )
 from app.modules.electrical.risers import RiserService, RiserView, RiserWriteResult
 from app.modules.electrical.schemas import (
@@ -65,6 +73,11 @@ from app.modules.electrical.schemas import (
     CableOut,
     CableProblemOut,
     CableSegmentOut,
+    CableTemplateCreate,
+    CableTemplateListOut,
+    CableTemplateOut,
+    CableTemplateUpdate,
+    CableValueOriginValue,
     CableWaypointKindValue,
     CableWaypointOut,
     CablingBucketOut,
@@ -83,12 +96,22 @@ from app.modules.electrical.schemas import (
     CircuitListOut,
     CircuitOut,
     CircuitUpdate,
+    DefaultsBasisOut,
     DeviceOut,
     DeviceTypeOut,
+    DeviceTypeTemplateOut,
     DistributionBoardCreate,
     DistributionBoardListOut,
     DistributionBoardOut,
     DistributionBoardUpdate,
+    EffectiveAllowanceOut,
+    EffectiveCableAllowancesOut,
+    EffectiveForCableOut,
+    EffectiveHintOut,
+    EffectivePlanningDefaultsOut,
+    EffectiveReserveOut,
+    EffectiveSpecOut,
+    EffectiveTemplateChoiceOut,
     FloorPlanOut,
     GeometryProblemOut,
     MissingSpecValue,
@@ -98,7 +121,12 @@ from app.modules.electrical.schemas import (
     PenetrationListOut,
     PenetrationOut,
     PenetrationUpdate,
+    PlanningDefaultsIn,
+    PlanningDefaultsOut,
     PositionOut,
+    ProjectPlanningDefaultsIn,
+    ProjectPlanningDefaultsOut,
+    ReserveModeValue,
     RiserCoursePointOut,
     RiserCreate,
     RiserListOut,
@@ -157,6 +185,12 @@ _WRITE_RESPONSES: dict[int | str, dict[str, object]] = {
     422: {"model": ProblemDetail, "description": "Geometrie oder Eingabe unzulaessig"},
     428: {"model": ProblemDetail, "description": "If-Match fehlt"},
 }
+
+
+def _require_assignment_right(current_user: CurrentUser, payload: CableIn) -> None:
+    """Zuordnung beim Speichern einer Leitung: zusaetzlich ``electrical.circuit.write`` (V1)."""
+    if payload.assign_devices:
+        current_user.require(CIRCUIT_WRITE)
 
 
 def _require_acknowledgement_right(
@@ -1115,6 +1149,7 @@ def _circuit_out(view: CircuitView) -> CircuitOut:
         rcd_group=circuit.rcd_group,
         phase_count=circuit.phase_count,
         note=circuit.note,
+        proposal_overrides_templates=circuit.proposal_overrides_templates,
         device_ids=list(view.device_ids),
         version=circuit.version,
         created_at=circuit.created_at,
@@ -1353,6 +1388,19 @@ def _cable_out(view: CableView) -> CableOut:
         start_allowance_mm=cable.start_allowance_mm,
         end_allowance_mm=cable.end_allowance_mm,
         reserve_mm=cable.reserve_mm,
+        # Die Datenbank laesst nur die bekannten Werte zu (CHECK).
+        reserve_mode=cast(ReserveModeValue, cable.reserve_mode),
+        reserve_percent=percent_out(cable.reserve_percent),
+        reserve_effective_mm=result.reserve_mm,
+        reserve_pending=result.reserve_pending,
+        connection_allowance_mm=result.connection_allowance_mm,
+        spec_origin=cast(CableValueOriginValue, cable.spec_origin),
+        reserve_origin=cast(CableValueOriginValue, cable.reserve_origin),
+        allowance_origin=cast(CableValueOriginValue, cable.allowance_origin),
+        cable_template_id=cable.cable_template_id,
+        cable_template_version=cable.cable_template_version,
+        defaults_office_version=cable.defaults_office_version,
+        defaults_project_version=cable.defaults_project_version,
         waypoints=[
             CableWaypointOut(
                 # Die Datenbank laesst nur die bekannten Arten zu (CHECK).
@@ -1504,6 +1552,9 @@ def _bucket_out(bucket: StatusBucket) -> CablingBucketOut:
         count=bucket.count,
         geometric_mm=bucket.geometric_mm,
         allowance_mm=bucket.allowance_mm,
+        connection_allowance_mm=bucket.connection_allowance_mm,
+        reserve_mm=bucket.reserve_mm,
+        reserve_pending_count=bucket.reserve_pending_count,
         total_mm=bucket.total_mm,
         cable_ids=list(bucket.cable_ids),
     )
@@ -1525,6 +1576,14 @@ def _summary_cable_out(line: CableLine) -> CablingCableOut:
         status=result.status.value,
         geometric_mm=result.geometric_mm,
         allowance_mm=result.allowance_mm,
+        connection_allowance_mm=result.connection_allowance_mm,
+        reserve_mode=cast(ReserveModeValue, cable.reserve_mode),
+        reserve_percent=percent_out(cable.reserve_percent),
+        reserve_effective_mm=result.reserve_mm,
+        reserve_pending=result.reserve_pending,
+        spec_origin=cast(CableValueOriginValue, cable.spec_origin),
+        reserve_origin=cast(CableValueOriginValue, cable.reserve_origin),
+        allowance_origin=cast(CableValueOriginValue, cable.allowance_origin),
         length_mm=result.length_mm,
         known_mm=result.known_mm,
         problem_codes=[problem.code for problem in result.problems],
@@ -1622,8 +1681,12 @@ def create_cable(
 
     Endgeraete: das Lagegeraet der Verteilung oder Geraete dieses Stromkreises, im
     Gebaeude, nicht aussen montiert. Unvollstaendige Wege werden gespeichert
-    (``incomplete``), unzulaessige Strecken nicht (``422 cable-route-invalid``).
+    (``incomplete``), unzulaessige Strecken nicht (``422 cable-route-invalid``). Ohne
+    Endgeraet: offene Planung (``incomplete``). Werte aus Vorgaben: ``409
+    planning-defaults-changed`` bei geaendertem Stand. ``assign_devices`` verlangt
+    zusaetzlich ``electrical.circuit.write``.
     """
+    _require_assignment_right(current_user, payload)
     view, result = CableService(session, current_user.organization_id).create(circuit_id, payload)
     _commit_cables(session=session, current_user=current_user, result=result)
     return _cable_out(view)
@@ -1646,8 +1709,10 @@ def replace_cable(
     """Ersetzt die ganze Leitung samt Wegpunkten (``If-Match`` der Leitungsversion).
 
     Bleiben Weg und Endgeraete unveraendert, blockiert ein bestehender Konflikt das
-    Aendern der Kabelangaben nicht; ein **neuer** Konflikt wird abgelehnt.
+    Aendern der Kabelangaben nicht; ein **neuer** Konflikt wird abgelehnt. Eine reine
+    Leitungsaenderung aendert keine Geraetezuordnung (``assign_devices`` nur ausdruecklich).
     """
+    _require_assignment_right(current_user, payload)
     view, result = CableService(session, current_user.organization_id).replace(
         cable_id, payload, expected_version=expected_version
     )
@@ -1763,3 +1828,367 @@ def delete_penetration(
         penetration_id, expected_version=expected_version
     )
     _commit_cables(session=session, current_user=current_user, result=result)
+
+
+# ------------------------------------- Kabelvorlagen und Planungsvorgaben (Phase 6c, V1)
+
+
+def _template_out(view: TemplateView) -> CableTemplateOut:
+    row = view.template
+    return CableTemplateOut(
+        id=row.id,
+        name=row.name,
+        cable_type=row.cable_type,
+        conductor_count=row.conductor_count,
+        cross_section_mm2=cross_section_out(row.cross_section_mm2) or "",
+        is_active=row.is_active,
+        sort_order=row.sort_order,
+        in_use=view.in_use,
+        version=row.version,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def _defaults_fields(view: DefaultsView) -> dict[str, object]:
+    row = view.row
+    return {
+        "version": view.version,
+        "reserve_percent": None if row is None else percent_out(row.reserve_percent),
+        "board_allowance_mm": None if row is None else row.board_allowance_mm,
+        "junction_allowance_mm": None if row is None else row.junction_allowance_mm,
+        "device_allowance_mm": None if row is None else row.device_allowance_mm,
+        "default_cable_template_id": None if row is None else row.default_cable_template_id,
+        "device_type_templates": [
+            DeviceTypeTemplateOut(device_type_key=key, cable_template_id=template_id)
+            for key, template_id in view.type_templates
+        ],
+        "updated_at": None if row is None else row.updated_at,
+    }
+
+
+def _effective_out(view: EffectiveView) -> EffectivePlanningDefaultsOut:
+    data = view.data
+    templates = {item.template.id: item for item in view.templates}
+
+    def choice(
+        template_id: uuid.UUID | None, level: Literal["project", "office"], key: str | None
+    ) -> EffectiveTemplateChoiceOut | None:
+        if template_id is None or template_id not in templates:
+            return None
+        return EffectiveTemplateChoiceOut(
+            device_type_key=key, level=level, template=_template_out(templates[template_id])
+        )
+
+    default = choice(data.project.default_template_id, "project", None) or choice(
+        data.office.default_template_id, "office", None
+    )
+    keys = sorted(set(data.project.type_templates) | set(data.office.type_templates))
+    type_choices = [
+        item
+        for key in keys
+        if (
+            item := choice(data.project.type_templates.get(key), "project", key)
+            or choice(data.office.type_templates.get(key), "office", key)
+        )
+        is not None
+    ]
+    reserve_project = data.project.reserve_percent
+    reserve_office = data.office.reserve_percent
+    reserve = EffectiveReserveOut(
+        percent=percent_out(
+            reserve_project
+            if reserve_project is not None
+            else reserve_office
+            if reserve_office is not None
+            else None
+        )
+        or "0.00",
+        origin="project_default"
+        if reserve_project is not None
+        else "office_default"
+        if reserve_office is not None
+        else "none",
+    )
+    allowances: list[EffectiveAllowanceOut] = []
+    for kind in ("board", "junction", "device"):
+        project = data.project.allowance(kind)
+        office = data.office.allowance(kind)
+        allowances.append(
+            EffectiveAllowanceOut(
+                endpoint_kind=kind,
+                value_mm=project if project is not None else office if office is not None else 0,
+                origin="project_default"
+                if project is not None
+                else "office_default"
+                if office is not None
+                else "none",
+            )
+        )
+    basis = DefaultsBasisOut(
+        office_version=view.office.version, project_version=view.project.version
+    )
+    for_cable: EffectiveForCableOut | None = None
+    if view.for_cable is not None:
+        target = view.for_cable
+        spec = target.spec
+        for_cable = EffectiveForCableOut(
+            circuit_id=target.circuit.id,
+            start_device_id=target.start_device_id,
+            end_device_id=target.end_device_id,
+            spec=EffectiveSpecOut(
+                origin=cast(CableValueOriginValue, spec.origin),
+                cable_type=spec.cable_type,
+                conductor_count=spec.conductor_count,
+                cross_section_mm2=cross_section_out(spec.cross_section_mm2),
+                cable_template_id=None if spec.template is None else spec.template.id,
+                level=cast(Literal["project", "office"] | None, spec.level),
+                deciding_device_id=spec.deciding_device_id,
+            ),
+            reserve=EffectiveReserveOut(
+                percent=percent_out(target.reserve.percent) or "0.00",
+                origin=cast(CableValueOriginValue, target.reserve.origin),
+            ),
+            allowances=EffectiveCableAllowancesOut(
+                origin=cast(CableValueOriginValue, target.allowances.origin),
+                start_mm=target.allowances.start_mm,
+                end_mm=target.allowances.end_mm,
+                start_origin=cast(CableValueOriginValue, target.allowances.start_origin),
+                end_origin=cast(CableValueOriginValue, target.allowances.end_origin),
+            ),
+            hints=[
+                EffectiveHintOut(code=h.code, template_id=h.template_id, device_id=h.device_id)
+                for h in spec.hints
+            ],
+            basis=DefaultsBasisOut(
+                office_version=view.office.version,
+                project_version=view.project.version,
+                cable_template_id=None if spec.template is None else spec.template.id,
+                cable_template_version=None if spec.template is None else spec.template.version,
+                circuit_version=target.circuit.version
+                if spec.origin == "circuit_override"
+                else None,
+            ),
+        )
+    return EffectivePlanningDefaultsOut(
+        project_id=view.context.project_id,
+        project_status=view.context.project_status,
+        basis=basis,
+        reserve=reserve,
+        allowances=allowances,
+        default_template=default,
+        device_type_templates=type_choices,
+        templates=[_template_out(item) for item in view.templates],
+        for_cable=for_cable,
+    )
+
+
+_DEFAULTS_WRITE_RESPONSES: dict[int | str, dict[str, object]] = {
+    404: {"model": ProblemDetail, "description": "Nicht gefunden"},
+    409: {
+        "model": ProblemDetail,
+        "description": "Versionskonflikt, Vorlage in Gebrauch oder Projekt schreibgeschuetzt",
+    },
+    422: {"model": ProblemDetail, "description": "Eingabe unzulaessig"},
+}
+
+
+@router.get(
+    "/cable-templates",
+    response_model=CableTemplateListOut,
+    operation_id="listElectricalCableTemplates",
+    summary="Kabelvorlagen des Betriebs",
+)
+def list_cable_templates(
+    current_user: CurrentUser = Depends(require_permission(PLAN_READ)),
+    session: Session = Depends(get_session),
+) -> CableTemplateListOut:
+    """Alle Kabelvorlagen (auch inaktive) - technische Angaben ohne Preis."""
+    views = PlanningDefaultsService(session, current_user.organization_id).list_templates()
+    return CableTemplateListOut(templates=[_template_out(view) for view in views])
+
+
+@router.post(
+    "/cable-templates",
+    response_model=CableTemplateOut,
+    status_code=status.HTTP_201_CREATED,
+    operation_id="createElectricalCableTemplate",
+    summary="Kabelvorlage anlegen",
+    responses=_DEFAULTS_WRITE_RESPONSES,
+)
+def create_cable_template(
+    payload: CableTemplateCreate,
+    current_user: CurrentUser = Depends(require_permission(DEFAULTS_MANAGE)),
+    session: Session = Depends(get_session),
+) -> CableTemplateOut:
+    """Neue Kabelvorlage (``electrical.defaults.manage``); Name je Betrieb eindeutig."""
+    view = PlanningDefaultsService(session, current_user.organization_id).create_template(payload)
+    session.commit()
+    return _template_out(view)
+
+
+@router.patch(
+    "/cable-templates/{template_id}",
+    response_model=CableTemplateOut,
+    operation_id="updateElectricalCableTemplate",
+    summary="Kabelvorlage aendern oder deaktivieren",
+    responses={
+        **_DEFAULTS_WRITE_RESPONSES,
+        428: {"model": ProblemDetail, "description": "If-Match fehlt"},
+    },
+)
+def update_cable_template(
+    template_id: uuid.UUID,
+    payload: CableTemplateUpdate,
+    current_user: CurrentUser = Depends(require_permission(DEFAULTS_MANAGE)),
+    session: Session = Depends(get_session),
+    expected_version: int = Depends(require_if_match),
+) -> CableTemplateOut:
+    """Aendert die Vorlage (``If-Match``). Bestehende Leitungen behalten ihre Angaben."""
+    view, _ = PlanningDefaultsService(session, current_user.organization_id).update_template(
+        template_id, payload, expected_version=expected_version
+    )
+    session.commit()
+    return _template_out(view)
+
+
+@router.delete(
+    "/cable-templates/{template_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="deleteElectricalCableTemplate",
+    summary="Ungenutzte Kabelvorlage loeschen",
+    responses={
+        **_DEFAULTS_WRITE_RESPONSES,
+        428: {"model": ProblemDetail, "description": "If-Match fehlt"},
+    },
+)
+def delete_cable_template(
+    template_id: uuid.UUID,
+    current_user: CurrentUser = Depends(require_permission(DEFAULTS_MANAGE)),
+    session: Session = Depends(get_session),
+    expected_version: int = Depends(require_if_match),
+) -> None:
+    """Nur ungenutzt, sonst ``409 cable-template-in-use`` - dann deaktivieren."""
+    PlanningDefaultsService(session, current_user.organization_id).delete_template(
+        template_id, expected_version=expected_version
+    )
+    session.commit()
+
+
+@router.get(
+    "/planning-defaults",
+    response_model=PlanningDefaultsOut,
+    operation_id="getElectricalPlanningDefaults",
+    summary="Betriebsstandard der Planungsvorgaben",
+)
+def get_planning_defaults(
+    current_user: CurrentUser = Depends(require_permission(PLAN_READ)),
+    session: Session = Depends(get_session),
+) -> PlanningDefaultsOut:
+    """Gespeicherte Werte; ``null`` = nicht gesetzt, Version ``0`` = nichts gespeichert."""
+    view = PlanningDefaultsService(session, current_user.organization_id).office()
+    return PlanningDefaultsOut(**_defaults_fields(view))
+
+
+@router.put(
+    "/planning-defaults",
+    response_model=PlanningDefaultsOut,
+    operation_id="replaceElectricalPlanningDefaults",
+    summary="Betriebsstandard ersetzen",
+    responses=_DEFAULTS_WRITE_RESPONSES,
+)
+def replace_planning_defaults(
+    payload: PlanningDefaultsIn,
+    current_user: CurrentUser = Depends(require_permission(DEFAULTS_MANAGE)),
+    session: Session = Depends(get_session),
+) -> PlanningDefaultsOut:
+    """Ersetzt den Betriebsstandard ganz (``expected_version``, ``0`` = Erstanlage).
+
+    Aendert **keine** Leitung und kein Projekt - auch nicht in abgeschlossenen oder
+    archivierten Projekten. Offene Abschluesse sehen die Aenderung als ``409
+    planning-defaults-changed`` beim Speichern.
+    """
+    view, _ = PlanningDefaultsService(session, current_user.organization_id).put_office(payload)
+    session.commit()
+    return PlanningDefaultsOut(**_defaults_fields(view))
+
+
+@router.get(
+    "/projects/{project_id}/planning-defaults",
+    response_model=ProjectPlanningDefaultsOut,
+    operation_id="getElectricalProjectPlanningDefaults",
+    summary="Projektvorgabe",
+    responses=_READ_RESPONSES,
+)
+def get_project_planning_defaults(
+    project_id: uuid.UUID,
+    current_user: CurrentUser = Depends(require_permission(PLAN_READ)),
+    session: Session = Depends(get_session),
+) -> ProjectPlanningDefaultsOut:
+    """Gespeicherte Projektwerte; ``null`` = Betriebsstandard uebernehmen."""
+    context, view = PlanningDefaultsService(session, current_user.organization_id).project(
+        project_id
+    )
+    return ProjectPlanningDefaultsOut(project_id=context.project_id, **_defaults_fields(view))
+
+
+@router.put(
+    "/projects/{project_id}/planning-defaults",
+    response_model=ProjectPlanningDefaultsOut,
+    operation_id="replaceElectricalProjectPlanningDefaults",
+    summary="Projektvorgabe ersetzen",
+    responses=_DEFAULTS_WRITE_RESPONSES,
+)
+def replace_project_planning_defaults(
+    project_id: uuid.UUID,
+    payload: ProjectPlanningDefaultsIn,
+    current_user: CurrentUser = Depends(require_permission(ROUTE_WRITE)),
+    session: Session = Depends(get_session),
+) -> ProjectPlanningDefaultsOut:
+    """Ersetzt die Projektvorgabe (``electrical.route.write``, ``expected_version``).
+
+    Waehlt nur Betriebsvorlagen. ``409`` bei abgeschlossenem oder archiviertem Projekt.
+    Aendert keine bestehende Leitung.
+    """
+    context, view, result = PlanningDefaultsService(
+        session, current_user.organization_id
+    ).put_project(project_id, payload)
+    if result.changed:
+        FloorPlanningAccess(session, current_user.organization_id).record_project_change(
+            context.project_id, actor_user_id=current_user.user_id
+        )
+    session.commit()
+    return ProjectPlanningDefaultsOut(project_id=context.project_id, **_defaults_fields(view))
+
+
+@router.get(
+    "/projects/{project_id}/planning-defaults/effective",
+    response_model=EffectivePlanningDefaultsOut,
+    operation_id="getElectricalEffectivePlanningDefaults",
+    summary="Wirksame Planungsvorgaben eines Projekts",
+    responses={
+        **_READ_RESPONSES,
+        422: {"model": ProblemDetail, "description": "Geraet nicht im Gebaeude des Stromkreises"},
+    },
+)
+def get_effective_planning_defaults(
+    project_id: uuid.UUID,
+    circuit_id: uuid.UUID | None = None,
+    start_device_id: uuid.UUID | None = None,
+    end_device_id: uuid.UUID | None = None,
+    current_user: CurrentUser = Depends(require_permission(PLAN_READ)),
+    session: Session = Depends(get_session),
+) -> EffectivePlanningDefaultsOut:
+    """Aufgeloeste Werte, Herkunft und Versionsbasis (``basis`` -> ``defaults_basis``).
+
+    Mit ``circuit_id`` (und optional Start-/Endgeraet) zusaetzlich ``for_cable``: genau
+    die Werte, die eine neue Leitung mit ``*_source = defaults`` erhielte. Lesend, ein
+    konsistenter Stand, auch fuer abgeschlossene und archivierte Projekte.
+    """
+    view = PlanningDefaultsService(session, current_user.organization_id).effective(
+        project_id,
+        circuit_id=circuit_id,
+        start_device_id=start_device_id,
+        end_device_id=end_device_id,
+    )
+    return _effective_out(view)

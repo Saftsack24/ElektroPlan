@@ -485,14 +485,14 @@ bearbeitet ist; die manuelle Gesamtprüfung von Phase 6 bleibt davon unberührt 
 | Schritt | Inhalt | Status |
 |---|---|---|
 | 6c.0 | Planungsarbeitsfläche (Eigenschaften einklappbar, Maximieren, Kontextleiste), Undo/Redo-Icons, Dialogrichtlinie | technisch umgesetzt, **nicht abgenommen, überarbeitungsbedürftig** (Entwurf §17/§18), nicht committet |
-| L1 | Planungslayout: gemeinsame Breite/Höhe, einzeiliger Kopf, gruppierte Werkzeugleiste mit „Leitung hinzufügen“, Menüs, Wand/Decke in der Arbeitsfläche (Entwurf §18.2, §19) | umgesetzt, nachgearbeitet und **technisch geprüft** (§19.9; regulärer Frontend-Gesamtlauf 1 188/1 188 grün), Beurteilung durch den Auftraggeber offen, nicht committet; „Leitung hinzufügen“ führt bis L2 in den bestehenden Ablauf |
-| V1 | Vorgaben-Backend aus 6c.4 (Entwurf §18.6) | Entwurf – nächster Schritt nach Freigabe (F7: vor L2/L3) |
+| L1 | Planungslayout: gemeinsame Breite/Höhe, einzeiliger Kopf, gruppierte Werkzeugleiste mit „Leitung hinzufügen“, Menüs, Wand/Decke in der Arbeitsfläche (Entwurf §18.2, §19) | umgesetzt, nachgearbeitet und **technisch geprüft** (§19.9), **Checkpoint `331bfbd`** (2026-10-23); persönliche Layoutabnahme offen; „Leitung hinzufügen“ führt bis L2 in den bestehenden Ablauf |
+| V1 | Vorgaben-Backend aus 6c.4 (Entwurf §18.6, §20): Kabelvorlagen, Betriebsstandard, Projektvorgabe, Gerätetypvorlagen, Stromkreisvorrang, Prozentreserve, Herkunft und Basis, offene Leitung, Zuordnung beim Speichern, `effective`, Migration `0014` | **technisch umgesetzt und geprüft** (2026-10-23; Gesamtlauf grün, Entwicklungsdatenbank migriert, API-Durchlauf 15/15), **als Checkpoint committet** (Task 0059); Oberflächen für Vorgaben folgen mit L3 |
 | L2 | Neuer Zeichenablauf (Entwurf §18.3–§18.4, F6 rechtwinklig) | Entwurf – nach V1, gemeinsam mit L3 |
 | L3 | Abschlussdialog an Vorgaben, Verwaltungsdialoge (Entwurf §18.5) | Entwurf – nach V1, gemeinsam mit L2 |
 | 6c.1 | 3D „Leitungen anzeigen“, modulbezogene Anzeigeschalter (ADR 0029) | zurückgestellt |
 | 6c.2 | bestehende Formulare auf Dialoge (Gebäude/Geschoss, Steigweg, Stammdaten) | Entwurf |
 | 6c.3 | Verteilung im Plan platzieren/zeigen/umsetzen (ADR 0028) | Entwurf |
-| 6c.4 | Planungsvorgaben, Kabelvorlagen, Prozentreserve – Backend (ADR 0027) | Entwurf |
+| 6c.4 | Planungsvorgaben, Kabelvorlagen, Prozentreserve – Backend (ADR 0027) | Backendteil als **V1** umgesetzt (s. o.) |
 | 6c.5 | neuer Leitungsablauf mit Abschlussdialog, Vorgabenverwaltung | Entwurf |
 | 6c.6 | zentrale Anwendung der Vorgaben mit Vorschau | Entwurf |
 | 6c.7 | Verteilungsaufbau mit Vorlagen (ADR 0028) | Entwurf |

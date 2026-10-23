@@ -158,7 +158,7 @@ def to_cable(row: ElectricalCable, waypoints: Sequence[Waypoint]) -> Cable:
     return Cable(
         id=str(row.id),
         start_device_id=None if row.start_device_id is None else str(row.start_device_id),
-        end_device_id=str(row.end_device_id),
+        end_device_id=None if row.end_device_id is None else str(row.end_device_id),
         waypoints=tuple(waypoints),
         start_allowance_mm=row.start_allowance_mm,
         end_allowance_mm=row.end_allowance_mm,
@@ -166,6 +166,8 @@ def to_cable(row: ElectricalCable, waypoints: Sequence[Waypoint]) -> Cable:
         cable_type=row.cable_type,
         conductor_count=row.conductor_count,
         cross_section_mm2=row.cross_section_mm2,
+        reserve_mode=row.reserve_mode,
+        reserve_percent=row.reserve_percent,
     )
 
 
@@ -542,10 +544,15 @@ def build_plan(
 # ------------------------------------------------------------------ Beschreibung
 
 
-def device_name(state: BuildingCableState, device_id: uuid.UUID | None) -> str:
+def device_name(
+    state: BuildingCableState,
+    device_id: uuid.UUID | None,
+    *,
+    missing: str = "Verteilung (ohne Lage)",
+) -> str:
     """„Steckdose „Bett links“ (1.02 Kueche)“ - ohne Datenbankzugriff."""
     if device_id is None:
-        return "Verteilung (ohne Lage)"
+        return missing
     device = state.devices.get(device_id)
     if device is None:
         return "Geraet"
@@ -565,7 +572,7 @@ def describe_cable(state: BuildingCableState, cable_id: uuid.UUID) -> str:
     label = cable.label or "Leitung"
     return (
         f"{prefix} · {label}: {device_name(state, cable.start_device_id)} → "
-        f"{device_name(state, cable.end_device_id)}"
+        f"{device_name(state, cable.end_device_id, missing='Endgeraet fehlt')}"
     )
 
 

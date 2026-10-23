@@ -111,6 +111,32 @@ CABLE_WAYPOINT_KINDS: tuple[str, ...] = (
 )
 #: Obergrenze je Zugabe und Reserve in Millimetern (Entwurf §3.2).
 MAX_CABLE_ALLOWANCE_MM = 20_000
+#: Herkunft einer Wertegruppe an der Leitung (Phase 6c, V1, ADR 0027 Nr. 4, Entwurf §8.5).
+#: ``none``: die Vorgabenkette lieferte nichts (Kabelangaben sichtbar fehlend, 0 % bzw. 0 mm).
+CABLE_VALUE_ORIGINS: tuple[str, ...] = (
+    "legacy",
+    "manual",
+    "circuit_override",
+    "device_type_template",
+    "default_template",
+    "project_default",
+    "office_default",
+    "none",
+)
+#: Reservearten einer Leitung (ADR 0027 Nr. 5) - Bestand ``fixed``.
+CABLE_RESERVE_MODES: tuple[str, ...] = ("fixed", "percent")
+#: Name einer Kabelvorlage ist je Betrieb eindeutig.
+CABLE_TEMPLATE_NAME_CONSTRAINT = "uq_el_cable_templates_name"
+#: Hoechstens ein Betriebsstandard je Betrieb.
+PLANNING_DEFAULTS_ORG_CONSTRAINT = "uq_el_planning_defaults_org"
+#: Hoechstens eine Projektvorgabe je Projekt.
+PROJECT_DEFAULTS_PROJECT_CONSTRAINT = "uq_el_project_defaults_project"
+#: Felder der Anschlusszugaben je Endpunktart (Entwurf §8.2).
+ALLOWANCE_FIELDS: tuple[str, ...] = (
+    "board_allowance_mm",
+    "junction_allowance_mm",
+    "device_allowance_mm",
+)
 
 
 def _value_list(values: tuple[str, ...]) -> str:
@@ -582,6 +608,12 @@ class ElectricalCircuit(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, Ba
     rcd_group: Mapped[str | None] = mapped_column(String(40), nullable=True)
     phase_count: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     note: Mapped[str | None] = mapped_column(String(500), nullable=True, default=None)
+    #: "Fuer neue Leitungen dieses Stromkreises diese Kabelvorgabe verwenden" (Phase 6c, V1,
+    #: ADR 0027, F1). Nur dann sind ``proposed_*`` Stufe 2 der Vorgabenkette - sonst reine
+    #: Information. Fuer alle Bestandsstromkreise ``false``.
+    proposal_overrides_templates: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
 
 
 class ElectricalCircuitDevice(TenantScoped, Timestamped, Base):
@@ -743,9 +775,31 @@ class ElectricalCable(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, Base
             name="fk_electrical_cables_end_device",
             ondelete="RESTRICT",
         ),
+        ForeignKeyConstraint(
+            ["organization_id", "cable_template_id"],
+            ["electrical_cable_templates.organization_id", "electrical_cable_templates.id"],
+            name="fk_electrical_cables_cable_template",
+            ondelete="RESTRICT",
+        ),
         CheckConstraint(
-            "start_device_id IS NULL OR start_device_id <> end_device_id",
+            "start_device_id IS NULL OR end_device_id IS NULL OR start_device_id <> end_device_id",
             name="endpoints_differ",
+        ),
+        CheckConstraint(
+            f"reserve_mode IN ({_value_list(CABLE_RESERVE_MODES)})", name="reserve_mode_known"
+        ),
+        # Genau eine Reserveform: fest in mm oder Prozentsatz - nie beides (keine Doppelzaehlung).
+        CheckConstraint(
+            "(reserve_mode = 'fixed' AND reserve_percent IS NULL) OR "
+            "(reserve_mode = 'percent' AND reserve_percent IS NOT NULL AND reserve_mm = 0 "
+            "AND reserve_percent BETWEEN 0 AND 100)",
+            name="reserve_matches_mode",
+        ),
+        CheckConstraint(
+            f"spec_origin IN ({_value_list(CABLE_VALUE_ORIGINS)}) "
+            f"AND reserve_origin IN ({_value_list(CABLE_VALUE_ORIGINS)}) "
+            f"AND allowance_origin IN ({_value_list(CABLE_VALUE_ORIGINS)})",
+            name="origins_known",
         ),
         CheckConstraint(
             "conductor_count IS NULL OR conductor_count BETWEEN 1 AND 100",
@@ -771,12 +825,19 @@ class ElectricalCable(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, Base
             "organization_id",
             "end_device_id",
         ),
+        Index(
+            "ix_electrical_cables_organization_id_cable_template_id",
+            "organization_id",
+            "cable_template_id",
+        ),
     )
 
     circuit_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     label: Mapped[str | None] = mapped_column(String(60), nullable=True, default=None)
     start_device_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, default=None)
-    end_device_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    #: Leer = bewusst offene Planung ("Endgeraet fehlt", Phase 6c V1) - die Leitung ist dann
+    #: ``incomplete`` und hat keine Gesamtlaenge.
+    end_device_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, default=None)
     cable_type: Mapped[str | None] = mapped_column(String(40), nullable=True, default=None)
     conductor_count: Mapped[int | None] = mapped_column(SmallInteger, nullable=True, default=None)
     cross_section_mm2: Mapped[Decimal | None] = mapped_column(
@@ -791,6 +852,33 @@ class ElectricalCable(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, Base
     reserve_mm: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=text("0")
     )
+    # ---- Phase 6c, V1 (ADR 0027): Reserveform, Herkunft je Wertegruppe, Vorgabenbasis.
+    #: ``fixed``: ``reserve_mm`` ist die Reserve (Bestand); ``percent``: ``reserve_percent``
+    #: der geometrischen Laenge, ``reserve_mm`` dann ``0``. Die Reserve selbst wird nie
+    #: gespeichert (abgeleitet wie die Laenge).
+    reserve_mode: Mapped[str] = mapped_column(
+        String(8), nullable=False, default="fixed", server_default=text("'fixed'")
+    )
+    reserve_percent: Mapped[Decimal | None] = mapped_column(
+        Numeric(5, 2), nullable=True, default=None
+    )
+    #: Herkunft der Kabelangaben, der Reserve und der Anschlusszugaben (``legacy`` vor 6c).
+    spec_origin: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="manual", server_default=text("'legacy'")
+    )
+    reserve_origin: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="manual", server_default=text("'legacy'")
+    )
+    allowance_origin: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="manual", server_default=text("'legacy'")
+    )
+    #: Vorlage, aus der die Kabelangaben stammen - nur Herkunft, die Werte stehen oben.
+    cable_template_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, default=None)
+    #: Versionen der beim Speichern genutzten Vorgaben (Herkunft und Version, ADR 0027 Nr. 8).
+    #: ``0`` = zu dem Zeitpunkt keine Vorgabe gespeichert; ``NULL`` = nicht aus Vorgaben.
+    cable_template_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    defaults_office_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    defaults_project_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class ElectricalCableWaypoint(UUIDPrimaryKey, TenantScoped, Timestamped, Base):
@@ -889,3 +977,184 @@ class ElectricalCableWaypoint(UUIDPrimaryKey, TenantScoped, Timestamped, Base):
     from_height_mm: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
     to_stop_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, default=None)
     to_height_mm: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+
+
+# ------------------------------- Kabelvorlagen und Planungsvorgaben (Phase 6c, V1)
+
+
+class ElectricalCableTemplate(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, Base):
+    """Technische Kabelvorlage eines Betriebs (ADR 0027 Nr. 2) - **ohne Preis**.
+
+    Das Tripel (Typ, Leiterzahl, Querschnitt) ist eine Einheit und wird nie mit einer
+    anderen Quelle gemischt. Eine genutzte Vorlage wird nicht geloescht (``RESTRICT`` an
+    Leitungen, Vorgaben und Zuordnungen), sondern deaktiviert: Leitungen behalten ihre
+    tatsaechlichen Angaben, eine inaktive Vorlage wird nie vorgeschlagen.
+    """
+
+    __tablename__ = "electrical_cable_templates"
+    __table_args__ = (
+        tenant_identity(),
+        UniqueConstraint("organization_id", "name", name=CABLE_TEMPLATE_NAME_CONSTRAINT),
+        CheckConstraint("conductor_count BETWEEN 1 AND 100", name="conductor_count_plausible"),
+        CheckConstraint("cross_section_mm2 > 0", name="cross_section_positive"),
+        CheckConstraint("btrim(name) <> '' AND btrim(cable_type) <> ''", name="text_present"),
+    )
+
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    cable_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    conductor_count: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    cross_section_mm2: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+    sort_order: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+
+
+#: Wertebereiche der Vorgabefelder; ``NULL`` = nicht gesetzt (naechste Ebene).
+DEFAULTS_RESERVE_CHECK = "reserve_percent IS NULL OR reserve_percent BETWEEN 0 AND 100"
+DEFAULTS_ALLOWANCE_CHECK = " AND ".join(
+    f"({column} IS NULL OR {column} BETWEEN 0 AND {MAX_CABLE_ALLOWANCE_MM})"
+    for column in ALLOWANCE_FIELDS
+)
+
+
+class _DefaultsFields:
+    """Gemeinsame Felder von Betriebsstandard und Projektvorgabe (Entwurf §8.2).
+
+    Jedes Feld ``NULL`` = **nicht gesetzt** (Projekt: Betriebsstandard uebernehmen,
+    Betrieb: 0 % bzw. 0 mm); ein gesetzter Wert ``0`` ist ausdruecklich null. Anschluss-
+    zugaben je Endpunktart: Verteilung, Abzweigdose, sonstiges Geraet.
+    """
+
+    reserve_percent: Mapped[Decimal | None] = mapped_column(
+        Numeric(5, 2), nullable=True, default=None
+    )
+    board_allowance_mm: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    junction_allowance_mm: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    device_allowance_mm: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    default_cable_template_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, default=None)
+
+
+class ElectricalPlanningDefaults(
+    _DefaultsFields, UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, Base
+):
+    """Betriebsstandard (ADR 0027 Nr. 1) - hoechstens eine Zeile je Betrieb.
+
+    Die Version deckt auch die Vorlage je Geraetetyp
+    (:class:`ElectricalDeviceTypeCableTemplate`). Fehlt die Zeile, ist nichts gesetzt
+    (Version ``0`` in der Vorgabenbasis).
+    """
+
+    __tablename__ = "electrical_planning_defaults"
+    __table_args__ = (
+        tenant_identity(),
+        UniqueConstraint("organization_id", name=PLANNING_DEFAULTS_ORG_CONSTRAINT),
+        ForeignKeyConstraint(
+            ["organization_id", "default_cable_template_id"],
+            ["electrical_cable_templates.organization_id", "electrical_cable_templates.id"],
+            name="fk_el_planning_defaults_template",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(DEFAULTS_RESERVE_CHECK, name="reserve_percent_plausible"),
+        CheckConstraint(DEFAULTS_ALLOWANCE_CHECK, name="allowances_plausible"),
+    )
+
+
+class ElectricalDeviceTypeCableTemplate(TenantScoped, Timestamped, Base):
+    """Kabelvorlage je Geraetetyp im Betriebsstandard (unter dessen Version)."""
+
+    __tablename__ = "electrical_type_templates"
+    __table_args__ = (
+        PrimaryKeyConstraint("organization_id", "device_type_key", name="pk_el_type_templates"),
+        ForeignKeyConstraint(
+            ["device_type_key"],
+            ["electrical_device_types.key"],
+            name="fk_el_type_templates_device_type",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "cable_template_id"],
+            ["electrical_cable_templates.organization_id", "electrical_cable_templates.id"],
+            name="fk_el_type_templates_template",
+            ondelete="RESTRICT",
+        ),
+        Index("ix_el_type_templates_template", "organization_id", "cable_template_id"),
+    )
+
+    device_type_key: Mapped[str] = mapped_column(String(40), nullable=False)
+    cable_template_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+
+
+class ElectricalProjectPlanningDefaults(
+    _DefaultsFields, UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, Base
+):
+    """Projektvorgabe (ADR 0027 Nr. 1) - hoechstens eine je Projekt, feldweise abweichend.
+
+    Waehlt nur **Betriebsvorlagen** (keine eigenen). Die Version deckt auch die
+    abweichende Vorlage je Geraetetyp. Projekt ``RESTRICT``: Das Loeschprotokoll
+    (``lifecycle.py``) entfernt die Zeile vor dem Projekt.
+    """
+
+    __tablename__ = "electrical_project_defaults"
+    __table_args__ = (
+        tenant_identity(),
+        UniqueConstraint("organization_id", "project_id", name=PROJECT_DEFAULTS_PROJECT_CONSTRAINT),
+        ForeignKeyConstraint(
+            ["organization_id", "project_id"],
+            ["projects.organization_id", "projects.id"],
+            name="fk_el_project_defaults_project",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "default_cable_template_id"],
+            ["electrical_cable_templates.organization_id", "electrical_cable_templates.id"],
+            name="fk_el_project_defaults_template",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(DEFAULTS_RESERVE_CHECK, name="reserve_percent_plausible"),
+        CheckConstraint(DEFAULTS_ALLOWANCE_CHECK, name="allowances_plausible"),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+
+
+class ElectricalProjectDeviceTypeCableTemplate(TenantScoped, Timestamped, Base):
+    """Abweichende Kabelvorlage je Geraetetyp einer Projektvorgabe (unter deren Version)."""
+
+    __tablename__ = "electrical_proj_type_templates"
+    __table_args__ = (
+        PrimaryKeyConstraint(
+            "organization_id",
+            "project_defaults_id",
+            "device_type_key",
+            name="pk_el_proj_type_templates",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "project_defaults_id"],
+            [
+                "electrical_project_defaults.organization_id",
+                "electrical_project_defaults.id",
+            ],
+            name="fk_el_proj_type_templates_defaults",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["device_type_key"],
+            ["electrical_device_types.key"],
+            name="fk_el_proj_type_templates_device_type",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["organization_id", "cable_template_id"],
+            ["electrical_cable_templates.organization_id", "electrical_cable_templates.id"],
+            name="fk_el_proj_type_templates_template",
+            ondelete="RESTRICT",
+        ),
+        Index("ix_el_proj_type_templates_template", "organization_id", "cable_template_id"),
+    )
+
+    project_defaults_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    device_type_key: Mapped[str] = mapped_column(String(40), nullable=False)
+    cable_template_id: Mapped[uuid.UUID] = mapped_column(nullable=False)

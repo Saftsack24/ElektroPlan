@@ -32,6 +32,7 @@ function werte(wegpunkte: readonly Wegpunkt[] = []): Leitungswerte {
     startzugabeMm: 0,
     endzugabeMm: 0,
     reserveMm: 0,
+    reserveProzent: null,
     wegpunkte,
     neueDurchfuehrungen: [],
   };

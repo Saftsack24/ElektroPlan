@@ -1,6 +1,6 @@
 # Phase 6c – Entwurf: Bedienungsüberarbeitung, zentrale Planungsvorgaben und Verteilungsplanung
 
-**Status:** **3. Fassung (2026-10-16): Planungslayout und Leitungsablauf überarbeitet (§18); F6–F8 entschieden. L1 Planungslayout umgesetzt und am 2026-10-22 nachgearbeitet (§19.9: schmale Werkzeugleiste, gesperrte Knöpfe, Decke und 3D-Rückkehr im Browser) – **technisch geprüft** (2026-10-22, nach Senkung der Mehrkosten §19.9.6: regulärer Frontend-Gesamtlauf grün: 1 188/1 188 Tests in 55 s (Projekteinstellungen, allein, Last 26 %); die früher kritischen langen Tests 1,3–3,8 s); nicht committet, Beurteilung des Layouts durch den Auftraggeber offen.** 6c.0 ist **überarbeitungsbedürftig und nicht abgenommen**; 6c.1–6c.8 zurückgestellt; neue Reihenfolge L1 → V1 → L2/L3 → P (§18.7, F6–F8 entschieden). Vorher: **2. Fassung (2026-10-15)** – Entscheidungen **F1–F5 vom Auftraggeber getroffen** (§14; F1 abweichend
+**Status:** **3. Fassung (2026-10-16): Planungslayout und Leitungsablauf überarbeitet (§18); F6–F8 entschieden. L1 Planungslayout umgesetzt und am 2026-10-22 nachgearbeitet (§19.9: schmale Werkzeugleiste, gesperrte Knöpfe, Decke und 3D-Rückkehr im Browser) – **technisch geprüft** (2026-10-22, nach Senkung der Mehrkosten §19.9.6: regulärer Frontend-Gesamtlauf grün: 1 188/1 188 Tests in 55 s (Projekteinstellungen, allein, Last 26 %); die früher kritischen langen Tests 1,3–3,8 s); **L1 als Checkpoint `331bfbd` committet (2026-10-23)**, persönliche Layoutabnahme offen. **V1 Vorgaben-Backend technisch umgesetzt und geprüft (2026-10-23, §20), als Checkpoint committet (Task 0059).**** 6c.0 ist **überarbeitungsbedürftig und nicht abgenommen**; 6c.1–6c.8 zurückgestellt; neue Reihenfolge L1 → V1 → L2/L3 → P (§18.7, F6–F8 entschieden). Vorher: **2. Fassung (2026-10-15)** – Entscheidungen **F1–F5 vom Auftraggeber getroffen** (§14; F1 abweichend
 von der Empfehlung, F2–F5 bestätigt). **6c.0 zur Umsetzung freigegeben** – **6c.0 technisch umgesetzt, automatisiert und im laufenden Stack funktional und optisch geprüft** (§17.5; nicht committet, manuelle Abnahme durch den Auftraggeber offen); alle übrigen
 Schritte bleiben bis zu ihrer jeweiligen Freigabe unangetastet. ADR 0027–0029 weiterhin *proposed*.
 **Einordnung:** eingeschobene Phase **vor Phase 7**. Phase 7 bleibt zurückgestellt, bis 6c bearbeitet ist.
@@ -1531,6 +1531,156 @@ Fristverlängerung. Danach Typprüfung, ESLint, Modulgrenzen, Build, API-Drift (
 Die beiden Anwendungsänderungen dieser Runde (Inhalt des Hilfedialogs nur geöffnet, gemerkte Knöpfe Eigenschaften/
 Maximieren) sind nur automatisiert geprüft (Hilfe öffnen/schließen, Ein-/Ausklappen, Maximieren mit Taste und
 Escape); im Browser nicht erneut, weil die Sitzung abgelaufen war. Sichtbar ändert sich dadurch nichts.
+
+## 20. Umsetzungsstand V1 Vorgaben-Backend (2026-10-23)
+
+**Freigabe:** Der Auftraggeber hat V1 am 2026-10-23 freigegeben, ohne das Layout L1 selbst angesehen zu haben.
+Die Freigabe ist **keine** nachträgliche Layoutabnahme; die persönliche Abnahme von L1 bleibt offen. L1 wurde
+vorher als Checkpoint `331bfbd` gesichert (technisch geprüfter Stand, §19.9). V1 ist **uncommittet**.
+
+### 20.1 Umfang (umgesetzt)
+
+* **Technische Kabelvorlagen** je Betrieb (`electrical_cable_templates`): Name, Leitungstyp, Leiteranzahl,
+  Querschnitt (`numeric`, API-String), aktiv, Reihenfolge, Version; kein Preis. Ändern mit `If-Match`;
+  Löschen nur ungenutzt (`409`, Code `cable-template-in-use`), sonst deaktivieren.
+* **Betriebsstandard** (`electrical_planning_defaults`, eine Zeile je Betrieb) mit Vorlage je Gerätetyp
+  (`electrical_type_templates`), **Projektvorgabe** (`electrical_project_defaults`) mit eigener Vorlage je
+  Gerätetyp (`electrical_proj_type_templates`). Felder: Reserve %, Zugabe an Verteilung, Abzweigdose, Gerät,
+  allgemeine Standardvorlage. **`NULL` = nicht gesetzt** (erbt), **`0` = ausdrücklich null** (gewinnt).
+* **Stromkreisvorrang** `electrical_circuits.proposal_overrides_templates` (Bestand `false`), über
+  `POST`/`PATCH` des Stromkreises setzbar; ohne Aktivierung nur Hinweis `circuit-proposal-not-activated`.
+* **Kette je Wertegruppe** als reine Funktion `defaults_chain.py`: Kabelangaben 1 Leitung (manuell) →
+  2 aktivierter Stromkreis → 3 Gerätetypvorlage (Projekt vor Betrieb) → 4 Standardvorlage (Projekt vor Betrieb)
+  → 5 sichtbar fehlend. Das Tripel stammt immer aus **einer** Quelle; eine teilweise Stromkreisvorgabe bleibt
+  teilweise (Hinweis `circuit-override-incomplete`). Inaktive Vorlagen werden nie vorgeschlagen (Hinweis
+  `template-inactive`, die Kette fällt weiter). Maßgeblich ist das Zielgerät; ohne Ziel das Startgerät, nie eine
+  Verteilung (Hinweis `start-template-differs`, wenn Start und Ziel verschiedene Vorlagen hätten). Reserve und
+  Zugaben je Feld: Projekt → Betrieb → 0.
+* **Prozentreserve** an der Leitung (`reserve_mode` `fixed`/`percent`, `reserve_percent numeric(5,2)`):
+  `r = ⌊(g·P + 9 999) / 10 000⌋` mit `P = p·100` ganzzahlig – aufgerundet, ohne Gleitkomma, nur auf den
+  geometrischen Weg und **nur bei `confirmed`**. Offen/Konflikt: keine Reserve, keine Gesamtlänge
+  (`reserve_pending`). Gespeichert wird der Prozentsatz, nie das Ergebnis. Zugaben getrennt
+  (`connection_allowance_mm`); `allowance_mm` behält seine Bedeutung (Anschlusszugaben + Reserve, soweit
+  bekannt).
+* **Herkunft und Basis** je Gruppe an der Leitung: `spec_origin`, `reserve_origin`, `allowance_origin`
+  (`legacy`, `manual`, `circuit_override`, `device_type_template`, `default_template`, `project_default`,
+  `office_default`, `none`), `cable_template_id`/`_version`, `defaults_office_version`/`_project_version`.
+* **Leitung ohne Endgerät** zulässig: `incomplete`, Befund `end-device-missing` („Endgerät fehlt“).
+* **Ausdrückliche Zuordnung beim Speichern** (`assign_devices`, höchstens 2): zusätzlich
+  `electrical.circuit.write` und `expected_circuit_version`; nur Endgeräte dieser Leitung, gleiches Gebäude und
+  Betrieb, zuordenbare Kategorie, nie Umhängen; atomar mit der Leitung.
+* **Längenfunktion, Fixture, Frontend-Spiegel, Mengenübersicht**: gemeinsame Fälle in
+  `testdata/geometry/leitung.v1.json` (`reserve`-Abschnitt, Fall „V1 Prozentreserve“). Die Mengenübersicht
+  weist Anschlusszugaben, Reserve und die Zahl offener Prozentreserven je Eimer getrennt aus; die Reserve ist
+  Teil von `allowance_mm`/`total_mm`, nie zusätzlich.
+* **Bestehende Oberflächen** arbeiten weiter: Der Leitungseditor übernimmt `reserve_mode`/`reserve_percent`
+  unverändert beim Speichern (sonst würde eine Prozentreserve still zu 0 mm), zeigt eine Prozentreserve als
+  Text mit „Feste Reserve eingeben“ und „Prozentreserve erst mit vollständigem Weg“. Kein neuer Zeichenablauf,
+  kein Dialog, keine Verwaltungsoberfläche.
+
+### 20.2 API-Verträge für L2/L3 (unter `/api/v1/modules/electrical`)
+
+```text
+GET    /cable-templates                                   plan.read      → {templates: CableTemplateOut[]}
+POST   /cable-templates                                   defaults.manage
+PATCH  /cable-templates/{template_id}       If-Match      defaults.manage  (Teiländerung; deaktivieren)
+DELETE /cable-templates/{template_id}       If-Match      defaults.manage  (409 cable-template-in-use)
+GET    /planning-defaults                                 plan.read      → PlanningDefaultsOut (version 0 = nicht angelegt)
+PUT    /planning-defaults                                 defaults.manage  Körper mit expected_version, alle Felder
+GET    /projects/{project_id}/planning-defaults           plan.read
+PUT    /projects/{project_id}/planning-defaults           route.write    (409 project-completed/-archived)
+GET    /projects/{project_id}/planning-defaults/effective plan.read
+       ?circuit_id&start_device_id&end_device_id         → EffectivePlanningDefaultsOut (+ for_cable)
+POST   /circuits/{id}/cables · PUT /cables/{id}           CableIn erweitert (s. u.)
+```
+
+* `PUT` der Vorgaben ersetzt alle Felder; Versionsprüfung über `expected_version` im Körper (`0` = noch
+  keine Zeile; `If-Match: 0` lehnt der Core ab). Unbekannte/fremde Vorlage `422 cable-template-unknown`,
+  neu gewählte inaktive `422 cable-template-inactive`, Gerätetyp doppelt/unbekannt/nicht zuordenbar `422`.
+* `effective` liefert `basis` (`office_version`, `project_version`), wirksame Reserve, Zugaben je
+  Endpunktart, Standard- und Gerätetypvorlagen mit Ebene, alle Vorlagen, und mit `circuit_id` je Leitung
+  `for_cable`: `spec` (Herkunft, Tripel, Vorlage, Ebene, maßgebliches Gerät), `reserve`, `allowances`
+  (`start_mm`/`end_mm` mit Herkunft je Seite), `hints`, `basis` inkl. `cable_template_id`/`_version` und
+  `circuit_version`.
+* `CableIn`: `end_device_id` optional; `reserve_mode` (`fixed` Standard), `reserve_percent` (nur bei `percent`,
+  dann `reserve_mm = 0`); `spec_source`/`reserve_source`/`allowance_source` (`defaults`, `manual` oder
+  weglassen); `defaults_basis` (Pflicht bei `defaults`, genau `for_cable.basis` übernehmen); `assign_devices`
+  mit `expected_circuit_version`.
+* **Der Server vertraut keiner Client-Herkunft:** Bei `defaults` löst er die Kette selbst auf; Werte, Basis,
+  Vorlagenversion oder (bei aktiviertem Vorrang) Stromkreisversion abweichend → **`409
+  planning-defaults-changed`**, Felder in `errors`, nichts gespeichert. `manual` speichert die Werte mit
+  Herkunft `manual`. Ohne Angabe (bisherige Clients) behält eine unveränderte Gruppe ihre gespeicherte
+  Herkunft (`legacy` bleibt `legacy`), eine geänderte wird `manual`.
+* `CableOut`/Mengenübersicht: `reserve_mode`, `reserve_percent`, `reserve_effective_mm` (`null` = offen),
+  `reserve_pending`, `connection_allowance_mm`, Herkunft und Basis; Eimer mit `connection_allowance_mm`,
+  `reserve_mm`, `reserve_pending_count`.
+
+### 20.3 Präzisierungen gegenüber §10 (ohne neue fachliche Entscheidung)
+
+* **Tabellennamen** gekürzt, weil die abgeleiteten Constraint-Namen sonst über 63 Zeichen lägen:
+  `electrical_type_templates`, `electrical_project_defaults`, `electrical_proj_type_templates` statt der in
+  §10.3 genannten Langformen.
+* **Sperre der betriebsweiten Vorgaben** (präzisiert §10.5 „nur ihre eigene Zeile“): eine transaktionsgebundene
+  PostgreSQL-Advisory-Sperre je Betrieb, weil eine Zeilensperre eine gleichzeitige Erstanlage nicht aufhält.
+  Schreiben (Betriebsstandard, Vorlagen) **exklusiv** und nie mit Projektsperre; Lesen/Prüfen (wirksame
+  Vorgaben, Speichern mit Vorgabenherkunft, Projektvorgabe) **erst Projektsperre, dann geteilt**. Kein Zyklus,
+  die Reihenfolge „Projekt zuerst“ bleibt. Tests belegen beide Richtungen (Speichern wartet auf eine laufende
+  Betriebsänderung und sieht sie → `409`; Betriebsänderung wartet auf ein laufendes Speichern).
+* **Core**: `FloorPlanningAccess.project_context`/`consistent_project_context`/`writable_project_context` und
+  `ProjectPlanningContext` – generisch, ohne Fachwissen.
+* **Seed**: Recht `electrical.defaults.manage`, Standardrollen keine – nur der Administrator erhält es (über die
+  Registry). Nach der Migration den Seed ausführen.
+* Synthetische Beispielwerte (`TEST-*`, 20 %) sind ausschließlich Testdaten; es gibt **keine** ausgelieferte
+  Vorlage und keinen Standardwert.
+
+### 20.4 Übergabe an Phase 7/8 (dokumentiert, nicht umgesetzt)
+
+Electrical liefert je Leitung getrennt: geometrischen Bedarf, Anschlusszugaben und Planungsreserve
+(`reserve_effective_mm`, Herkunft, Modus). Eine Materialberechnung darf auf Leitungen mit Planungsreserve keinen
+weiteren Verschnitt aufschlagen; Verpackungsrundung erst danach. Die Vertragsänderung entscheidet ein
+Phase-7-ADR; der `ProjectRequirementsProvider` bleibt in V1 unverändert.
+
+### 20.5 Tests
+
+* **Neu:** `test_defaults_chain.py` (11, reine Kette: jede Stufe, Aktivierung an/aus, keine Mischung, inaktive
+  Vorlage, maßgebliches Gerät, ausdrückliche 0 gegen Vererbung), `test_electrical_planning_defaults.py` (21 gegen
+  PostgreSQL: wirksame Vorgaben mit Herkunft und Basis, Projekt vor Betrieb, aktivierter Stromkreisvorrang mit
+  Stromkreisbasis, 10 900 mm mit Herkunft und Mengenübersicht ohne Doppelzählung, veraltete Basis beim Anlegen und
+  Ersetzen → `409`, nichts gespeichert, Bestand unverändert, falsche Werte unter „aus Vorgaben“, manuell/gemischt/
+  bisherige Clients, `legacy` bleibt, Vorlage ändern/deaktivieren/Löschschutz, Eingabeprüfung, offene Leitung,
+  Zuordnung atomar/veraltet/kein Endgerät/nie umhängen/ohne `circuit.write`/Datendose, Rechte, fremde Vorlage und
+  fremdes Projekt, `completed`/`archived`, Projektlöschung, **beide Sperrrichtungen**),
+  `test_migration_planning_defaults.py` (5, Wegwerf-Datenbank: Bestand unverändert, Mengen wie vorher,
+  Autogenerate ohne Unterschied, CHECKs, Downgrade-Schutz und erneutes Upgrade).
+* **Gemeinsame Fixture:** 12 Rundungsfälle (u. a. 8 500/20 → 1 700, 8 333/20 → 1 667, 4 001/12,5 → 501, 0 % → 0,
+  100 % → g, 1/0,01 → 1, 9 999/99,99 → 9 999) und ein Planfall (L1 mit 20 % → 10 900; offener Weg und Leitung ohne
+  Endgerät ohne Reserve und Gesamtlänge) – Backend und Frontend prüfen dieselbe Datei.
+* **Angepasst:** Modulregistrierung (Tabellen, Recht, Untermodule), Mandanten-Sweep (Vorlage je Betrieb),
+  Tabellenzahl (42), Migrationstest `0013` (Bestand per SQL, Head dynamisch); Frontend: Längenspiegel, Editor
+  (Prozentreserve bleibt beim Speichern, feste Reserve nur ausdrücklich), Mengenübersicht (Reserve getrennt).
+* **Gesamtlauf `tasks.ps1 check`** gegen PostgreSQL und MinIO, allein bei normaler Last (CPU ≈ 12 %): erster Lauf
+  rot nur an der beabsichtigten Tabellenzahl-Wache (`test_architecture`, 37 → 42), nach der Anpassung
+  **vollständig grün**: Ruff, Format, mypy `--strict`, Modulgrenzen, ein Alembic-Head, Lockfile, **1 382
+  Backendtests** (18 min), API-Client aktuell (kein Drift), Frontend-Typprüfung, ESLint, **1 205/1 205
+  Frontendtests in 56 s**, Build.
+* **Entwicklungsstack:** Datenbank vorher gesichert (`pg_dump -Fc`, Scratchpad), `alembic upgrade head` → `0014`,
+  Seed: 1 neues Recht. Alle 12 vorhandenen Leitungen mit unveränderten Werten (Vorher/Nachher-Vergleich), `fixed`/
+  `legacy`; 5 Stromkreise `false`; keine Vorlage, kein Standard. Backend neu gestartet. **Synthetischer
+  API-Durchlauf 15/15** (Entwicklungskonto aus `docker-compose.yml`, eigenes Projekt): Vorlagen und Standard
+  anlegen → wirksame Werte mit Herkunft → Leitung 8 500 + 700 + 1 700 = 10 900 speichern → Standard auf 25 % →
+  alte Basis `409 planning-defaults-changed`, nichts gespeichert, Leitung unverändert → neue Vorgabe 25 % gelesen →
+  Mengenübersicht getrennt → Projekt, Kunde und Vorlagen entfernt. Danach bleibt eine leere Betriebsstandard-Zeile
+  (alle Felder nicht gesetzt, Version 3) – sie wirkt wie „keine Vorgabe“.
+* **Nicht im Browser geprüft:** Die sichtbaren Editor- und Mengenänderungen sind nur automatisiert geprüft
+  (keine neue Oberfläche in V1).
+
+### 20.6 Offen
+
+* Oberfläche für Betriebsstandard, Kabelvorlagen, Gerätetypzuordnung und Projektvorgabe (L3).
+* Neuer Zeichenablauf und Abschlussdialog mit Vorbelegung nach `effective` (L2/L3); bis dahin legt der
+  bestehende Editor neue Leitungen mit fester Reserve und ohne Vorgabenherkunft an und verlangt ein Endgerät.
+* Persönliche Layoutabnahme L1 durch den Auftraggeber.
+* Zentrale Anwendung (6c.6), Verteilungsaufbau, Phase 7 – zurückgestellt.
 
 ## 16. Geänderte Dokumentation durch diesen Entwurf
 

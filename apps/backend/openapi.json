@@ -7049,7 +7049,7 @@
           "electrical"
         ],
         "summary": "Leitung anlegen",
-        "description": "Legt eine Leitung samt Wegpunkten an; neue Durchfuehrungen entstehen atomar mit ihr.\n\nEndgeraete: das Lagegeraet der Verteilung oder Geraete dieses Stromkreises, im\nGebaeude, nicht aussen montiert. Unvollstaendige Wege werden gespeichert\n(``incomplete``), unzulaessige Strecken nicht (``422 cable-route-invalid``).",
+        "description": "Legt eine Leitung samt Wegpunkten an; neue Durchfuehrungen entstehen atomar mit ihr.\n\nEndgeraete: das Lagegeraet der Verteilung oder Geraete dieses Stromkreises, im\nGebaeude, nicht aussen montiert. Unvollstaendige Wege werden gespeichert\n(``incomplete``), unzulaessige Strecken nicht (``422 cable-route-invalid``). Ohne\nEndgeraet: offene Planung (``incomplete``). Werte aus Vorgaben: ``409\nplanning-defaults-changed`` bei geaendertem Stand. ``assign_devices`` verlangt\nzusaetzlich ``electrical.circuit.write``.",
         "operationId": "createElectricalCable",
         "parameters": [
           {
@@ -7123,7 +7123,7 @@
           "electrical"
         ],
         "summary": "Leitung ersetzen",
-        "description": "Ersetzt die ganze Leitung samt Wegpunkten (``If-Match`` der Leitungsversion).\n\nBleiben Weg und Endgeraete unveraendert, blockiert ein bestehender Konflikt das\nAendern der Kabelangaben nicht; ein **neuer** Konflikt wird abgelehnt.",
+        "description": "Ersetzt die ganze Leitung samt Wegpunkten (``If-Match`` der Leitungsversion).\n\nBleiben Weg und Endgeraete unveraendert, blockiert ein bestehender Konflikt das\nAendern der Kabelangaben nicht; ein **neuer** Konflikt wird abgelehnt. Eine reine\nLeitungsaenderung aendert keine Geraetezuordnung (``assign_devices`` nur ausdruecklich).",
         "operationId": "replaceElectricalCable",
         "parameters": [
           {
@@ -7633,6 +7633,582 @@
         }
       }
     },
+    "/api/v1/modules/electrical/cable-templates": {
+      "get": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Kabelvorlagen des Betriebs",
+        "description": "Alle Kabelvorlagen (auch inaktive) - technische Angaben ohne Preis.",
+        "operationId": "listElectricalCableTemplates",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CableTemplateListOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Kabelvorlage anlegen",
+        "description": "Neue Kabelvorlage (``electrical.defaults.manage``); Name je Betrieb eindeutig.",
+        "operationId": "createElectricalCableTemplate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CableTemplateCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CableTemplateOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, Vorlage in Gebrauch oder Projekt schreibgeschuetzt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules/electrical/cable-templates/{template_id}": {
+      "patch": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Kabelvorlage aendern oder deaktivieren",
+        "description": "Aendert die Vorlage (``If-Match``). Bestehende Leitungen behalten ihre Angaben.",
+        "operationId": "updateElectricalCableTemplate",
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CableTemplateUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CableTemplateOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, Vorlage in Gebrauch oder Projekt schreibgeschuetzt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Ungenutzte Kabelvorlage loeschen",
+        "description": "Nur ungenutzt, sonst ``409 cable-template-in-use`` - dann deaktivieren.",
+        "operationId": "deleteElectricalCableTemplate",
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, Vorlage in Gebrauch oder Projekt schreibgeschuetzt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules/electrical/planning-defaults": {
+      "get": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Betriebsstandard der Planungsvorgaben",
+        "description": "Gespeicherte Werte; ``null`` = nicht gesetzt, Version ``0`` = nichts gespeichert.",
+        "operationId": "getElectricalPlanningDefaults",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanningDefaultsOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Betriebsstandard ersetzen",
+        "description": "Ersetzt den Betriebsstandard ganz (``expected_version``, ``0`` = Erstanlage).\n\nAendert **keine** Leitung und kein Projekt - auch nicht in abgeschlossenen oder\narchivierten Projekten. Offene Abschluesse sehen die Aenderung als ``409\nplanning-defaults-changed`` beim Speichern.",
+        "operationId": "replaceElectricalPlanningDefaults",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlanningDefaultsIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanningDefaultsOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, Vorlage in Gebrauch oder Projekt schreibgeschuetzt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules/electrical/projects/{project_id}/planning-defaults": {
+      "get": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Projektvorgabe",
+        "description": "Gespeicherte Projektwerte; ``null`` = Betriebsstandard uebernehmen.",
+        "operationId": "getElectricalProjectPlanningDefaults",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectPlanningDefaultsOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Projektvorgabe ersetzen",
+        "description": "Ersetzt die Projektvorgabe (``electrical.route.write``, ``expected_version``).\n\nWaehlt nur Betriebsvorlagen. ``409`` bei abgeschlossenem oder archiviertem Projekt.\nAendert keine bestehende Leitung.",
+        "operationId": "replaceElectricalProjectPlanningDefaults",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectPlanningDefaultsIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectPlanningDefaultsOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, Vorlage in Gebrauch oder Projekt schreibgeschuetzt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules/electrical/projects/{project_id}/planning-defaults/effective": {
+      "get": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Wirksame Planungsvorgaben eines Projekts",
+        "description": "Aufgeloeste Werte, Herkunft und Versionsbasis (``basis`` -> ``defaults_basis``).\n\nMit ``circuit_id`` (und optional Start-/Endgeraet) zusaetzlich ``for_cable``: genau\ndie Werte, die eine neue Leitung mit ``*_source = defaults`` erhielte. Lesend, ein\nkonsistenter Stand, auch fuer abgeschlossene und archivierte Projekte.",
+        "operationId": "getElectricalEffectivePlanningDefaults",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "circuit_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Circuit Id"
+            }
+          },
+          {
+            "name": "start_device_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start Device Id"
+            }
+          },
+          {
+            "name": "end_device_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EffectivePlanningDefaultsOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geraet nicht im Gebaeude des Stromkreises",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health/live": {
       "get": {
         "tags": [
@@ -8030,8 +8606,15 @@
             "title": "Start Device Id"
           },
           "end_device_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "End Device Id"
           },
           "cable_type": {
@@ -8096,6 +8679,106 @@
             "title": "Reserve Mm",
             "default": 0
           },
+          "reserve_mode": {
+            "type": "string",
+            "enum": [
+              "fixed",
+              "percent"
+            ],
+            "title": "Reserve Mode",
+            "default": "fixed"
+          },
+          "reserve_percent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(100(\\.0{1,2})?|[0-9]{1,2}(\\.[0-9]{1,2})?)$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reserve Percent",
+            "examples": [
+              "20"
+            ]
+          },
+          "spec_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "manual",
+                  "defaults"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spec Source"
+          },
+          "reserve_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "manual",
+                  "defaults"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reserve Source"
+          },
+          "allowance_source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "manual",
+                  "defaults"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowance Source"
+          },
+          "defaults_basis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DefaultsBasisIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "assign_devices": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 2,
+            "title": "Assign Devices"
+          },
+          "expected_circuit_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Circuit Version"
+          },
           "waypoints": {
             "items": {
               "oneOf": [
@@ -8142,11 +8825,8 @@
         },
         "additionalProperties": false,
         "type": "object",
-        "required": [
-          "end_device_id"
-        ],
         "title": "CableIn",
-        "description": "Leitung als Ganzes - anlegen (``POST /circuits/{id}/cables``) oder ersetzen (``PUT``).\n\nDie Kabelangaben stehen an der Leitung; der Stromkreisvorschlag wird nicht\nergaenzt. ``start_device_id`` ist leer nur bei einer Verteilung ohne Lage.\nZugaben und Reserve nur ausdruecklich (D5). ``waypoints`` ist die\nvollstaendige Liste in Leitungsrichtung."
+        "description": "Leitung als Ganzes - anlegen (``POST /circuits/{id}/cables``) oder ersetzen (``PUT``).\n\nDie Kabelangaben stehen an der Leitung. ``start_device_id`` ist leer nur bei einer\nVerteilung ohne Lage; ``end_device_id`` leer = bewusst offene Planung (\"Endgeraet\nfehlt\", ``incomplete``, Phase 6c V1). ``waypoints`` ist die vollstaendige Liste in\nLeitungsrichtung.\n\n**Herkunft je Wertegruppe** (ADR 0027): Kabelangaben (``spec_source``), Reserve\n(``reserve_source``), Anschlusszugaben (``allowance_source``). ``defaults``: Der Server\nloest die Vorgabenkette selbst auf, die gesendeten Werte muessen ihr entsprechen, und\n``defaults_basis`` muss dem aktuellen Stand gleichen - sonst ``409\nplanning-defaults-changed``, nichts gespeichert. ``manual``: ausdruecklich abweichend.\nFehlt die Angabe (bisherige Clients), gelten die Werte als ausdruecklich; eine\nunveraenderte Gruppe einer Bestandsleitung behaelt dabei ihre Herkunft ``legacy``.\n\n**Reserve:** ``fixed`` (``reserve_mm``, Bestand) oder ``percent``\n(``reserve_percent``, ``reserve_mm`` dann ``0``) - nie beides.\n\n``assign_devices``: Endgeraete dieser Leitung, die beim Speichern ausdruecklich diesem\nStromkreis zugeordnet werden (zusaetzlich ``electrical.circuit.write``,\n``expected_circuit_version``); nie umgehaengt, atomar mit der Leitung."
       },
       "CableListOut": {
         "properties": {
@@ -8207,8 +8887,15 @@
             "title": "Start Device Id"
           },
           "end_device_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "End Device Id"
           },
           "cable_type": {
@@ -8255,6 +8942,131 @@
           "reserve_mm": {
             "type": "integer",
             "title": "Reserve Mm"
+          },
+          "reserve_mode": {
+            "type": "string",
+            "enum": [
+              "fixed",
+              "percent"
+            ],
+            "title": "Reserve Mode"
+          },
+          "reserve_percent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reserve Percent"
+          },
+          "reserve_effective_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reserve Effective Mm"
+          },
+          "reserve_pending": {
+            "type": "boolean",
+            "title": "Reserve Pending"
+          },
+          "connection_allowance_mm": {
+            "type": "integer",
+            "title": "Connection Allowance Mm"
+          },
+          "spec_origin": {
+            "type": "string",
+            "enum": [
+              "legacy",
+              "manual",
+              "circuit_override",
+              "device_type_template",
+              "default_template",
+              "project_default",
+              "office_default",
+              "none"
+            ],
+            "title": "Spec Origin"
+          },
+          "reserve_origin": {
+            "type": "string",
+            "enum": [
+              "legacy",
+              "manual",
+              "circuit_override",
+              "device_type_template",
+              "default_template",
+              "project_default",
+              "office_default",
+              "none"
+            ],
+            "title": "Reserve Origin"
+          },
+          "allowance_origin": {
+            "type": "string",
+            "enum": [
+              "legacy",
+              "manual",
+              "circuit_override",
+              "device_type_template",
+              "default_template",
+              "project_default",
+              "office_default",
+              "none"
+            ],
+            "title": "Allowance Origin"
+          },
+          "cable_template_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cable Template Id"
+          },
+          "cable_template_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cable Template Version"
+          },
+          "defaults_office_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Defaults Office Version"
+          },
+          "defaults_project_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Defaults Project Version"
           },
           "waypoints": {
             "items": {
@@ -8357,6 +9169,18 @@
           "start_allowance_mm",
           "end_allowance_mm",
           "reserve_mm",
+          "reserve_mode",
+          "reserve_percent",
+          "reserve_effective_mm",
+          "reserve_pending",
+          "connection_allowance_mm",
+          "spec_origin",
+          "reserve_origin",
+          "allowance_origin",
+          "cable_template_id",
+          "cable_template_version",
+          "defaults_office_version",
+          "defaults_project_version",
           "waypoints",
           "status",
           "geometric_mm",
@@ -8374,7 +9198,7 @@
           "updated_at"
         ],
         "title": "CableOut",
-        "description": "Leitung samt Kabelangaben, Wegpunkten und berechnetem Weg (nie gespeichert).\n\n``length_mm`` nur bei ``status = confirmed``; sonst ist ``known_mm`` ausdruecklich\neine **Teilsumme** der gueltigen Teile plus Zugaben. ``deviates_from_proposal``:\ndie Kabelangaben weichen vom aktuellen Stromkreisvorschlag ab."
+        "description": "Leitung samt Kabelangaben, Wegpunkten und berechnetem Weg (nie gespeichert).\n\n``length_mm`` nur bei ``status = confirmed``; sonst ist ``known_mm`` ausdruecklich\neine **Teilsumme** der gueltigen Teile plus Zugaben. ``deviates_from_proposal``:\ndie Kabelangaben weichen vom aktuellen Stromkreisvorschlag ab. ``allowance_mm`` =\n``connection_allowance_mm`` + wirksame Reserve (ohne offene Prozentreserve)."
       },
       "CableProblemOut": {
         "properties": {
@@ -8483,6 +9307,228 @@
         ],
         "title": "CableSegmentOut",
         "description": "Teilstrecke - Laenge aus der reinen Funktion, Punkte nur fuer die Darstellung.\n\n``points``: Geschoss-x/y und absolute Hoehe ``z`` (gespeicherte Hoehenlage des\nGeschosses + lokale Hoehe), ganze mm. ``floor_id`` fehlt bei Steigweg und Schacht."
+      },
+      "CableTemplateCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "cable_type": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Cable Type"
+          },
+          "conductor_count": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Conductor Count"
+          },
+          "cross_section_mm2": {
+            "type": "string",
+            "pattern": "^[0-9]{1,4}(\\.[0-9]{1,2})?$",
+            "title": "Cross Section Mm2",
+            "examples": [
+              "1.5"
+            ]
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": true
+          },
+          "sort_order": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "cable_type",
+          "conductor_count",
+          "cross_section_mm2"
+        ],
+        "title": "CableTemplateCreate",
+        "description": "Neue Kabelvorlage des Betriebs - technische Angaben, **kein Preis**.\n\nDas Tripel ist vollstaendig (eine Vorlage liefert immer alle drei Werte)."
+      },
+      "CableTemplateListOut": {
+        "properties": {
+          "templates": {
+            "items": {
+              "$ref": "#/components/schemas/CableTemplateOut"
+            },
+            "type": "array",
+            "title": "Templates"
+          }
+        },
+        "type": "object",
+        "required": [
+          "templates"
+        ],
+        "title": "CableTemplateListOut",
+        "description": "Alle Kabelvorlagen des Betriebs nach Sortierung und Name (auch inaktive)."
+      },
+      "CableTemplateOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "cable_type": {
+            "type": "string",
+            "title": "Cable Type"
+          },
+          "conductor_count": {
+            "type": "integer",
+            "title": "Conductor Count"
+          },
+          "cross_section_mm2": {
+            "type": "string",
+            "title": "Cross Section Mm2"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order"
+          },
+          "in_use": {
+            "type": "boolean",
+            "title": "In Use"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "cable_type",
+          "conductor_count",
+          "cross_section_mm2",
+          "is_active",
+          "sort_order",
+          "in_use",
+          "version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CableTemplateOut"
+      },
+      "CableTemplateUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "cable_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cable Type"
+          },
+          "conductor_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conductor Count"
+          },
+          "cross_section_mm2": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{1,4}(\\.[0-9]{1,2})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cross Section Mm2",
+            "examples": [
+              "1.5",
+              "2.50"
+            ]
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 10000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CableTemplateUpdate",
+        "description": "Teilaenderung (``If-Match``). Deaktivieren statt Loeschen, wenn genutzt.\n\nEine Aenderung aendert **keine** bestehende Leitung - deren Angaben stehen an ihr."
       },
       "CableWaypointOut": {
         "properties": {
@@ -8670,6 +9716,18 @@
             "type": "integer",
             "title": "Allowance Mm"
           },
+          "connection_allowance_mm": {
+            "type": "integer",
+            "title": "Connection Allowance Mm"
+          },
+          "reserve_mm": {
+            "type": "integer",
+            "title": "Reserve Mm"
+          },
+          "reserve_pending_count": {
+            "type": "integer",
+            "title": "Reserve Pending Count"
+          },
           "total_mm": {
             "type": "integer",
             "title": "Total Mm"
@@ -8688,6 +9746,9 @@
           "count",
           "geometric_mm",
           "allowance_mm",
+          "connection_allowance_mm",
+          "reserve_mm",
+          "reserve_pending_count",
           "total_mm",
           "cable_ids"
         ],
@@ -8730,8 +9791,15 @@
             "title": "Start Device Id"
           },
           "end_device_id": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "End Device Id"
           },
           "cable_type": {
@@ -8796,6 +9864,86 @@
             "type": "integer",
             "title": "Allowance Mm"
           },
+          "connection_allowance_mm": {
+            "type": "integer",
+            "title": "Connection Allowance Mm"
+          },
+          "reserve_mode": {
+            "type": "string",
+            "enum": [
+              "fixed",
+              "percent"
+            ],
+            "title": "Reserve Mode"
+          },
+          "reserve_percent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reserve Percent"
+          },
+          "reserve_effective_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reserve Effective Mm"
+          },
+          "reserve_pending": {
+            "type": "boolean",
+            "title": "Reserve Pending"
+          },
+          "spec_origin": {
+            "type": "string",
+            "enum": [
+              "legacy",
+              "manual",
+              "circuit_override",
+              "device_type_template",
+              "default_template",
+              "project_default",
+              "office_default",
+              "none"
+            ],
+            "title": "Spec Origin"
+          },
+          "reserve_origin": {
+            "type": "string",
+            "enum": [
+              "legacy",
+              "manual",
+              "circuit_override",
+              "device_type_template",
+              "default_template",
+              "project_default",
+              "office_default",
+              "none"
+            ],
+            "title": "Reserve Origin"
+          },
+          "allowance_origin": {
+            "type": "string",
+            "enum": [
+              "legacy",
+              "manual",
+              "circuit_override",
+              "device_type_template",
+              "default_template",
+              "project_default",
+              "office_default",
+              "none"
+            ],
+            "title": "Allowance Origin"
+          },
           "length_mm": {
             "anyOf": [
               {
@@ -8833,6 +9981,14 @@
           "status",
           "geometric_mm",
           "allowance_mm",
+          "connection_allowance_mm",
+          "reserve_mode",
+          "reserve_percent",
+          "reserve_effective_mm",
+          "reserve_pending",
+          "spec_origin",
+          "reserve_origin",
+          "allowance_origin",
           "length_mm",
           "known_mm",
           "problem_codes"
@@ -9313,6 +10469,17 @@
             ],
             "title": "Note"
           },
+          "proposal_overrides_templates": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Overrides Templates"
+          },
           "designation": {
             "type": "string",
             "maxLength": 16,
@@ -9476,6 +10643,10 @@
             ],
             "title": "Note"
           },
+          "proposal_overrides_templates": {
+            "type": "boolean",
+            "title": "Proposal Overrides Templates"
+          },
           "device_ids": {
             "items": {
               "type": "string",
@@ -9513,6 +10684,7 @@
           "rcd_group",
           "phase_count",
           "note",
+          "proposal_overrides_templates",
           "device_ids",
           "version",
           "created_at",
@@ -9628,6 +10800,17 @@
               }
             ],
             "title": "Note"
+          },
+          "proposal_overrides_templates": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposal Overrides Templates"
           },
           "designation": {
             "anyOf": [
@@ -10263,6 +11446,117 @@
         "title": "CustomerUpdate",
         "description": "Teilaenderung. Nicht gesetzte Felder bleiben unveraendert.\n\nDie Kundennummer ist nicht aenderbar: Sie ist der Bezug bestehender\nBelege (docs/security.md, Abschnitt 13, Punkt 4)."
       },
+      "DefaultsBasisIn": {
+        "properties": {
+          "office_version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Office Version"
+          },
+          "project_version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Project Version"
+          },
+          "cable_template_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cable Template Id"
+          },
+          "cable_template_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cable Template Version"
+          },
+          "circuit_version": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Circuit Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "office_version",
+          "project_version"
+        ],
+        "title": "DefaultsBasisIn",
+        "description": "Stand der Vorgaben, den der Client gesehen hat (``effective``-Antwort, ADR 0027 Nr. 8).\n\n``0`` = zu dem Zeitpunkt keine Vorgabe gespeichert. ``cable_template_*`` nur, wenn die\nKabelangaben aus einer Vorlage stammen; ``circuit_version`` nur bei aktivierter\nStromkreisvorgabe."
+      },
+      "DefaultsBasisOut": {
+        "properties": {
+          "office_version": {
+            "type": "integer",
+            "title": "Office Version"
+          },
+          "project_version": {
+            "type": "integer",
+            "title": "Project Version"
+          },
+          "cable_template_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cable Template Id"
+          },
+          "cable_template_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cable Template Version"
+          },
+          "circuit_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Circuit Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "office_version",
+          "project_version"
+        ],
+        "title": "DefaultsBasisOut",
+        "description": "Stand der Vorgaben dieser Antwort - beim Speichern als ``defaults_basis`` mitsenden."
+      },
       "DeviceOut": {
         "properties": {
           "id": {
@@ -10467,6 +11761,47 @@
         ],
         "title": "DeviceTypeOut",
         "description": "Ein Geraetetyp des Systemkatalogs.\n\n``width_mm``/``height_mm`` sind das **Planungsmass** fuer die\nPlatzierungspruefung (an der Wand Breite x Hoehe, an der Decke in x und y)\n- keine Herstellerangabe. ``default_center_height_mm`` ist ein Startwert,\nkeine Normvorgabe. ``is_active = false``: nicht mehr fuer neue Geraete."
+      },
+      "DeviceTypeTemplateIn": {
+        "properties": {
+          "device_type_key": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Device Type Key"
+          },
+          "cable_template_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Cable Template Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device_type_key",
+          "cable_template_id"
+        ],
+        "title": "DeviceTypeTemplateIn"
+      },
+      "DeviceTypeTemplateOut": {
+        "properties": {
+          "device_type_key": {
+            "type": "string",
+            "title": "Device Type Key"
+          },
+          "cable_template_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Cable Template Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "device_type_key",
+          "cable_template_id"
+        ],
+        "title": "DeviceTypeTemplateOut"
       },
       "DirectoryEntryOut": {
         "properties": {
@@ -10784,6 +12119,212 @@
         "title": "DistributionBoardUpdate",
         "description": "Teilaenderung (``If-Match``). ``note`` und ``placement_device_id`` sind leerbar."
       },
+      "EffectiveAllowanceOut": {
+        "properties": {
+          "endpoint_kind": {
+            "type": "string",
+            "enum": [
+              "board",
+              "junction",
+              "device"
+            ],
+            "title": "Endpoint Kind"
+          },
+          "value_mm": {
+            "type": "integer",
+            "title": "Value Mm"
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "legacy",
+              "manual",
+              "circuit_override",
+              "device_type_template",
+              "default_template",
+              "project_default",
+              "office_default",
+              "none"
+            ],
+            "title": "Origin"
+          }
+        },
+        "type": "object",
+        "required": [
+          "endpoint_kind",
+          "value_mm",
+          "origin"
+        ],
+        "title": "EffectiveAllowanceOut"
+      },
+      "EffectiveCableAllowancesOut": {
+        "properties": {
+          "origin": {
+            "type": "string",
+            "enum": [
+              "legacy",
+              "manual",
+              "circuit_override",
+              "device_type_template",
+              "default_template",
+              "project_default",
+              "office_default",
+              "none"
+            ],
+            "title": "Origin"
+          },
+          "start_mm": {
+            "type": "integer",
+            "title": "Start Mm"
+          },
+          "end_mm": {
+            "type": "integer",
+            "title": "End Mm"
+          },
+          "start_origin": {
+            "type": "string",
+            "enum": [
+              "legacy",
+              "manual",
+              "circuit_override",
+              "device_type_template",
+              "default_template",
+              "project_default",
+              "office_default",
+              "none"
+            ],
+            "title": "Start Origin"
+          },
+          "end_origin": {
+            "type": "string",
+            "enum": [
+              "legacy",
+              "manual",
+              "circuit_override",
+              "device_type_template",
+              "default_template",
+              "project_default",
+              "office_default",
+              "none"
+            ],
+            "title": "End Origin"
+          }
+        },
+        "type": "object",
+        "required": [
+          "origin",
+          "start_mm",
+          "end_mm",
+          "start_origin",
+          "end_origin"
+        ],
+        "title": "EffectiveCableAllowancesOut"
+      },
+      "EffectiveForCableOut": {
+        "properties": {
+          "circuit_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Circuit Id"
+          },
+          "start_device_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Device Id"
+          },
+          "end_device_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Device Id"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/EffectiveSpecOut"
+          },
+          "reserve": {
+            "$ref": "#/components/schemas/EffectiveReserveOut"
+          },
+          "allowances": {
+            "$ref": "#/components/schemas/EffectiveCableAllowancesOut"
+          },
+          "hints": {
+            "items": {
+              "$ref": "#/components/schemas/EffectiveHintOut"
+            },
+            "type": "array",
+            "title": "Hints"
+          },
+          "basis": {
+            "$ref": "#/components/schemas/DefaultsBasisOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "circuit_id",
+          "start_device_id",
+          "end_device_id",
+          "spec",
+          "reserve",
+          "allowances",
+          "hints",
+          "basis"
+        ],
+        "title": "EffectiveForCableOut",
+        "description": "Vorbelegung fuer eine konkrete neue Leitung - genau das, was der Server mit\n``*_source = defaults`` speichern wuerde."
+      },
+      "EffectiveHintOut": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "template_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Id"
+          },
+          "device_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "template_id",
+          "device_id"
+        ],
+        "title": "EffectiveHintOut",
+        "description": "Hinweis, nie eine stille Entscheidung: ``template-inactive``,\n``start-template-differs``, ``circuit-proposal-not-activated``,\n``circuit-override-incomplete``."
+      },
       "EffectivePermissionOut": {
         "properties": {
           "key": {
@@ -10814,6 +12355,243 @@
           "granted_by"
         ],
         "title": "EffectivePermissionOut"
+      },
+      "EffectivePlanningDefaultsOut": {
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          },
+          "project_status": {
+            "type": "string",
+            "title": "Project Status"
+          },
+          "basis": {
+            "$ref": "#/components/schemas/DefaultsBasisOut"
+          },
+          "reserve": {
+            "$ref": "#/components/schemas/EffectiveReserveOut"
+          },
+          "allowances": {
+            "items": {
+              "$ref": "#/components/schemas/EffectiveAllowanceOut"
+            },
+            "type": "array",
+            "title": "Allowances"
+          },
+          "default_template": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EffectiveTemplateChoiceOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "device_type_templates": {
+            "items": {
+              "$ref": "#/components/schemas/EffectiveTemplateChoiceOut"
+            },
+            "type": "array",
+            "title": "Device Type Templates"
+          },
+          "templates": {
+            "items": {
+              "$ref": "#/components/schemas/CableTemplateOut"
+            },
+            "type": "array",
+            "title": "Templates"
+          },
+          "for_cable": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EffectiveForCableOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_id",
+          "project_status",
+          "basis",
+          "reserve",
+          "allowances",
+          "default_template",
+          "device_type_templates",
+          "templates",
+          "for_cable"
+        ],
+        "title": "EffectivePlanningDefaultsOut",
+        "description": "Wirksame Vorgaben eines Projekts (aufgeloeste Werte, Herkunft, Versionsbasis).\n\nEin konsistenter Stand je Antwort (geteilte Projekt- und Vorgabensperre). ``basis`` ist\nbeim Speichern einer Leitung mit ``*_source = defaults`` als ``defaults_basis`` zu\nsenden; ``for_cable`` nur mit ``circuit_id`` (optional Start-/Endgeraet)."
+      },
+      "EffectiveReserveOut": {
+        "properties": {
+          "percent": {
+            "type": "string",
+            "title": "Percent"
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "legacy",
+              "manual",
+              "circuit_override",
+              "device_type_template",
+              "default_template",
+              "project_default",
+              "office_default",
+              "none"
+            ],
+            "title": "Origin"
+          }
+        },
+        "type": "object",
+        "required": [
+          "percent",
+          "origin"
+        ],
+        "title": "EffectiveReserveOut"
+      },
+      "EffectiveSpecOut": {
+        "properties": {
+          "origin": {
+            "type": "string",
+            "enum": [
+              "legacy",
+              "manual",
+              "circuit_override",
+              "device_type_template",
+              "default_template",
+              "project_default",
+              "office_default",
+              "none"
+            ],
+            "title": "Origin"
+          },
+          "cable_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cable Type"
+          },
+          "conductor_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conductor Count"
+          },
+          "cross_section_mm2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cross Section Mm2"
+          },
+          "cable_template_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cable Template Id"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "project",
+                  "office"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          },
+          "deciding_device_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deciding Device Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "origin",
+          "cable_type",
+          "conductor_count",
+          "cross_section_mm2",
+          "cable_template_id",
+          "level",
+          "deciding_device_id"
+        ],
+        "title": "EffectiveSpecOut"
+      },
+      "EffectiveTemplateChoiceOut": {
+        "properties": {
+          "device_type_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Type Key"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "project",
+              "office"
+            ],
+            "title": "Level"
+          },
+          "template": {
+            "$ref": "#/components/schemas/CableTemplateOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "device_type_key",
+          "level",
+          "template"
+        ],
+        "title": "EffectiveTemplateChoiceOut",
+        "description": "Vorlagenwahl einer Ebene: Projekt vor Betrieb; ``template`` inklusive Aktivstatus."
       },
       "FileDownloadUrl": {
         "properties": {
@@ -12611,6 +14389,199 @@
         ],
         "title": "PermissionInfo"
       },
+      "PlanningDefaultsIn": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Expected Version"
+          },
+          "reserve_percent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(100(\\.0{1,2})?|[0-9]{1,2}(\\.[0-9]{1,2})?)$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reserve Percent",
+            "examples": [
+              "20",
+              null
+            ]
+          },
+          "board_allowance_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 20000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Board Allowance Mm"
+          },
+          "junction_allowance_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 20000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Junction Allowance Mm"
+          },
+          "device_allowance_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 20000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Allowance Mm"
+          },
+          "default_cable_template_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Cable Template Id"
+          },
+          "device_type_templates": {
+            "items": {
+              "$ref": "#/components/schemas/DeviceTypeTemplateIn"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Device Type Templates"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version",
+          "reserve_percent",
+          "board_allowance_mm",
+          "junction_allowance_mm",
+          "device_allowance_mm",
+          "default_cable_template_id",
+          "device_type_templates"
+        ],
+        "title": "PlanningDefaultsIn",
+        "description": "Betriebsstandard ersetzen (``electrical.defaults.manage``)."
+      },
+      "PlanningDefaultsOut": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "reserve_percent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reserve Percent"
+          },
+          "board_allowance_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Board Allowance Mm"
+          },
+          "junction_allowance_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Junction Allowance Mm"
+          },
+          "device_allowance_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Allowance Mm"
+          },
+          "default_cable_template_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Cable Template Id"
+          },
+          "device_type_templates": {
+            "items": {
+              "$ref": "#/components/schemas/DeviceTypeTemplateOut"
+            },
+            "type": "array",
+            "title": "Device Type Templates"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "reserve_percent",
+          "board_allowance_mm",
+          "junction_allowance_mm",
+          "device_allowance_mm",
+          "default_cable_template_id",
+          "device_type_templates",
+          "updated_at"
+        ],
+        "title": "PlanningDefaultsOut",
+        "description": "Betriebsstandard - gespeicherte Werte, ``null`` = nicht gesetzt."
+      },
       "PositionOut": {
         "properties": {
           "whole": {
@@ -13159,6 +15130,205 @@
           "updated_by"
         ],
         "title": "ProjectOut"
+      },
+      "ProjectPlanningDefaultsIn": {
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Expected Version"
+          },
+          "reserve_percent": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(100(\\.0{1,2})?|[0-9]{1,2}(\\.[0-9]{1,2})?)$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reserve Percent",
+            "examples": [
+              "20",
+              null
+            ]
+          },
+          "board_allowance_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 20000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Board Allowance Mm"
+          },
+          "junction_allowance_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 20000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Junction Allowance Mm"
+          },
+          "device_allowance_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 20000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Allowance Mm"
+          },
+          "default_cable_template_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Cable Template Id"
+          },
+          "device_type_templates": {
+            "items": {
+              "$ref": "#/components/schemas/DeviceTypeTemplateIn"
+            },
+            "type": "array",
+            "maxItems": 200,
+            "title": "Device Type Templates"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_version",
+          "reserve_percent",
+          "board_allowance_mm",
+          "junction_allowance_mm",
+          "device_allowance_mm",
+          "default_cable_template_id",
+          "device_type_templates"
+        ],
+        "title": "ProjectPlanningDefaultsIn",
+        "description": "Projektvorgabe ersetzen (``electrical.route.write``) - waehlt nur Betriebsvorlagen."
+      },
+      "ProjectPlanningDefaultsOut": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "reserve_percent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reserve Percent"
+          },
+          "board_allowance_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Board Allowance Mm"
+          },
+          "junction_allowance_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Junction Allowance Mm"
+          },
+          "device_allowance_mm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Allowance Mm"
+          },
+          "default_cable_template_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Cable Template Id"
+          },
+          "device_type_templates": {
+            "items": {
+              "$ref": "#/components/schemas/DeviceTypeTemplateOut"
+            },
+            "type": "array",
+            "title": "Device Type Templates"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Project Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "reserve_percent",
+          "board_allowance_mm",
+          "junction_allowance_mm",
+          "device_allowance_mm",
+          "default_cable_template_id",
+          "device_type_templates",
+          "updated_at",
+          "project_id"
+        ],
+        "title": "ProjectPlanningDefaultsOut",
+        "description": "Projektvorgabe - gespeicherte Werte, ``null`` = Betriebsstandard uebernehmen."
       },
       "ProjectSummary": {
         "properties": {

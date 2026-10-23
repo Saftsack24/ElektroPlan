@@ -1042,6 +1042,238 @@
           }
         }
       }
+    },
+    {
+      "name": "V1 Prozentreserve (ADR 0027): L1 wie §6.4 mit 20 % -> Reserve 1 700, Zugaben 700, gesamt 10 900; offener Weg -> keine Prozentreserve, keine Gesamtlaenge; ohne Endgeraet -> offene Planung",
+      "plan": "diele-kueche",
+      "leitungen": [
+        {
+          "id": "L1-prozent",
+          "start": "uv1",
+          "ende": "sd1",
+          "zugaben": [
+            500,
+            200,
+            0
+          ],
+          "kabel": [
+            "NYM-J",
+            3,
+            "1.5"
+          ],
+          "wegpunkte": [
+            [
+              "wand",
+              "diele.sued",
+              500,
+              2200
+            ],
+            [
+              "wand",
+              "diele.sued",
+              4200,
+              2200
+            ],
+            [
+              "wand",
+              "diele.ost",
+              0,
+              2200
+            ],
+            [
+              "durchfuehrung",
+              "d1"
+            ]
+          ],
+          "reserve_prozent": "20"
+        },
+        {
+          "id": "L1-prozent-offen",
+          "start": "uv1",
+          "ende": "sd1",
+          "zugaben": [
+            500,
+            200,
+            0
+          ],
+          "kabel": [
+            "NYM-J",
+            3,
+            "1.5"
+          ],
+          "wegpunkte": [
+            [
+              "wand",
+              "diele.sued",
+              500,
+              2200
+            ],
+            [
+              "wand",
+              "diele.sued",
+              4200,
+              2200
+            ]
+          ],
+          "reserve_prozent": "20"
+        },
+        {
+          "id": "ohne-ende",
+          "start": "uv1",
+          "ende": null,
+          "zugaben": [
+            500,
+            0,
+            0
+          ],
+          "reserve_prozent": "12.5",
+          "kabel": [
+            "NYM-J",
+            3,
+            "1.5"
+          ],
+          "wegpunkte": [
+            [
+              "wand",
+              "diele.sued",
+              500,
+              2200
+            ],
+            [
+              "wand",
+              "diele.sued",
+              4200,
+              2200
+            ]
+          ]
+        }
+      ],
+      "erwartet": {
+        "leitungen": {
+          "L1-prozent": {
+            "status": "confirmed",
+            "geometrisch": 8500,
+            "zugaben": 2400,
+            "anschlusszugaben": 700,
+            "reserve": 1700,
+            "reserve_offen": false,
+            "laenge": 10900,
+            "bekannt": 10900,
+            "spezifiziert": true,
+            "strecken": [
+              [
+                "connection",
+                "start",
+                800,
+                800
+              ],
+              [
+                "wall",
+                "w0-w1",
+                3700,
+                3700
+              ],
+              [
+                "corner",
+                "w1-w2",
+                0,
+                0
+              ],
+              [
+                "wall",
+                "w2-w3",
+                2100,
+                2100
+              ],
+              [
+                "penetration",
+                "w3",
+                0,
+                0
+              ],
+              [
+                "connection",
+                "end",
+                1900,
+                1900
+              ]
+            ],
+            "befunde": [],
+            "durchfuehrungen": [
+              "d1"
+            ],
+            "bodenuebergaenge": 0
+          },
+          "L1-prozent-offen": {
+            "status": "incomplete",
+            "geometrisch": 4500,
+            "zugaben": 700,
+            "anschlusszugaben": 700,
+            "reserve": null,
+            "reserve_offen": true,
+            "laenge": null,
+            "bekannt": 5200,
+            "spezifiziert": true,
+            "strecken": [
+              [
+                "connection",
+                "start",
+                800,
+                800
+              ],
+              [
+                "wall",
+                "w0-w1",
+                3700,
+                3700
+              ]
+            ],
+            "befunde": [
+              [
+                "route-not-reaching-end",
+                "missing",
+                "end"
+              ]
+            ],
+            "durchfuehrungen": [],
+            "bodenuebergaenge": 0
+          },
+          "ohne-ende": {
+            "status": "incomplete",
+            "geometrisch": 4500,
+            "zugaben": 500,
+            "anschlusszugaben": 500,
+            "reserve": null,
+            "reserve_offen": true,
+            "laenge": null,
+            "bekannt": 5000,
+            "spezifiziert": true,
+            "strecken": [
+              [
+                "connection",
+                "start",
+                800,
+                800
+              ],
+              [
+                "wall",
+                "w0-w1",
+                3700,
+                3700
+              ]
+            ],
+            "befunde": [
+              [
+                "end-device-missing",
+                "missing",
+                "end"
+              ]
+            ],
+            "durchfuehrungen": [],
+            "bodenuebergaenge": 0
+          }
+        }
+      }
     }
   ],
   "gegenlagen": [
@@ -1105,5 +1337,67 @@
     { "lage": [5, 0], "m": 7, "erwartet": 5 },
     { "lage": [0, 3], "m": 25, "erwartet": 15 },
     { "lage": [0, 1000000], "m": 2, "erwartet": 1414214 }
+  ],
+  "reserve": [
+    {
+      "geometrisch": 8500,
+      "prozent": "20",
+      "erwartet": 1700
+    },
+    {
+      "geometrisch": 8333,
+      "prozent": "20",
+      "erwartet": 1667
+    },
+    {
+      "geometrisch": 4001,
+      "prozent": "12.5",
+      "erwartet": 501
+    },
+    {
+      "geometrisch": 4000,
+      "prozent": "12.5",
+      "erwartet": 500
+    },
+    {
+      "geometrisch": 8500,
+      "prozent": "0",
+      "erwartet": 0
+    },
+    {
+      "geometrisch": 8500,
+      "prozent": "0.00",
+      "erwartet": 0
+    },
+    {
+      "geometrisch": 8500,
+      "prozent": "100",
+      "erwartet": 8500
+    },
+    {
+      "geometrisch": 1,
+      "prozent": "0.01",
+      "erwartet": 1
+    },
+    {
+      "geometrisch": 0,
+      "prozent": "50",
+      "erwartet": 0
+    },
+    {
+      "geometrisch": 3,
+      "prozent": "33.33",
+      "erwartet": 1
+    },
+    {
+      "geometrisch": 9999,
+      "prozent": "99.99",
+      "erwartet": 9999
+    },
+    {
+      "geometrisch": 123456,
+      "prozent": "7.77",
+      "erwartet": 9593
+    }
   ]
 }

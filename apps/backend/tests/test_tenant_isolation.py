@@ -12,6 +12,7 @@ import re
 import uuid
 from dataclasses import dataclass
 from datetime import timedelta
+from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
@@ -33,6 +34,7 @@ from app.core.users.models import User
 from app.db.mixins import utcnow
 from app.modules.electrical.models import (
     ElectricalCable,
+    ElectricalCableTemplate,
     ElectricalCableWaypoint,
     ElectricalCircuit,
     ElectricalCircuitDevice,
@@ -83,6 +85,8 @@ class Tenant:
     #: Durchfuehrung auf der Kopplung und Leitung des Stromkreises (Phase 6b.3).
     penetration_id: uuid.UUID
     cable_id: uuid.UUID
+    #: Technische Kabelvorlage des Betriebs (Phase 6c V1; synthetisch).
+    template_id: uuid.UUID
     #: Benutzerverwaltung (Phase 4.2): ein weiteres Mitglied und eine offene
     #: Einladung je Betrieb.
     member_id: uuid.UUID
@@ -313,6 +317,14 @@ def two_tenants(
                 expires_at=utcnow() + timedelta(days=1),
             )
             session.add(einladung)
+            vorlage = ElectricalCableTemplate(
+                organization_id=result.organization_id,
+                name="Testvorlage",
+                cable_type="TEST-K",
+                conductor_count=3,
+                cross_section_mm2=Decimal("1.5"),
+            )
+            session.add(vorlage)
             session.flush()
             tenants.append(
                 Tenant(
@@ -338,6 +350,7 @@ def two_tenants(
                     socket_id=steckdose.id,
                     penetration_id=durchfuehrung.id,
                     cable_id=leitung.id,
+                    template_id=vorlage.id,
                     member_id=mitglied.id,
                     invitation_id=einladung.id,
                 )
@@ -447,6 +460,7 @@ def fremde_ids(tenant: Tenant) -> dict[str, str]:
         "circuit_id": str(tenant.circuit_id),
         "cable_id": str(tenant.cable_id),
         "penetration_id": str(tenant.penetration_id),
+        "template_id": str(tenant.template_id),
         "member_id": str(tenant.member_id),
         "invitation_id": str(tenant.invitation_id),
     }

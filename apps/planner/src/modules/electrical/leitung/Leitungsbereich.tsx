@@ -93,12 +93,15 @@ export function Laengenangabe({
   zugabenMm,
   laengeMm,
   bekanntMm,
+  reserveOffen = false,
 }: {
   status: string;
   geometrischMm: number;
   zugabenMm: number;
   laengeMm: number | null;
   bekanntMm: number;
+  /** Prozentreserve noch nicht berechenbar (Phase 6c V1) - nie als 0 ausgeben. */
+  reserveOffen?: boolean;
 }) {
   const masse = useMasse();
   const s = STATUS[status] ?? { text: status, art: "neutral" as const };
@@ -115,6 +118,7 @@ export function Laengenangabe({
       <p className="m-0 text-muted">
         Weg (geometrisch) {masse.anzeigen(geometrischMm)} · Zugaben {masse.anzeigen(zugabenMm)}
         {laengeMm !== null ? ` · zusammen ${masse.anzeigen(laengeMm)}` : ""}
+        {reserveOffen ? " · Prozentreserve erst mit vollständigem Weg" : ""}
       </p>
     </div>
   );
@@ -347,6 +351,7 @@ function Leitungsliste({
                 zugabenMm={auswahl.allowance_mm}
                 laengeMm={auswahl.length_mm}
                 bekanntMm={auswahl.known_mm}
+                reserveOffen={auswahl.reserve_pending}
               />
               <Befundliste befunde={auswahl.problems.map((b) => ({ code: b.code, ort: b.ref }))} />
               {p.unlesbar(auswahl) && (
@@ -579,7 +584,17 @@ function Entwurfsfeld({
         <legend className="px-1 text-label text-muted">Zugaben (ausdrücklich je Leitung)</legend>
         <MassFeld id="leitung-zugabe-start" label="Zugabe am Start" wertMm={w.startzugabeMm} gesperrt={!darf} onUebernehmen={(mm) => zugabe(mm, (v) => aendern({ ...w, startzugabeMm: v }))} />
         <MassFeld id="leitung-zugabe-ende" label="Zugabe am Ende" wertMm={w.endzugabeMm} gesperrt={!darf} onUebernehmen={(mm) => zugabe(mm, (v) => aendern({ ...w, endzugabeMm: v }))} />
-        <MassFeld id="leitung-reserve" label="Reserve" wertMm={w.reserveMm} gesperrt={!darf} onUebernehmen={(mm) => zugabe(mm, (v) => aendern({ ...w, reserveMm: v }))} />
+        {w.reserveProzent === null ? (
+          <MassFeld id="leitung-reserve" label="Reserve" wertMm={w.reserveMm} gesperrt={!darf} onUebernehmen={(mm) => zugabe(mm, (v) => aendern({ ...w, reserveMm: v }))} />
+        ) : (
+          // Prozentreserve (Phase 6c V1): bleibt erhalten; eine feste Reserve ersetzt sie nur ausdrücklich.
+          <p className="m-0 flex flex-wrap items-center gap-1.5" data-testid="leitung-reserve-prozent">
+            Reserve {w.reserveProzent.replace(".", ",")} % der geometrischen Länge
+            <button type="button" className={knopf("einfach", { klein: true })} disabled={!darf} onClick={() => aendern({ ...w, reserveProzent: null, reserveMm: 0 })}>
+              Feste Reserve eingeben
+            </button>
+          </p>
+        )}
       </fieldset>
 
       <div>
@@ -632,6 +647,7 @@ function Entwurfsfeld({
             zugabenMm={ergebnis.zugabenMm}
             laengeMm={ergebnis.laengeMm}
             bekanntMm={ergebnis.bekanntMm}
+            reserveOffen={ergebnis.reserveOffen}
           />
           <Befundliste befunde={ergebnis.befunde} />
         </div>

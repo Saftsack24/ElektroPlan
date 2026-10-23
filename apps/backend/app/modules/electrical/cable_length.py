@@ -8,6 +8,9 @@ Kopplungen, Geraete, Durchfuehrungen, Steigwege) und einer Leitung
 * die Folge der Teilstrecken mit ihren Laengen,
 * die geometrische Summe, die Zugaben, der Status und - nur bei
   ``confirmed`` - die Leitungslaenge,
+* die Leitungsreserve (Phase 6c, V1, ADR 0027): fest in mm (``fixed``, Bestand)
+  oder in Prozent der geometrischen Laenge (``percent``) - getrennt von den
+  Anschlusszugaben ausgewiesen,
 * die Befunde mit Code und Ort.
 
 :func:`derive_traces` leitet daraus die gemeinsamen Trassen ab (Trassenmeter
@@ -64,6 +67,14 @@ heisst dann ausdruecklich Teilsumme.
 Fussbodenstrecken, ``direct``-Steigwegversaetze und Wandstrecken zu einer
 irrationalen Gegenlage je Strecke **einmal** kaufmaennisch gerundet, danach nur
 ganzzahlige Summen. Keine Fliesskommazahl.
+
+**Reserve** (ADR 0027 Nr. 5, Entwurf §8.7): ``fixed`` zaehlt ``reserve_mm`` wie
+bisher - unabhaengig vom Status. ``percent`` rechnet ``r = ceil(g * p / 100)`` auf
+ganze Millimeter **aufgerundet**, ganzzahlig ueber ``P = p * 100``
+(:func:`percent_reserve_mm`), und **nur** bei ``confirmed``: Ein offener oder
+konflikthafter Weg hat keine scheinbar vollstaendige Prozentreserve
+(``reserve_mm = None``, ``reserve_pending``). Prozent nie auf Zugaben, nie auf eine
+feste Reserve. Die Reserve wird nie gespeichert, nur der Prozentsatz.
 
 Keine elektrotechnische Bemessung, keine Normaussage, kein Material, kein
 Preis (docs/security.md, Abschnitt 17).
@@ -257,6 +268,32 @@ class Cable:
     cable_type: str | None = None
     conductor_count: int | None = None
     cross_section_mm2: Decimal | None = None
+    #: ``fixed`` (``reserve_mm``) oder ``percent`` (``reserve_percent``, 0-100, zwei Stellen).
+    reserve_mode: str = "fixed"
+    reserve_percent: Decimal | None = None
+
+
+#: Reservearten (ADR 0027) - dieselben Schluessel wie Datenbank und API.
+RESERVE_FIXED = "fixed"
+RESERVE_PERCENT = "percent"
+RESERVE_MODES: tuple[str, ...] = (RESERVE_FIXED, RESERVE_PERCENT)
+
+
+def percent_reserve_mm(geometric_mm: int, percent: Decimal) -> int:
+    """Prozentreserve auf die geometrische Laenge, auf ganze mm **aufgerundet** (F2).
+
+    Ganzzahlig, ohne Gleitkomma: ``P = p * 100`` muss eine ganze Zahl sein (hoechstens
+    zwei Nachkommastellen), ``r = (g * P + 9 999) // 10 000``. 8 500 / 20 -> 1 700,
+    8 333 / 20 -> 1 667, 4 001 / 12,5 -> 501, 0 % -> 0, 100 % -> g.
+    """
+    if geometric_mm < 0:
+        msg = "Die geometrische Laenge ist nie negativ."
+        raise ValueError(msg)
+    scaled = percent * 100
+    if scaled != scaled.to_integral_value() or not Decimal(0) <= percent <= Decimal(100):
+        msg = "Prozentsatz 0 bis 100 mit hoechstens zwei Nachkommastellen."
+        raise ValueError(msg)
+    return (geometric_mm * int(scaled) + 9_999) // 10_000
 
 
 # ------------------------------------------------------------------ Ergebnis
@@ -293,6 +330,7 @@ class SegmentKind(StrEnum):
 PROBLEM_TEXT: dict[str, str] = {
     "start-not-placed": "Die Leitung hat keinen platzierten Startpunkt.",
     "end-not-placed": "Die Leitung hat keinen platzierten Endpunkt.",
+    "end-device-missing": "Die Leitung hat noch kein Endgeraet (offene Planung).",
     "endpoint-unknown": "Das Endgeraet ist nicht bekannt.",
     "endpoint-exterior": "Aussen montierte Geraete werden in 6b nicht angeschlossen.",
     "endpoint-surface-unknown": "Die Montageflaeche des Endgeraets ist nicht bekannt.",
@@ -438,7 +476,8 @@ class CableResult:
     segments: tuple[CableSegment, ...]
     #: Summe der bekannten, gueltigen Teilstrecken.
     geometric_mm: int
-    #: Start- und Endzugabe und Reserve - nur aus der Leitung (D5).
+    #: Alle Zusaetze: Anschlusszugaben + wirksame Reserve (bei offener Prozentreserve nur
+    #: die Zugaben). Bedeutung unveraendert seit 6b (ADR 0027 §8.8).
     allowance_mm: int
     status: CableStatus
     #: Nur bei ``confirmed``: geometrisch + Zugaben.
@@ -450,6 +489,12 @@ class CableResult:
     #: Genutzte Durchfuehrungen in Wegreihenfolge, je einmal.
     penetration_ids: tuple[str, ...]
     opening_crossings: int
+    #: Start- und Endzugabe (fest, mm) - getrennt von der Reserve (V1).
+    connection_allowance_mm: int = 0
+    #: Wirksame Reserve in mm; ``None``, solange eine Prozentreserve nicht berechenbar ist.
+    reserve_mm: int | None = 0
+    #: Prozentreserve wartet auf einen bestaetigten Weg (nie bei ``fixed``).
+    reserve_pending: bool = False
 
 
 # ------------------------------------------------------------------ Rundung
@@ -859,7 +904,9 @@ class _Walk:
 
     def device_loc(self, device_id: str | None, ref: str) -> _Loc | None:
         if device_id is None:
-            self.missing(f"{ref}-not-placed", ref)
+            # Start fehlt nur bei einer Verteilung ohne Lage; ein fehlendes Endgeraet ist
+            # eine bewusst offene Planung (V1, ADR 0027 Nr. 9) - beides ``missing``.
+            self.missing("end-device-missing" if ref == "end" else f"{ref}-not-placed", ref)
             return None
         device = self.p.devices.get(device_id)
         if device is None:
@@ -1362,7 +1409,6 @@ def analyse_cable(prepared: PreparedPlan, cable: Cable) -> CableResult:
             walk.connect(end, last_exit, "end", at_start=False)
 
     geometric = sum(segment.known_mm for segment in walk.segments)
-    allowance = cable.start_allowance_mm + cable.end_allowance_mm + cable.reserve_mm
     problems = tuple(walk.problems)
     if any(p.kind is ProblemKind.CONFLICT for p in problems):
         status = CableStatus.CONFLICT
@@ -1370,6 +1416,20 @@ def analyse_cable(prepared: PreparedPlan, cable: Cable) -> CableResult:
         status = CableStatus.INCOMPLETE
     else:
         status = CableStatus.CONFIRMED
+    connection = cable.start_allowance_mm + cable.end_allowance_mm
+    reserve: int | None
+    if cable.reserve_mode == RESERVE_PERCENT:
+        if cable.reserve_percent is None:
+            msg = "Prozentreserve ohne Prozentsatz."
+            raise ValueError(msg)
+        reserve = (
+            percent_reserve_mm(geometric, cable.reserve_percent)
+            if status is CableStatus.CONFIRMED
+            else None
+        )
+    else:
+        reserve = cable.reserve_mm
+    allowance = connection + (reserve or 0)
     penetrations: list[str] = []
     for segment in walk.segments:
         if segment.kind is SegmentKind.PENETRATION and segment.owner_id not in penetrations:
@@ -1392,6 +1452,9 @@ def analyse_cable(prepared: PreparedPlan, cable: Cable) -> CableResult:
         opening_crossings=sum(
             1 for segment in walk.segments if segment.kind is SegmentKind.OPENING_CROSSING
         ),
+        connection_allowance_mm=connection,
+        reserve_mm=reserve,
+        reserve_pending=reserve is None,
     )
 
 
@@ -1520,6 +1583,9 @@ def analyse_cables(plan: CablePlan, cables: Iterable[Cable]) -> list[CableResult
 
 __all__ = [
     "PROBLEM_TEXT",
+    "RESERVE_FIXED",
+    "RESERVE_MODES",
+    "RESERVE_PERCENT",
     "AreaRun",
     "AreaWaypoint",
     "Cable",
@@ -1548,6 +1614,7 @@ __all__ = [
     "analyse_cable",
     "analyse_cables",
     "penetration_problem",
+    "percent_reserve_mm",
     "prepare_plan",
     "rounded_position",
     "run_points",

@@ -65,6 +65,20 @@ class FloorPlanningContext:
 
 
 @dataclass(frozen=True, slots=True)
+class ProjectPlanningContext:
+    """Was ein Fachmodul ueber ein Projekt wissen darf (Phase 6c, ADR 0027).
+
+    Fuer projektbezogene Planungsdaten ohne Gebaeudebezug (etwa Planungsvorgaben eines
+    Fachmoduls). Bewusst flach: Kennung, Nummer und Status - kein ORM-Objekt.
+    """
+
+    organization_id: uuid.UUID
+    project_id: uuid.UUID
+    project_number: str
+    project_status: str
+
+
+@dataclass(frozen=True, slots=True)
 class BuildingPlanningContext:
     """Was ein Fachmodul ueber ein Gebaeude wissen darf (Phase 6a.4, ADR 0025).
 
@@ -216,6 +230,37 @@ class FloorPlanningAccess:
         for floor in self._projects.list_floors(building.id):
             self._projects.session.refresh(floor)
         return self.building_context(building_id)
+
+    def project_context(self, project_id: uuid.UUID) -> ProjectPlanningContext:
+        """Loest ein Projekt auf, **ohne** zu sperren. Fremd oder unbekannt: ``404``."""
+        project = self._projects.get(project_id)
+        return ProjectPlanningContext(
+            organization_id=self._organization_id,
+            project_id=project.id,
+            project_number=project.project_number,
+            project_status=project.status,
+        )
+
+    def consistent_project_context(self, project_id: uuid.UUID) -> ProjectPlanningContext:
+        """Wie :meth:`project_context`, haelt aber eine **geteilte** Projektsperre.
+
+        Ein Planungsstand je Antwort: Bis zum Ende der Transaktion committet kein
+        Schreibvorgang unter diesem Projekt. Kein Schreibschutz - auch abgeschlossene und
+        archivierte Projekte bleiben lesbar.
+        """
+        self._projects.lock_project_for_reading(project_id)
+        return self.project_context(project_id)
+
+    def writable_project_context(self, project_id: uuid.UUID) -> ProjectPlanningContext:
+        """Wie :meth:`project_context`, **sperrt** aber zuerst die Projektzeile.
+
+        Fuer projektbezogene Planungsdaten ohne Gebaeude (B12). Dieselbe Zusage und
+        dieselben Antworten wie :meth:`writable_building_context`: ``409
+        project-archived`` bzw. ``project-completed``; die Reihenfolge ist **Projekt
+        zuerst**.
+        """
+        self._projects.lock_writable(project_id)
+        return self.project_context(project_id)
 
     def building_ids_of_project(self, project_id: uuid.UUID) -> tuple[uuid.UUID, ...]:
         """Alle Gebaeude eines Projekts dieses Mandanten - fuer das Loeschprotokoll.

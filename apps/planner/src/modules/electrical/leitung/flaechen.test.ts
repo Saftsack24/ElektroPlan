@@ -26,7 +26,7 @@ import { DIELE, DURCHFUEHRUNG, GESCHOSS, KUECHE, geschossplan } from "./testdate
 const vorbereitet = planVorbereiten(leitungsplanAus({ geschosse: [GESCHOSS], plaene: [geschossplan()], durchfuehrungen: [DURCHFUEHRUNG], steigwege: [] }));
 
 function mitWeg(wegpunkte: Wegpunkt[], endGeraetId: string | null = null): Leitung {
-  return { id: "neu", startGeraetId: "uv1", endGeraetId, wegpunkte, startzugabeMm: 0, endzugabeMm: 0, reserveMm: 0, kabeltyp: null, leiterzahl: null, querschnittMm2: null };
+  return { id: "neu", startGeraetId: "uv1", endGeraetId, wegpunkte, startzugabeMm: 0, endzugabeMm: 0, reserveMm: 0, reserveProzent: null, kabeltyp: null, leiterzahl: null, querschnittMm2: null };
 }
 
 const wand = (wandId: string, abstandMm: number, hoeheMm: number): Wegpunkt => ({ art: "wand", wandId, abstandMm, hoeheMm });

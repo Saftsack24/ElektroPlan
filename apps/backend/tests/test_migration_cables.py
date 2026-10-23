@@ -7,7 +7,9 @@ synthetische Daten:
   ``0012`` auf ``0013`` gehoben und bleibt unveraendert,
 * mit Leitungen oder Durchfuehrungen bricht das Downgrade ab - nichts wird still
   geloescht, der Stand bleibt ``0013``; ohne sie gelingt es, der Bestand bleibt,
-* Autogenerate meldet danach keinen Unterschied zum ORM,
+* Autogenerate meldet danach keinen Unterschied zum ORM (auf dem jeweiligen Head - seit
+  Phase 6c folgt ``0014``; der Bestand vor 6b.3 wird deshalb per SQL angelegt, nicht ueber
+  ORM-Klassen, deren Tabellen spaeter Spalten erhalten haben),
 * die Datenbank erzwingt Wegpunktform, Reihenfolge, verschiedene Endgeraete,
   Halt-zu-Steigweg-Zugehoerigkeit und Mandantenreinheit.
 """
@@ -24,6 +26,7 @@ from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from sqlalchemy import Engine, create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
@@ -34,7 +37,6 @@ from app.core.projects.models import Building, Floor, Project
 from app.core.seed import seed_initial_data
 from app.model_registry import metadata
 from app.modules.electrical.models import (
-    ElectricalCircuit,
     ElectricalDevice,
     ElectricalDistributionBoard,
     ElectricalRiser,
@@ -156,9 +158,8 @@ def _struktur(
     )
     session.add(verteilung)
     session.flush()
-    kreis = ElectricalCircuit(
-        organization_id=org, board_id=verteilung.id, designation="F1", name="F1"
-    )
+    # Per SQL: Das ORM kennt spaetere Spalten (Phase 6c), die es im Stand 0012 noch nicht gibt.
+    kreis_id = uuid.uuid4()
     steigwege = []
     halte = []
     for name_steigweg in ("S1", "S2"):
@@ -174,8 +175,13 @@ def _struktur(
         session.flush()
         steigwege.append(steigweg.id)
         halte.append(halt.id)
-    session.add(kreis)
-    session.flush()
+    session.execute(
+        text(
+            "INSERT INTO electrical_circuits (id, organization_id, board_id, designation, "
+            "name, sort_order) VALUES (:id, :org, :board, 'F1', 'F1', 0)"
+        ),
+        {"id": kreis_id, "org": org, "board": verteilung.id},
+    )
     return {
         "org": org,
         "wall_a": waende[0],
@@ -183,7 +189,7 @@ def _struktur(
         "room": raeume[0],
         "board_device": lage.id,
         "socket": dose.id,
-        "circuit": kreis.id,
+        "circuit": kreis_id,
         "riser": steigwege[0],
         "stop": halte[0],
         "other_riser": steigwege[1],
@@ -236,6 +242,12 @@ def bestand() -> Iterator[Bestand]:
     maintenance.dispose()
 
 
+def _head() -> str:
+    head = ScriptDirectory.from_config(_config()).get_current_head()
+    assert head is not None
+    return head
+
+
 def _version(engine: Engine) -> str:
     with engine.connect() as connection:
         return str(connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one())
@@ -282,7 +294,7 @@ def _wegpunkt(
 
 
 def test_bestand_bleibt_und_neue_tabellen_ohne_unterschied_zum_modell(bestand: Bestand) -> None:
-    assert _version(bestand.engine) == "0013_cables_and_penetrations"
+    assert _version(bestand.engine) == _head()
     assert set(inspect(bestand.engine).get_table_names()) >= NEUE_TABELLEN
     assert _anzahl(bestand.engine, "electrical_devices") == 4
     assert _anzahl(bestand.engine, "electrical_circuits") == 2
@@ -351,8 +363,8 @@ def test_downgrade_bricht_mit_leitungen_ab_und_gelingt_ohne(bestand: Bestand) ->
         cable = _leitung(bestand, connection)
     with pytest.raises(RuntimeError, match="Downgrade abgebrochen"):
         command.downgrade(_config(), VOR_6B3)
-    # Nichts geloescht, Stand unveraendert.
-    assert _version(bestand.engine) == "0013_cables_and_penetrations"
+    # Nichts geloescht, Stand unveraendert (eine Transaktion fuer den ganzen Lauf).
+    assert _version(bestand.engine) == _head()
     assert _anzahl(bestand.engine, "electrical_cables") == 1
 
     with bestand.engine.begin() as connection:
@@ -364,4 +376,4 @@ def test_downgrade_bricht_mit_leitungen_ab_und_gelingt_ohne(bestand: Bestand) ->
     assert _anzahl(bestand.engine, "electrical_circuits") == 2
     assert _anzahl(bestand.engine, "electrical_riser_stops") == 4
     command.upgrade(_config(), "head")
-    assert _version(bestand.engine) == "0013_cables_and_penetrations"
+    assert _version(bestand.engine) == _head()

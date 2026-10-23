@@ -108,7 +108,7 @@ export function useDeckenleitungen({
     const ids = new Set(andere.map((x) => x.l.id));
     const hier = new Set(geraete.map((g) => g.id));
     for (const l of p?.leitungen ?? []) {
-      if ((l.start_device_id !== null && hier.has(l.start_device_id)) || hier.has(l.end_device_id)) ids.add(l.id);
+      if ((l.start_device_id !== null && hier.has(l.start_device_id)) || (l.end_device_id !== null && hier.has(l.end_device_id))) ids.add(l.id);
     }
     if (e?.cableId != null) ids.add(e.cableId);
     return ids;

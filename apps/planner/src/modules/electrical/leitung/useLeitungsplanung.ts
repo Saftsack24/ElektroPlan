@@ -134,6 +134,7 @@ function werteAusServer(c: LeitungAusServer, wegpunkte: Leitungswerte["wegpunkte
     startzugabeMm: c.start_allowance_mm,
     endzugabeMm: c.end_allowance_mm,
     reserveMm: c.reserve_mm,
+    reserveProzent: c.reserve_mode === "percent" ? c.reserve_percent : null,
     wegpunkte,
     neueDurchfuehrungen: [],
   };
@@ -151,6 +152,7 @@ export function leitungAusWerten(id: string, w: Leitungswerte): Leitung {
     startzugabeMm: w.startzugabeMm,
     endzugabeMm: w.endzugabeMm,
     reserveMm: w.reserveMm,
+    reserveProzent: w.reserveProzent,
     kabeltyp: w.kabeltyp.trim() === "" ? null : w.kabeltyp.trim(),
     leiterzahl: zahl.ok ? zahl.wert : null,
     querschnittMm2: querschnitt.ok ? querschnitt.wert : null,
@@ -368,6 +370,7 @@ export function useLeitungsplanung({
           startzugabeMm: 0,
           endzugabeMm: 0,
           reserveMm: 0,
+          reserveProzent: null,
           wegpunkte: [],
           neueDurchfuehrungen: [],
         }),
@@ -426,6 +429,9 @@ export function useLeitungsplanung({
       start_allowance_mm: w.startzugabeMm,
       end_allowance_mm: w.endzugabeMm,
       reserve_mm: w.reserveMm,
+      // Eine Prozentreserve (Phase 6c V1) bleibt beim Speichern erhalten - nie still zu 0 mm.
+      reserve_mode: w.reserveProzent === null ? ("fixed" as const) : ("percent" as const),
+      reserve_percent: w.reserveProzent,
       // Neue Durchführungen entstehen atomar mit der Leitung - nur die, die ein Wegpunkt nutzt.
       waypoints: w.wegpunkte.map((wp) => wegpunktAlsAnfrage(wp, neueSchluessel)),
       new_penetrations: genutzt.neueDurchfuehrungen.map((d) => ({

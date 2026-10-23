@@ -101,7 +101,13 @@ export interface Leitung {
   readonly wegpunkte: readonly Wegpunkt[];
   readonly startzugabeMm: number;
   readonly endzugabeMm: number;
+  /** Feste Reserve (Bestand); bei Prozentreserve `0`. */
   readonly reserveMm: number;
+  /**
+   * Prozentreserve (Phase 6c V1, ADR 0027) als Dezimaltext, `null` = feste Reserve. Zählt auf
+   * die geometrische Länge, aufgerundet - und nur bei `confirmed`.
+   */
+  readonly reserveProzent: string | null;
   readonly kabeltyp: string | null;
   readonly leiterzahl: number | null;
   /** Dezimalzahl als Zeichenkette (ADR 0005) - nie `number`. */
@@ -192,7 +198,13 @@ export interface Leitungsergebnis {
   readonly leitungId: string;
   readonly strecken: readonly Leitungsstrecke[];
   readonly geometrischMm: number;
+  /** Anschlusszugaben + Reserve (soweit bekannt). */
   readonly zugabenMm: number;
+  /** Start- und Endzugabe, ohne Reserve. */
+  readonly anschlusszugabenMm: number;
+  /** `null` = Prozentreserve noch offen (Leitung nicht `confirmed`). */
+  readonly reserveMm: number | null;
+  readonly reserveOffen: boolean;
   readonly status: Leitungsstatus;
   /** Nur bei `confirmed`. */
   readonly laengeMm: number | null;
@@ -208,6 +220,7 @@ export interface Leitungsergebnis {
 export const LEITUNG_BEFUND_TEXT: Record<string, string> = {
   "start-not-placed": "Die Leitung hat keinen platzierten Startpunkt.",
   "end-not-placed": "Die Leitung hat keinen platzierten Endpunkt.",
+  "end-device-missing": "Die Leitung hat noch kein Endgerät (offene Planung).",
   "endpoint-unknown": "Das Endgerät ist nicht bekannt.",
   "endpoint-exterior": "Außen montierte Geräte werden noch nicht angeschlossen.",
   "endpoint-surface-unknown": "Die Montagefläche des Endgeräts ist nicht bekannt.",
@@ -253,6 +266,20 @@ export const LEITUNG_BEFUND_TEXT: Record<string, string> = {
 };
 
 // ------------------------------------------------------------------ Rundung
+
+const PROZENT = /^(\d{1,3})(?:\.(\d{1,2}))?$/;
+
+/**
+ * Prozentreserve auf die geometrische Länge, auf ganze mm **aufgerundet** - Spiegel von
+ * `percent_reserve_mm`. Ganzzahlig ohne Gleitkomma: `P = p·100`, `r = ⌊(g·P + 9 999) / 10 000⌋`.
+ */
+export function prozentReserveMm(geometrischMm: number, prozent: string): number {
+  const treffer = PROZENT.exec(prozent);
+  const hundertstel = treffer === null ? Number.NaN : Number(treffer[1]) * 100 + Number((treffer[2] ?? "").padEnd(2, "0"));
+  if (!(hundertstel <= 10_000)) throw new RangeError("Prozentsatz 0 bis 100 mit höchstens zwei Nachkommastellen.");
+  if (!Number.isSafeInteger(geometrischMm) || geometrischMm < 0) throw new RangeError("Die geometrische Länge ist nie negativ.");
+  return Math.floor((geometrischMm * hundertstel + 9_999) / 10_000);
+}
 
 /** `round(ganz + stufen·√m)` kaufmännisch, rein ganzzahlig - wie `rounded_position`. */
 export function gerundeteLage(wert: Lage, mass: Linienmass): number {
@@ -618,7 +645,7 @@ class Weg {
 
   geraeteOrt(geraetId: string | null, ort: "start" | "end"): Ort | null {
     if (geraetId === null) {
-      this.fehlt(`${ort}-not-placed`, ort);
+      this.fehlt(ort === "end" ? "end-device-missing" : "start-not-placed", ort);
       return null;
     }
     const geraet = this.p.geraete.get(geraetId);
@@ -1131,12 +1158,19 @@ export function leitungAuswerten(vorbereitet: VorbereiteterPlan, leitung: Leitun
   }
 
   const geometrisch = weg.strecken.reduce((s, x) => s + x.bekanntMm, 0);
-  const zugaben = leitung.startzugabeMm + leitung.endzugabeMm + leitung.reserveMm;
   const status: Leitungsstatus = weg.befunde.some((b) => b.art === "conflict")
     ? "conflict"
     : weg.befunde.length > 0
       ? "incomplete"
       : "confirmed";
+  const anschlusszugaben = leitung.startzugabeMm + leitung.endzugabeMm;
+  const reserve =
+    leitung.reserveProzent === null
+      ? leitung.reserveMm
+      : status === "confirmed"
+        ? prozentReserveMm(geometrisch, leitung.reserveProzent)
+        : null;
+  const zugaben = anschlusszugaben + (reserve ?? 0);
   const durchfuehrungen: string[] = [];
   for (const s of weg.strecken) {
     if (s.art === "penetration" && !durchfuehrungen.includes(s.besitzerId)) durchfuehrungen.push(s.besitzerId);
@@ -1146,6 +1180,9 @@ export function leitungAuswerten(vorbereitet: VorbereiteterPlan, leitung: Leitun
     strecken: weg.strecken,
     geometrischMm: geometrisch,
     zugabenMm: zugaben,
+    anschlusszugabenMm: anschlusszugaben,
+    reserveMm: reserve,
+    reserveOffen: reserve === null,
     status,
     laengeMm: status === "confirmed" ? geometrisch + zugaben : null,
     bekanntMm: geometrisch + zugaben,

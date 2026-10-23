@@ -155,9 +155,11 @@ def test_tabellenbestand_ist_vollstaendig_erfasst() -> None:
     Wandkopplungen sowie die Steigweg-Tabellen. Dazu die Refresh-Token-Familien
     (Sicherheitsauftrag 2026-10-10, Migration 0011) und seit Phase 6b.0
     Verteilungen, Stromkreise und Geraetezuordnung (Migration 0012), seit Phase 6b.3
-    Leitungen, Wegpunkte und Durchfuehrungen (Migration 0013).
+    Leitungen, Wegpunkte und Durchfuehrungen (Migration 0013), seit Phase 6c V1
+    Kabelvorlagen, Betriebsstandard, Projektvorgabe und je eine Vorlage-je-Geraetetyp-
+    Tabelle (Migration 0014).
     """
-    assert len(metadata.sorted_tables) == 37, (
+    assert len(metadata.sorted_tables) == 42, (
         "Anzahl der Tabellen hat sich geaendert - test_architecture.py und "
         "docs/database.md pruefen."
     )

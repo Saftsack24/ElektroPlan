@@ -225,6 +225,8 @@ describe("Neue Leitung zeichnen", () => {
         start_allowance_mm: 0,
         end_allowance_mm: 0,
         reserve_mm: 0,
+        reserve_mode: "fixed",
+        reserve_percent: null,
         waypoints: [
           { kind: "wall", wall_id: "diele-w0", offset_mm: 500, height_mm: 2200 },
           { kind: "wall", wall_id: "diele-w0", offset_mm: 3000, height_mm: 2200 },
@@ -365,6 +367,42 @@ describe("Bestehende Leitung bearbeiten", () => {
       { kind: "penetration", penetration_id: "d1" },
       boden,
     ]);
+  });
+
+  it("Prozentreserve (Phase 6c V1) bleibt beim Speichern erhalten und zählt erst bei bestätigtem Weg", async () => {
+    leitungen = [leitung({ reserve_mode: "percent", reserve_percent: "20", reserve_origin: "manual", reserve_effective_mm: 1700, allowance_mm: 2400, length_mm: 10_900, known_mm: 10_900 })];
+    api.put.mockImplementation((_p: string, o: { body: Record<string, unknown> }) => Promise.resolve(leitung({ ...(o.body as object), version: 3 })));
+    zeigen();
+    const d = await wandOeffnen();
+    fireEvent.click(within(d).getByRole("button", { name: /F3 · L1/ }));
+    fireEvent.click(within(d).getByRole("button", { name: "Leitung bearbeiten" }));
+    const entwurf = within(d).getByRole("region", { name: "Leitungsentwurf" });
+    expect(within(entwurf).getByTestId("leitung-reserve-prozent")).toHaveTextContent("Reserve 20 % der geometrischen Länge");
+    // 8 500 Weg + 500 + 200 + 20 % von 8 500 (1 700) = 10 900 - wie im Backend (gemeinsame Fixture).
+    expect(within(entwurf).getByTestId("leitungslaenge")).toHaveTextContent("Leitungslänge 1.090 cm");
+    expect(within(entwurf).getByTestId("leitungslaenge")).toHaveTextContent("Zugaben 240 cm");
+
+    // Nur die Bezeichnung ändern und speichern: Die Prozentreserve wird nicht still zu 0 mm.
+    const bezeichnung = within(entwurf).getByLabelText("Bezeichnung");
+    fireEvent.change(bezeichnung, { target: { value: "L1a" } });
+    fireEvent.blur(bezeichnung);
+    fireEvent.click(within(entwurf).getByRole("button", { name: "Leitung speichern" }));
+    await waitFor(() => expect(api.put).toHaveBeenCalledTimes(1));
+    const [, optionen] = api.put.mock.calls[0] as [string, { body: Record<string, unknown> }];
+    expect(optionen.body).toMatchObject({ label: "L1a", reserve_mode: "percent", reserve_percent: "20", reserve_mm: 0 });
+  });
+
+  it("Feste Reserve ersetzt die Prozentreserve nur ausdrücklich", async () => {
+    leitungen = [leitung({ reserve_mode: "percent", reserve_percent: "12.5" })];
+    zeigen();
+    const d = await wandOeffnen();
+    fireEvent.click(within(d).getByRole("button", { name: /F3 · L1/ }));
+    fireEvent.click(within(d).getByRole("button", { name: "Leitung bearbeiten" }));
+    const entwurf = within(d).getByRole("region", { name: "Leitungsentwurf" });
+    expect(within(entwurf).getByTestId("leitung-reserve-prozent")).toHaveTextContent("Reserve 12,5 %");
+    fireEvent.click(within(entwurf).getByRole("button", { name: "Feste Reserve eingeben" }));
+    expect(within(entwurf).queryByTestId("leitung-reserve-prozent")).toBeNull();
+    expect(within(entwurf).getByTestId("leitungslaenge")).toHaveTextContent("Zugaben 70 cm");
   });
 
   it("Pfeiltasten verschieben, Entf entfernt - Fußbodenpunkt nicht", async () => {

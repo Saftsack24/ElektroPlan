@@ -3875,3 +3875,33 @@ von V1 ist keine nachträgliche Layoutabnahme.
   Scratchpad-Dateien; keine Instrumentierung, keine künstlichen Verzögerungen, kein `only`/`skip`, keine verlängerten
   Fristen; keine Änderung an Architektur-, Sicherheits- oder Mandantenprüfungen (nur Frontend und Dokumentation);
   `git diff --check` sauber. Nicht aufgenommen: eine unabhängige Datei unter `output/`.
+
+## Task 0058 – Phase 6c V1: Vorgaben-Backend
+
+**Datum:** 2026-10-23 · **Status:** technisch umgesetzt und geprüft, **uncommittet**. Freigabe durch den
+Auftraggeber ohne eigene Layoutsicht; ausdrücklich **keine** Layoutabnahme von L1 (Checkpoint `331bfbd`).
+
+* **Umfang:** Migration `0014` (fünf Tabellen, neue Spalten an Leitungen und Stromkreisen, Bestand unverändert),
+  reine Vorgabenkette `defaults_chain.py`, Dienst `planning_defaults.py` (Vorlagen, Betriebsstandard,
+  Projektvorgabe, wirksame Vorgaben, Advisory-Sperre je Betrieb), Leitungsdienst mit Herkunft, Vorgabenbasis,
+  offener Leitung und Zuordnung beim Speichern, Prozentreserve in Längenfunktion, Fixture, Frontend-Spiegel und
+  Mengenübersicht; Core: `ProjectPlanningContext` und Projektkontexte in `FloorPlanningAccess`; Recht
+  `electrical.defaults.manage`; OpenAPI und API-Client neu erzeugt. Bestehende Oberflächen angepasst, nicht erweitert.
+* **Befund unterwegs:** Der bestehende Editor hätte eine Prozentreserve beim Speichern still in 0 mm umgewandelt
+  (`reserve_mode` fehlte in der Anfrage) – behoben, mit Test.
+* **Tests:** siehe Entwurf §20.5 – neue 37 Backendtests (11 rein, 21 API/PostgreSQL inkl. Sperrrichtungen, 5
+  Migration), gemeinsame Fixture, Frontend +7; Gesamtlauf grün (1 382 / 1 205). Entwicklungsstack: Sicherung,
+  Migration, Seed, API-Durchlauf 15/15.
+* **Offen:** Vorgabenoberfläche, L2/L3, zentrale Anwendung, Phase-7-Vertrag; persönliche Layoutabnahme L1.
+
+## Task 0059 – Checkpoint V1
+
+**Datum:** 2026-10-23 · **Status:** Checkpoint-Commit (nicht gepusht). Inhalt: V1 Vorgaben-Backend (Task 0058) mit
+Migration `0014`, Tests, gemeinsamer Fixture, OpenAPI und API-Client sowie Dokumentation.
+
+* **Grundlage:** dokumentierter grüner Gesamtlauf (1 382 Backend-, 1 205 Frontendtests) und API-Durchlauf 15/15;
+  kein erneuter Gesamtlauf für den Checkpoint.
+* **Vorabprüfung:** keine Secrets, `.env`, Vorschaukonfiguration, Dumps, Screenshots, Logs, Caches oder
+  Scratchpad-Dateien; keine Diagnose-Reste, kein `skip`/`only`; Architektur-, Sicherheits- und Mandantenprüfungen
+  nur erweitert (neue Tabellen, Recht, Vorlage im Mandanten-Sweep); ältere Migrationen unverändert;
+  `git diff --check` sauber. Nicht aufgenommen: eine unabhängige Datei unter `output/`.

@@ -27,6 +27,9 @@ const eimer = (count = 0, geometric = 0, allowance = 0, ids: string[] = []) => (
   count,
   geometric_mm: geometric,
   allowance_mm: allowance,
+  connection_allowance_mm: allowance,
+  reserve_mm: 0,
+  reserve_pending_count: 0,
   total_mm: geometric + allowance,
   cable_ids: ids,
 });
@@ -49,6 +52,14 @@ function zeile(c: components["schemas"]["CableOut"], missing: ("cable_type" | "c
     status: c.status,
     geometric_mm: c.geometric_mm,
     allowance_mm: c.allowance_mm,
+    connection_allowance_mm: c.connection_allowance_mm,
+    reserve_mode: c.reserve_mode,
+    reserve_percent: c.reserve_percent,
+    reserve_effective_mm: c.reserve_effective_mm,
+    reserve_pending: c.reserve_pending,
+    spec_origin: c.spec_origin,
+    reserve_origin: c.reserve_origin,
+    allowance_origin: c.allowance_origin,
     length_mm: c.length_mm,
     known_mm: c.known_mm,
     problem_codes: c.problems.map((p) => p.code),
@@ -135,6 +146,29 @@ describe("Texte", () => {
 });
 
 describe("Mengenübersicht", () => {
+  it("Prozentreserve (Phase 6c V1): getrennt ausgewiesen, nie doppelt, offen ohne Wert", async () => {
+    const mitReserve = { ...eimer(1, 8_500, 2_400, ["l1"]), connection_allowance_mm: 700, reserve_mm: 1_700 };
+    const offen = { ...eimer(1, 1_200, 0, ["l5"]), reserve_pending_count: 1 };
+    const l1 = { ...zeile(L1), reserve_mode: "percent" as const, reserve_percent: "20", reserve_effective_mm: 1_700, allowance_mm: 2_400, length_mm: 10_900, known_mm: 10_900 };
+    const l5 = { ...zeile(L5), reserve_mode: "percent" as const, reserve_percent: "20", reserve_effective_mm: null, reserve_pending: true };
+    antwort = () =>
+      Promise.resolve({
+        ...SUMMARY,
+        groups: [{ ...SUMMARY.groups[0], confirmed: mitReserve, incomplete: offen }],
+        totals: { ...SUMMARY.totals, confirmed: mitReserve, incomplete: offen },
+        cables: [l1, zeile(L4, ["cross_section_mm2"]), l5],
+      });
+    zeigen();
+    const gruppe = await screen.findByTestId("mengen-gruppe-NYM-J 3 × 1,5 mm²");
+    // 8 500 + 700 + 1 700 = 10 900: die Reserve ist Teil der Summe, nicht zusätzlich.
+    expect(gruppe).toHaveTextContent("1.090 cm");
+    expect(gruppe).toHaveTextContent("Weg 850 cm + Zugaben 70 cm + Reserve 170 cm");
+    expect(gruppe).toHaveTextContent("Prozentreserve offen bei 1");
+    fireEvent.click(within(gruppe).getByRole("button", { name: /^Zeigen/ }));
+    expect(screen.getAllByTestId("mengen-leitung-l1")[0]).toHaveTextContent("davon Reserve 20 %");
+    expect(screen.getAllByTestId("mengen-leitung-l5")[0]).toHaveTextContent("Reserve 20 % offen");
+  });
+
   it("zeigt Gruppen, getrennte Status, fehlende Angaben, Trassen, Stückzahlen - mit Bezug zum gespeicherten Stand", async () => {
     zeigen();
     const uebersicht = await screen.findByTestId("mengenuebersicht");

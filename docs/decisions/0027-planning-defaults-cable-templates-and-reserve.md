@@ -1,7 +1,11 @@
 # 0027 — Planungsvorgaben, Kabelvorlagen und Leitungsreserve (Phase 6c)
 
-Status: **proposed** (2026-10-15) – Entwurf, nicht umgesetzt. **Einzelentscheidungen bestätigt** (2026-10-15):
-F1 (Vorrang, abweichend von der ursprünglichen Empfehlung) und F2 (Rundung) – siehe Nr. 3 und Nr. 5
+Status: **proposed** (2026-10-15). **Einzelentscheidungen bestätigt** (2026-10-15):
+F1 (Vorrang, abweichend von der ursprünglichen Empfehlung) und F2 (Rundung) – siehe Nr. 3 und Nr. 5.
+**Teilweise umgesetzt (2026-10-23, V1, uncommittet):** Nr. 1–6, 8, 9, 11 im Backend samt Längenfunktion,
+Frontend-Spiegel und Mengenübersicht (Entwurf §20); **offen:** Nr. 7 (zentrale Anwendung, 6c.6), die
+Oberflächen für Vorgaben und Abschlussdialog (L2/L3), Nr. 10 (Phase-7-Vertrag). Der Status bleibt
+*proposed*, bis 6c abgenommen ist.
 Betrifft: Phase 6c (Schritte 6c.4–6c.6)
 Löst ab: [ADR 0026](0026-circuits-cables-and-cable-paths.md) **D5** (Zugaben/Reserve nur ausdrücklich je
 Leitung, keine Projektstandardwerte); präzisiert ADR 0026 Nr. 4 und Nr. 9
@@ -74,6 +78,16 @@ ohne doppelte Reserve in der späteren Materialberechnung.
 * **Gespeicherter Reservebetrag:** veraltet bei jeder Wegänderung. Verworfen; Prozentsatz speichern.
 * **Kaufmännisch runden:** kann die Reserve um 0,5 mm unterschreiten. Aufrunden bestätigt (F2).
 * **Teilweises Anwenden bei Konflikten:** schwer nachvollziehbar. Verworfen; atomar.
+
+## Umsetzungsnotizen (V1, 2026-10-23)
+
+* Tabellen gekürzt benannt (`electrical_type_templates`, `electrical_project_defaults`,
+  `electrical_proj_type_templates`), weil abgeleitete Constraint-Namen sonst 63 Zeichen überschritten.
+* Sperre betriebsweiter Vorgaben: PostgreSQL-Advisory-Sperre je Betrieb (exklusiv beim Schreiben, geteilt nach
+  der Projektsperre beim Lesen und Prüfen) – deckt auch die noch nicht angelegte Zeile ab; kein Zyklus.
+* Vorgabenbasis: Versionen im Körper (`expected_version`, `defaults_basis`); `0` = noch keine Zeile.
+* Herkunft zusätzlich `none` (Kette ohne Wert). Bisherige Clients ohne Herkunftsangabe: unveränderte Gruppen
+  behalten ihre Herkunft, geänderte werden `manual`.
 
 ## Consequences
 

@@ -36,7 +36,13 @@ from app.core.module_registry.registry import ModuleRegistry
 from app.model_registry import metadata
 from app.modules import REGISTERED_MODULES
 from app.modules.electrical import DESCRIPTOR
-from app.modules.electrical.permissions import CIRCUIT_WRITE, PLAN_READ, PLAN_WRITE, ROUTE_WRITE
+from app.modules.electrical.permissions import (
+    CIRCUIT_WRITE,
+    DEFAULTS_MANAGE,
+    PLAN_READ,
+    PLAN_WRITE,
+    ROUTE_WRITE,
+)
 from tests.routes import all_routes
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -233,6 +239,7 @@ def test_oeffentlicher_einstiegspunkt_exportiert_nur_den_descriptor() -> None:
         "cables",
         "cabling_summary",
         "catalog",
+        "defaults_chain",
         "device_rules",
         "devices",
         "distribution",
@@ -244,6 +251,7 @@ def test_oeffentlicher_einstiegspunkt_exportiert_nur_den_descriptor() -> None:
         "models",
         "module",
         "permissions",
+        "planning_defaults",
         "reference_data",
         "riser_course",
         "risers",
@@ -292,6 +300,12 @@ def test_tabellen_tragen_das_modulpraefix(registry: ModuleRegistry) -> None:
         "electrical_cables",
         "electrical_cable_waypoints",
         "electrical_wall_penetrations",
+        # Phase 6c V1: Kabelvorlagen und Planungsvorgaben (Betrieb, Projekt).
+        "electrical_cable_templates",
+        "electrical_planning_defaults",
+        "electrical_type_templates",
+        "electrical_project_defaults",
+        "electrical_proj_type_templates",
     }
     for name in eigene:
         assert name.startswith(DESCRIPTOR.table_prefix)
@@ -314,7 +328,13 @@ def test_verweis_auf_floors_ist_mandantensicher() -> None:
 
 
 def test_permissions_liegen_im_eigenen_namensraum() -> None:
-    assert DESCRIPTOR.permission_keys == (PLAN_READ, PLAN_WRITE, CIRCUIT_WRITE, ROUTE_WRITE)
+    assert DESCRIPTOR.permission_keys == (
+        PLAN_READ,
+        PLAN_WRITE,
+        CIRCUIT_WRITE,
+        ROUTE_WRITE,
+        DEFAULTS_MANAGE,
+    )
     for key in DESCRIPTOR.permission_keys:
         assert key.startswith("electrical.")
 

@@ -8,8 +8,9 @@ selben atomaren Raumentwurf gespeichert (ADR 0023); ein eigener
 ``electrical.device.write`` wuerde einen Speichervorgang in Teilrechte
 zerlegen. Seit Phase 6b.0 gibt es ``electrical.circuit.write`` fuer
 Verteilungen, Stromkreise und Geraetezuordnung (ADR 0026), seit Phase 6b.3
-``electrical.route.write`` fuer Leitungen und Durchfuehrungen; weitere Schluessel
-entstehen mit den Phasen, die sie brauchen
+``electrical.route.write`` fuer Leitungen und Durchfuehrungen, seit Phase 6c (V1,
+ADR 0027) ``electrical.defaults.manage`` fuer betriebsweite Planungsvorgaben und
+Kabelvorlagen; weitere Schluessel entstehen mit den Phasen, die sie brauchen
 (docs/modules/electrical.md, Abschnitt 7).
 
 ``default_roles`` nennt die ausgelieferten Systemrollen, die den Schluessel
@@ -25,8 +26,12 @@ PLAN_READ = "electrical.plan.read"
 PLAN_WRITE = "electrical.plan.write"
 #: Verteilungen, Stromkreise und Geraetezuordnung (Phase 6b.0, ADR 0026).
 CIRCUIT_WRITE = "electrical.circuit.write"
-#: Leitungen, Wegpunkte, Kabelangaben und Durchfuehrungen (Phase 6b.3, ADR 0026).
+#: Leitungen, Wegpunkte, Kabelangaben und Durchfuehrungen (Phase 6b.3, ADR 0026);
+#: seit Phase 6c auch die Projektvorgabe und Abweichungen je Leitung (ADR 0027).
 ROUTE_WRITE = "electrical.route.write"
+#: Betriebsstandard, Kabelvorlagen und Vorlage je Geraetetyp (Phase 6c, V1, ADR 0027).
+#: Betriebsweit - ein Projektbearbeiter aendert damit nie die Vorgaben aller Projekte.
+DEFAULTS_MANAGE = "electrical.defaults.manage"
 
 ELECTRICAL_PERMISSIONS: tuple[PermissionDef, ...] = (
     PermissionDef(
@@ -48,5 +53,11 @@ ELECTRICAL_PERMISSIONS: tuple[PermissionDef, ...] = (
         ROUTE_WRITE,
         "Leitungen, Leitungswege und Durchfuehrungen bearbeiten, Unterbrechungen bestaetigen",
         default_roles=("planer",),
+    ),
+    # Standard: nur der Administrator (erhaelt jede Berechtigung) - Entwurf 6c §14.
+    PermissionDef(
+        DEFAULTS_MANAGE,
+        "Betriebsweite Planungsvorgaben und Kabelvorlagen verwalten",
+        default_roles=(),
     ),
 )

@@ -27,6 +27,10 @@ keine Core-Tabelle selbst.
   Verteilung verweist mit ``RESTRICT`` auf ihr Lagegeraet und ihr Gebaeude und
   muss deshalb vor den Raeumen und vor dem Core weg.
 
+* Seit Phase 6c (V1, ADR 0027) die Projektvorgabe: Sie haengt am **Projekt** (``RESTRICT``)
+  und wird zuerst entfernt; ihre Vorlagen je Geraetetyp folgen per ``CASCADE``. Die
+  Kabelvorlagen und der Betriebsstandard gehoeren dem Betrieb und bleiben.
+
 Beides laeuft in der Transaktion des Core, der die Projektzeile bereits
 gesperrt haelt. Hier wird nicht committet.
 """
@@ -51,6 +55,7 @@ from app.modules.electrical.models import (
     ElectricalDevice,
     ElectricalDistributionBoard,
     ElectricalOpening,
+    ElectricalProjectPlanningDefaults,
     ElectricalRiser,
     ElectricalRiserStop,
     ElectricalRoom,
@@ -72,6 +77,7 @@ class ElectricalProjectContent:
         building_ids = access.building_ids_of_project(request.project_id)
         floor_ids = access.floor_ids_of_project(request.project_id)
         riser_items = [
+            *_defaults_items(session, request),
             *_distribution_items(session, request, building_ids),
             *_cable_items(session, request, building_ids, floor_ids),
             *_riser_items(session, request, building_ids),
@@ -152,6 +158,15 @@ class ElectricalProjectContent:
         return _report([*items, *riser_items])
 
     def delete_project_content(self, session: Session, request: ProjectContentRequest) -> None:
+        # Projektvorgabe zuerst: Sie haelt das Projekt per RESTRICT (Zuordnungen per CASCADE).
+        session.execute(
+            delete(ElectricalProjectPlanningDefaults)
+            .where(
+                ElectricalProjectPlanningDefaults.organization_id == request.organization_id,
+                ElectricalProjectPlanningDefaults.project_id == request.project_id,
+            )
+            .execution_options(synchronize_session=False)
+        )
         access = FloorPlanningAccess(session, request.organization_id)
         building_ids = access.building_ids_of_project(request.project_id)
         floor_ids = access.floor_ids_of_project(request.project_id)
@@ -224,6 +239,24 @@ class ElectricalProjectContent:
 
 def _report(items: list[ProjectContentItem]) -> ProjectContentReport:
     return ProjectContentReport(module_id=MODULE_ID, has_content=bool(items), items=tuple(items))
+
+
+def _defaults_items(session: Session, request: ProjectContentRequest) -> list[ProjectContentItem]:
+    count = int(
+        session.execute(
+            select(func.count())
+            .select_from(ElectricalProjectPlanningDefaults)
+            .where(
+                ElectricalProjectPlanningDefaults.organization_id == request.organization_id,
+                ElectricalProjectPlanningDefaults.project_id == request.project_id,
+            )
+        ).scalar_one()
+    )
+    return (
+        [ProjectContentItem("electrical.project_defaults", "Planungsvorgaben", count)]
+        if count
+        else []
+    )
 
 
 def _distribution_items(

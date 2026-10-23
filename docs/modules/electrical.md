@@ -353,7 +353,8 @@ Meter × Minuten-pro-Meter des Verlegeart-Schlüssels.
 | `electrical.plan.write` | Räume, Wände, Öffnungen bearbeiten | **registriert (Phase 3)** |
 | `electrical.device.write` | ~~Elektroelemente bearbeiten~~ | **nicht angelegt (Phase 5):** Geräte gehören zum atomaren Raumentwurf und fallen unter `electrical.plan.write` (ADR 0023) |
 | `electrical.circuit.write` | Verteilungen, Stromkreise, Gerätezuordnung bearbeiten | **registriert (Phase 6b.0)**, Rolle Planer |
-| `electrical.route.write` | Leitungen, Wegpunkte, Durchführungen bearbeiten, Leitungsunterbrechungen bestätigen | **registriert (Phase 6b.3)**, Rolle Planer |
+| `electrical.route.write` | Leitungen, Wegpunkte, Durchführungen bearbeiten, Leitungsunterbrechungen bestätigen; seit 6c V1 auch die Projektvorgabe | **registriert (Phase 6b.3)**, Rolle Planer |
+| `electrical.defaults.manage` | Betriebsstandard, Kabelvorlagen und Vorlage je Gerätetyp pflegen | **registriert (Phase 6c V1, ADR 0027)**, keine Standardrolle – nur Administrator |
 | `electrical.settings.write` | Gerätetypen und Zonen-Standardwerte pflegen | offen – der Gerätekatalog ist in Phase 5 ein Systemkatalog aus dem Seed |
 
 Phase 3 registriert bewusst nur **zwei** Schlüssel: ansehen und bearbeiten. Wer die
@@ -586,6 +587,50 @@ Durchführungen nach Identität, Bodenübergänge als Nutzungen, Geräte je Stro
 zugeordnete Geräte, Zugaben getrennt. Abgeleitet, nie gespeichert; ein konsistenter Stand je Antwort
 (geteilte Projektsperre). Lesen `electrical.plan.read`, auch bei abgeschlossenen und archivierten
 Projekten; `404` bei fremdem Mandanten oder unbekanntem Gebäude. Kein Event.
+
+### Ergänzt in Phase 6c V1 (ADR 0027, Entwurf 6c §20)
+
+```
+GET    /cable-templates                                    Kabelvorlagen des Betriebs (mit in_use)
+POST   /cable-templates                                    defaults.manage
+PATCH  /cable-templates/{template_id}                      If-Match, defaults.manage (deaktivieren statt löschen)
+DELETE /cable-templates/{template_id}                      If-Match, defaults.manage, nur ungenutzt
+GET    /planning-defaults                                  Betriebsstandard (version 0 = nicht angelegt)
+PUT    /planning-defaults                                  expected_version im Körper, defaults.manage
+GET    /projects/{project_id}/planning-defaults            Projektvorgabe
+PUT    /projects/{project_id}/planning-defaults            expected_version im Körper, route.write
+GET    /projects/{project_id}/planning-defaults/effective  wirksame Werte, Herkunft, Basis; je Leitung mit
+                                                           circuit_id, start_device_id, end_device_id
+```
+
+`CableIn`: `end_device_id` optional (offene Planung, Befund `end-device-missing`), `reserve_mode`
+`fixed`/`percent` mit `reserve_percent`, Herkunft je Wertegruppe (`spec_source`, `reserve_source`,
+`allowance_source`: `defaults`/`manual`/weglassen), `defaults_basis`, `assign_devices` mit
+`expected_circuit_version` (zusätzlich `electrical.circuit.write`). `CableOut` und Mengenübersicht: wirksame
+Reserve (`reserve_effective_mm`, `null` = offen), `reserve_pending`, `connection_allowance_mm`, Herkunft
+(`*_origin`) und Basis; Eimer mit getrennter Reserve und `reserve_pending_count`. Codes: `409
+planning-defaults-changed` (nichts gespeichert, Felder in `errors`), `409` mit `cable-template-in-use`,
+`circuit-version-changed`, `device-assigned-elsewhere`; `422` mit `cable-template-unknown`,
+`cable-template-inactive`, `device-type-duplicate`/`-unknown`/`-not-assignable`,
+`assign-device-not-endpoint`, `circuit-device-not-assignable`. Kein Event.
+
+**Vorgabenkette** (reine Funktion `defaults_chain.py`): Kabelangaben Leitung → aktivierter Stromkreis
+(`proposal_overrides_templates`) → Gerätetypvorlage (Projekt vor Betrieb) → Standardvorlage → fehlend; das
+Tripel immer aus einer Quelle; Zielgerät maßgeblich, nie eine Verteilung. Reserve und Zugaben je Feld:
+Projekt → Betrieb → 0; `NULL` erbt, `0` gilt. Der Server löst die Kette beim Speichern selbst auf und
+vertraut keiner Client-Herkunft.
+
+**Prozentreserve:** `⌊(g·P + 9 999)/10 000⌋`, `P = p·100`, nur auf den geometrischen Weg und nur bei
+`confirmed`; gespeichert wird der Prozentsatz. Bestand: `fixed`, Herkunft `legacy`, Werte unverändert.
+
+**Sperren:** Betriebsweite Vorgaben und Vorlagen schreiben unter einer **exklusiven** Advisory-Sperre je
+Betrieb, nie mit Projektsperre; wirksame Vorgaben, Speichern mit Vorgabenherkunft und Projektvorgabe nehmen
+**erst die Projektsperre, dann die Advisory-Sperre geteilt**. Projektvorgaben gehören zum Projektinhalt
+(`ProjectContentParticipant`, „Planungsvorgaben“) und werden mit dem Projekt gelöscht; Vorlagen gehören
+dem Betrieb.
+
+**Übergabe an Phase 7/8:** Weg, Anschlusszugaben und Planungsreserve getrennt; auf Leitungen mit
+Planungsreserve kein weiterer Material-Verschnitt; Vertragsänderung per Phase-7-ADR.
 
 *Frühere Planung (Phase 0):* `GET /projects/{id}/summary` und Polygonzug-Routen – durch die
 gebäudebezogenen Endpunkte aus 6b ersetzt.

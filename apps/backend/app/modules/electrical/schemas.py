@@ -824,6 +824,9 @@ class _CircuitFields(_Strict):
     rcd_group: str | None = Field(default=None, max_length=40)
     phase_count: PhaseCountValue | None = None
     note: str | None = Field(default=None, max_length=500)
+    #: "Fuer neue Leitungen dieses Stromkreises diese Kabelvorgabe verwenden" (Phase 6c,
+    #: ADR 0027, F1). Nur dann gilt der Vorschlag als Stufe 2 der Vorgabenkette.
+    proposal_overrides_templates: bool | None = None
 
     _optional = field_validator("proposed_cable_type", "protective_device", "rcd_group", "note")(
         _trimmed
@@ -856,7 +859,9 @@ class CircuitUpdate(_CircuitFields):
     designation: str | None = Field(default=None, min_length=1, max_length=16)
     name: str | None = Field(default=None, min_length=1, max_length=120)
 
-    _not_nullable = field_validator("designation", "name", "sort_order")(reject_explicit_null)
+    _not_nullable = field_validator(
+        "designation", "name", "sort_order", "proposal_overrides_templates"
+    )(reject_explicit_null)
     _required = field_validator("designation", "name")(_required_text)
 
 
@@ -883,6 +888,8 @@ class CircuitOut(BaseModel):
     rcd_group: str | None
     phase_count: int | None
     note: str | None
+    #: Vorschlag ist aktivierte Vorgabe fuer neue Leitungen (Stufe 2, F1); Bestand ``false``.
+    proposal_overrides_templates: bool
     device_ids: list[uuid.UUID]
     version: int
     created_at: datetime
@@ -905,6 +912,25 @@ MAX_NEW_PENETRATIONS = 50
 MAX_CABLE_ALLOWANCE_MM = 20_000
 
 CableStatusValue = Literal["confirmed", "incomplete", "conflict"]
+#: Prozentsatz 0-100 mit hoechstens zwei Nachkommastellen, als String (ADR 0005).
+PERCENT_PATTERN = r"^(100(\.0{1,2})?|[0-9]{1,2}(\.[0-9]{1,2})?)$"
+ReserveModeValue = Literal["fixed", "percent"]
+#: ``manual``: die gesendeten Werte gelten als ausdrueckliche Angabe der Leitung.
+#: ``defaults``: die Werte stammen aus der Vorgabenkette - der Server loest sie selbst auf
+#: und prueft die Vorgabenbasis (``409 planning-defaults-changed``).
+ValueSourceValue = Literal["manual", "defaults"]
+CableValueOriginValue = Literal[
+    "legacy",
+    "manual",
+    "circuit_override",
+    "device_type_template",
+    "default_template",
+    "project_default",
+    "office_default",
+    "none",
+]
+#: Hoechstzahl der beim Speichern ausdruecklich zuzuordnenden Endgeraete.
+MAX_ASSIGN_DEVICES = 2
 CableProblemKindValue = Literal["conflict", "missing"]
 CableSegmentKindValue = Literal[
     "connection",
@@ -1008,18 +1034,48 @@ class NewPenetrationIn(_Strict):
     _optional = field_validator("note")(_trimmed)
 
 
+class DefaultsBasisIn(_Strict):
+    """Stand der Vorgaben, den der Client gesehen hat (``effective``-Antwort, ADR 0027 Nr. 8).
+
+    ``0`` = zu dem Zeitpunkt keine Vorgabe gespeichert. ``cable_template_*`` nur, wenn die
+    Kabelangaben aus einer Vorlage stammen; ``circuit_version`` nur bei aktivierter
+    Stromkreisvorgabe.
+    """
+
+    office_version: int = Field(ge=0)
+    project_version: int = Field(ge=0)
+    cable_template_id: uuid.UUID | None = None
+    cable_template_version: int | None = Field(default=None, ge=1)
+    circuit_version: int | None = Field(default=None, ge=1)
+
+
 class CableIn(_Strict):
     """Leitung als Ganzes - anlegen (``POST /circuits/{id}/cables``) oder ersetzen (``PUT``).
 
-    Die Kabelangaben stehen an der Leitung; der Stromkreisvorschlag wird nicht
-    ergaenzt. ``start_device_id`` ist leer nur bei einer Verteilung ohne Lage.
-    Zugaben und Reserve nur ausdruecklich (D5). ``waypoints`` ist die
-    vollstaendige Liste in Leitungsrichtung.
+    Die Kabelangaben stehen an der Leitung. ``start_device_id`` ist leer nur bei einer
+    Verteilung ohne Lage; ``end_device_id`` leer = bewusst offene Planung ("Endgeraet
+    fehlt", ``incomplete``, Phase 6c V1). ``waypoints`` ist die vollstaendige Liste in
+    Leitungsrichtung.
+
+    **Herkunft je Wertegruppe** (ADR 0027): Kabelangaben (``spec_source``), Reserve
+    (``reserve_source``), Anschlusszugaben (``allowance_source``). ``defaults``: Der Server
+    loest die Vorgabenkette selbst auf, die gesendeten Werte muessen ihr entsprechen, und
+    ``defaults_basis`` muss dem aktuellen Stand gleichen - sonst ``409
+    planning-defaults-changed``, nichts gespeichert. ``manual``: ausdruecklich abweichend.
+    Fehlt die Angabe (bisherige Clients), gelten die Werte als ausdruecklich; eine
+    unveraenderte Gruppe einer Bestandsleitung behaelt dabei ihre Herkunft ``legacy``.
+
+    **Reserve:** ``fixed`` (``reserve_mm``, Bestand) oder ``percent``
+    (``reserve_percent``, ``reserve_mm`` dann ``0``) - nie beides.
+
+    ``assign_devices``: Endgeraete dieser Leitung, die beim Speichern ausdruecklich diesem
+    Stromkreis zugeordnet werden (zusaetzlich ``electrical.circuit.write``,
+    ``expected_circuit_version``); nie umgehaengt, atomar mit der Leitung.
     """
 
     label: str | None = Field(default=None, max_length=60)
     start_device_id: uuid.UUID | None = None
-    end_device_id: uuid.UUID
+    end_device_id: uuid.UUID | None = None
     cable_type: str | None = Field(default=None, max_length=40)
     conductor_count: int | None = Field(default=None, ge=1, le=100)
     cross_section_mm2: str | None = Field(
@@ -1028,6 +1084,14 @@ class CableIn(_Strict):
     start_allowance_mm: int = Field(default=0, ge=0, le=MAX_CABLE_ALLOWANCE_MM)
     end_allowance_mm: int = Field(default=0, ge=0, le=MAX_CABLE_ALLOWANCE_MM)
     reserve_mm: int = Field(default=0, ge=0, le=MAX_CABLE_ALLOWANCE_MM)
+    reserve_mode: ReserveModeValue = "fixed"
+    reserve_percent: str | None = Field(default=None, pattern=PERCENT_PATTERN, examples=["20"])
+    spec_source: ValueSourceValue | None = None
+    reserve_source: ValueSourceValue | None = None
+    allowance_source: ValueSourceValue | None = None
+    defaults_basis: DefaultsBasisIn | None = None
+    assign_devices: list[uuid.UUID] = Field(default_factory=list, max_length=MAX_ASSIGN_DEVICES)
+    expected_circuit_version: int | None = Field(default=None, ge=1)
     waypoints: list[CableWaypointIn] = Field(default_factory=list, max_length=MAX_CABLE_WAYPOINTS)
     new_penetrations: list[NewPenetrationIn] = Field(
         default_factory=list, max_length=MAX_NEW_PENETRATIONS
@@ -1042,6 +1106,30 @@ class CableIn(_Strict):
             msg = "Der Querschnitt muss groesser als 0 sein."
             raise ValueError(msg)
         return value
+
+    @model_validator(mode="after")
+    def _consistent(self) -> CableIn:
+        if self.reserve_mode == "percent":
+            if self.reserve_percent is None:
+                msg = "Bei reserve_mode percent ist reserve_percent anzugeben."
+                raise ValueError(msg)
+            if self.reserve_mm != 0:
+                msg = "Bei reserve_mode percent ist reserve_mm 0 - nie beide Reserveformen."
+                raise ValueError(msg)
+        elif self.reserve_percent is not None:
+            msg = "reserve_percent gilt nur bei reserve_mode percent."
+            raise ValueError(msg)
+        uses_defaults = "defaults" in (self.spec_source, self.reserve_source, self.allowance_source)
+        if uses_defaults and self.defaults_basis is None:
+            msg = "Werte aus Vorgaben brauchen defaults_basis (Stand der gelesenen Vorgaben)."
+            raise ValueError(msg)
+        if self.assign_devices and self.expected_circuit_version is None:
+            msg = "assign_devices braucht expected_circuit_version."
+            raise ValueError(msg)
+        if len(set(self.assign_devices)) != len(self.assign_devices):
+            msg = "Ein Geraet ist in assign_devices doppelt angegeben."
+            raise ValueError(msg)
+        return self
 
 
 class CableWaypointOut(BaseModel):
@@ -1097,20 +1185,39 @@ class CableOut(BaseModel):
 
     ``length_mm`` nur bei ``status = confirmed``; sonst ist ``known_mm`` ausdruecklich
     eine **Teilsumme** der gueltigen Teile plus Zugaben. ``deviates_from_proposal``:
-    die Kabelangaben weichen vom aktuellen Stromkreisvorschlag ab.
+    die Kabelangaben weichen vom aktuellen Stromkreisvorschlag ab. ``allowance_mm`` =
+    ``connection_allowance_mm`` + wirksame Reserve (ohne offene Prozentreserve).
     """
 
     id: uuid.UUID
     circuit_id: uuid.UUID
     label: str | None
     start_device_id: uuid.UUID | None
-    end_device_id: uuid.UUID
+    #: ``null`` = Endgeraet fehlt (offene Planung, ``incomplete``).
+    end_device_id: uuid.UUID | None
     cable_type: str | None
     conductor_count: int | None
     cross_section_mm2: str | None
     start_allowance_mm: int
     end_allowance_mm: int
+    #: Feste Reserve (``fixed``); bei ``percent`` immer ``0``.
     reserve_mm: int
+    reserve_mode: ReserveModeValue
+    #: Prozentsatz als String (``"20.00"``) bei ``percent``, sonst ``null``.
+    reserve_percent: str | None
+    #: Wirksame Reserve in mm; ``null``, solange eine Prozentreserve auf einen bestaetigten
+    #: Weg wartet (``reserve_pending``). Abgeleitet, nie gespeichert.
+    reserve_effective_mm: int | None
+    reserve_pending: bool
+    #: Start- und Endzugabe zusammen - getrennt von der Reserve.
+    connection_allowance_mm: int
+    spec_origin: CableValueOriginValue
+    reserve_origin: CableValueOriginValue
+    allowance_origin: CableValueOriginValue
+    cable_template_id: uuid.UUID | None
+    cable_template_version: int | None
+    defaults_office_version: int | None
+    defaults_project_version: int | None
     waypoints: list[CableWaypointOut]
     status: CableStatusValue
     geometric_mm: int
@@ -1217,7 +1324,15 @@ class CablingBucketOut(BaseModel):
 
     count: int
     geometric_mm: int
+    #: ``connection_allowance_mm`` + ``reserve_mm`` - je Leitung genau einmal.
     allowance_mm: int
+    #: Anschlusszugaben (fest) - getrennt ausgewiesen (Phase 6c, V1).
+    connection_allowance_mm: int
+    #: Wirksame Reserve: feste Bestandsreserve und berechnete Prozentreserve, je Leitung eine.
+    reserve_mm: int
+    #: Leitungen mit Prozentreserve, die auf einen bestaetigten Weg wartet - ihre Reserve
+    #: ist in keiner Summe enthalten.
+    reserve_pending_count: int
     total_mm: int
     cable_ids: list[uuid.UUID]
 
@@ -1248,7 +1363,7 @@ class CablingCableOut(BaseModel):
     circuit_id: uuid.UUID
     label: str | None
     start_device_id: uuid.UUID | None
-    end_device_id: uuid.UUID
+    end_device_id: uuid.UUID | None
     cable_type: str | None
     conductor_count: int | None
     cross_section_mm2: str | None
@@ -1256,6 +1371,14 @@ class CablingCableOut(BaseModel):
     status: CableStatusValue
     geometric_mm: int
     allowance_mm: int
+    connection_allowance_mm: int
+    reserve_mode: ReserveModeValue
+    reserve_percent: str | None
+    reserve_effective_mm: int | None
+    reserve_pending: bool
+    spec_origin: CableValueOriginValue
+    reserve_origin: CableValueOriginValue
+    allowance_origin: CableValueOriginValue
     length_mm: int | None
     known_mm: int
     problem_codes: list[str]
@@ -1339,3 +1462,227 @@ class CablingSummaryOut(BaseModel):
     crossings: list[CablingCrossingOut]
     circuits: list[CablingCircuitOut]
     unassigned_device_ids: list[uuid.UUID]
+
+
+# ------------------------------------- Kabelvorlagen und Planungsvorgaben (Phase 6c, V1)
+
+#: Endpunktarten der Anschlusszugaben (Entwurf §8.2).
+EndpointKindValue = Literal["board", "junction", "device"]
+DefaultsLevelValue = Literal["project", "office"]
+MAX_CABLE_TEMPLATES = 500
+MAX_TYPE_TEMPLATES = 200
+
+
+class _CableTemplateFields(_Strict):
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    cable_type: str | None = Field(default=None, min_length=1, max_length=40)
+    conductor_count: int | None = Field(default=None, ge=1, le=100)
+    cross_section_mm2: str | None = Field(
+        default=None, pattern=CROSS_SECTION_PATTERN, examples=["1.5", "2.50"]
+    )
+    is_active: bool | None = None
+    sort_order: int | None = Field(default=None, ge=0, le=10_000)
+
+    _required = field_validator("name", "cable_type")(_required_text)
+
+    @field_validator("cross_section_mm2")
+    @classmethod
+    def _positive(cls, value: str | None) -> str | None:
+        if value is not None and Decimal(value) == 0:
+            msg = "Der Querschnitt muss groesser als 0 sein."
+            raise ValueError(msg)
+        return value
+
+
+class CableTemplateCreate(_CableTemplateFields):
+    """Neue Kabelvorlage des Betriebs - technische Angaben, **kein Preis**.
+
+    Das Tripel ist vollstaendig (eine Vorlage liefert immer alle drei Werte).
+    """
+
+    name: str = Field(min_length=1, max_length=80)
+    cable_type: str = Field(min_length=1, max_length=40)
+    conductor_count: int = Field(ge=1, le=100)
+    cross_section_mm2: str = Field(pattern=CROSS_SECTION_PATTERN, examples=["1.5"])
+    is_active: bool = True
+    sort_order: int = Field(default=0, ge=0, le=10_000)
+
+
+class CableTemplateUpdate(_CableTemplateFields):
+    """Teilaenderung (``If-Match``). Deaktivieren statt Loeschen, wenn genutzt.
+
+    Eine Aenderung aendert **keine** bestehende Leitung - deren Angaben stehen an ihr.
+    """
+
+    _not_nullable = field_validator(
+        "name", "cable_type", "conductor_count", "cross_section_mm2", "is_active", "sort_order"
+    )(reject_explicit_null)
+
+
+class CableTemplateOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    cable_type: str
+    conductor_count: int
+    cross_section_mm2: str
+    is_active: bool
+    sort_order: int
+    #: Von Leitungen, Vorgaben oder Zuordnungen genutzt - dann nicht loeschbar.
+    in_use: bool
+    version: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class CableTemplateListOut(BaseModel):
+    """Alle Kabelvorlagen des Betriebs nach Sortierung und Name (auch inaktive)."""
+
+    templates: list[CableTemplateOut]
+
+
+class DeviceTypeTemplateIn(_Strict):
+    device_type_key: str = Field(min_length=1, max_length=40)
+    cable_template_id: uuid.UUID
+
+
+class DeviceTypeTemplateOut(BaseModel):
+    device_type_key: str
+    cable_template_id: uuid.UUID
+
+
+class _PlanningDefaultsFields(_Strict):
+    """Vollstaendiger Stand einer Vorgabenebene (``PUT`` ersetzt ihn ganz).
+
+    **Jedes Feld ist anzugeben**: ``null`` = nicht gesetzt (Projekt: Betriebsstandard
+    uebernehmen; Betrieb: 0 % bzw. 0 mm), ``"0"`` bzw. ``0`` = ausdruecklich null. Ein
+    fehlendes Feld ist ein Fehler (``422``) - so werden fehlend, ``null`` und null nie
+    verwechselt. ``expected_version``: gelesene Version, ``0`` = noch nichts gespeichert.
+    """
+
+    expected_version: int = Field(ge=0)
+    reserve_percent: str | None = Field(pattern=PERCENT_PATTERN, examples=["20", None])
+    board_allowance_mm: int | None = Field(ge=0, le=MAX_CABLE_ALLOWANCE_MM)
+    junction_allowance_mm: int | None = Field(ge=0, le=MAX_CABLE_ALLOWANCE_MM)
+    device_allowance_mm: int | None = Field(ge=0, le=MAX_CABLE_ALLOWANCE_MM)
+    default_cable_template_id: uuid.UUID | None
+    device_type_templates: list[DeviceTypeTemplateIn] = Field(max_length=MAX_TYPE_TEMPLATES)
+
+
+class PlanningDefaultsIn(_PlanningDefaultsFields):
+    """Betriebsstandard ersetzen (``electrical.defaults.manage``)."""
+
+
+class ProjectPlanningDefaultsIn(_PlanningDefaultsFields):
+    """Projektvorgabe ersetzen (``electrical.route.write``) - waehlt nur Betriebsvorlagen."""
+
+
+class _PlanningDefaultsOutFields(BaseModel):
+    #: ``0`` = keine Vorgabe gespeichert (alle Felder ``null``).
+    version: int
+    reserve_percent: str | None
+    board_allowance_mm: int | None
+    junction_allowance_mm: int | None
+    device_allowance_mm: int | None
+    default_cable_template_id: uuid.UUID | None
+    device_type_templates: list[DeviceTypeTemplateOut]
+    updated_at: datetime | None
+
+
+class PlanningDefaultsOut(_PlanningDefaultsOutFields):
+    """Betriebsstandard - gespeicherte Werte, ``null`` = nicht gesetzt."""
+
+
+class ProjectPlanningDefaultsOut(_PlanningDefaultsOutFields):
+    """Projektvorgabe - gespeicherte Werte, ``null`` = Betriebsstandard uebernehmen."""
+
+    project_id: uuid.UUID
+
+
+class DefaultsBasisOut(BaseModel):
+    """Stand der Vorgaben dieser Antwort - beim Speichern als ``defaults_basis`` mitsenden."""
+
+    office_version: int
+    project_version: int
+    cable_template_id: uuid.UUID | None = None
+    cable_template_version: int | None = None
+    circuit_version: int | None = None
+
+
+class EffectiveReserveOut(BaseModel):
+    percent: str
+    origin: CableValueOriginValue
+
+
+class EffectiveAllowanceOut(BaseModel):
+    endpoint_kind: EndpointKindValue
+    value_mm: int
+    origin: CableValueOriginValue
+
+
+class EffectiveTemplateChoiceOut(BaseModel):
+    """Vorlagenwahl einer Ebene: Projekt vor Betrieb; ``template`` inklusive Aktivstatus."""
+
+    device_type_key: str | None
+    level: DefaultsLevelValue
+    template: CableTemplateOut
+
+
+class EffectiveHintOut(BaseModel):
+    """Hinweis, nie eine stille Entscheidung: ``template-inactive``,
+    ``start-template-differs``, ``circuit-proposal-not-activated``,
+    ``circuit-override-incomplete``."""
+
+    code: str
+    template_id: uuid.UUID | None
+    device_id: uuid.UUID | None
+
+
+class EffectiveSpecOut(BaseModel):
+    origin: CableValueOriginValue
+    cable_type: str | None
+    conductor_count: int | None
+    cross_section_mm2: str | None
+    cable_template_id: uuid.UUID | None
+    level: DefaultsLevelValue | None
+    deciding_device_id: uuid.UUID | None
+
+
+class EffectiveCableAllowancesOut(BaseModel):
+    origin: CableValueOriginValue
+    start_mm: int
+    end_mm: int
+    start_origin: CableValueOriginValue
+    end_origin: CableValueOriginValue
+
+
+class EffectiveForCableOut(BaseModel):
+    """Vorbelegung fuer eine konkrete neue Leitung - genau das, was der Server mit
+    ``*_source = defaults`` speichern wuerde."""
+
+    circuit_id: uuid.UUID
+    start_device_id: uuid.UUID | None
+    end_device_id: uuid.UUID | None
+    spec: EffectiveSpecOut
+    reserve: EffectiveReserveOut
+    allowances: EffectiveCableAllowancesOut
+    hints: list[EffectiveHintOut]
+    basis: DefaultsBasisOut
+
+
+class EffectivePlanningDefaultsOut(BaseModel):
+    """Wirksame Vorgaben eines Projekts (aufgeloeste Werte, Herkunft, Versionsbasis).
+
+    Ein konsistenter Stand je Antwort (geteilte Projekt- und Vorgabensperre). ``basis`` ist
+    beim Speichern einer Leitung mit ``*_source = defaults`` als ``defaults_basis`` zu
+    senden; ``for_cable`` nur mit ``circuit_id`` (optional Start-/Endgeraet).
+    """
+
+    project_id: uuid.UUID
+    project_status: str
+    basis: DefaultsBasisOut
+    reserve: EffectiveReserveOut
+    allowances: list[EffectiveAllowanceOut]
+    default_template: EffectiveTemplateChoiceOut | None
+    device_type_templates: list[EffectiveTemplateChoiceOut]
+    templates: list[CableTemplateOut]
+    for_cable: EffectiveForCableOut | None

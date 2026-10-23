@@ -84,11 +84,14 @@ Dokumentation und Oberfläche auf Deutsch, Code und API auf Englisch.
 | Neue Durchführung | `new_penetrations` | Durchführung, die nur im Leitungsentwurf besteht und atomar mit der Leitung entsteht; Verwerfen hinterlässt nichts – seit 6b.5 |
 | Hilfslinie | – (Oberfläche) | unverbindliche Planungshilfe für Leitungswege in der Wandansicht, ohne Prüfung oder Normaussage – seit 6b.4 |
 | Anschlusszugabe / Reserve | `start_allowance_mm`, `end_allowance_mm`, `reserve_mm` | ausdrücklich je Leitung eingetragene Zusatzlänge, nie still – **Entwurf 6b** (ab 6c: siehe Leitungsreserve, Planungsvorgabe) |
-| Planungsvorgabe | `planning_defaults` | vom Betrieb (Betriebsstandard) oder im Projekt (Projektvorgabe) hinterlegte Vorschlagswerte für neue Leitungen; keine Laufzeitvererbung – **Entwurf 6c** (ADR 0027) |
-| Betriebsstandard / Projektvorgabe | `planning_defaults` / `project_planning_defaults` | Vorgabe je Organisation bzw. je Projekt; leere Projektfelder übernehmen den Betriebsstandard – **Entwurf 6c** |
-| Kabelvorlage | `cable_template` | benannte technische Kabelangabe (Typ, Leiteranzahl, Querschnitt) ohne Preis, zuordenbar je Gerätetyp – **Entwurf 6c** |
-| Leitungsreserve | `reserve_mode`, `reserve_percent`, `reserve_mm` | Planungsreserve einer Leitung: Prozent der geometrischen Länge (aufgerundet auf ganze mm, nur bei vollständigem Weg) oder fest; getrennt vom Material-Verschnitt – **Entwurf 6c** |
-| Herkunft (einer Angabe) | `*_origin` | woher ein Leitungswert stammt: Stromkreisvorschlag, Vorlage, Projekt, Betrieb, abweichend, Altbestand – **Entwurf 6c** |
+| Planungsvorgabe | `planning_defaults` | vom Betrieb (Betriebsstandard) oder im Projekt (Projektvorgabe) hinterlegte Vorschlagswerte für neue Leitungen; keine Laufzeitvererbung – **6c V1 umgesetzt** (ADR 0027) |
+| Betriebsstandard / Projektvorgabe | `electrical_planning_defaults` / `electrical_project_defaults` | Vorgabe je Organisation bzw. je Projekt; leere (`NULL`) Projektfelder übernehmen den Betriebsstandard, eine ausdrückliche 0 gilt – **6c V1 umgesetzt** |
+| Kabelvorlage | `electrical_cable_templates` | benannte technische Kabelangabe (Typ, Leiteranzahl, Querschnitt) ohne Preis, zuordenbar je Gerätetyp; genutzt nicht löschbar, nur deaktivierbar – **6c V1 umgesetzt** |
+| Leitungsreserve | `reserve_mode`, `reserve_percent`, `reserve_mm` | Planungsreserve einer Leitung: Prozent der geometrischen Länge (aufgerundet auf ganze mm, nur bei vollständigem Weg) oder fest; getrennt vom Material-Verschnitt – **6c V1 umgesetzt** |
+| Herkunft (einer Angabe) | `spec_origin`, `reserve_origin`, `allowance_origin` | woher ein Leitungswert stammt: aktivierter Stromkreis, Gerätetyp- oder Standardvorlage, Projekt, Betrieb, abweichend (`manual`), Altbestand (`legacy`), keine (`none`) – **6c V1 umgesetzt** |
+| Vorgabenbasis | `defaults_basis`, `defaults_*_version` | Versionen der beim Lesen genutzten Vorgaben; weicht sie beim Speichern ab, wird nichts gespeichert (`planning-defaults-changed`) – **6c V1** |
+| Stromkreisvorrang | `proposal_overrides_templates` | ausdrücklich aktivierte Kabelvorgabe eines Stromkreises für neue Leitungen; ohne Aktivierung nur Hinweis – **6c V1** |
+| Offene Leitung | `end_device_id` NULL | Leitung ohne Endgerät, Status unvollständig („Endgerät fehlt“), ohne Prozentreserve und Gesamtlänge – **6c V1** |
 | Abschlussdialog | – (Oberfläche) | Dialog nach dem Zeichnen einer Leitung mit vorbelegten Angaben, Herkunft und Ergebnis – **Entwurf 6c** |
 | Kontextleiste | – (Oberfläche) | kompakte Leiste an der Zeichenfläche mit Schritt, Status, Meldung und Primäraktion der laufenden Bearbeitung – **Entwurf 6c** |
 | Lagegerät | `placement_device_id` | Gerät `distribution_board`, das die räumliche Lage einer Verteilung angibt; entsteht nur über die Platzierung – **Entwurf 6c** (ADR 0028) |

@@ -119,7 +119,10 @@ export function Mengenuebersicht({
       <span className="flex min-w-[10rem] flex-col">
         <strong>{art === "bestaetigt" ? mm(e.total_mm) : `Teilsumme ${mm(e.total_mm)}`}</strong>
         <span className="text-muted">
-          {e.count} {e.count === 1 ? "Leitung" : "Leitungen"} · Weg {mm(e.geometric_mm)} + Zugaben {mm(e.allowance_mm)}
+          {e.count} {e.count === 1 ? "Leitung" : "Leitungen"} · Weg {mm(e.geometric_mm)} +{" "}
+          {/* Reserve getrennt (Phase 6c V1) - Teil der Zugaben, nie doppelt gezählt. */}
+          {e.reserve_mm > 0 ? `Zugaben ${mm(e.connection_allowance_mm)} + Reserve ${mm(e.reserve_mm)}` : `Zugaben ${mm(e.allowance_mm)}`}
+          {e.reserve_pending_count > 0 ? ` · Prozentreserve offen bei ${e.reserve_pending_count}` : ""}
         </span>
       </span>
     );
@@ -397,7 +400,13 @@ function Leitungszeile({
         <strong>{l.label ?? "Leitung"}</strong> · {kreis} · {von} → {nach}
         <br />
         <span className="text-muted">
-          {angabenText(l)} · {laenge} (Weg {masse.anzeigen(l.geometric_mm)}, Zugaben {masse.anzeigen(l.allowance_mm)})
+          {angabenText(l)} · {laenge} (Weg {masse.anzeigen(l.geometric_mm)}, Zugaben {masse.anzeigen(l.allowance_mm)}
+          {l.reserve_mode === "percent" && l.reserve_percent !== null
+            ? l.reserve_pending
+              ? `, Reserve ${l.reserve_percent.replace(".", ",")} % offen`
+              : `, davon Reserve ${l.reserve_percent.replace(".", ",")} %`
+            : ""}
+          )
         </span>
         {fehlend && l.missing_spec.length > 0 && <span className="text-danger"> · {fehlendText(l.missing_spec)}</span>}
         {befunde && l.problem_codes.length > 0 && (
