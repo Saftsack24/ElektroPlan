@@ -16,8 +16,25 @@
  * Wegpunkte jeder Art bleiben unverändert erhalten - auch Fußboden-,
  * Bodenübergangs- und Steigwegpunkte, die hier nicht bearbeitet werden.
  */
+import type { components } from "@elektroplan/api-client";
+
 import type { NeueDurchfuehrung } from "./durchfuehrung";
 import type { Wegpunkt } from "./laenge";
+
+/**
+ * Herkunft einer Wertegruppe im Entwurf (Phase 6c, ADR 0027): `vorgabe` = aus der
+ * Vorgabenkette, die der Server beim Speichern selbst prüft; `manuell` = ausdrücklich
+ * abweichend; `bestand` = unverändert wie gespeichert (Herkunft bleibt, auch `legacy`).
+ */
+export type Wertequelle = "vorgabe" | "manuell" | "bestand";
+
+export interface Wertequellen {
+  readonly kabel: Wertequelle;
+  readonly reserve: Wertequelle;
+  readonly zugaben: Wertequelle;
+}
+
+export type Vorgabenbasis = components["schemas"]["DefaultsBasisOut"];
 
 export interface Leitungswerte {
   readonly circuitId: string;
@@ -40,7 +57,14 @@ export interface Leitungswerte {
    * Rückgängig und Verwerfen nehmen sie mit; auf dem Server gibt es sie erst nach dem Speichern.
    */
   readonly neueDurchfuehrungen: readonly NeueDurchfuehrung[];
+  /** Phase 6c (L3): Herkunft je Wertegruppe. */
+  readonly quellen: Wertequellen;
+  /** Endgeräte, deren Zuordnung zum Stromkreis beim Speichern ausdrücklich bestätigt ist. */
+  readonly zuordnen: readonly string[];
 }
+
+export const NEUE_QUELLEN: Wertequellen = { kabel: "vorgabe", reserve: "vorgabe", zugaben: "vorgabe" };
+export const BESTAND_QUELLEN: Wertequellen = { kabel: "bestand", reserve: "bestand", zugaben: "bestand" };
 
 export type Leitungsstatus = "bearbeiten" | "speichert" | "konflikt" | "fehler";
 
@@ -62,6 +86,18 @@ export interface Leitungsentwurf {
   readonly auswahl: number | null;
   readonly status: Leitungsstatus;
   readonly fehler: Leitungsfehler | null;
+  /**
+   * Basis der zuletzt übernommenen Vorgaben (Versionen) - nicht Teil der Historie. Der Server
+   * lehnt ein Speichern mit veralteter Basis ab (`409 planning-defaults-changed`).
+   */
+  readonly vorgabenBasis: Vorgabenbasis | null;
+  /** Die Vorgaben haben sich seit dem Lesen geändert - Entscheidung im Dialog (Entwurf §8.6). */
+  readonly vorgabenGeaendert: boolean;
+  /**
+   * Feld, dessen Eingabe zuletzt übernommen wurde (Abschlussdialog, 6c L3): Weitere Tastenanschläge im
+   * selben Feld ergänzen diesen Rückgängig-Schritt, statt je Zeichen einen neuen anzulegen.
+   */
+  readonly eingabeFeld: string | null;
 }
 
 export const MAX_LEITUNGSHISTORIE = 100;
@@ -69,7 +105,7 @@ export const MAX_LEITUNGSHISTORIE = 100;
 export type Leitungsaktion =
   | { typ: "oeffnen"; entwurf: Leitungsentwurf }
   | { typ: "schliessen" }
-  | { typ: "aendern"; werte: Leitungswerte; auswahl?: number | null }
+  | { typ: "aendern"; werte: Leitungswerte; auswahl?: number | null; feld?: string }
   | { typ: "auswaehlen"; auswahl: number | null }
   | { typ: "ziehen-beginnen" }
   | { typ: "ziehen-vorschau"; werte: Leitungswerte }
@@ -80,11 +116,29 @@ export type Leitungsaktion =
   | { typ: "verwerfen" }
   | { typ: "speichern-beginnt" }
   | { typ: "gespeichert"; cableId: string; version: number; werte: Leitungswerte }
-  | { typ: "gescheitert"; status: "konflikt" | "fehler"; fehler: Leitungsfehler }
-  | { typ: "hinweis-schliessen" };
+  | { typ: "gescheitert"; status: "konflikt" | "fehler"; fehler: Leitungsfehler; vorgabenGeaendert?: boolean }
+  | { typ: "hinweis-schliessen" }
+  /** Werte aus den gelesenen Vorgaben für Gruppen mit Quelle `vorgabe` - abgeleitet, kein Rückgängig-Schritt. */
+  | { typ: "vorgaben-anwenden"; werte: Leitungswerte; basis: Vorgabenbasis | null }
+  /** Weiterzeichnen (6c, L2): das Ziel wird gelöst - die Zielwahl war der letzte Schritt und entfällt mit ihm. */
+  | { typ: "ziel-loesen" };
 
 export function entwurfAus(cableId: string | null, version: number | null, werte: Leitungswerte): Leitungsentwurf {
-  return { cableId, version, basis: werte, werte, zurueck: [], vor: [], ziehenAb: null, auswahl: null, status: "bearbeiten", fehler: null };
+  return {
+    cableId,
+    version,
+    basis: werte,
+    werte,
+    zurueck: [],
+    vor: [],
+    ziehenAb: null,
+    auswahl: null,
+    status: "bearbeiten",
+    fehler: null,
+    vorgabenBasis: null,
+    vorgabenGeaendert: false,
+    eingabeFeld: null,
+  };
 }
 
 function gleicheWegpunkte(a: readonly Wegpunkt[], b: readonly Wegpunkt[]): boolean {
@@ -105,13 +159,20 @@ export function gleicheWerte(a: Leitungswerte, b: Leitungswerte): boolean {
     a.reserveMm === b.reserveMm &&
     a.reserveProzent === b.reserveProzent &&
     gleicheWegpunkte(a.wegpunkte, b.wegpunkte) &&
-    JSON.stringify(a.neueDurchfuehrungen) === JSON.stringify(b.neueDurchfuehrungen)
+    JSON.stringify(a.neueDurchfuehrungen) === JSON.stringify(b.neueDurchfuehrungen) &&
+    a.quellen.kabel === b.quellen.kabel &&
+    a.quellen.reserve === b.quellen.reserve &&
+    a.quellen.zugaben === b.quellen.zugaben &&
+    a.zuordnen.join("|") === b.zuordnen.join("|")
   );
 }
 
-/** Weicht der Entwurf vom gespeicherten Stand ab? Eine neue Leitung ist immer ungespeichert. */
+/**
+ * Weicht der Entwurf vom gespeicherten Stand ab? Eine neue Leitung zählt erst, sobald Planungsdaten
+ * eingegeben sind (6c L2/L3): Der leere Einstieg über „Leitung hinzufügen“ ist keine Bearbeitung.
+ */
 export function leitungUngespeichert(e: Leitungsentwurf | null): boolean {
-  return e !== null && (e.cableId === null || !gleicheWerte(e.basis, e.werte));
+  return e !== null && !gleicheWerte(e.basis, e.werte);
 }
 
 function begrenzt(liste: readonly Leitungswerte[]): readonly Leitungswerte[] {
@@ -123,6 +184,12 @@ function gueltigeAuswahl(auswahl: number | null, werte: Leitungswerte): number |
 }
 
 export function leitungsReducer(zustand: Leitungsentwurf | null, aktion: Leitungsaktion): Leitungsentwurf | null {
+  const neu = schritt(zustand, aktion);
+  // Jede andere Aktion beendet die Folge von Eingaben im selben Feld.
+  return neu !== null && neu.eingabeFeld !== null && aktion.typ !== "aendern" && neu !== zustand ? { ...neu, eingabeFeld: null } : neu;
+}
+
+function schritt(zustand: Leitungsentwurf | null, aktion: Leitungsaktion): Leitungsentwurf | null {
   if (aktion.typ === "oeffnen") return aktion.entwurf;
   if (zustand === null) return null;
   const e = zustand;
@@ -133,11 +200,15 @@ export function leitungsReducer(zustand: Leitungsentwurf | null, aktion: Leitung
       if (gleicheWerte(aktion.werte, e.werte)) {
         return aktion.auswahl === undefined ? e : { ...e, auswahl: gueltigeAuswahl(aktion.auswahl, e.werte) };
       }
+      const feld = aktion.feld ?? null;
+      // Weiter getippt im selben Feld: derselbe Rückgängig-Schritt.
+      const fortsetzen = feld !== null && e.eingabeFeld === feld && e.zurueck.length > 0;
       return {
         ...e,
         werte: aktion.werte,
-        zurueck: begrenzt([...e.zurueck, e.werte]),
+        zurueck: fortsetzen ? e.zurueck : begrenzt([...e.zurueck, e.werte]),
         vor: [],
+        eingabeFeld: feld,
         auswahl: gueltigeAuswahl(aktion.auswahl === undefined ? e.auswahl : aktion.auswahl, aktion.werte),
         status: e.status === "speichert" ? e.status : "bearbeiten",
       };
@@ -174,13 +245,49 @@ export function leitungsReducer(zustand: Leitungsentwurf | null, aktion: Leitung
       return entwurfAus(aktion.cableId, aktion.version, aktion.werte);
     case "gescheitert":
       // Der Entwurf bleibt vollständig erhalten - nichts wird überschrieben.
-      return { ...e, status: aktion.status, fehler: aktion.fehler };
+      return { ...e, status: aktion.status, fehler: aktion.fehler, vorgabenGeaendert: aktion.vorgabenGeaendert === true };
     case "hinweis-schliessen":
-      return { ...e, status: "bearbeiten", fehler: null };
+      return { ...e, status: "bearbeiten", fehler: null, vorgabenGeaendert: false };
+    case "ziel-loesen": {
+      if (e.werte.endId === null) return e;
+      const ohne = { ...e.werte, endId: null };
+      const vorher = e.zurueck[e.zurueck.length - 1];
+      // War die Zielwahl der letzte Schritt (gleicher Verlauf, nur ohne Ziel), entfällt sie samt Schritt;
+      // im Dialog abgeleitete Angaben (Stromkreis, Vorgaben) bleiben. Sonst ohne neuen Schritt.
+      const gleicherVerlauf =
+        vorher !== undefined &&
+        vorher.endId === null &&
+        vorher.startId === ohne.startId &&
+        gleicheWegpunkte(vorher.wegpunkte, ohne.wegpunkte) &&
+        JSON.stringify(vorher.neueDurchfuehrungen) === JSON.stringify(ohne.neueDurchfuehrungen);
+      return gleicherVerlauf ? { ...e, werte: ohne, zurueck: e.zurueck.slice(0, -1) } : { ...e, werte: ohne };
+    }
+    case "vorgaben-anwenden": {
+      // Abgeleitet aus den Vorgaben: ersetzt den Stand ohne neuen Rückgängig-Schritt; frühere
+      // Schritte behalten ihre eigenen Werte. Eine neue Leitung übernimmt sie als Ausgangsstand.
+      const werte = aktion.werte;
+      const neu = e.cableId === null && e.zurueck.length === 0;
+      return {
+        ...e,
+        werte,
+        basis: neu ? werte : e.basis,
+        vorgabenBasis: aktion.basis,
+        vorgabenGeaendert: false,
+        ...(e.fehler !== null && e.vorgabenGeaendert ? { fehler: null, status: "bearbeiten" as const } : {}),
+      };
+    }
   }
 }
 
 // ------------------------------------------------------------------ Wegpunkte
+
+/**
+ * Mehrere Punkte auf einmal an einer Stelle (Standard: ans Ende) - etwa Ecke und Endpunkt einer L-Führung als **ein**
+ * Rückgängig-Schritt (Entwurf §18.4).
+ */
+export function wegpunkteEinfuegenAn(werte: Leitungswerte, index: number, neue: readonly Wegpunkt[]): Leitungswerte {
+  return { ...werte, wegpunkte: [...werte.wegpunkte.slice(0, index), ...neue, ...werte.wegpunkte.slice(index)] };
+}
 
 /** Neuer Punkt nach dem gewählten Wegpunkt, sonst am Ende; liefert Werte und neuen Index. */
 export function wegpunktEinfuegen(werte: Leitungswerte, wp: Wegpunkt, nach: number | null): { werte: Leitungswerte; index: number } {

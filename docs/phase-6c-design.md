@@ -1,6 +1,6 @@
 # Phase 6c – Entwurf: Bedienungsüberarbeitung, zentrale Planungsvorgaben und Verteilungsplanung
 
-**Status:** **3. Fassung (2026-10-16): Planungslayout und Leitungsablauf überarbeitet (§18); F6–F8 entschieden. L1 Planungslayout umgesetzt und am 2026-10-22 nachgearbeitet (§19.9: schmale Werkzeugleiste, gesperrte Knöpfe, Decke und 3D-Rückkehr im Browser) – **technisch geprüft** (2026-10-22, nach Senkung der Mehrkosten §19.9.6: regulärer Frontend-Gesamtlauf grün: 1 188/1 188 Tests in 55 s (Projekteinstellungen, allein, Last 26 %); die früher kritischen langen Tests 1,3–3,8 s); **L1 als Checkpoint `331bfbd` committet (2026-10-23)**, persönliche Layoutabnahme offen. **V1 Vorgaben-Backend technisch umgesetzt und geprüft (2026-10-23, §20), als Checkpoint committet (Task 0059).**** 6c.0 ist **überarbeitungsbedürftig und nicht abgenommen**; 6c.1–6c.8 zurückgestellt; neue Reihenfolge L1 → V1 → L2/L3 → P (§18.7, F6–F8 entschieden). Vorher: **2. Fassung (2026-10-15)** – Entscheidungen **F1–F5 vom Auftraggeber getroffen** (§14; F1 abweichend
+**Status:** **3. Fassung (2026-10-16): Planungslayout und Leitungsablauf überarbeitet (§18); F6–F8 entschieden. L1 Planungslayout umgesetzt und am 2026-10-22 nachgearbeitet (§19.9: schmale Werkzeugleiste, gesperrte Knöpfe, Decke und 3D-Rückkehr im Browser) – **technisch geprüft** (2026-10-22, nach Senkung der Mehrkosten §19.9.6: regulärer Frontend-Gesamtlauf grün: 1 188/1 188 Tests in 55 s (Projekteinstellungen, allein, Last 26 %); die früher kritischen langen Tests 1,3–3,8 s); **L1 als Checkpoint `331bfbd` committet (2026-10-23)**, persönliche Layoutabnahme offen. **V1 Vorgaben-Backend technisch umgesetzt und geprüft (2026-10-23, §20), als Checkpoint `39386c4` committet (Task 0059).** **L2/L3 (Zeichenablauf, Abschlussdialog, Verwaltung der Vorgaben) technisch umgesetzt, automatisiert und im laufenden Stack funktional geprüft (2026-10-24, §21), Bedienungslücken aus §21.5 nachgearbeitet (§21.6), Höhe der Arbeitsfläche (§21.7); als Checkpoint committet (Task 0062); persönliche Abnahme offen.**** 6c.0 ist **überarbeitungsbedürftig und nicht abgenommen**; 6c.1–6c.8 zurückgestellt; neue Reihenfolge L1 → V1 → L2/L3 → P (§18.7, F6–F8 entschieden). Vorher: **2. Fassung (2026-10-15)** – Entscheidungen **F1–F5 vom Auftraggeber getroffen** (§14; F1 abweichend
 von der Empfehlung, F2–F5 bestätigt). **6c.0 zur Umsetzung freigegeben** – **6c.0 technisch umgesetzt, automatisiert und im laufenden Stack funktional und optisch geprüft** (§17.5; nicht committet, manuelle Abnahme durch den Auftraggeber offen); alle übrigen
 Schritte bleiben bis zu ihrer jeweiligen Freigabe unangetastet. ADR 0027–0029 weiterhin *proposed*.
 **Einordnung:** eingeschobene Phase **vor Phase 7**. Phase 7 bleibt zurückgestellt, bis 6c bearbeitet ist.
@@ -1676,11 +1676,233 @@ Phase-7-ADR; der `ProjectRequirementsProvider` bleibt in V1 unverändert.
 
 ### 20.6 Offen
 
-* Oberfläche für Betriebsstandard, Kabelvorlagen, Gerätetypzuordnung und Projektvorgabe (L3).
-* Neuer Zeichenablauf und Abschlussdialog mit Vorbelegung nach `effective` (L2/L3); bis dahin legt der
-  bestehende Editor neue Leitungen mit fester Reserve und ohne Vorgabenherkunft an und verlangt ein Endgerät.
+* ~~Oberfläche für Vorgaben, neuer Zeichenablauf und Abschlussdialog~~ – mit L2/L3 umgesetzt (§21).
 * Persönliche Layoutabnahme L1 durch den Auftraggeber.
 * Zentrale Anwendung (6c.6), Verteilungsaufbau, Phase 7 – zurückgestellt.
+
+## 21. Umsetzungsstand L2/L3 – Zeichenablauf, Abschlussdialog, Verwaltung der Vorgaben (2026-10-23/24)
+
+**Freigabe:** Der Auftraggeber hat am 2026-10-23 V1 als Checkpoint (`39386c4`) sichern lassen und L2/L3
+freigegeben (Arbeitspakete A–D). L2/L3 ist **technisch umgesetzt, automatisiert und im laufenden Stack
+funktional geprüft, uncommittet**. Die persönliche Layoutabnahme L1 bleibt offen, ebenso die Abnahme von L2/L3.
+Keine Backendänderung, keine Migration, kein neuer API-Vertrag – alle Aufrufe nutzen die V1-Verträge (§20.2).
+
+### 21.1 A – Verwaltung der Vorgaben (Dialoge)
+
+* **Seite „Elektro-Vorgaben“** (Hauptnavigation, Route `/elektro-vorgaben`, Lesen mit `electrical.plan.read`):
+  Tabelle der Kabelvorlagen (Name, Typ, Leiter, Querschnitt, aktiv/deaktiviert, „in Verwendung“) mit Anlegen/
+  Bearbeiten im Dialog, Deaktivieren/Aktivieren, Entfernen nur ungenutzt; Zusammenfassung des Betriebsstandards
+  („nicht gesetzt“ ≠ 0) mit Dialog „Betriebsstandard für neue Leitungen“. Ohne `electrical.defaults.manage`
+  nur ansehen.
+* **Projekt:** Knopf „Planungsvorgaben“ (schmal: „Vorgaben“) in der Ansichtszeile von „Räume & Grundriss“; Dialog
+  je Angabe „Betriebsstandard übernehmen (Wert)“ oder „abweichender Projektwert“, darunter „Wirksam im Projekt:
+  Wert (Herkunft)“. Abgeschlossene oder archivierte Projekte: nur lesen, mit Grund.
+* **Stromkreis:** Schalter „Für neue Leitungen dieses Stromkreises diese Kabelvorgabe verwenden“
+  (`proposal_overrides_templates`) – nur ausdrücklich; unvollständige Angaben werden beim Aktivieren benannt.
+* Gemeinsam: 0 % / 0 mm sind ausdrückliche Werte; keine erfundenen Vorgaben, Preise oder Bemessungen;
+  Versionsprüfung (`expected_version` bzw. `If-Match`); beim Konflikt bleiben die Eingaben, „Serverstand laden
+  (Eingaben verwerfen)“ nur auf Wunsch. Vorgaben schreiben keine bestehende Leitung um.
+
+### 21.2 B – Direkter Einstieg und Zeichenablauf
+
+* **„Leitung hinzufügen“** (Taste L) startet sofort das Zeichnen – ohne Stromkreiswahl, ohne Formular. Die
+  Zeichenleiste zeigt die Schritte **1 Startgerät wählen → 2 Verlauf zeichnen → 3 Zielgerät anklicken oder offen
+  abschließen** (`aria-current="step"`).
+* **Schritt 1:** Nur Geräte reagieren; mögliche Startgeräte sind markiert, andere gedimmt mit Grund beim Zeigen
+  (z. B. Datendose, außen montiert). **Schritt 2:** Vorschau bis zum Zeiger mit Wirkung des nächsten Klicks (Fang,
+  Ecke, Übergang, Höhe) und Grund vor dem Klick bei ungültiger Lage. Ein Klick (Drücken/Loslassen unter 4 px)
+  setzt genau die Vorschau; ein Klick auf einen Wegpunkt wählt nur; neue Punkte kommen ans Ende, Einfügen nur
+  ausdrücklich („Nächsten Punkt nach Wegpunkt N einfügen“); Ziehen = ein Rückgängig-Schritt; Ecke und Punkt = ein
+  Schritt.
+* **L-Führung** an der Wand und standardmäßig auf Fußboden/Decke („Rechtwinklig“/„Gerade“, Taste W),
+  „Ecke wechseln“ (K) statt Kippen; beide Schenkel werden geprüft („Teilstrecke k: …“); eine gültige andere Ecke
+  wird angeboten. Doppelklick, Enter oder „Abschließen …“ öffnen den Dialog ohne doppelten Punkt.
+* **Grundriss:** Das Klickziel bestimmt die Punktart (Wandlinie = Wandpunkt, Raum = Fußboden-/Deckenpunkt,
+  Tür = Bodenübergang). Die Höhe neuer Wandpunkte ist ausdrücklich wählbar („Höhe wie zuvor“, 0 cm, Zonen,
+  Raumhöhe). Übergänge Raum↔Wand liegen auf der Achse und werden angekündigt mitgesetzt; der Wechsel Wand→Raum
+  ist zusätzlich als Knopf vorhanden. *(Präzisierung gegenüber §18.4: Ohne ausdrückliche Höhe wäre ein
+  Fußbodenpunkt an der Wand nicht eindeutig.)*
+* **Flächen und Geschosse:** ein gebäudeweiter Entwurf; Wechsel Wand/Decke/Grundriss (Knöpfe „→ Wand …“,
+  „↑ Decke dieses Raums“; aus dem Grundriss „Weiterzeichnen“ an den letzten Punkt) behalten Verlauf, Eingaben und
+  Rückgängig; nichts wird automatisch gespeichert. Escape: Ziehen → Vorschau → Auswahl → Einfügen → Werkzeug
+  beenden (Entwurf bleibt). „Abbrechen“ verwirft nur mit Rückfrage.
+* **Entfallen:** das lange Leitungsformular im Panel (jetzt Übersicht mit Status, Start → Ziel, Länge, Befunden
+  und lesbaren Wegpunkten), Stromkreiswahl und „Neue Leitung“ in der Leitungsliste (Stromkreiswahl dort nur noch
+  für „Geräte einem Stromkreis zuordnen“), die Ebenen-Knöpfe der Grundrissleiste und das eigene Leitungswerkzeug
+  in Wand- und Deckenansicht.
+
+### 21.3 C – Abschlussdialog und Vorbelegung
+
+* **Ein Dialog** für neue und bestehende Leitungen („Leitung abschließen“ bzw. „… – Angaben“): Verlauf
+  (Start → Ziel bzw. „offen“), Stromkreis (abgeleitet nach §7.3 aus der Zuordnung; Wahl bei mehreren; Konflikt bei
+  fremder Verteilung, nie umhängen), Kabel (Vorlage/Typ/Leiter/Querschnitt), Reserve (Prozent oder Bestandsmodus
+  „fest“), Anschlusszugaben, Ergebnis getrennt (Weg · Reserve · Zugaben = Gesamtbedarf), Status und Befunde,
+  **Herkunft** je Teil (z. B. „Standardvorlage (Betriebsstandard)“, „Projektvorgabe“, „abweichend“).
+* Vorbelegung über `…/planning-defaults/effective` (sitzungsgebunden, abbrechbar, `staleTime 0`); „⟲ Vorgabe
+  übernehmen“ je Teil; eine Abweichung bleibt eine Abweichung. Speichern sendet `spec_source`/`reserve_source`/
+  `allowance_source` und `defaults_basis`; bei einer unveränderten Bestandsleitung wird nichts umgeschrieben.
+* **Nicht zugeordnetes Ziel:** Die Zuordnung wird deutlich angezeigt, nur ausdrücklich bestätigt und nur mit
+  `circuit.write` ausgeführt (`assign_devices` + `expected_circuit_version`, atomar).
+* **Konflikte:** Versionskonflikt → Eingaben bleiben, „Serverstand laden (Änderungen verwerfen)“ oder „Entwurf
+  vorerst behalten“. Geänderte Vorgabenbasis (`409 planning-defaults-changed`) → nichts gespeichert, Vergleich
+  „bisher → jetzt“ in Anzeigeeinheiten, „Neue Vorgaben übernehmen“ oder „Bisherige Werte als Abweichung
+  behalten“.
+* Schließen, Escape oder Klick daneben verlieren nichts („Weiterzeichnen“ löst das Ziel einer neuen Leitung ohne
+  Rückgängig-Schritt); Verwerfen nur mit Rückfrage. Nach dem Speichern bleibt das Werkzeug für die nächste
+  Leitung aktiv.
+
+### 21.4 D – Prüfung
+
+* **Automatisiert (Frontend):** neu `Leitungsablauf.test.tsx` (13), `stromkreisableitung.test.ts` (11),
+  `vorgaben/formular.test.ts` (5), `vorgaben/Vorgaben.test.tsx` (6); erweitert bzw. angepasst Leitungsplanung,
+  Grundrissleitungen (+2 aus den Browserbefunden), Stromkreise (+1), Arbeitsfläche, Mengen, 3D, Modulindex.
+  **Gesamtlauf 1 242/1 242 grün** (108 Dateien, `--maxWorkers=6`, 82 s); ESLint, `tsc`, Modulgrenzen
+  (Front- und Backend), Build, API-Drift grün. Mit 16 parallelen Workern liefen 31 lange Integrationstests in die
+  5-s-Frist (reine Lastfolge, einzeln grün; Vergleich mit V1 im temporären Worktree ohne Regression).
+* **Im laufenden Stack** (Entwicklungskonto aus `docker-compose.yml`, PR-2026-0010, synthetische Werte):
+  Vorlage „TEST Steckdosen“ und Betriebsstandard (Standardvorlage, Verteilung 50 cm) über die Seite, Projektvorgabe
+  20 % über den Projektdialog; „Leitung hinzufügen“ → Verteilung → Wandpunkt (220 cm) → Steckdose → Dialog:
+  F1 abgeleitet, Herkunft korrekt, Weg 520 + Reserve 104 + Zugaben 50 = **674 cm**; Server identisch (5 200/
+  1 040/500 → 6 740 mm, Herkünfte, Basisversionen). Abweichung 15 % → „abweichend“, 78 cm, „Vorgabe übernehmen“;
+  Escape, Weiterzeichnen, offener Abschluss; nach Neuladen derselbe Dialog für die bestehende Leitung, unverändertes
+  Speichern ohne neue Version; Versions- und Vorgabenkonflikt (Projektvorgabe an anderer Stelle geändert) wie
+  beschrieben; Wechsel Grundriss → Wand → Decke mit erhaltenem Entwurf; Verwerfen mit Rückfrage. Danach
+  aufgeräumt (Vorgaben wieder „nicht gesetzt“, Vorlage gelöscht, sechs Bestandsleitungen unverändert).
+* **Browserbefunde behoben:** (1) Ein Startgerät unter einer bestehenden Leitung oder Wandlinie wurde nicht
+  erkannt – jetzt Ersatz über den Markierungsring (in Schritt 1 immer, beim Zeichnen nur über bestehenden
+  Leitungen); (2) nach „Ansicht verschieben“ führten „Leitung hinzufügen“ und Taste L nicht zurück zum Zeichnen;
+  (3) rohe Serverzeilen („geaendert“, „25.00 %“) im Vorgabenkonflikt – ersetzt durch den Vergleich; (4) die
+  Betriebsstandard-Liste lief bei 375 px über den Kartenrand.
+* **Optisch geprüft:** 1024×640, 1280×800, ~780 px Breite und 375 px (Seite und Dialoge), hell und dunkel
+  (dunkel nur vorübergehend im Browser gesetzt; die gespeicherte Darstellung des Kontos blieb unverändert).
+
+### 21.5 Offen (Stand nach §21.6)
+
+* ~~Layout beim Zeichnen~~, ~~veraltete Statuszeile / „ungespeichert“ beim leeren Einstieg~~, ~~Werte erst beim
+  Verlassen des Felds~~, ~~Wand aus dem Grundriss nur über „Weiterzeichnen“~~ – mit §21.6 behoben.
+* Backendtexte aus V1 (`cables.py`, `planning-defaults-changed`) ohne Umlaute und mit Dezimalpunkt – im
+  Frontend nicht sichtbar; bewusst keine Aufgabe dieser Runde.
+* Persönliche Abnahme L1 und L2/L3; zentrale Anwendung (6c.6), Verteilungsaufbau, Phase 7 – zurückgestellt.
+
+### 21.6 Nacharbeit: vier Bedienungslücken (2026-10-24)
+
+**Auftrag:** die vier relevanten Punkte aus §21.5 innerhalb von L1/L2/L3 schließen. Nur Frontend; kein Backend,
+keine Migration, kein neuer API-Vertrag. Uncommittet; Beurteilung von Layout und Leitungsbedienung offen.
+
+**1 – Zeichenfläche.** Die Zeichenleiste ist eine Zeile (bei mittlerer Breite zwei): aktueller Schritt (nur er),
+eine Rückmeldung, die Aktionen des Schritts und ein Hilfeknopf (?). Schritt 1 zeigt nur Schritt, Anweisung,
+Abbrechen und Hilfe. Entfallen sind die drei Schrittchips, der Block „Leitungsentwurf offen“ während des
+Zeichnens (Rückwege zu Mengen/3D stehen in der Leiste), die Dauertexte der Grundrissleitung (Klickziel,
+Steighalte, Durchführung → Hilfedialog) und die eigene Statuszeile von Wand/Decke während des Zeichnens.
+Höhenoptionen sind kurz („obere Zone“), schmal kürzere Knopftexte. Die L1-Höhenregel bleibt unverändert (Kopf,
+Werkzeuge, Kontext natürliche Höhe, Fläche den Rest, Mindesthöhe 220 px, bei Platzmangel füllt die Arbeitsfläche
+nach einem Scrollen das Fenster); neu: **„Leitung hinzufügen“ rollt die nicht vollständig sichtbare
+Arbeitsfläche einmal ins Bild** (`arbeitsflaecheZeigen`). Zoom und Weltmitte bleiben bei Größenänderungen
+(`groesseAendern`), Einpassen (F, „Ansicht zurücksetzen“) bleibt bewusst.
+
+Gemessen im laufenden Stack, Schritt 2 aktiv (SVG-Höhe; „frei“ = nicht von Leiste, Hinweis oder Maßstab verdeckt):
+
+| Fenster | bisher normal | bisher maximiert | jetzt normal | jetzt maximiert |
+|---|---|---|---|---|
+| 1280 × 800 | 220 px (≈187 frei), Leiste 120 px | 424 px (≈398) | **370 px (≈346)**, Leiste 74 px, ohne Scrollen | **600 px (≈576)** |
+| 1024 × 640 | 228 px, erst nach 323 px Scrollen | 220 px (≈187), Leiste 156 px + Hilfetexte | **440 px (≈416)**, Start rollt ein | **400 px (≈376)**, Leiste 87 px |
+| 390 × 844 | 531 px, Leiste (302 px) außerhalb des Bildes | 220 px (≈184) | **471 px (≈447)**, Leiste 220 px sichtbar | **471 px (≈447)** |
+
+Optisch: bei 1280 × 800 und 1024 × 640 bleibt der Plan beim Zeichnen sichtbar und eingepasst groß genug, um
+Wände und Geräte sicher zu treffen; schmal sind Schritt, Rückmeldung und alle Aktionen ohne Scrollen
+erreichbar (sieben kurze Zeilen). Schritt 1 ist eine Zeile.
+
+**2 – Direkter Flächenwechsel.** In der Zeichenleiste stehen sichtbare Knöpfe „Fläche:“ – im Grundriss
+„→ Wand n“ (Wand des gewählten bzw. letzten Punkts oder des Startgeräts) und „↑ Decke“, in Wand/Decke
+„Grundriss“, die Nachbarwände bzw. alle Wände und „↑ Decke“ (`leitung/Flaechenwechsel.tsx`, `zumGrundriss` im
+Kontext). Ein Wechsel speichert nichts, setzt keinen Punkt, behält Entwurf, Start/Ziel, Wegpunkte, Angaben,
+Rückgängig und Schritt; jede Fläche behält ihren Ausschnitt (`ansichten`, Grundriss-Viewport im Editor). Ein Klick
+in die Zeichenfläche wechselt nie die Ansicht.
+
+**3 – Status und Änderungszustand.** Eine Rückmeldung je Ablauf in der Zeichenleiste: die letzte Meldung der
+Fläche, sonst Ergebnis der letzten Aktion („… gespeichert.“) und die aus dem Zustand abgeleitete Anweisung
+(`anweisung`). `ablaufSchluessel` (Entwurf neu/bestehend/keiner · Schritt · Dialog) verwirft Meldungen bei jedem
+Übergang (Escape, Dialog, Weiterzeichnen, Speichern, Verwerfen, nächste Leitung) und beim Flächenwechsel.
+`leitungUngespeichert` gilt für neue Leitungen erst mit Eingaben: Der leere Einstieg zeigt kein „ungespeichert“,
+fragt beim Abbrechen nicht und löst den Verlassen-Schutz nicht aus; ab dem Startgerät greifen Markierung,
+Rückfrage und Navigationsschutz. Fehlgeschlagenes Speichern behält den Entwurf (unverändert).
+
+**4 – Aktuelles Ergebnis.** Gültige Eingaben in Reserve, Zugaben, Kabelangaben und Bezeichnung gehen beim Tippen
+in den Entwurf; die Rechnung bleibt die gemeinsame Längenfunktion. Tippen im selben Feld ist **ein**
+Rückgängig-Schritt (`eingabeFeld`). Leer, „12,“ oder Text sind nie eine stille Null: Das Ergebnis heißt dann
+„Ergebnis nicht aktuell“ (gedimmt, ohne Statusmarke), Speichern ist mit Grund gesperrt; der Feldfehler erscheint
+nach Verlassen oder Enter. Ein leeres Prozentfeld wurde bisher als 0 % übernommen – behoben. Wer beim Tippen
+wieder beim Vorgabewert ankommt, behält die Herkunft „Vorgabe“. Nachweis „Zahl ändern → sofort speichern“:
+Browser (12,5 % getippt, Fokus im Feld, „Leitung speichern“ → Server `12.50`, 650 mm, 5 850 mm = Anzeige 585 cm)
+und Test.
+
+**Tests.** Neu: Flächenwechsel Grundriss → Wand → Decke → Grundriss mit unveränderten Wegpunkten, ohne Speichern;
+Rückmeldung nach Start, Zeichnen, Dialog, Weiterzeichnen, Escape, Speichern und nächster Leitung; leerer
+Einstieg ohne Änderungszustand, mit Startgerät Rückfrage; sofortige Rechnung, Zwischenstände ohne Null, letzte
+Eingabe ohne Feldwechsel gespeichert; Rückkehr zur Vorgabe; feste und prozentuale Bestandsreserve beim
+sofortigen Speichern; Reducer: ein Rückgängig-Schritt je Feld. Angepasst: Struktur der Leiste (Statusblock,
+Hilfetexte, Wechselknöpfe). Frontend **1 250/1 250** (`--maxWorkers=6`, 72 s); ESLint, `tsc`, Modulgrenzen,
+Build, API-Drift grün. Browser: oben genannte Abläufe mit synthetischen Werten, Daten danach entfernt.
+
+**Offen** (zwei Punkte mit §21.7 behoben): ~~maximiert weniger Fläche als normal bei 1024 × 640~~, ~~Plansprung
+beim Übergang Schritt 1 → 2~~. Sehr kleine Fenster (unter ~450 px Höhe) erreichen weiter nur die Mindesthöhe.
+
+### 21.7 Nacharbeit: Höhe der Planungsarbeitsfläche (2026-10-24)
+
+**Auftrag:** die beiden verbliebenen Höhenprobleme aus §21.6 beheben, dann L1/L2/L3 als Checkpoint sichern. Nur
+Frontend, keine neue Zeichenlogik, kein Backend, keine Migration. Die persönliche Beurteilung von Layout und
+Leitungsbedienung bleibt offen; es wird keine Abnahme dokumentiert.
+
+**Ursachen.** (1) Maximiert trug der Knopf rechts oben den Text „Normale Ansicht“, normal nur das Symbol – bei
+1024 px brach die Werkzeugzeile dadurch um, die Fläche begann 39 px tiefer. Zusätzlich setzte der Browser beim
+Maximieren die Scrollposition auf 0 (ohne feste Höhe ist die Seite kurz); zurück in der normalen Ansicht stand
+die eingerollte Arbeitsfläche nicht mehr im Bild. (2) Die Zeichenleiste war in Schritt 1 eine Zeile, in
+Schritt 2 zwei (bei 1024 px drei) – die Fläche verlor beim Startklick 34–47 px, der Plan rückte um die Hälfte.
+
+**Korrekturen.**
+* **Gleiche Aufteilung normal und maximiert:** „Normale Ansicht“ als Text erst ab 80 rem (1 280 px), darunter
+  Symbol mit Name und Kürzel M wie „Zeichenfläche maximieren“ (`SEHR_BREIT`, `useMedium` in `kompakt.ts`).
+  Die Scrollposition vor dem Maximieren wird gemerkt und nach dem Zurückschalten wiederhergestellt, sobald die
+  Höhenregel die Seite wieder verlängert hat (Knopf, Taste M und Escape).
+* **Höhenstabile Zeichenleiste:** Zwei feste Zeilen auf breiten Fenstern – oben Schritt, Rückmeldung (einzeilig,
+  voller Text im Hinweis und für Screenreader) und Abschluss/Abbrechen/Hilfe; unten die Werkzeuge des Schritts. In
+  Schritt 1 belegt die untere Zeile eine kurze Vorschau („Danach: Verlauf zeichnen – Wandlinie = Wandpunkt …“),
+  ihre Mindesthöhe entspricht der Werkzeugzeile. Unter 80 rem kurze Texte („Ecke: waagerecht“, „Durchführung“;
+  Name und Hinweis bleiben vollständig), damit Schritt 2 auch bei 1 024 px in eine Zeile passt. Schmal (unter
+  60 rem) darf die Leiste weiterhin umbrechen.
+
+**Messung im laufenden Stack** (synthetische Daten, PR-2026-0010). Jede Messung erst nach stabiler Größe: Fläche,
+Planmatrix, Leistenhöhe und Scrollposition über acht Animationsframes unverändert (keine festen Pausen).
+„frei“ = sichtbare und nicht verdeckte Zeichenfläche.
+
+| Fenster | normal | maximiert | vorher normal / maximiert (§21.6) |
+|---|---|---|---|
+| 1280 × 800 | 366 px (336 frei) | 610 px (586 frei) | 370 / 600 px |
+| 1024 × 640 | 450 px (420 frei), eingerollt | **450 px (420 frei)** | 440 / **400 px** |
+| 390 × 844 | 467 px (437 frei) in Schritt 2 | 467 px (437 frei) | 471 / 471 px |
+
+Übergang „Leitung hinzufügen“ → Startgerät → Wegpunkt → Ziel (Dialog) → Weiterzeichnen → Abschluss und Speichern
+→ nächste Leitung → nächster Start: bei **1 280 × 800 und 1 024 × 640 unverändert** – Bezugspunkt (Südwand der
+Diele) y 591,2 bzw. 389,1 px, Zoom 0,0255, Weltmitte (4 000 | 2 750) mm, Flächen- und Leistenhöhe (366/76 bzw.
+450/76 px) in allen neun Zuständen gleich; der Wegpunkt lag an der vor dem Startklick berechneten Stelle.
+Maximieren und zurück (M, Knopf, Escape): Planlage, Zoom und Weltmitte gleich, Scrollposition (325 px)
+wiederhergestellt. Schmal (390 × 844): keine Überlappung von Fläche und Leiste, alle Knöpfe im Bild und
+unverdeckt, keine Querbreite; die Leiste wächst dort beim Startklick weiterhin (Umbruch zulässig).
+
+**Optische Prüfung:** In dieser Runde **nicht** zuverlässig möglich – die Bildschirmfotos des eingebetteten
+Browsers zeigten die emulierten Größen nur verkleinert oder als Ausschnitt; sie gelten nicht als Sichtprüfung.
+Belegt sind die Messwerte oben; die optische Beurteilung bleibt offen (persönliche Abnahme).
+
+**Tests.** Neu: Verhaltenstest „Maximieren und zurück (Knopf oder Escape) lässt die eingerollte Arbeitsfläche
+dort, wo sie war“ – scheitert ohne die Korrektur (Gegenprobe). Die Höhenstabilität der Leiste ist in jsdom ohne
+Layout nicht sinnvoll prüfbar und durch die Browsermessung belegt; kein Test, der nur Klassen festschreibt.
+Typprüfung, ESLint, Modulgrenzen, Build, API-Drift grün. Frontend-Gesamtlauf (6 Worker, reguläre Fristen):
+**1 251/1 251 grün** (75 s). Ein erster Lauf unter fremder Last (CPU 76 %, 213 s) hatte zwei
+5-s-Zeitüberschreitungen langer Integrationstests (`Leitung3d`, `WandansichtGeraete`, allein grün); nach Ende der
+Last einmal wiederholt.
+
+**Checkpoint:** L1/L2/L3 mit allen Nachkorrekturen (§21–§21.7) als technisch geprüfter Stand committet
+(Task 0062); persönliche Beurteilung von Layout und Leitungsbedienung sowie die optische Prüfung offen.
 
 ## 16. Geänderte Dokumentation durch diesen Entwurf
 

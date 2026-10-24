@@ -5,7 +5,37 @@ Einträge entstehen nach relevanten Änderungen, nicht nach jedem Commit.
 
 ---
 
-## 2026-10-23 — Phase 6c V1: Planungsvorgaben, Kabelvorlagen, Prozentreserve – Backend (nicht committet)
+## 2026-10-24 — Phase 6c: Höhe der Planungsarbeitsfläche
+
+Nur Oberfläche. Maximiert ist die Zeichenfläche nie kleiner als in der normalen Ansicht; nach dem Zurückschalten
+steht die Seite wieder an derselben Stelle. Die Zeichenleiste behält beim Wechsel vom Startgerät zum Verlauf, nach
+dem Abschlussdialog und beim Start der nächsten Leitung ihre Höhe – der Plan bleibt an seinem Platz. Auf
+mittelbreiten Fenstern stehen einige Werkzeuge mit kürzerem Text da („Ecke: waagerecht“, „Durchführung“,
+Symbol statt „Normale Ansicht“).
+
+## 2026-10-24 — Phase 6c L2/L3 Nacharbeit: Zeichenfläche, Flächenwechsel, Status, aktuelles Ergebnis
+
+Nur Oberfläche. **Mehr Zeichenfläche:** Die Zeichenleiste zeigt nur den aktuellen Schritt, eine Rückmeldung und die
+Aktionen des Schritts; Erklärungen stehen hinter dem Hilfeknopf (?). „Leitung hinzufügen“ bringt die Arbeitsfläche
+ganz ins Bild. **Flächenwechsel beim Zeichnen:** „Fläche:“ in der Leiste – Wand, Decke und Grundriss desselben
+Entwurfs, ohne das Werkzeug zu beenden. **Status:** Eine Rückmeldung, die immer zum Schritt passt; ein leerer
+Einstieg gilt nicht als ungespeichert und fragt beim Abbrechen nicht. **Abschlussdialog:** Gültige Zahlen rechnen
+sofort; unvollständige Eingaben kennzeichnen das Ergebnis als nicht aktuell und sperren das Speichern; „Leitung
+speichern“ speichert genau, was im Feld steht – auch ohne das Feld vorher zu verlassen. Ein leeres Prozentfeld
+wird nicht mehr als 0 % übernommen.
+
+## 2026-10-24 — Phase 6c L2/L3: Leitung hinzufügen, Abschlussdialog, Vorgaben verwalten
+
+Nur Oberfläche, keine API-, Migrations- oder Backendänderung. **Neue Leitungen:** „Leitung hinzufügen“ (L) startet
+sofort das Zeichnen: Startgerät anklicken, Verlauf mit Vorschau zeichnen, Zielgerät anklicken (oder Enter/
+Doppelklick für einen offenen Abschluss); danach öffnet der **Abschlussdialog** mit abgeleitetem Stromkreis,
+vorbelegten Kabelangaben, Reserve und Zugaben samt Herkunft und getrenntem Ergebnis. Bestehende Leitungen
+bearbeiten dieselben Angaben im selben Dialog („Angaben …“), den Verlauf über „Verlauf bearbeiten“. **Vorgaben:**
+neue Seite „Elektro-Vorgaben“ (Kabelvorlagen, Betriebsstandard), Dialog „Planungsvorgaben“ im Projekt, Schalter
+für den Stromkreisvorrang. **Entfallen:** das lange Leitungsformular im Eigenschaftenpanel, Stromkreiswahl und
+„Neue Leitung“ in der Leitungsliste, die Ebenen-Knöpfe im Grundriss.
+
+## 2026-10-23 — Phase 6c V1: Planungsvorgaben, Kabelvorlagen, Prozentreserve – Backend (als `39386c4` committet)
 
 **API (neu, `/api/v1/modules/electrical`):** `cable-templates` (Lesen, Anlegen, Ändern, Löschen nur ungenutzt),
 `planning-defaults` (Betriebsstandard), `projects/{id}/planning-defaults` und `…/effective` (wirksame Werte mit

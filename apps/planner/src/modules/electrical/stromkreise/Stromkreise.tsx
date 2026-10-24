@@ -73,6 +73,7 @@ function alsWerte(kreis: Stromkreis): Stromkreiswerte {
     rcd_group: kreis.rcd_group ?? "",
     phase_count: kreis.phase_count === null ? "" : String(kreis.phase_count),
     note: kreis.note ?? "",
+    vorrang: kreis.proposal_overrides_templates,
   };
 }
 

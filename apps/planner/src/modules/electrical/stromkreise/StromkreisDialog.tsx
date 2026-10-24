@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { Dialog } from "../../../core/ui/Dialog";
-import { Auswahl, Feld } from "../../../core/ui/Feld";
+import { Auswahl, Feld, Schalter } from "../../../core/ui/Feld";
 import { AKTION } from "../../../core/ui/aktionssymbole";
 import { MitSymbol } from "../../../core/ui/Symbol";
 import {
@@ -26,6 +26,8 @@ export interface Stromkreiswerte {
   rcd_group: string;
   phase_count: string;
   note: string;
+  /** Phase 6c (ADR 0027, F1): Kabelvorgabe für neue Leitungen ausdrücklich vor Vorlagen. */
+  vorrang: boolean;
 }
 
 export const LEERER_STROMKREIS: Stromkreiswerte = {
@@ -38,9 +40,10 @@ export const LEERER_STROMKREIS: Stromkreiswerte = {
   rcd_group: "",
   phase_count: "",
   note: "",
+  vorrang: false,
 };
 
-type Feldname = keyof Stromkreiswerte;
+type Feldname = Exclude<keyof Stromkreiswerte, "vorrang">;
 export type Stromkreisfehler = Partial<Record<Feldname, string>>;
 export type Stromkreisergebnis = { fehler?: string; felder?: Stromkreisfehler } | undefined;
 
@@ -55,6 +58,7 @@ export interface Stromkreisanfrage {
   rcd_group: string | null;
   phase_count: 1 | 2 | 3 | null;
   note: string | null;
+  proposal_overrides_templates: boolean;
 }
 
 function optional(text: string): string | null {
@@ -91,6 +95,7 @@ export function stromkreisAnfrage(
       rcd_group: optional(werte.rcd_group),
       phase_count: phasen,
       note: optional(werte.note),
+      proposal_overrides_templates: werte.vorrang,
     },
   };
 }
@@ -118,6 +123,9 @@ export function StromkreisDialog({
   const [fehler, setFehler] = useState<string | null>(null);
   const [laeuft, setLaeuft] = useState(false);
   const setze = (feld: Feldname) => (wert: string) => setWerte({ ...werte, [feld]: wert });
+  const unvollstaendig =
+    werte.vorrang &&
+    [werte.proposed_cable_type, werte.proposed_conductor_count, werte.proposed_cross_section].some((t) => t.trim() === "");
 
   const absenden = async () => {
     if (laeuft) return;
@@ -156,6 +164,26 @@ export function StromkreisDialog({
             <Feld id="kreis-leitungstyp" label="Leitungstyp (Vorschlag)" value={werte.proposed_cable_type} disabled={laeuft} fehler={felder.proposed_cable_type} hinweis="Z. B. NYM-J." onChange={setze("proposed_cable_type")} />
             <Feld id="kreis-leiter" label="Leiteranzahl (Vorschlag)" inputMode="numeric" value={werte.proposed_conductor_count} disabled={laeuft} fehler={felder.proposed_conductor_count} onChange={setze("proposed_conductor_count")} />
             <Feld id="kreis-querschnitt" label="Querschnitt in mm² (Vorschlag)" inputMode="decimal" value={werte.proposed_cross_section} disabled={laeuft} fehler={felder.proposed_cross_section} hinweis="Z. B. 1,5." onChange={setze("proposed_cross_section")} />
+          </div>
+          <div className="mt-3">
+            <Schalter
+              id="kreis-vorrang"
+              label="Für neue Leitungen dieses Stromkreises diese Kabelvorgabe verwenden"
+              checked={werte.vorrang}
+              disabled={laeuft}
+              onChange={(an) => setWerte({ ...werte, vorrang: an })}
+            />
+            <p className="m-0 mt-1 text-label text-muted" data-testid="kreis-vorrang-hinweis">
+              {werte.vorrang
+                ? "Aktiviert: Neue Leitungen erhalten diese Angaben vor den Kabelvorlagen der Gerätetypen. Bestehende Leitungen ändern sich nicht."
+                : "Nicht aktiviert: Die Angaben bleiben ein Hinweis; neue Leitungen erhalten die Kabelvorlage ihres Gerätetyps."}
+            </p>
+            {unvollstaendig && (
+              <p className={`${meldungsflaeche("schlicht")} mt-1`} role="status" data-testid="kreis-vorrang-unvollstaendig">
+                Die Kabelvorgabe ist unvollständig. Aktiviert gilt sie als Einheit – fehlende Angaben bleiben bei neuen Leitungen fehlend
+                und werden nicht aus einer Vorlage ergänzt.
+              </p>
+            )}
           </div>
         </fieldset>
         <Feld id="kreis-schutzorgan" label="Schutzorgan (Angabe, optional)" value={werte.protective_device} disabled={laeuft} fehler={felder.protective_device} hinweis="Nur erfasst, nicht geprüft." onChange={setze("protective_device")} />

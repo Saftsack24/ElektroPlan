@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Leitungsentwurf, Leitungswerte } from "./entwurf";
 import {
+  BESTAND_QUELLEN,
   entwurfAus,
   gleicheWerte,
   leiterzahlLesen,
@@ -35,6 +36,8 @@ function werte(wegpunkte: readonly Wegpunkt[] = []): Leitungswerte {
     reserveProzent: null,
     wegpunkte,
     neueDurchfuehrungen: [],
+    quellen: BESTAND_QUELLEN,
+    zuordnen: [],
   };
 }
 
@@ -119,8 +122,10 @@ describe("Speichern und Konflikt", () => {
     expect(leitungUngespeichert(e)).toBe(false);
   });
 
-  it("eine neue Leitung ist immer ungespeichert; Verwerfen führt zur Basis zurück", () => {
-    expect(leitungUngespeichert(entwurfAus(null, null, werte()))).toBe(true);
+  it("eine neue Leitung zählt erst mit Eingaben als ungespeichert (6c, §21.5); Verwerfen führt zur Basis zurück", () => {
+    // Der leere Einstieg über „Leitung hinzufügen“ ist keine Bearbeitung - keine Rückfrage, kein Schutz.
+    expect(leitungUngespeichert(entwurfAus(null, null, werte()))).toBe(false);
+    expect(leitungUngespeichert(mit(entwurfAus(null, null, werte()), { typ: "aendern", werte: werte([wand(1)]) }))).toBe(true);
     const e = mit(entwurfAus("l1", 2, werte()), { typ: "aendern", werte: werte([wand(1)]) }, { typ: "verwerfen" });
     expect(leitungUngespeichert(e)).toBe(false);
     expect(leitungsReducer(e, { typ: "schliessen" })).toBeNull();
@@ -179,5 +184,25 @@ describe("Kabelangaben", () => {
     expect(leiterzahlLesen("0").ok).toBe(false);
     expect(leiterzahlLesen("2,5").ok).toBe(false);
     expect(leiterzahlLesen("101").ok).toBe(false);
+  });
+});
+
+describe("Eingaben im Abschlussdialog (6c, §21.5)", () => {
+  it("Tippen im selben Feld ist ein Rückgängig-Schritt; ein anderes Feld oder eine andere Aktion beginnt einen neuen", () => {
+    const e0 = entwurfAus("l1", 4, werte());
+    const getippt = mit(
+      e0,
+      { typ: "aendern", werte: { ...werte(), reserveProzent: "1" }, feld: "reserve" },
+      { typ: "aendern", werte: { ...werte(), reserveProzent: "15" }, feld: "reserve" },
+    );
+    expect(getippt.werte.reserveProzent).toBe("15");
+    expect(getippt.zurueck).toHaveLength(1);
+    expect(mit(getippt, { typ: "rueckgaengig" }).werte).toEqual(e0.werte);
+    const anderesFeld = mit(getippt, { typ: "aendern", werte: { ...getippt.werte, startzugabeMm: 600 }, feld: "zugabe-start" });
+    expect(anderesFeld.zurueck).toHaveLength(2);
+    // Nach Rückgängig beginnt erneutes Tippen einen eigenen Schritt.
+    const danach = mit(getippt, { typ: "rueckgaengig" }, { typ: "aendern", werte: { ...werte(), reserveProzent: "2" }, feld: "reserve" });
+    expect(danach.zurueck).toHaveLength(1);
+    expect(danach.eingabeFeld).toBe("reserve");
   });
 });

@@ -29,6 +29,7 @@ import { WandZeichenflaeche } from "./WandZeichenflaeche";
 import type { Leitungskontext } from "../leitung/kontext";
 import { Leitungsbereich } from "../leitung/Leitungsbereich";
 import { useWandleitungen } from "../leitung/Wandleitungen";
+import { Zeichenleiste } from "../leitung/Zeichenleiste";
 import { Planungsarbeitsflaeche } from "../arbeitsflaeche/Planungsarbeitsflaeche";
 import type { Arbeitsflaechenzustand } from "../arbeitsflaeche/Planungsarbeitsflaeche";
 import { AnsichtMenue, HilfeDialog, LeitungHinzufuegenKnopf, Werkzeuggruppe, Werkzeugknopf, Werkzeugwahl, Zoomgruppe } from "../arbeitsflaeche/Werkzeuggruppen";
@@ -51,7 +52,6 @@ const WERKZEUGE: readonly { wert: Wandwerkzeug; label: string; taste: string; sc
 
 /** Werkzeuge der Leitungsplanung (6b.4) - nur mit offenem Leitungs- bzw. Zuordnungsentwurf. */
 const LEITUNGSWERKZEUGE: readonly { wert: Wandwerkzeug; label: string; taste: string; icon: LucideIcon }[] = [
-  { wert: "leitung", label: "Leitung", taste: "L", icon: WERKZEUGSYMBOL.leitung },
   { wert: "durchfuehrung", label: "Durchführung", taste: "U", icon: WERKZEUGSYMBOL.durchfuehrung },
   { wert: "zuordnen", label: "Zuordnen", taste: "Z", icon: WERKZEUGSYMBOL.zuordnen },
 ];
@@ -163,6 +163,14 @@ export function Wandansicht({
   const flaechenRef = useRef<HTMLElement>(null);
   const kompakt = useKompakt();
   const [statuszeile, setStatuszeile] = useState("Eine Öffnung anklicken oder ein Werkzeug wählen.");
+  // Ein Wechsel des Zeichenablaufs (Escape, Dialog, Speichern, nächste Leitung) macht die Rückmeldung
+  // zum vorigen Zustand ungültig (6c L2/L3); beim Zeichnen gilt dann die Anweisung der Zeichenleiste.
+  const ablaufSchluessel = leitungen?.planung.ablaufSchluessel;
+  const zeichnetJetzt = leitungen?.planung.ablauf != null;
+  useEffect(() => {
+    setStatuszeile(zeichnetJetzt ? "" : "Eine Öffnung anklicken oder ein Werkzeug wählen.");
+    // Nur beim Wechsel des Ablaufs - nicht bei jeder Meldung.
+  }, [ablaufSchluessel]);
   const flaeche = useRef<ZeichenflaecheGriff>(null);
 
   const aktiverRaum = zustand.entwurf?.roomId ?? null;
@@ -421,6 +429,8 @@ export function Wandansicht({
   /** Escape: erst die Bewegung, dann das Werkzeug, dann die Auswahl - zuletzt schließen. */
   const escape = (): boolean => {
     if (flaeche.current?.abbrechen() === true) return true;
+    // Zeichenablauf (6c, L2): Vorschau, Punktauswahl, Einfügen, zuletzt das Werkzeug - nie der Entwurf.
+    if (wl.escape()) return true;
     if (werkzeug !== "auswahl") {
       setWerkzeug("auswahl");
       return true;
@@ -518,15 +528,18 @@ export function Wandansicht({
       )}
     </div>
   );
-  // „Leitung hinzufügen“ (L1): mit Entwurf das Werkzeug „Leitung“, sonst der bestehende Einstieg im Panel.
+  // „Leitung hinzufügen“ (6c, L2): direkt zeichnen – 1 Startgerät anklicken. Kein Panel, keine Stromkreiswahl.
   const leitungMoeglich = leitungen !== undefined && leitungen.planung.darfLeitungen && seite === "innen";
+  const zeichnet = leitungen?.planung.ablauf != null;
   const leitungHinzufuegen = useStabil(() => {
-    if (leitungsentwurf !== null) {
-      setWerkzeug("leitung");
-      return;
-    }
-    af.setEigenschaftenOffen(true);
-    setTimeout(() => flaechenRef.current?.querySelector<HTMLElement>("[data-leitung-einstieg]")?.focus(), 0);
+    if (leitungen === undefined) return;
+    setWerkzeug("auswahl");
+    setStatuszeile(leitungen.leitungZeichnen() ?? "1 Startgerät wählen – auf ein markiertes Gerät klicken.");
+  });
+  /** Ein anderes Werkzeug beendet den Zeichenablauf (der Entwurf bleibt); Durchführung und Zuordnen ergänzen ihn. */
+  const werkzeugWaehlen = useStabil((w: Wandwerkzeug) => {
+    if (w !== "durchfuehrung" && w !== "zuordnen" && leitungen?.planung.ablauf != null) leitungen.planung.ablaufBeenden();
+    setWerkzeug(w);
   });
   const rueckgaengig = useStabil(() => (leitungsentwurf !== null ? leitungen?.planung.dispatch({ typ: "rueckgaengig" }) : dispatch({ typ: "rueckgaengig" })));
   const wiederholen = useStabil(() => (leitungsentwurf !== null ? leitungen?.planung.dispatch({ typ: "wiederholen" }) : dispatch({ typ: "wiederholen" })));
@@ -536,7 +549,7 @@ export function Wandansicht({
   const hatZuordnungsentwurf = zuordnungsentwurf !== null;
   const typKey = geraetetyp?.key ?? null;
   const werkzeugknopf = (w: { wert: Wandwerkzeug; label: string; taste: string; icon: LucideIcon }) => (
-    <Werkzeugknopf key={w.wert} label={w.label} taste={w.taste} icon={w.icon} aktiv={werkzeug === w.wert} onClick={() => setWerkzeug(w.wert)} />
+    <Werkzeugknopf key={w.wert} label={w.label} taste={w.taste} icon={w.icon} aktiv={werkzeug === w.wert && !(zeichnet && w.wert === "auswahl")} onClick={() => werkzeugWaehlen(w.wert)} />
   );
   // Gemerkt (L1): Die Leiste zeichnet nur bei sichtbaren Änderungen neu, nicht bei jeder Zeigerbewegung.
   const werkzeugleiste = useMemo(() => (
@@ -553,7 +566,7 @@ export function Wandansicht({
               taste: w.taste,
               icon: w.icon,
               aktiv: werkzeug === w.wert,
-              onClick: () => setWerkzeug(w.wert),
+              onClick: () => werkzeugWaehlen(w.wert),
             }))}
           />
           <Werkzeuggruppe label="Gerät">
@@ -575,9 +588,7 @@ export function Wandansicht({
       )}
       {(leitungMoeglich || zuordnenErlaubt) && (
         <Werkzeuggruppe label="Leitung">
-          {!hatLeitungsentwurf && !hatZuordnungsentwurf && leitungMoeglich && (
-            <LeitungHinzufuegenKnopf aktiv={false} gesperrtGrund={null} onClick={leitungHinzufuegen} />
-          )}
+          {!hatZuordnungsentwurf && leitungMoeglich && <LeitungHinzufuegenKnopf aktiv={zeichnet} gesperrtGrund={null} onClick={leitungHinzufuegen} />}
           {LEITUNGSWERKZEUGE.filter((w) => (w.wert === "zuordnen" ? zuordnenErlaubt : leitungErlaubt)).map(werkzeugknopf)}
         </Werkzeuggruppe>
       )}
@@ -596,7 +607,7 @@ export function Wandansicht({
       <AnsichtMenue fangAktiv={fangAktiv} onFang={onFang} fangLabel="Einrasten" rasterMm={rasterMm} onRaster={onRaster} onHilfe={() => setHilfe(true)} />
     </div>
     // Rückrufe sind stabil (Zustandssetzer, `useStabil`); abhängig ist die Leiste nur von dem, was sie zeigt.
-  ), [werkzeug, editierbar, seite, typen, typKey, leitungMoeglich, hatLeitungsentwurf, hatZuordnungsentwurf, zuordnenErlaubt, leitungErlaubt, kannZurueck, kannVor, fangAktiv, rasterMm, onFang, onRaster]);
+  ), [werkzeug, editierbar, seite, typen, typKey, leitungMoeglich, zeichnet, hatLeitungsentwurf, hatZuordnungsentwurf, zuordnenErlaubt, leitungErlaubt, kannZurueck, kannVor, fangAktiv, rasterMm, onFang, onRaster]);
 
   const hilfeInhalt = (
     <>
@@ -649,10 +660,13 @@ export function Wandansicht({
             werkzeuge={werkzeugleiste}
             kontext={
               <div className="flex flex-col gap-1.5">
-              {/* Feste Höhe: Die Fläche springt nicht, wenn der Text wechselt. */}
-              <p className="m-0 h-11 overflow-hidden text-[0.82rem] text-muted" aria-live="polite" data-testid="wand-statuszeile">
-                {statuszeile}
-              </p>
+              {/* Feste Höhe: Die Fläche springt nicht, wenn der Text wechselt. Beim Zeichnen steht die
+                  Rückmeldung in der Zeichenleiste - eine Zeile statt zwei Stellen. */}
+              {!zeichnetJetzt && (
+                <p className="m-0 h-11 overflow-hidden text-[0.82rem] text-muted" aria-live="polite" data-testid="wand-statuszeile">
+                  {statuszeile}
+                </p>
+              )}
                 {seite === "aussen" && leitungsentwurf !== null && (
                   <p className={`${meldungsflaeche("schlicht")} m-0 mb-2`}>
                     Leitungen werden innen geplant – Außenleitungen sind nicht vorgesehen. Mit „Innenseite ansehen“ weiterzeichnen.
@@ -672,6 +686,9 @@ export function Wandansicht({
                 </div>
               )}
                 <Raumrueckmeldung fehler={zustand.serverFehler} konflikt={zustand.status === "konflikt"} onSchliessen={() => dispatch({ typ: "hinweis-schliessen" })} />
+                {leitungen !== undefined && (
+                  <Zeichenleiste k={leitungen} flaeche={{ art: "wand", raumId: ziel.raumId, wandId: ziel.wandId, seite }} meldung={statuszeile} meldungTestId="wand-statuszeile" />
+                )}
                 <Entwurfsleiste k={leitungen} panelOffen={af.eigenschaftenOffen} onDetails={() => af.setEigenschaftenOffen(true)} nachSchliessen={() => setWerkzeug("auswahl")} />
               </div>
             }

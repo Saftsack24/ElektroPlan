@@ -102,6 +102,8 @@ export function Entwurfsleiste({
   const kurz = (voll: string, knapp: string) => knopftext(kompakt, voll, knapp);
 
   if (e !== null) {
+    // Während gezeichnet wird, führt die Zeichenleiste (6c, L2).
+    if (p.ablauf !== null) return null;
     const stand =
       e.status === "speichert"
         ? "wird gespeichert …"
@@ -132,7 +134,12 @@ export function Entwurfsleiste({
               onClick={() => void k.leitungSchliessen().then((ok) => ok && nachSchliessen?.())}
               {...kurz("Entwurf schließen", "Schließen")}
             />
-            <button type="button" className={knopf("neutral", { klein: true })} onClick={onDetails} {...kurz("Angaben und Wegpunkte", "Angaben")} />
+            {e.werte.startId !== null && (
+              <button type="button" className={knopf("neutral", { klein: true })} onClick={() => p.abschliessen()} {...kurz("Angaben …", "Angaben")} />
+            )}
+            {p.darfLeitungen && (
+              <button type="button" className={knopf("neutral", { klein: true })} onClick={() => p.leitungZeichnen()} {...kurz("Weiterzeichnen", "Weiter")} />
+            )}
             <Entwurfsfehler k={k} onDetails={onDetails} />
           </>
         )}

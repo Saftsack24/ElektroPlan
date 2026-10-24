@@ -8,7 +8,7 @@ import type { MarkenArt } from "../../../core/ui/Marke";
 import { useMasse } from "../../../core/ui/masseinheit";
 import { KARTENKOPF, KARTENTITEL, TABELLE, TABELLENRAHMEN, karte, knopf, meldungsflaeche } from "../../../core/ui/stil";
 import { leitungsbefundText } from "../leitung/laenge";
-import { useGrundrisseinstellung, useLeitungsplanungImKontext } from "../leitung/LeitungsplanungProvider";
+import { useLeitungsplanungImKontext } from "../leitung/LeitungsplanungProvider";
 import type { Mengeneimer, Mengengruppe, Mengenleitung, Mengenuebersicht as Uebersicht } from "./daten";
 import { FLAECHE_TEXT, STATUS_TEXT, angabenText, fehlendText, gruppenName, mengenAbfrage } from "./daten";
 
@@ -43,7 +43,6 @@ export function Mengenuebersicht({
   const { api } = useAuth();
   const masse = useMasse();
   const planung = useLeitungsplanungImKontext();
-  const einstellung = useGrundrisseinstellung();
   const abfrage = useQuery(mengenAbfrage(api, buildingId));
   const mm = (wert: number) => masse.anzeigen(wert);
 
@@ -87,8 +86,8 @@ export function Mengenuebersicht({
       : (cableId: string) => {
           const cable = planung.leitungen.find((c) => c.id === cableId);
           if (cable === undefined || sperrgrund(cableId) !== null) return;
-          if (planung.entwurf === null) planung.bearbeiten(cable);
-          einstellung?.setWerkzeug("leitung");
+          // Verlauf bearbeiten (6c, L2): Entwurf und Zeichenablauf - nichts gespeichert.
+          planung.verlaufBearbeiten(cable);
           const floorId =
             cable.segments.find((s) => s.floor_id !== null)?.floor_id ?? planung.geraete.find((g) => g.id === cable.end_device_id)?.floorId ?? null;
           onBearbeitungOeffnen({ cableId, floorId });

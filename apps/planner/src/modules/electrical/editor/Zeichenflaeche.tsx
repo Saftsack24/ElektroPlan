@@ -573,8 +573,12 @@ export function Zeichenflaeche(props: Props) {
   };
 
   const doppelklick = (event: ReactMouseEvent<SVGSVGElement>) => {
-    // Ein aktives Leitungswerkzeug verarbeitet jeden Klick selbst - kein Ansichtswechsel nebenbei.
-    if (props.zusatz?.cursor != null) return;
+    // Ein aktives Leitungswerkzeug verarbeitet jeden Klick selbst - kein Ansichtswechsel nebenbei;
+    // ein Doppelklick schließt dort offen ab (Phase 6c, L2).
+    if (props.zusatz?.cursor != null) {
+      props.zusatz.doppelklick?.();
+      return;
+    }
     if (doppelklickGeraet(event)) return;
     const daten = datensatz(event.target);
     if (zustand.werkzeug === "auswahl" && daten?.raum !== undefined && daten.oeffnung !== undefined && daten.wand !== undefined) {

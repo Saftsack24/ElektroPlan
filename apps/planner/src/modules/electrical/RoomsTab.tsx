@@ -34,6 +34,7 @@ import { BestaetigungAbgelehnt, bestaetigungsfeld, useLeitungsbestaetigung } fro
 import { leitungenSchluessel } from "./leitung/daten";
 import { LEITUNG_MELDUNG, LeitungsplanungProvider } from "./leitung/LeitungsplanungProvider";
 import { Mengenuebersicht } from "./mengen/Mengenuebersicht";
+import { VorgabenDialog } from "./vorgaben/VorgabenDialog";
 import type { Leitungsplanung } from "./leitung/useLeitungsplanung";
 import type { Raumwerte } from "./RaumDialog";
 import { KONTURZUSTAND_LABEL, RAUMTYP_LABEL, flaecheAnzeigen, raumtypAusWert } from "./texte";
@@ -156,6 +157,8 @@ export default function RoomsTab() {
   const [leitungAus3d, setLeitungAus3d] = useState(false);
   // Mengenübersicht (6b.6): aufgeklappte Gruppen und Rückweg aus der Bearbeitung.
   const [mengenOffen, setMengenOffen] = useState<readonly string[]>([]);
+  // Phase 6c (L3): Planungsvorgaben des Projekts im Dialog.
+  const [projektvorgaben, setProjektvorgaben] = useState(false);
   const [leitungAusMengen, setLeitungAusMengen] = useState(false);
   // Woher die Steigwegverwaltung geöffnet wurde - für „Zurück zu …".
   const [vorherigeAnsicht, setVorherigeAnsicht] = useState<Ansicht | null>(null);
@@ -554,6 +557,9 @@ export default function RoomsTab() {
                 ))}
               </div>
             )}
+            <button type="button" className={`${knopf("neutral", { klein: true })} ml-auto`} onClick={() => setProjektvorgaben(true)} data-testid="projektvorgaben-oeffnen">
+              {kompakt ? "Vorgaben" : "Planungsvorgaben"}
+            </button>
           </div>
         ) : (
           <>
@@ -670,8 +676,24 @@ export default function RoomsTab() {
         )}
       </section>
 
+      {projektvorgaben && (
+        <VorgabenDialog
+          modus="projekt"
+          projektId={projectId}
+          darfSchreiben={darfLeitungenGrundsaetzlich && !archiviert}
+          sperrgrund={
+            archiviert
+              ? `Das Projekt ist ${projektstatus === "completed" ? "abgeschlossen" : "archiviert"} – die Projektvorgaben sind nur lesbar.`
+              : !darfLeitungenGrundsaetzlich
+                ? "Nur Ansicht – Projektvorgaben ändern darf, wer Leitungen bearbeiten darf."
+                : null
+          }
+          onClose={() => setProjektvorgaben(false)}
+        />
+      )}
       <LeitungsplanungProvider
         key={aktivesGeschoss?.building_id ?? "ohne"}
+        projectId={projectId}
         buildingId={aktivesGeschoss?.building_id}
         darfLeitungen={darfLeitungenGrundsaetzlich && !archiviert}
         darfStromkreise={darfStromkreiseGrundsaetzlich && !archiviert}

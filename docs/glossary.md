@@ -92,7 +92,8 @@ Dokumentation und Oberfläche auf Deutsch, Code und API auf Englisch.
 | Vorgabenbasis | `defaults_basis`, `defaults_*_version` | Versionen der beim Lesen genutzten Vorgaben; weicht sie beim Speichern ab, wird nichts gespeichert (`planning-defaults-changed`) – **6c V1** |
 | Stromkreisvorrang | `proposal_overrides_templates` | ausdrücklich aktivierte Kabelvorgabe eines Stromkreises für neue Leitungen; ohne Aktivierung nur Hinweis – **6c V1** |
 | Offene Leitung | `end_device_id` NULL | Leitung ohne Endgerät, Status unvollständig („Endgerät fehlt“), ohne Prozentreserve und Gesamtlänge – **6c V1** |
-| Abschlussdialog | – (Oberfläche) | Dialog nach dem Zeichnen einer Leitung mit vorbelegten Angaben, Herkunft und Ergebnis – **Entwurf 6c** |
+| Abschlussdialog | – (Oberfläche) | Dialog nach dem Zeichnen einer Leitung mit vorbelegten Angaben, Herkunft und Ergebnis; derselbe Dialog dient zum Bearbeiten bestehender Leitungen – **6c L3 umgesetzt** |
+| Zeichenablauf | `ablauf` (Frontend) | Ablauf von „Leitung hinzufügen“: 1 Startgerät wählen, 2 Verlauf zeichnen, 3 Zielgerät anklicken oder offen abschließen; der Entwurf bleibt über Flächen- und Geschosswechsel erhalten – **6c L2 umgesetzt** |
 | Kontextleiste | – (Oberfläche) | kompakte Leiste an der Zeichenfläche mit Schritt, Status, Meldung und Primäraktion der laufenden Bearbeitung – **Entwurf 6c** |
 | Lagegerät | `placement_device_id` | Gerät `distribution_board`, das die räumliche Lage einer Verteilung angibt; entsteht nur über die Platzierung – **Entwurf 6c** (ADR 0028) |
 | Verteilungsaufbau | `board_rows`, `board_components` | Reihen und eingebaute Komponenten einer Verteilung; Planungsangabe, keine Auslegung – **Entwurf 6c** |

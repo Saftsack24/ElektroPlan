@@ -23,6 +23,9 @@ export const electricalModule: PlannerModule = {
   name: "Elektroplanung",
   version: "1.0.0",
   dependsOn: ["core"],
+  // Phase 6c (L3): technische Vorgaben des Betriebs für neue Leitungen.
+  navigation: [{ id: "electrical-defaults", label: "Elektro-Vorgaben", to: "/elektro-vorgaben", order: 60, permission: "electrical.plan.read" }],
+  routes: [{ path: "/elektro-vorgaben", element: lazy(() => import("./vorgaben/VorgabenSeite")), permission: "electrical.plan.read" }],
   projectTabs: [
     {
       id: "electrical-rooms",

@@ -18,7 +18,7 @@ import type { Rueckmeldung } from "./szene";
 import type { Geraet3d } from "./geraete3d";
 import { katalogAbfrage, typenNachSchluessel } from "../geraete/katalog";
 import { raumseite } from "../leitung/grundriss";
-import { useGrundrisseinstellung, useLeitungsplanungImKontext } from "../leitung/LeitungsplanungProvider";
+import { useLeitungsplanungImKontext } from "../leitung/LeitungsplanungProvider";
 import type { Leitung3d } from "./leitungen3d";
 import { leitungen3d } from "./leitungen3d";
 import type { Leitungsziel3d } from "./Seitenleiste";
@@ -135,7 +135,6 @@ export default function Ansicht3d({
 
   // Gespeicherte Leitungen des Gebäudes (6b.5) - nur der gespeicherte Stand, nie der Entwurf.
   const planung = useLeitungsplanungImKontext();
-  const einstellung = useGrundrisseinstellung();
   const leitungen: readonly Leitung3d[] = useMemo(() => {
     const v = planung?.vorbereitet ?? null;
     if (planung === null || v === null || !Array.isArray(plan.data?.rooms)) return [];
@@ -272,8 +271,8 @@ export default function Ansicht3d({
     if (planung === null || leitungSperre !== null) return;
     const cable = planung.leitungen.find((c) => c.id === l.id);
     if (cable === undefined) return;
-    if (planung.entwurf === null) planung.bearbeiten(cable);
-    if (ziel.art === "grundriss") einstellung?.setWerkzeug("leitung");
+    // Verlauf bearbeiten (6c, L2): derselbe Ablauf in jeder Fläche - nichts gespeichert.
+    planung.verlaufBearbeiten(cable);
     onLeitungBearbeiten?.(ziel, rueckkehr());
   };
   const entwurfHinweis =

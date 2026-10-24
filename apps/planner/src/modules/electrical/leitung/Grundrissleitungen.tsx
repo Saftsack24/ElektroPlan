@@ -6,7 +6,7 @@ import type { Punkt } from "../editor/geometrie";
 import type { Bildpunkt } from "../editor/viewport";
 import "./leitung.css";
 import type { Leitungswerte } from "./entwurf";
-import { durchfuehrungDaneben, durchfuehrungEinfuegen, wegpunktEinfuegen, wegpunktEntfernen, wegpunktErsetzen } from "./entwurf";
+import { durchfuehrungDaneben, durchfuehrungEinfuegen, wegpunktEinfuegen, wegpunktEntfernen, wegpunktErsetzen, wegpunkteEinfuegenAn } from "./entwurf";
 import { durchfuehrungsziel, neuerSchluessel } from "./durchfuehrung";
 import { betroffeneOrte, konfliktAn } from "./flaechen";
 import type { Fangpunkt, Planflaeche } from "./grundriss";
@@ -16,7 +16,11 @@ import type { VorbereiteterPlan, Wegpunkt } from "./laenge";
 import { leitungsbefundText } from "./laenge";
 import type { Grundrisseinstellung } from "./LeitungsplanungProvider";
 import { steigwegText } from "./Leitungsbereich";
+import { DOPPELKLICK_MS, andereEcke, geraetImRing, istKlick, lEcke, wiederholtLetzten } from "./zeichnen";
 import type { Flaechenzusatz, Zeigerereignis } from "./zusatz";
+
+/** Markierungsring eines Geräts in Schritt 1 - zugleich der Fangradius für Geräteklicks (Bildpunkte). */
+const START_RING_PX = 14;
 
 /** Treffer einer Raumwand unter dem Zeiger - wie beim Öffnungswerkzeug (Raumseite zählt). */
 export type Wandtreffer = { readonly ok: true; readonly raumId: string; readonly wandId: string } | { readonly ok: false; readonly grund: string } | null;
@@ -40,6 +44,13 @@ interface Kandidat {
   readonly text: string;
   /** Vorgänger auf diesem Geschoss - für die gestrichelte Vorschau. */
   readonly von: Punkt | null;
+  /** Ecke einer rechtwinkligen Führung auf Fußboden oder Decke (6c, L2) - ein Schritt mit dem Punkt. */
+  readonly ecke?: Punkt | null;
+  /** Zwischenpunkte vor dem Zielpunkt (Ecke, Übergang auf der Achse) - für die Vorschau. */
+  readonly pfad?: readonly Punkt[];
+  /** Anzahl der neuen Wegpunkte (mit Zwischenpunkten) - ein Rückgängig-Schritt. */
+  readonly anzahl?: number;
+  readonly hinweis?: string | null;
 }
 
 /** Abstand der Wandwege von der Achse zur Raumseite, in Bildpunkten. */
@@ -104,13 +115,22 @@ export function useGrundrissleitungen({
   };
   const [gewaehlt, setGewaehlt] = useState<string | null>(null);
   const [steigwahl, setSteigwahl] = useState<Steigwahl | null>(null);
-  const laufend = useRef<{ art: "setzen" } | { art: "ziehen"; index: number; gueltig: boolean } | null>(null);
+  const laufend = useRef<
+    { art: "setzen"; start: { x: number; y: number }; massstab: number; bewegt: boolean } | { art: "ziehen"; index: number; gueltig: boolean } | null
+  >(null);
+  /** Zuletzt gesetzter Wegpunkt - der zweite Klick eines Doppelklicks setzt ihn nicht noch einmal. */
+  const zuletzt = useRef<{ zeit: number; schluessel: string } | null>(null);
 
   const p = k?.planung;
   const e = p?.entwurf ?? null;
   const v = p?.vorbereitetEntwurf ?? null;
-  const werkzeug = einstellung?.werkzeug ?? "aus";
-  const ebene = einstellung?.ebene ?? "fussboden";
+  // Seit 6c (L2) gehört der Zeichenablauf zum Gebäude; „Durchführung hier“ bleibt ein eigenes Werkzeug.
+  const durchfuehrungWerkzeug = einstellung?.werkzeug === "durchfuehrung";
+  const zeichnet = p?.ablauf != null && !p.dialogOffen && !durchfuehrungWerkzeug;
+  const werkzeug = durchfuehrungWerkzeug ? "durchfuehrung" : zeichnet ? "leitung" : "aus";
+  const schritt = p?.ablauf?.schritt ?? null;
+  // Wandpunkte entstehen durch einen Klick auf die Wandlinie; im Raum gilt der Umschalter „Raumpunkt“.
+  const ebene = p?.ablauf?.raumpunkt ?? einstellung?.ebene ?? "fussboden";
   const darf = p !== undefined && p.darfLeitungen && e !== null && e.status !== "speichert";
 
   // Anderes Werkzeug oder andere Ebene: keine alte Vorschau stehen lassen.
@@ -186,7 +206,37 @@ export function useGrundrissleitungen({
 
   // ------------------------------------------------------------ Kandidat
 
-  const einfuegeIndex = (w: Leitungswerte) => (e?.auswahl === null || e?.auswahl === undefined ? w.wegpunkte.length : e.auswahl + 1);
+  /** Neue Punkte kommen ans Ende - außer ausdrücklich „danach einfügen“ (Entwurf §18.4). */
+  const einfuegeIndex = (w: Leitungswerte) => {
+    const nach = p?.ablauf?.einfuegenNach ?? null;
+    return nach === null || nach >= w.wegpunkte.length ? w.wegpunkte.length : nach + 1;
+  };
+
+  /**
+   * Höhe eines neuen Wandpunkts im Grundriss: wie der vorige Wandpunkt; nach Fußboden 0, nach Decke die
+   * Raumhöhe, nach einem Gerät dessen Mitte - vor dem Klick angezeigt; genau in der Wandfläche.
+   */
+  const wandhoeheNach = (vor: Wegpunkt | undefined, raumhoehe: number, startId: string | null): number => {
+    const v = p?.vorbereitetEntwurf ?? null;
+    if (vor === undefined) {
+      const g = startId === null ? undefined : v?.geraete.get(startId);
+      if (g?.flaeche === "ceiling") return raumhoehe;
+      return Math.min(g?.hoeheMm ?? 300, raumhoehe);
+    }
+    switch (vor.art) {
+      case "wand":
+        return Math.min(vor.hoeheMm, raumhoehe);
+      case "ceiling":
+        return raumhoehe;
+      case "floor":
+      case "uebergang":
+        return 0;
+      case "durchfuehrung":
+        return Math.min(v?.durchfuehrungen.get(vor.durchfuehrungId)?.hoeheMm ?? 300, raumhoehe);
+      case "steigweg":
+        return Math.min(vor.nachHoeheMm, raumhoehe);
+    }
+  };
 
   /** Fangziele für Fußboden- und Deckenpunkte dieses Geschosses. */
   const flaechenziele = (vp: VorbereiteterPlan, decke: boolean): Fangpunkt[] => {
@@ -224,12 +274,14 @@ export function useGrundrissleitungen({
     const vor = w.wegpunkte[index - 1];
     const radiusMm = FANG_PX / ereignis.massstab;
     const f = { aktiv: fangAktiv, ausgesetzt: ereignis.altKey, radiusMm, rasterMm };
-    const art = ersetzen === null ? ebene : w.wegpunkte[ersetzen]?.art === "ceiling" ? "decke" : "fussboden";
+    // Neuer Punkt: Die Wandlinie unter dem Zeiger macht ihn zum Wandpunkt, sonst gilt „Raumpunkt“.
+    const wandtreffer = ersetzen === null ? wandUnterZeiger(roh, ereignis.massstab) : null;
+    const art = ersetzen === null ? (wandtreffer !== null ? "wand" : ebene) : w.wegpunkte[ersetzen]?.art === "ceiling" ? "decke" : "fussboden";
     let wp: Wegpunkt;
     let punkt: Punkt;
     let text: string;
     if (art === "wand") {
-      const t = wandUnterZeiger(roh, ereignis.massstab);
+      const t = wandtreffer;
       if (t === null || !t.ok) {
         return { punkt: roh, ok: false, grund: t === null ? "Für einen Wandpunkt auf eine Raumwand zeigen." : t.grund, werte: w, index, text: "", von: planpunkt(vor)?.punkt ?? null };
       }
@@ -260,9 +312,11 @@ export function useGrundrissleitungen({
           text = naechste.text;
         } else abstand = Math.min(laenge, Math.max(0, Math.round(roheLage / rasterMm) * rasterMm));
       }
-      const hoehe = wandhoeheIn(einstellung?.wandhoehe ?? 300, info.raum.hoeheMm);
-      wp = { art: "wand", wandId: t.wandId, abstandMm: abstand, hoeheMm: Math.min(hoehe, info.raum.hoeheMm) };
+      const wahl = p.ablauf?.wandhoehe ?? "folgen";
+      const hoehe = wahl === "folgen" ? wandhoeheNach(vor, info.raum.hoeheMm, w.startId) : wandhoeheIn(wahl, info.raum.hoeheMm);
+      wp = { art: "wand", wandId: t.wandId, abstandMm: abstand, hoeheMm: hoehe };
       punkt = achsenpunkt(info, abstand);
+      text = `${text}${text === "" ? "" : " · "}${masse.anzeigen(hoehe)} hoch – genau in der Wandfläche`;
     } else {
       const decke = art === "decke";
       const ziele = flaechenziele(v, decke);
@@ -285,11 +339,88 @@ export function useGrundrissleitungen({
       punkt = fang.punkt;
       text = fang.text ?? "";
     }
-    const werte = ersetzen === null ? wegpunktEinfuegen(w, wp, index - 1 < 0 ? null : index - 1).werte : wegpunktErsetzen(w, ersetzen, wp);
-    const geprueft = p.pruefen(werte, index);
-    if (geprueft === null) return null;
-    const von = planpunkt(ersetzen === null ? vor : w.wegpunkte[ersetzen - 1])?.punkt ?? null;
-    return { punkt, ok: geprueft.ok, grund: geprueft.ok ? null : geprueft.grund, werte, index, text, von };
+    if (ersetzen !== null) {
+      const werte = wegpunktErsetzen(w, ersetzen, wp);
+      const geprueft = p.pruefen(werte, index);
+      if (geprueft === null) return null;
+      const von = planpunkt(w.wegpunkte[ersetzen - 1])?.punkt ?? null;
+      return { punkt, ok: geprueft.ok, grund: geprueft.ok ? null : geprueft.grund, werte, index, text, von };
+    }
+    // Fußboden und Decke: rechtwinklig mit sichtbarer Ecke (F6), außer „Gerade“ gewählt. Übergänge
+    // zwischen Wand und Raumfläche liegen genau auf der Achse und werden mitgesetzt - angekündigt,
+    // als ein Schritt mit dem Punkt (Entwurf §18.4).
+    const rechtwinklig = (p.ablauf?.fuehrung ?? "rechtwinklig") === "rechtwinklig";
+    const eckenwahl = p.ablauf?.ecke ?? "waagerecht";
+    type Flaechenpunkt = Extract<Wegpunkt, { art: "floor" | "ceiling" }>;
+    const flaechig = (x: Wegpunkt | undefined): x is Flaechenpunkt => x?.art === "floor" || x?.art === "ceiling";
+    const versuchen = (ecke: typeof eckenwahl) => {
+      const neue: Wegpunkt[] = [];
+      const pfad: Punkt[] = [];
+      let knickGesetzt = false;
+      let uebergang: string | null = null;
+      let ziel: Wegpunkt = wp;
+      const knickZu = (ab: Flaechenpunkt, nach: Punkt) => {
+        const knick = rechtwinklig ? lEcke({ a: ab.x, b: ab.y }, { a: nach.x, b: nach.y }, ecke) : null;
+        if (knick === null) return;
+        neue.push({ art: ab.art, raumId: ab.raumId, x: knick.a, y: knick.b });
+        pfad.push({ x: knick.a, y: knick.b });
+        knickGesetzt = true;
+      };
+      if (wp.art === "wand" && flaechig(vor)) {
+        // Vom Raum an die Wand: Übergangspunkt auf der Achse, Wandpunkt auf Fußboden- bzw. Raumhöhe.
+        const info = v.waende.get(wp.wandId);
+        if (info !== undefined && info.raum.id === vor.raumId) {
+          const q = achsenpunkt(info, wp.abstandMm);
+          ziel = { ...wp, hoeheMm: vor.art === "floor" ? 0 : info.raum.hoeheMm };
+          knickZu(vor, q);
+          if (q.x !== vor.x || q.y !== vor.y) {
+            neue.push({ art: vor.art, raumId: vor.raumId, x: q.x, y: q.y });
+            pfad.push(q);
+          }
+          uebergang = vor.art === "floor" ? "Übergang vom Fußboden an die Wand" : "Übergang von der Decke an die Wand";
+        }
+      } else if (flaechig(wp)) {
+        let ab: Flaechenpunkt | null = flaechig(vor) && vor.art === wp.art && vor.raumId === wp.raumId ? vor : null;
+        if (vor?.art === "wand") {
+          // Von der Wand in den Raum: zuerst der Übergang auf der Achse (Wandpunkt auf Fußboden- bzw. Raumhöhe).
+          const info = v.waende.get(vor.wandId);
+          const passt = info !== undefined && info.raum.id === wp.raumId && vor.hoeheMm === (wp.art === "floor" ? 0 : info.raum.hoeheMm);
+          if (info !== undefined && passt) {
+            const q = achsenpunkt(info, vor.abstandMm);
+            const achse: Flaechenpunkt = { art: wp.art, raumId: wp.raumId, x: q.x, y: q.y };
+            neue.push(achse);
+            pfad.push(q);
+            ab = achse;
+            uebergang = wp.art === "floor" ? "Übergang zum Fußboden" : "Übergang zur Decke";
+          }
+        }
+        if (ab !== null) knickZu(ab, punkt);
+      }
+      neue.push(ziel);
+      const werte = wegpunkteEinfuegenAn(w, index, neue);
+      const geprueft = p.pruefen(werte, neue.map((_, i) => index + i));
+      return { werte, geprueft, pfad, anzahl: neue.length, knickGesetzt, uebergang };
+    };
+    const versuch = versuchen(eckenwahl);
+    if (versuch.geprueft === null) return null;
+    let hinweis: string | null = versuch.uebergang;
+    if (!versuch.geprueft.ok && versuch.knickGesetzt && versuchen(andereEcke(eckenwahl)).geprueft?.ok === true) {
+      hinweis = "Andere Ecke wäre gültig: Ecke wechseln (K)";
+    }
+    const von = planpunkt(vor)?.punkt ?? null;
+    return {
+      punkt,
+      ok: versuch.geprueft.ok,
+      grund: versuch.geprueft.ok ? null : versuch.geprueft.grund,
+      werte: versuch.werte,
+      index,
+      text: versuch.uebergang !== null && art === "wand" ? "" : text,
+      von,
+      ecke: versuch.knickGesetzt ? (versuch.pfad[0] ?? null) : null,
+      pfad: versuch.pfad,
+      anzahl: versuch.anzahl,
+      hinweis,
+    };
   };
 
   const kandidatStatus = (c: Kandidat, aktion: string) => {
@@ -297,9 +428,15 @@ export function useGrundrissleitungen({
       onStatus(`Nicht möglich: ${c.grund ?? ""}`);
       return;
     }
-    const wp = c.werte.wegpunkte[c.index];
+    const letzter = c.index + (c.anzahl ?? 1) - 1;
+    const wp = c.werte.wegpunkte[letzter];
     const ort = wp?.art === "wand" ? `${k?.wandName(wp.wandId) ?? ""} · ${masse.anzeigen(wp.abstandMm)} ab Wandanfang · ${masse.anzeigen(wp.hoeheMm)} hoch` : masse.punkt(c.punkt.x, c.punkt.y);
-    onStatus(`Wegpunkt ${c.index + 1} ${aktion} (${wp === undefined ? "" : FLAECHE_TEXT[wp.art === "wand" ? "wand" : wp.art === "ceiling" ? "decke" : "fussboden"]}): ${ort}${c.text !== "" ? ` · eingerastet: ${c.text}` : ""}`);
+    const nummer = letzter + 1;
+    const ziel = wp;
+    const flaecheText = ziel === undefined ? "" : FLAECHE_TEXT[ziel.art === "wand" ? "wand" : ziel.art === "ceiling" ? "decke" : "fussboden"];
+    onStatus(
+      `${aktion === "setzen" ? "Nächster Klick: " : ""}${(c.anzahl ?? 1) > 1 ? `${(c.anzahl ?? 1) - 1} Zwischenpunkt${(c.anzahl ?? 1) > 2 ? "e" : ""} und ` : ""}Wegpunkt ${nummer} ${aktion} (${flaecheText}): ${ort}${c.text !== "" ? ` · eingerastet: ${c.text}` : ""}${c.hinweis != null ? ` · ${c.hinweis}` : ""}`,
+    );
   };
 
   // ------------------------------------------------------------ Aktionen
@@ -310,21 +447,18 @@ export function useGrundrissleitungen({
   };
 
   const geraetGeklickt = (id: string) => {
-    if (e === null || p === undefined) return;
-    const w = e.werte;
-    if (!p.endpunkte(w.circuitId).some((g) => g.id === id)) {
-      onStatus("Dieses Gerät ist weder die Verteilung noch dem Stromkreis zugeordnet – erst zuordnen, dann anschließen.");
-      return;
-    }
-    if (w.startId === null && id !== w.endId) {
-      p.dispatch({ typ: "aendern", werte: { ...w, startId: id } });
-      onStatus(`Startgerät: ${p.geraetName(id)} – jetzt den Verlauf setzen.`);
-    } else if (id === w.startId) {
-      onStatus("Dieses Gerät ist bereits das Startgerät.");
-    } else {
-      p.dispatch({ typ: "aendern", werte: { ...w, endId: id } });
-      onStatus(`Endgerät: ${p.geraetName(id)} – Länge und Befunde prüfen, dann speichern.`);
-    }
+    if (p === undefined) return;
+    setKandidat(null);
+    onStatus(p.geraetGewaehlt(id));
+  };
+
+  const geraetVorschau = (id: string) => {
+    if (p === undefined || e === null) return;
+    const g = p.geraetPruefen(id);
+    if (!g.ok) onStatus(`Nicht möglich: ${g.grund}`);
+    else if (e.werte.startId === null) onStatus(`Nächster Klick: Startgerät ${p.geraetName(id)}`);
+    else if (id === e.werte.startId) onStatus("Das ist das Startgerät – ein anderes Gerät beendet die Leitung.");
+    else onStatus(`Nächster Klick: beendet am Zielgerät ${p.geraetName(id)}`);
   };
 
   /** Bodenübergang an einer Tür oder einem Durchgang - nur ausdrücklich gesetzt (D11). */
@@ -500,15 +634,105 @@ export function useGrundrissleitungen({
     onStatus(`Steigweg ${halt.name}: Zielhalt und Ausstieg im Seitenfeld wählen – Verlauf und Länge erscheinen vor dem Übernehmen.`);
   };
 
+  /**
+   * Flächenwechsel an der Wand ausdrücklich (Entwurf §18.4): Liegt der letzte Punkt an der Wand auf
+   * Fußboden- bzw. Raumhöhe, setzt „↓ Fußboden“ bzw. „↑ Decke“ den Übergangspunkt genau auf der Achse.
+   * Ein Klick auf die Wandlinie bleibt ein Wandpunkt.
+   */
+  const uebergaenge = (): { art: "floor" | "ceiling"; text: string }[] => {
+    if (e === null || v === null || !zeichnet || schritt !== "verlauf") return [];
+    const letzter = e.werte.wegpunkte[e.werte.wegpunkte.length - 1];
+    if (letzter?.art !== "wand") return [];
+    const info = v.waende.get(letzter.wandId);
+    if (info === undefined || info.raum.geschossId !== floorId) return [];
+    if (letzter.hoeheMm === 0) return [{ art: "floor", text: "↓ Übergang zum Fußboden" }];
+    if (letzter.hoeheMm === info.raum.hoeheMm) return [{ art: "ceiling", text: "↑ Übergang zur Decke" }];
+    return [];
+  };
+
+  const flaechenwechsel = (art: "floor" | "ceiling") => {
+    if (e === null || p === undefined || v === null) return;
+    const w = e.werte;
+    const letzter = w.wegpunkte[w.wegpunkte.length - 1];
+    if (letzter?.art !== "wand") return;
+    const info = v.waende.get(letzter.wandId);
+    if (info === undefined) return;
+    const punkt = achsenpunkt(info, letzter.abstandMm);
+    const index = w.wegpunkte.length;
+    const werte = wegpunkteEinfuegenAn(w, index, [{ art, raumId: info.raum.id, x: punkt.x, y: punkt.y }]);
+    const geprueft = p.pruefen(werte, index);
+    if (geprueft === null) return;
+    if (!geprueft.ok) {
+      onStatus(`Kein Übergang: ${geprueft.grund}`);
+      return;
+    }
+    p.dispatch({ typ: "aendern", werte, auswahl: null });
+    p.setAblauf({ raumpunkt: art === "floor" ? "fussboden" : "decke" });
+    onStatus(`Übergang ${art === "floor" ? "zum Fußboden" : "zur Decke"} als Wegpunkt ${index + 1} – weiter im Raum.`);
+  };
+
   // ------------------------------------------------------------ Zeiger
 
   const leitungAn = (ziel: Element | null) => ziel?.closest?.("[data-leitung]")?.getAttribute("data-leitung") ?? null;
+
+  const setzen = (c: Kandidat) => {
+    if (!c.ok) {
+      onStatus(`Nicht gesetzt: ${c.grund ?? ""}`);
+      return;
+    }
+    const neu = c.werte.wegpunkte[c.index + (c.anzahl ?? 1) - 1];
+    const jetzt = Date.now();
+    const z = zuletzt.current;
+    // Der zweite Klick eines Doppelklicks setzt keinen weiteren Punkt an derselben Stelle.
+    const schluessel = JSON.stringify(neu);
+    if (neu === undefined || wiederholtLetzten(c.werte.wegpunkte.slice(0, c.index), neu) || (z !== null && jetzt - z.zeit < DOPPELKLICK_MS && z.schluessel === schluessel)) {
+      return;
+    }
+    zuletzt.current = { zeit: jetzt, schluessel };
+    if (p?.ablauf?.einfuegenNach != null) p.setAblauf({ einfuegenNach: null });
+    const nummer = c.index + (c.anzahl ?? 1);
+    p?.dispatch({ typ: "aendern", werte: c.werte, auswahl: null });
+    onStatus(`${(c.anzahl ?? 1) > 1 ? "Zwischenpunkte und " : ""}Wegpunkt ${nummer} gesetzt${c.hinweis != null ? ` (${c.hinweis})` : c.text !== "" ? ` (${c.text})` : ""} – noch nicht gespeichert.`);
+  };
+
+  /** Lage der Geräte dieses Geschosses im Grundriss - Deckengeräte frei, Wandgeräte auf der Wandachse. */
+  const geraetelagen = (): { id: string; x: number; y: number }[] => {
+    if (v === null) return [];
+    const lagen: { id: string; x: number; y: number }[] = [];
+    for (const g of v.geraete.values()) {
+      if (v.raeume.get(g.raumId)?.geschossId !== floorId) continue;
+      if (g.flaeche === "ceiling" && g.x != null && g.y != null) lagen.push({ id: g.id, x: g.x, y: g.y });
+      else if (g.wandId != null && g.abstandMm != null) {
+        const info = v.waende.get(g.wandId);
+        if (info !== undefined) lagen.push({ id: g.id, ...achsenpunkt(info, g.abstandMm) });
+      }
+    }
+    return lagen;
+  };
+  // Gerät unter dem Zeiger - auch wenn eine bestehende Leitung oder Wandlinie darüber liegt (Ring wie in
+  // Schritt 1). Eine Gerätegruppe (mehrere Geräte an einer Stelle) wird nicht erraten.
+  const geraetBei = (ev: Zeigerereignis): string | null => {
+    if (ev.ziel?.closest?.("[data-geraetegruppe]") != null) return null;
+    const getroffen = ev.ziel?.closest?.("[data-geraet]")?.getAttribute("data-geraet") ?? null;
+    if (getroffen !== null) return getroffen;
+    // Ersatz über den Ring nur in Schritt 1 (dort reagieren nur Geräte) oder wenn eine bestehende Leitung
+    // über dem Gerät liegt - sonst bleibt ein Klick neben einem Gerät ein Wegpunkt.
+    if (schritt !== "start" && ev.ziel?.closest?.(".leitung-treffer") == null) return null;
+    return geraetImRing(ev.welt, ev.massstab, geraetelagen(), START_RING_PX);
+  };
 
   const zusatz: Flaechenzusatz = {
     cursor: werkzeug !== "aus" && darf ? "crosshair" : null,
     druecken: (ev) => {
       if (p === undefined) return false;
       const ziel = ev.ziel;
+      const geraetAnZiel = geraetBei(ev);
+      // Schritt 1: nur Geräte reagieren.
+      if (zeichnet && darf && schritt === "start") {
+        if (geraetAnZiel !== null) geraetGeklickt(geraetAnZiel);
+        else onStatus("Zuerst ein Startgerät anklicken – markierte Geräte sind möglich.");
+        return true;
+      }
       const punkt = ziel?.closest?.("[data-wegpunkt]")?.getAttribute("data-wegpunkt") ?? null;
       if (punkt !== null && e !== null) {
         const index = Number(punkt);
@@ -518,7 +742,8 @@ export function useGrundrissleitungen({
           p.dispatch({ typ: "ziehen-beginnen" });
           laufend.current = { art: "ziehen", index, gueltig: false };
         }
-        onStatus(`Wegpunkt ${index + 1} gewählt – neue Punkte folgen ihm${darf ? "; Entf entfernt ihn" : ""}.`);
+        setKandidat(null);
+        onStatus(`Wegpunkt ${index + 1} gewählt${darf ? " – ziehen verschiebt ihn, Entf entfernt ihn" : ""}. Neue Punkte kommen weiter ans Ende.`);
         return true;
       }
       if (werkzeug === "aus" || !darf) {
@@ -545,9 +770,8 @@ export function useGrundrissleitungen({
         return true;
       }
       if (ziel?.closest?.("[data-geraetegruppe]") != null) return false;
-      const geraet = ziel?.closest?.("[data-geraet]")?.getAttribute("data-geraet") ?? null;
-      if (geraet !== null) {
-        geraetGeklickt(geraet);
+      if (geraetAnZiel !== null) {
+        geraetGeklickt(geraetAnZiel);
         return true;
       }
       const oeffnung = ziel?.closest?.("[data-oeffnung]");
@@ -557,10 +781,9 @@ export function useGrundrissleitungen({
         uebergangSetzen(oeffnungWand, oeffnungId, ev.welt, ev);
         return true;
       }
-      const c = kandidatFuer(ev.welt, ev, null);
-      setKandidat(c);
-      if (c !== null) kandidatStatus(c, "setzen");
-      laufend.current = { art: "setzen" };
+      // Ohne vorherige Bewegung (Tastatur, Berührung) die Vorschau an dieser Stelle bestimmen.
+      if (kandidatRef.current === null) setKandidat(kandidatFuer(ev.welt, ev, null));
+      laufend.current = { art: "setzen", start: ev.welt, massstab: ev.massstab, bewegt: false };
       return true;
     },
     bewegen: (ev, aktiv) => {
@@ -576,9 +799,25 @@ export function useGrundrissleitungen({
         }
         return true;
       }
-      if ((aktiv && l?.art === "setzen") || (!aktiv && werkzeug === "leitung" && darf)) {
+      if (aktiv && l?.art === "setzen") {
+        if (!istKlick(l.start, ev.welt, l.massstab)) l.bewegt = true;
+        return true;
+      }
+      if (!aktiv && zeichnet && darf) {
+        const geraet = geraetBei(ev);
+        if (geraet !== null) {
+          setKandidat(null);
+          geraetVorschau(geraet);
+          return false;
+        }
+        if (schritt === "start") {
+          setKandidat(null);
+          onStatus("1 Startgerät wählen – auf ein markiertes Gerät klicken.");
+          return false;
+        }
         const c = kandidatFuer(ev.welt, ev, null);
         setKandidat(c);
+        if (c !== null) kandidatStatus(c, "setzen");
         return false;
       }
       return false;
@@ -594,13 +833,12 @@ export function useGrundrissleitungen({
       }
       if (l?.art === "setzen") {
         const c = kandidatRef.current;
-        setKandidat(null);
-        if (c === null) return;
-        if (!c.ok) {
-          onStatus(`Nicht gesetzt: ${c.grund ?? ""}`);
+        if (l.bewegt) {
+          onStatus("Nicht gesetzt – zum Setzen ohne Bewegung klicken.");
           return;
         }
-        uebernehmen(c.werte, c.index, `Wegpunkt ${c.index + 1} gesetzt${c.text !== "" ? ` (eingerastet: ${c.text})` : ""} – noch nicht gespeichert.`);
+        setKandidat(null);
+        if (c !== null) setzen(c);
       }
     },
     abbrechen: () => {
@@ -614,15 +852,58 @@ export function useGrundrissleitungen({
       }
       return l !== null;
     },
+    doppelklick: () => {
+      if (!zeichnet || p === undefined) return false;
+      setKandidat(null);
+      const text = p.abschliessen();
+      if (text !== null) onStatus(text);
+      return true;
+    },
     zeichnen: (b) => zeichnen(b),
   };
 
   // ------------------------------------------------------------ Tastatur
 
+  /** Escape: Ziehen → Vorschau/Steigwegwahl → Punktauswahl → „danach einfügen“ → Werkzeug beenden. Nie den Entwurf. */
+  const escape = (): boolean => {
+    if (zusatz.abbrechen()) return true;
+    if (kandidat !== null || steigwahl !== null) {
+      setKandidat(null);
+      setSteigwahl(null);
+      return true;
+    }
+    if (e !== null && e.auswahl !== null) {
+      p?.dispatch({ typ: "auswaehlen", auswahl: null });
+      return true;
+    }
+    if (p?.ablauf != null && p.ablauf.einfuegenNach !== null) {
+      p.setAblauf({ einfuegenNach: null });
+      return true;
+    }
+    if (p?.ablauf != null) {
+      p.ablaufBeenden();
+      onStatus("Werkzeug beendet – der Entwurf bleibt erhalten.");
+      return true;
+    }
+    if (einstellung?.werkzeug === "durchfuehrung") {
+      einstellung.setWerkzeug("aus");
+      return true;
+    }
+    return false;
+  };
+
   /** Tasten der Leitungsplanung im Grundriss; `true` = verarbeitet. */
   const taste = (event: KeyboardEvent): boolean => {
-    if (p === undefined || e === null || einstellung === null) return false;
+    if (p === undefined || einstellung === null) return false;
     if (event.ctrlKey || event.metaKey || event.altKey) return false;
+    const kk = event.key.toLowerCase();
+    if (kk === "l" && k !== undefined && p.darfLeitungen) {
+      const grund = k.leitungZeichnen();
+      if (grund !== null) onStatus(grund);
+      return true;
+    }
+    if (e === null) return false;
+    if (event.key === "Escape") return escape();
     const index = e.auswahl;
     if ((event.key === "Delete" || event.key === "Backspace") && index !== null && darf && e.werte.wegpunkte[index] !== undefined) {
       event.preventDefault();
@@ -630,27 +911,23 @@ export function useGrundrissleitungen({
       onStatus(`Wegpunkt ${index + 1} entfernt – noch nicht gespeichert.`);
       return true;
     }
-    if (event.key === "Escape") {
-      const bewegung = zusatz.abbrechen();
-      if (bewegung || kandidat !== null || steigwahl !== null) {
-        setKandidat(null);
-        setSteigwahl(null);
-        return true;
-      }
-    }
-    if (event.key === "Enter" && werkzeug !== "aus") {
-      einstellung.setWerkzeug("aus");
+    if (event.key === "Enter" && zeichnet) {
+      event.preventDefault();
       setKandidat(null);
-      onStatus(e.werte.endId === null ? "Zeichnen beendet – bitte noch das Endgerät wählen." : "Zeichnen beendet – Länge und Befunde prüfen, dann speichern.");
+      const text = p.abschliessen();
+      if (text !== null) onStatus(text);
       return true;
     }
     if (!darf) return false;
-    const kk = event.key.toLowerCase();
-    if (kk === "l") einstellung.setWerkzeug("leitung");
-    else if (kk === "u") einstellung.setWerkzeug("durchfuehrung");
-    else if (kk === "1") einstellung.setEbene("fussboden");
-    else if (kk === "2") einstellung.setEbene("wand");
-    else if (kk === "3") einstellung.setEbene("decke");
+    if (kk === "u") einstellung.setWerkzeug("durchfuehrung");
+    else if (kk === "k" && zeichnet) {
+      p.setAblauf({ ecke: p.ablauf?.ecke === "senkrecht" ? "waagerecht" : "senkrecht" });
+      setKandidat(null);
+    } else if (kk === "w" && zeichnet) {
+      p.setAblauf({ fuehrung: p.ablauf?.fuehrung === "gerade" ? "rechtwinklig" : "gerade" });
+      setKandidat(null);
+    } else if (kk === "1" && zeichnet) p.setAblauf({ raumpunkt: "fussboden" });
+    else if (kk === "3" && zeichnet) p.setAblauf({ raumpunkt: "decke" });
     else return false;
     return true;
   };
@@ -800,18 +1077,42 @@ export function useGrundrissleitungen({
         }
       });
     }
+    // Schritt 1: mögliche Startgeräte dieses Geschosses markiert, andere gedimmt.
+    if (zeichnet && schritt === "start" && v !== null) {
+      for (const g of geraetelagen()) {
+        const m = b(g.x, g.y);
+        const ok = p.geraetPruefen(g.id).ok;
+        teile.push(<circle key={`start-${g.id}`} cx={m.x} cy={m.y} r={START_RING_PX} className={`leitung-start-ring${ok ? "" : " leitung-start-ring--nein"}`} data-testid={`startgeraet-${g.id}`} data-moeglich={ok ? "ja" : "nein"} />);
+      }
+    }
     if (kandidat !== null) {
       const m = b(kandidat.punkt.x, kandidat.punkt.y);
-      if (kandidat.von !== null) {
-        const a = b(kandidat.von.x, kandidat.von.y);
-        teile.push(<line key="kandidat-strecke" x1={a.x} y1={a.y} x2={m.x} y2={m.y} className={`leitung-kandidat-strecke${kandidat.ok ? "" : " leitung-kandidat-strecke--fehler"}`} />);
-      }
+      const klasse = `leitung-kandidat-strecke${kandidat.ok ? "" : " leitung-kandidat-strecke--fehler"}`;
+      // Vorschau genau des entstehenden Verlaufs: Vorgänger → Zwischenpunkte (Ecke, Übergang) → Ziel.
+      const kette = [...(kandidat.von === null ? [] : [kandidat.von]), ...(kandidat.pfad ?? []), kandidat.punkt].map((q) => b(q.x, q.y));
+      kette.slice(1).forEach((c, i) => {
+        const a = kette[i] as Bildpunkt;
+        teile.push(<line key={`kandidat-strecke-${i}`} x1={a.x} y1={a.y} x2={c.x} y2={c.y} className={klasse} data-testid="plan-kandidat-strecke" />);
+      });
+      (kandidat.pfad ?? []).forEach((q, i) => {
+        const c = b(q.x, q.y);
+        teile.push(<circle key={`kandidat-zwischen-${i}`} cx={c.x} cy={c.y} r={4} className={`leitung-kandidat${kandidat.ok ? "" : " leitung-kandidat--fehler"}`} data-testid={kandidat.ecke != null && i === 0 ? "plan-kandidat-ecke" : "plan-kandidat-zwischenpunkt"} />);
+      });
       teile.push(
         <circle key="kandidat" cx={m.x} cy={m.y} r={6} data-testid="plan-leitung-kandidat" data-gueltig={kandidat.ok ? "ja" : "nein"} className={`leitung-kandidat${kandidat.ok ? "" : " leitung-kandidat--fehler"}`} />,
       );
+      const text = kandidat.ok ? kandidat.hinweis : kandidat.grund;
+      if (text != null) {
+        teile.push(
+          <text key="kandidat-text" x={m.x + 10} y={m.y - 10} className={`leitung-kandidat-text${kandidat.ok ? "" : " leitung-kandidat-text--fehler"}`} data-testid="plan-kandidat-text">
+            {text}
+          </text>,
+        );
+      }
     }
+
     return <g data-testid="plan-leitungsebene">{teile}</g>;
   };
 
-  return { zusatz, taste, relevant, gewaehlt, setGewaehlt, steigwahl, setSteigwahl };
+  return { zusatz, taste, escape, relevant, gewaehlt, setGewaehlt, steigwahl, setSteigwahl, uebergaenge: uebergaenge(), flaechenwechsel };
 }

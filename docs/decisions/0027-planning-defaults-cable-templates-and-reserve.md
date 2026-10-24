@@ -97,3 +97,11 @@ ohne doppelte Reserve in der späteren Materialberechnung.
 * Core erhält generisch `writable_project_context` (kein Fachwissen).
 * Die Mengenübersicht weist Weg, Reserve und Zugaben getrennt aus.
 * Phase 7 muss die Trennung Planungsreserve/Verschnitt im Contract abbilden.
+
+## Umsetzungsstand Oberfläche (L2/L3, 2026-10-24)
+
+Die Oberfläche nutzt ausschließlich die V1-Verträge, ohne Backendänderung: Verwaltung von Vorlagen und
+Betriebsstandard (Seite „Elektro-Vorgaben“), Projektvorgabe als Dialog, Stromkreisvorrang als ausdrücklicher
+Schalter; neue Leitungen über den Abschlussdialog mit Vorbelegung aus `effective`, Herkunft je Wertegruppe und
+Vorgabenbasis; `409 planning-defaults-changed` führt zu einer bewussten Entscheidung (neue Vorgaben übernehmen oder
+als Abweichung behalten). Der ADR bleibt *proposed* bis zur Abnahme. Details: Entwurf 6c §21.

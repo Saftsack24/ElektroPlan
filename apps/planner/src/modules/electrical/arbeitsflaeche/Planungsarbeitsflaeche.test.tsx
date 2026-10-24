@@ -230,23 +230,33 @@ describe("Rückgängig und Wiederholen", () => {
 describe("Entwurfsleiste bei eingeklapptem Panel", () => {
   function kontext(werte: { fehler?: { meldung: string } | null; status?: string; ungespeichert?: boolean } = {}) {
     const speichern = vi.fn(() => Promise.resolve(true));
+    const abschliessen = vi.fn(() => null);
+    const leitungZeichnen = vi.fn();
     const k = {
       planung: {
-        entwurf: { status: werte.status ?? "bearbeiten", fehler: werte.fehler === undefined ? null : werte.fehler === null ? null : { ...werte.fehler, eintraege: [] } },
+        entwurf: {
+          cableId: "l1",
+          werte: { startId: "uv1" },
+          status: werte.status ?? "bearbeiten",
+          fehler: werte.fehler === undefined ? null : werte.fehler === null ? null : { ...werte.fehler, eintraege: [] },
+        },
         ungespeichert: werte.ungespeichert ?? true,
         darfLeitungen: true,
         darfStromkreise: true,
+        ablauf: null,
         speichern,
+        abschliessen,
+        leitungZeichnen,
       },
       zuordnung: { entwurf: null, fehler: null, konflikt: false, offen: false, speichert: false },
       leitungSchliessen: vi.fn(() => Promise.resolve(true)),
       zuordnungSchliessen: vi.fn(() => Promise.resolve(true)),
     } as unknown as Leitungskontext;
-    return { k, speichern };
+    return { k, speichern, abschliessen, leitungZeichnen };
   }
 
   it("zeigt Konflikt und Speichern an der Aktion und führt zu den Details", () => {
-    const { k, speichern } = kontext({ status: "konflikt", fehler: { meldung: "Die Leitung wurde inzwischen geändert." } });
+    const { k, speichern, abschliessen, leitungZeichnen } = kontext({ status: "konflikt", fehler: { meldung: "Die Leitung wurde inzwischen geändert." } });
     const details = vi.fn();
     render(<Entwurfsleiste k={k} panelOffen={false} onDetails={details} />);
     expect(screen.getByRole("alert")).toHaveTextContent("Konflikt – Leitung nicht gespeichert: Die Leitung wurde inzwischen geändert.");
@@ -255,6 +265,18 @@ describe("Entwurfsleiste bei eingeklapptem Panel", () => {
     expect(speichern).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Details und Entscheidung" }));
     expect(details).toHaveBeenCalledTimes(1);
+    // Angaben im Abschlussdialog, Verlauf über „Weiterzeichnen“ (6c, L2/L3) - kein langes Formular.
+    fireEvent.click(screen.getByRole("button", { name: "Angaben …" }));
+    expect(abschliessen).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Weiterzeichnen" }));
+    expect(leitungZeichnen).toHaveBeenCalledTimes(1);
+  });
+
+  it("während gezeichnet wird, führt die Zeichenleiste – die Entwurfsleiste schweigt", () => {
+    const { k } = kontext();
+    (k.planung as unknown as { ablauf: unknown }).ablauf = { schritt: "verlauf" };
+    render(<Entwurfsleiste k={k} panelOffen={false} onDetails={() => undefined} />);
+    expect(screen.queryByTestId("entwurfsleiste-leitung")).toBeNull();
   });
 
   it("bei offenem Panel gilt dessen Formular – die Leiste nennt nur den Stand", () => {
@@ -298,6 +320,40 @@ describe("Höhenregel (L1)", () => {
     expect(screen.getByRole("region", { name: "Probe-Arbeitsfläche" }).style.height).toBe("676px");
     vi.restoreAllMocks();
     Object.defineProperty(window, "innerHeight", { configurable: true, value: vorher });
+  });
+
+  it("Maximieren und zurück (Knopf oder Escape) lässt die eingerollte Arbeitsfläche dort, wo sie war (§21.6 Nacharbeit)", () => {
+    // Die Seite ist zur Arbeitsfläche gescrollt; maximiert wird sie kurz, und der Browser setzt die Position
+    // auf 0 - zurück in der normalen Ansicht muss die Arbeitsfläche wieder an derselben Stelle stehen.
+    // Wie im Browser: Ohne feste Höhe (maximiert) ist die Seite kurz, die Position wird auf 0 gekappt.
+    let gewuenscht = 325;
+    const region = () => document.querySelector<HTMLElement>("[data-arbeitsflaeche]");
+    Object.defineProperty(window, "scrollY", { configurable: true, get: () => (region()?.style.height === "" ? 0 : gewuenscht) });
+    const scrollTo = vi.fn((_x: number, y: number) => {
+      gewuenscht = y;
+    });
+    vi.stubGlobal("scrollTo", scrollTo);
+    render(<Probe />);
+    expect(window.scrollY).toBe(325);
+    fireEvent.click(screen.getByRole("button", { name: "Zeichenfläche maximieren" }));
+    expect(window.scrollY).toBe(0);
+    gewuenscht = 0;
+    fireEvent.click(screen.getByRole("button", { name: "Normale Ansicht" }));
+    expect(window.scrollY).toBe(325);
+    // Ebenso über Escape (letzte Stufe), nach erneutem Maximieren per Taste M.
+    fireEvent.keyDown(window, { key: "m" });
+    gewuenscht = 0;
+    act(() => {
+      zustand?.escape();
+    });
+    expect(window.scrollY).toBe(325);
+    // Ohne Maximieren wird nie gescrollt.
+    scrollTo.mockClear();
+    act(() => {
+      window.dispatchEvent(new Event("resize"));
+    });
+    expect(scrollTo).not.toHaveBeenCalled();
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 0, writable: true });
   });
 
   it("staucht bei fester Höhe nur die Zeichenfläche – Kopf, Werkzeuge und Kontext behalten ihre Höhe", () => {

@@ -3905,3 +3905,62 @@ Migration `0014`, Tests, gemeinsamer Fixture, OpenAPI und API-Client sowie Dokum
   Scratchpad-Dateien; keine Diagnose-Reste, kein `skip`/`only`; Architektur-, Sicherheits- und Mandantenprüfungen
   nur erweitert (neue Tabellen, Recht, Vorlage im Mandanten-Sweep); ältere Migrationen unverändert;
   `git diff --check` sauber. Nicht aufgenommen: eine unabhängige Datei unter `output/`.
+
+## Task 0060 – Phase 6c L2/L3: Zeichenablauf, Abschlussdialog, Verwaltung der Vorgaben
+
+**Datum:** 2026-10-23/24 · **Status:** technisch umgesetzt, automatisiert und im laufenden Stack funktional geprüft,
+**uncommittet**. Vorher V1 als Checkpoint `39386c4` gesichert (Task 0059). Persönliche Abnahme L1 und L2/L3 offen.
+
+* **A – Verwaltung:** Seite „Elektro-Vorgaben“ (Vorlagen, Betriebsstandard), Projektdialog „Planungsvorgaben“,
+  Stromkreisvorrang als Schalter; Versionsprüfung, Konflikt mit erhaltenen Eingaben, nur lesen ohne Recht bzw. in
+  abgeschlossenen/archivierten Projekten.
+* **B – Zeichenablauf:** „Leitung hinzufügen“ ohne Vorauswahl, Schritte 1–3, Vorschau mit Wirkung und Grund,
+  Klick/Ziehen/Einfügen nach §18.4, L-Führung mit „Ecke wechseln“, Grundriss mit Klickziel, ausdrücklicher Höhe und
+  Achsübergängen, Flächenwechsel ohne Verlust.
+* **C – Abschlussdialog:** abgeleiteter Stromkreis, Vorbelegung über `effective`, Herkunft, getrenntes Ergebnis,
+  ausdrückliche Zuordnung, Versions- und Vorgabenkonflikt mit bewusster Entscheidung; derselbe Dialog für
+  bestehende Leitungen; langes Panelformular entfernt.
+* **D – Prüfung:** Frontend 1 242/1 242 (`--maxWorkers=6`), ESLint, `tsc`, Modulgrenzen, Build, API-Drift grün;
+  keine Backendänderung, daher kein PostgreSQL-Lauf. Browserdurchlauf im Entwicklungsstack mit synthetischen Werten
+  (674 cm = 520 + 104 + 50, serverseitig identisch), danach aufgeräumt. Vier Browserbefunde behoben (Gerät unter
+  Leitung/Wandlinie, Rückkehr nach „Verschieben“, rohe Serverzeilen im Konflikt, Überlauf bei 375 px).
+* **Offen:** Höhenbedarf der Zeichenleiste bei kleinen Fenstern, veraltete Statuszeile, Backendtexte ohne
+  Umlaute, Wand aus dem Grundriss nur über „Weiterzeichnen“ (Entwurf §21.5); Abnahme durch den Auftraggeber.
+
+## Task 0061 – Phase 6c L2/L3: vier Bedienungslücken (§21.5)
+
+**Datum:** 2026-10-24 · **Status:** technisch umgesetzt, automatisiert und im laufenden Stack geprüft,
+**uncommittet**. Nur Frontend. Persönliche Beurteilung von Layout und Leitungsbedienung offen.
+
+* **Zeichenfläche:** einzeilige Zeichenleiste mit Schritt, Rückmeldung, Schrittaktionen und Hilfe; Statusblock,
+  Schrittchips und Dauertexte entfallen; „Leitung hinzufügen“ rollt die Arbeitsfläche ins Bild. Gemessen
+  (Schritt 2): 1280 × 800 normal 220 → 370 px, maximiert 424 → 600 px; 1024 × 640 maximiert 220 → 400 px, normal
+  440 px nach Einrollen; 390 × 844 maximiert 220 → 471 px, Leiste jetzt im Bild.
+* **Flächenwechsel:** „Fläche:“-Knöpfe in der Leiste (Grundriss: Wand des Bezugsorts, Decke; Wand/Decke:
+  Grundriss, Nachbarflächen); nichts gespeichert, kein Punkt, Schritt und Rückgängig bleiben.
+* **Status:** `ablaufSchluessel` verwirft veraltete Meldungen; Anweisung aus dem Zustand; leerer Einstieg nicht
+  „ungespeichert“ (keine Rückfrage, kein Verlassen-Schutz).
+* **Abschlussdialog:** gültige Eingaben sofort, ein Rückgängig-Schritt je Feld, Zwischenstände als „Ergebnis nicht
+  aktuell“ mit gesperrtem Speichern; leeres Prozentfeld nicht mehr 0 %; Rückkehr zur Vorgabe behält die Herkunft.
+* **Prüfung:** Frontend 1 250/1 250, ESLint, `tsc`, Modulgrenzen, Build, API-Drift grün; Browser mit synthetischen
+  Werten (Start, Grundriss → Wand → Decke → Grundriss, Abschluss, 12,5 % getippt und sofort gespeichert =
+  Server 650 mm/5 850 mm, Neuladen, Escape, Verwerfen, Neustart, schmal, hell/dunkel); Daten entfernt.
+
+## Task 0062 – Phase 6c: Höhe der Planungsarbeitsfläche (§21.7)
+
+**Datum:** 2026-10-24 · **Status:** technisch umgesetzt und im laufenden Stack gemessen. Nur Frontend. Persönliche
+Beurteilung von Layout und Leitungsbedienung offen; optische Prüfung in dieser Runde nicht zuverlässig möglich.
+
+* **Maximieren:** Text „Normale Ansicht“ erst ab 80 rem (vorher Umbruch der Werkzeugzeile bei 1 024 px); die
+  Scrollposition vor dem Maximieren wird nach dem Zurückschalten wiederhergestellt (Knopf, M, Escape). 1024 × 640:
+  maximiert 450 px wie normal (vorher 400 gegen 440 px).
+* **Zeichenleiste:** zwei feste Zeilen (oben Schritt/Rückmeldung/Abschluss, unten Werkzeuge bzw. in Schritt 1 eine
+  kurze Vorschau); unter 80 rem kurze Knopftexte. Bezugspunkt, Zoom und Weltmitte über Start, Wegpunkt, Dialog,
+  Weiterzeichnen, Speichern und nächste Leitung unverändert (1 280 × 800, 1 024 × 640; Messung nach stabiler Größe).
+* **Prüfung:** neuer Verhaltenstest (Scrollposition nach Maximieren, Gegenprobe ohne Korrektur rot); Typprüfung,
+  ESLint, Modulgrenzen, Build, API-Drift grün; Frontend-Gesamtlauf 1 251/1 251 (erster Lauf unter fremder Last mit
+  zwei 5-s-Zeitüberschreitungen, nach Lastende einmal wiederholt). Synthetische Leitungen danach entfernt.
+* **Checkpoint:** L1/L2/L3 samt Nachkorrekturen (Tasks 0060–0062) committet, nicht gepusht. Vorabprüfung: nur
+  Planner-Quellen, Tests und Dokumentation; keine Secrets, `.env`, Screenshots, Logs, Dumps, Caches oder
+  Scratchpad-Dateien; keine Diagnose-Reste, kein `only`/`skip`, keine verlängerten Fristen; kein Backend, keine
+  Migration; `git diff --check` sauber. Nicht aufgenommen: eine unabhängige Datei unter `output/`.

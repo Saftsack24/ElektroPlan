@@ -39,7 +39,7 @@ import { useAnsichtsgedaechtnis } from "../arbeitsflaeche/ansichtsgedaechtnis";
 import { knopftext, useKompakt } from "../arbeitsflaeche/kompakt";
 import { useStabil } from "../arbeitsflaeche/stabil";
 import { GrundrissLegende } from "../leitung/GrundrissLeitungsfeld";
-import { Planungsarbeitsflaeche, useArbeitsflaeche } from "../arbeitsflaeche/Planungsarbeitsflaeche";
+import { Planungsarbeitsflaeche, arbeitsflaecheZeigen, useArbeitsflaeche } from "../arbeitsflaeche/Planungsarbeitsflaeche";
 import type { Arbeitsflaechenzustand } from "../arbeitsflaeche/Planungsarbeitsflaeche";
 import { Entwurfsfehler, Raumrueckmeldung } from "../arbeitsflaeche/Kontextleiste";
 import { editorEinordnung, editorTopologie, raumwandUnterZeiger } from "./platzierung";
@@ -68,8 +68,9 @@ import type { Leitungsplanung } from "../leitung/useLeitungsplanung";
 import { LEITUNG_MELDUNG, LeitungsplanungProvider, useGrundrisseinstellung, useLeitungsplanungImKontext } from "../leitung/LeitungsplanungProvider";
 import { useGrundrissleitungen } from "../leitung/Grundrissleitungen";
 import type { Wandtreffer } from "../leitung/Grundrissleitungen";
-import { GrundrissLeitungsleiste, Steigwegwahl } from "../leitung/GrundrissLeitungsfeld";
+import { GrundrissLeitungshilfe, GrundrissLeitungsleiste, Steigwegwahl } from "../leitung/GrundrissLeitungsfeld";
 import { Leitungsbereich } from "../leitung/Leitungsbereich";
+import { Zeichenleiste } from "../leitung/Zeichenleiste";
 import { ZUORDNUNG_MELDUNG } from "../stromkreise/texte";
 import { useZuordnungsentwurf } from "../stromkreise/zuordnung";
 
@@ -248,6 +249,11 @@ function GrundrissEditorInhalt({
   const [neuerRaum, setNeuerRaum] = useState<readonly EntwurfWand[] | null>(null);
   const [raumdaten, setRaumdaten] = useState(false);
   const [hinweis, setHinweis] = useState<string | null>(null);
+  /**
+   * Rückmeldung des Zeichenablaufs (6c L2/L3) - steht in der Zeichenleiste, nicht als Hinweis über der
+   * Fläche. Sie gilt nur für den Ablaufzustand, in dem sie entstand.
+   */
+  const [leitungsMeldung, setLeitungsMeldung] = useState<string | null>(null);
   /** Panel und Maximierung - reine Ansicht (Phase 6c.0). */
   const eigeneArbeitsflaeche = useArbeitsflaeche();
   const af = arbeitsflaeche ?? eigeneArbeitsflaeche;
@@ -946,6 +952,8 @@ function GrundrissEditorInhalt({
   /** Wechsel der Arbeitsfläche im selben Entwurf: nichts wird gespeichert oder verworfen. */
   const arbeitsflaecheWechseln = (ziel: Arbeitsflaeche) => {
     const von = herkunft.current;
+    // Die Rückmeldung gehörte zur vorigen Fläche.
+    setLeitungsMeldung(null);
     if (ziel.art === "wand") {
       setDeckenansicht(null);
       void wandansichtOeffnen({ raumId: ziel.raumId, wandId: ziel.wandId, ...(ziel.seite !== undefined ? { seite: ziel.seite } : {}), herkunft: von });
@@ -956,7 +964,9 @@ function GrundrissEditorInhalt({
   };
 
   const leitungSchliessen = async (): Promise<boolean> => {
-    if (planung.ungespeichert && (await fragen(verwerfenOptionen("Leitungsentwurf schließen?", "Sie wollen den Leitungsentwurf schließen.", LEITUNG_MELDUNG))) !== "bestaetigt") {
+    // Eine neue Leitung ohne Startgerät und Punkte ist nichts - schließen ohne Rückfrage.
+    const leer = planung.entwurf?.cableId === null && planung.entwurf.werte.startId === null && planung.entwurf.werte.wegpunkte.length === 0;
+    if (planung.ungespeichert && !leer && (await fragen(verwerfenOptionen("Leitungsentwurf schließen?", "Sie wollen den Leitungsentwurf schließen.", LEITUNG_MELDUNG))) !== "bestaetigt") {
       return false;
     }
     planung.schliessen();
@@ -979,11 +989,33 @@ function GrundrissEditorInhalt({
         ? "Eine Gerätezuordnung ist offen – bitte zuerst speichern oder schließen."
         : null;
 
+  /** „Leitung hinzufügen“ (6c, L2): direkt zeichnen - ohne Stromkreiswahl, ohne Formular. */
+  const leitungZeichnen = (): string | null => {
+    if (offen) return `Der Raum „${zustand.basis?.raum.name ?? ""}“ hat ungespeicherte Änderungen – bitte zuerst speichern oder verwerfen.`;
+    if (zuordnungAktiv) return "Eine Gerätezuordnung ist offen – bitte zuerst speichern oder schließen.";
+    if (!planung.darfLeitungen) return "Leitungen dürfen hier nicht bearbeitet werden.";
+    // Nach „Ansicht verschieben“ wieder zeichnen (Knopf und Taste L): Die Zeichenfläche gäbe Klicks sonst
+    // weiter an das Verschieben.
+    if (zustand.werkzeug === "pan") dispatch({ typ: "werkzeug", werkzeug: "auswahl" });
+    const begonnen = planung.ablauf === null;
+    planung.leitungZeichnen();
+    // Zeichnen braucht die ganze Fläche: einmal ins Bild (Grundriss, Wand und Decke teilen diesen Einstieg).
+    if (begonnen) arbeitsflaecheZeigen();
+    return null;
+  };
+
   const leitungskontext: Leitungskontext = {
     planung,
     zuordnung,
     sperrgrund,
+    leitungZeichnen,
     arbeitsflaecheWechseln,
+    zumGrundriss: () => {
+      setLeitungsMeldung(null);
+      setWandansicht(null);
+      setDeckenansicht(null);
+      herkunft.current = "2d";
+    },
     raumName,
     wandName,
     zuordnungSchliessen,
@@ -1000,6 +1032,10 @@ function GrundrissEditorInhalt({
     if (t === null) return null;
     return t.ok ? { ok: true, raumId: t.treffer.raumId, wandId: t.treffer.wandId } : { ok: false, grund: t.grund };
   };
+  // Escape, Dialog, Speichern, Verwerfen, nächste Leitung: Die Rückmeldung zum vorigen Zustand entfällt;
+  // die Zeichenleiste zeigt dann die Anweisung zum aktuellen Schritt.
+  useEffect(() => setLeitungsMeldung(null), [planung.ablaufSchluessel]);
+
   const gl = useGrundrissleitungen({
     k: buildingId !== undefined ? leitungskontext : undefined,
     einstellung,
@@ -1007,7 +1043,7 @@ function GrundrissEditorInhalt({
     wandUnterZeiger,
     fangAktiv,
     rasterMm,
-    onStatus: setHinweis,
+    onStatus: (text: string | null) => (planung.ablauf !== null ? setLeitungsMeldung(text) : setHinweis(text)),
     raumBearbeitung: zustand.entwurf !== null,
   });
 
@@ -1035,20 +1071,15 @@ function GrundrissEditorInhalt({
   // --------------------------------------------------------------- Leitung hinzufügen (L1)
 
   /**
-   * „Leitung hinzufügen“ oben in der Werkzeugleiste. **L1-Zwischenstand:** Mit offenem
-   * Leitungsentwurf wählt der Knopf das Werkzeug „Leitung“; ohne Entwurf öffnet er den
-   * **bestehenden** Einstieg – die Leitungsliste im Eigenschaftenpanel mit Stromkreiswahl
-   * und „Neue Leitung“. Der neue Zeichenablauf (Startgerät anklicken …) folgt mit L2.
+   * „Leitung hinzufügen“ oben in der Werkzeugleiste (6c, L2): startet sofort den Zeichenablauf –
+   * Schritt 1 Startgerät anklicken. Mit offenem Leitungsentwurf geht es dort weiter.
    */
   const leitungHinzufuegenMoeglich = buildingId !== undefined && planung.darfLeitungen;
   const leitungHinzufuegen = () => {
-    if (leitungAktiv) {
-      einstellung?.setWerkzeug("leitung");
-      return;
-    }
-    af.setEigenschaftenOffen(true);
-    // Nach dem Aufklappen: Fokus auf den Einstieg der Leitungsliste.
-    setTimeout(() => document.querySelector<HTMLElement>("[data-leitung-einstieg]")?.focus(), 0);
+    einstellung?.setWerkzeug("aus");
+    // Die Anweisung zum Schritt steht in der Zeichenleiste; hier nur, warum es gerade nicht geht.
+    const grund = leitungZeichnen();
+    if (grund !== null) setHinweis(grund);
   };
 
   // --------------------------------------------------------------- Tastatur
@@ -1179,9 +1210,45 @@ function GrundrissEditorInhalt({
   // Die Werkzeuge des Zeichnens (Ebene, Höhe, Steigwegwahl) stehen in der Kontextleiste,
   // Liste und Angaben im Eigenschaftenpanel (Phase 6c.0).
   const eigeneLeitungsflaeche = wandansicht === null && deckenansicht === null;
+  // Rückwege aus Mengenübersicht und 3D - beim Zeichnen in der Zeichenleiste, sonst im Entwurfsblock.
+  const leitungsRueckwege = (
+    <>
+      {onZurueckZuMengen !== undefined && (
+        <button type="button" className={knopf("neutral", { klein: true })} onClick={onZurueckZuMengen}>
+          Zurück zur Mengenübersicht
+        </button>
+      )}
+      {rueckkehr3dAnbieten && onZurueck3d !== undefined && (
+        <button type="button" className={knopf("neutral", { klein: true })} onClick={onZurueck3d}>
+          Zurück zur 3D-Ansicht
+        </button>
+      )}
+    </>
+  );
   const leitungswerkzeuge = !eigeneLeitungsflaeche ? null : (
     <div className="flex flex-col gap-2" data-testid="grundriss-leitungswerkzeuge">
-      {einstellung !== null && <GrundrissLeitungsleiste k={leitungskontext} einstellung={einstellung} floorId={floorId} />}
+      {buildingId !== undefined && (
+        <Zeichenleiste
+          k={leitungskontext}
+          flaeche={{ art: "grundriss", floorId }}
+          meldung={leitungsMeldung}
+          meldungTestId="grundriss-leitungsmeldung"
+          zusatz={
+            <>
+              {gl.uebergaenge.map((u) => (
+                <button key={u.art} type="button" className={knopf("neutral", { klein: true })} onClick={() => gl.flaechenwechsel(u.art)} data-testid={`uebergang-${u.art}`}>
+                  {u.text}
+                </button>
+              ))}
+              {einstellung !== null && <GrundrissLeitungsleiste k={leitungskontext} einstellung={einstellung} />}
+            </>
+          }
+          nebenaktionen={leitungsRueckwege}
+          hilfe={<GrundrissLeitungshilfe k={leitungskontext} floorId={floorId} />}
+        />
+      )}
+      {/* Ohne laufendes Zeichnen (Werkzeug beendet, Entwurf offen) bleibt nur die Durchführung. */}
+      {einstellung !== null && planung.ablauf === null && <GrundrissLeitungsleiste k={leitungskontext} einstellung={einstellung} />}
       {gl.steigwahl !== null && (
         <Steigwegwahl
           key={`${gl.steigwahl.steigwegId}|${gl.steigwahl.haltId}|${gl.steigwahl.index}`}
@@ -1276,7 +1343,7 @@ function GrundrissEditorInhalt({
             onEinpassen={stabilEinpassen}
             onHilfe={stabilHilfe}
             leitungVorhanden={leitungHinzufuegenMoeglich}
-            leitungAktiv={leitungAktiv && einstellung?.werkzeug === "leitung"}
+            leitungAktiv={planung.ablauf !== null}
             onLeitungHinzufuegen={stabilLeitung}
             darfSchreiben={schreibbar}
           />
@@ -1292,35 +1359,32 @@ function GrundrissEditorInhalt({
               onSchliessen={() => dispatch({ typ: "hinweis-schliessen" })}
               onServerstand={() => void serverstandBestaetigen()}
             />
-            {(leitungAktiv || zuordnungAktiv) && (
+            {((leitungAktiv && planung.ablauf === null) || zuordnungAktiv) && (
               <div className={`${meldungsflaeche("schlicht")} flex flex-wrap items-center justify-between gap-2`} role="status" data-testid="entwurf-offen">
                 <span>
                   {leitungAktiv
-                    ? `Leitungsentwurf offen${planung.ungespeichert ? " – ungespeichert" : ""}`
+                    ? `Leitungsentwurf offen${planung.ungespeichert ? " – ungespeichert" : " – keine ungespeicherten Änderungen"}`
                     : `Gerätezuordnung offen${zuordnung.offen ? " – ungespeichert" : ""}`}
                 </span>
                 <span className="flex flex-wrap gap-2">
-                  {!af.eigenschaftenOffen && (
-                    <button
-                      type="button"
-                      className={knopf("neutral", { klein: true })}
-                      onClick={() => af.setEigenschaftenOffen(true)}
-                      {...kurz(leitungAktiv ? "Angaben und Wegpunkte" : "Zugeordnete Geräte", leitungAktiv ? "Angaben" : "Geräte")}
-                    />
+                  {zuordnungAktiv && !af.eigenschaftenOffen && (
+                    <button type="button" className={knopf("neutral", { klein: true })} onClick={() => af.setEigenschaftenOffen(true)} {...kurz("Zugeordnete Geräte", "Geräte")} />
                   )}
-                  {leitungAktiv && (
+                  {leitungAktiv && leitungsRueckwege}
+                  {leitungAktiv && planung.ablauf === null && (
                     <>
-                      <button type="button" className={knopf("neutral", { klein: true })} onClick={leitungFortsetzen} {...kurz("Leitung weiter bearbeiten", "Weiter")} />
-                      {onZurueckZuMengen !== undefined && (
-                        <button type="button" className={knopf("neutral", { klein: true })} onClick={onZurueckZuMengen}>
-                          Zurück zur Mengenübersicht
-                        </button>
+                      {planung.entwurf?.werte.startId != null && (
+                        <button type="button" className={knopf("neutral", { klein: true })} onClick={() => planung.abschliessen()} {...kurz("Angaben …", "Angaben")} />
                       )}
-                      {rueckkehr3dAnbieten && onZurueck3d !== undefined && (
-                        <button type="button" className={knopf("neutral", { klein: true })} onClick={onZurueck3d}>
-                          Zurück zur 3D-Ansicht
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        className={knopf("neutral", { klein: true })}
+                        onClick={() => {
+                          planung.leitungZeichnen();
+                          leitungFortsetzen();
+                        }}
+                        {...kurz("Weiterzeichnen", "Weiter")}
+                      />
                       <button
                         type="button"
                         className={knopf("primaer", { klein: true })}
@@ -1450,7 +1514,7 @@ function GrundrissEditorInhalt({
           <li>Strg+Z / Strg+Y (oder Strg+Umschalt+Z): Rückgängig / Wiederholen · Strg+S: Speichern · Entf: Auswahl entfernen.</li>
           <li>E: Eigenschaften ein- und ausklappen · M: Zeichenfläche maximieren bzw. zurück zur normalen Ansicht. Escape schließt zuletzt ein überlagerndes Eigenschaftenpanel und beendet dann die Maximierung. Zoom, Ausschnitt, Auswahl und Entwürfe bleiben dabei erhalten.</li>
           <li>Änderungen bleiben lokal, bis „Speichern“ gedrückt wird. Die Ansicht „Tabellen &amp; Details“ bietet dieselben Daten als Formular.</li>
-          <li>„Leitung hinzufügen“ (L): öffnet zurzeit die Leitungsliste in den Eigenschaften (Stromkreis wählen, „Neue Leitung“). Der neue Zeichenablauf ohne diese Vorauswahl folgt in einem späteren Schritt.</li>
+          <li>„Leitung hinzufügen“ (L): Startgerät anklicken, Verlauf zeichnen, Zielgerät anklicken – die Zeichenleiste unter der Fläche nennt den Schritt; ihre Hilfe (?) erklärt die Bedienung.</li>
         </ul>
         <li className="list-none">Werkzeugleiste: Auswahl · Raum · Öffnung · Gerät · Leitung · Rückgängig/Wiederholen · Zoom · „Ansicht“ (Fang, Raster, diese Hilfe).</li>
         <GrundrissLegende />

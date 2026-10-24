@@ -3,116 +3,84 @@ import { useState } from "react";
 import { Marke } from "../../../core/ui/Marke";
 import { useMasse } from "../../../core/ui/masseinheit";
 import { FELD, FELD_BESCHRIFTUNG, KNOPFZEILE, eingabefeld, knopf, meldungsflaeche } from "../../../core/ui/stil";
+import { SEHR_BREIT, useMedium } from "../arbeitsflaeche/kompakt";
 import { MassFeld } from "../wandansicht/WandEigenschaften";
 import { wegpunktEinfuegen } from "./entwurf";
-import type { Ebene, Wandhoehe } from "./grundriss";
-import { EBENE_LABEL } from "./grundriss";
+import type { Wandhoehe } from "./grundriss";
 import type { Steigwahl } from "./Grundrissleitungen";
 import type { Leitungskontext } from "./kontext";
 import { leitungsbefundText } from "./laenge";
-import type { Grundrisseinstellung, Grundrisswerkzeug } from "./LeitungsplanungProvider";
+import type { Grundrisseinstellung } from "./LeitungsplanungProvider";
 
-const WERKZEUGE: readonly { wert: Grundrisswerkzeug; label: string; taste: string }[] = [
-  { wert: "aus", label: "Grundriss", taste: "Enter" },
-  { wert: "leitung", label: "Leitung", taste: "L" },
-  { wert: "durchfuehrung", label: "Durchführung hier", taste: "U" },
-];
-const EBENEN: readonly { wert: Ebene; taste: string }[] = [
-  { wert: "fussboden", taste: "1" },
-  { wert: "wand", taste: "2" },
-  { wert: "decke", taste: "3" },
-];
-/** Übliche Höhen für grobe Wandpunkte (Planungshilfe wie die Zonenhilfslinien); genaue Lage in der Wandansicht. */
-const WANDHOEHEN: readonly { wert: Wandhoehe; text: string }[] = [
-  { wert: 0, text: "Fußboden (Übergang)" },
-  { wert: 300, text: "untere Zone" },
-  { wert: 1100, text: "mittlere Zone" },
-  { wert: "obere-zone", text: "obere Zone – 30 cm unter der Decke" },
-  { wert: "decke", text: "Raumhöhe – Decke (Übergang)" },
+/** Übliche Höhen für grobe Wandpunkte (auch die Wahl im Zeichenablauf, 6c L2) (Planungshilfe wie die Zonenhilfslinien); genaue Lage in der Wandansicht. */
+export const WANDHOEHEN: readonly { wert: Wandhoehe; text: string; kurz: string }[] = [
+  { wert: 0, text: "Fußboden (Übergang)", kurz: "Fußboden" },
+  { wert: 300, text: "untere Zone", kurz: "unten" },
+  { wert: 1100, text: "mittlere Zone", kurz: "Mitte" },
+  { wert: "obere-zone", text: "obere Zone – 30 cm unter der Decke", kurz: "obere Zone" },
+  { wert: "decke", text: "Raumhöhe – Decke (Übergang)", kurz: "Decke" },
 ];
 
 /**
- * Leitungswerkzeuge im Grundriss (Phase 6b.5): Werkzeug, Ebene, Höhe neuer
- * Wandpunkte, Legende. Die Ebenenwahl gilt nur für neue Punkte.
+ * Zusatzwerkzeug im Grundriss (Phase 6b.5, seit 6c L2 schlank, nach §21.5 ohne Dauertexte): „Durchführung
+ * hier“ (U) mit der Höhe der neuen Durchführung - als Teil der Zeichenleiste. Welcher Punkt entsteht,
+ * ergibt sich aus dem Klickziel; die Erklärung steht in der Hilfe ({@link GrundrissLeitungshilfe}).
  */
-export function GrundrissLeitungsleiste({ k, einstellung, floorId }: { k: Leitungskontext; einstellung: Grundrisseinstellung; floorId: string }) {
+export function GrundrissLeitungsleiste({ k, einstellung }: { k: Leitungskontext; einstellung: Grundrisseinstellung }) {
   const masse = useMasse();
+  const sehrBreit = useMedium(SEHR_BREIT);
   const p = k.planung;
   const darf = p.darfLeitungen && p.entwurf !== null && p.entwurf.status !== "speichert";
   if (p.entwurf === null) return null;
-  // Steighalte dieses Geschosses als Text - im Plan stehen sie bei kleinem Maßstab nur als Quadrat.
-  const halte = p.steigwege.filter((s) => s.stops.some((h) => h.floor_id === floorId)).map((s) => s.name);
+  const aktiv = einstellung.werkzeug === "durchfuehrung";
   return (
-    <section aria-label="Leitung im Grundriss" className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-small">
-      <div className="flex flex-wrap gap-1" role="toolbar" aria-label="Leitungswerkzeuge im Grundriss">
-        {WERKZEUGE.map((w) => (
-          <button
-            key={w.wert}
-            type="button"
-            className={knopf(einstellung.werkzeug === w.wert ? "primaer" : "neutral", { klein: true })}
-            aria-pressed={einstellung.werkzeug === w.wert}
-            disabled={!darf && w.wert !== "aus"}
-            title={`${w.label} (${w.taste})`}
-            onClick={() => einstellung.setWerkzeug(w.wert)}
-          >
-            {w.label}
-          </button>
-        ))}
-      </div>
-      {einstellung.werkzeug !== "aus" && (
-        <>
-          <fieldset className="m-0 flex flex-wrap items-center gap-1 border-0 p-0" title="Die Ebene gilt nur für neue Punkte; vorhandene Wegpunkte behalten ihre Art.">
-            <legend className="float-left mr-1 p-0 text-label text-muted">Ebene für neue Punkte</legend>
-            {EBENEN.map((x) => (
-              <button
-                key={x.wert}
-                type="button"
-                className={knopf(einstellung.ebene === x.wert ? "primaer" : "neutral", { klein: true })}
-                aria-pressed={einstellung.ebene === x.wert}
-                title={`${EBENE_LABEL[x.wert]} (${x.taste})`}
-                disabled={einstellung.werkzeug === "durchfuehrung"}
-                onClick={() => einstellung.setEbene(x.wert)}
-              >
-                {EBENE_LABEL[x.wert]}
-              </button>
-            ))}
-          </fieldset>
-          {(einstellung.ebene === "wand" || einstellung.werkzeug === "durchfuehrung") && (
-            <label className="flex items-center gap-1.5">
-              <span className={FELD_BESCHRIFTUNG}>{einstellung.werkzeug === "durchfuehrung" ? "Höhe der Durchführung" : "Höhe neuer Wandpunkte"}</span>
-              <select
-                className={eingabefeld({ kompakt: true })}
-                value={String(einstellung.wandhoehe)}
-                onChange={(event) => {
-                  const w = event.target.value;
-                  einstellung.setWandhoehe(w === "decke" || w === "obere-zone" ? w : Number(w));
-                }}
-              >
-                {WANDHOEHEN.map((h) => (
-                  <option key={h.text} value={String(h.wert)}>
-                    {typeof h.wert === "number" ? `${masse.anzeigen(h.wert)} – ${h.text}` : h.text}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          {einstellung.werkzeug === "leitung" && halte.length > 0 && (
-            <p className="m-0 w-full text-muted" data-testid="grundriss-steighalte">
-              Steighalte auf diesem Geschoss (Quadrat im Plan): {halte.join(", ")}
-            </p>
-          )}
-          <p className="m-0 w-full text-muted" data-testid="grundriss-leitung-hilfe">
-            {einstellung.werkzeug === "durchfuehrung"
-              ? "Klick auf eine gemeinsame Bauwand legt dort eine neue Durchführung an – sie entsteht erst beim Speichern der Leitung."
-              : einstellung.ebene === "fussboden"
-                ? "Klick in einen Raum setzt einen Fußbodenpunkt; Klick auf eine Tür oder einen Durchgang setzt einen Bodenübergang; Klick auf einen Steighalt nutzt den Steigweg."
-                : einstellung.ebene === "wand"
-                  ? "Klick an eine Raumwand setzt einen groben Wandpunkt auf der gewählten Höhe – genau wird in der Wandansicht gearbeitet."
-                  : "Klick in einen Raum setzt einen Deckenpunkt – genau wird in der Deckenansicht gearbeitet."}
-          </p>
-        </>
+    <span className="inline-flex flex-wrap items-center gap-1.5" role="group" aria-label="Leitung im Grundriss">
+      <button
+        type="button"
+        className={knopf(aktiv ? "primaer" : "neutral", { klein: true })}
+        aria-pressed={aktiv}
+        disabled={!darf}
+        title="Neue Durchführung an einer gemeinsamen Bauwand (U) – Klick auf die Bauwand legt sie an; sie entsteht erst beim Speichern der Leitung"
+        onClick={() => einstellung.setWerkzeug(aktiv ? "aus" : "durchfuehrung")}
+        aria-label="Durchführung hier"
+      >
+        {sehrBreit ? "Durchführung hier" : "Durchführung"}
+      </button>
+      {aktiv && (
+        <select
+          className={eingabefeld({ kompakt: true })}
+          aria-label="Höhe der Durchführung"
+          value={String(einstellung.wandhoehe)}
+          onChange={(event) => {
+            const w = event.target.value;
+            einstellung.setWandhoehe(w === "decke" || w === "obere-zone" ? w : Number(w));
+          }}
+        >
+          {WANDHOEHEN.map((h) => (
+            <option key={h.text} value={String(h.wert)}>
+              {typeof h.wert === "number" ? `${masse.anzeigen(h.wert)} – ${h.text}` : h.text}
+            </option>
+          ))}
+        </select>
       )}
-    </section>
+    </span>
+  );
+}
+
+/** Punkte der Zeichenhilfe im Grundriss - Klickziel, Durchführung und Steighalte dieses Geschosses. */
+export function GrundrissLeitungshilfe({ k, floorId }: { k: Leitungskontext; floorId: string }) {
+  // Steighalte dieses Geschosses als Text - im Plan stehen sie bei kleinem Maßstab nur als Quadrat.
+  const halte = k.planung.steigwege.filter((s) => s.stops.some((h) => h.floor_id === floorId)).map((s) => s.name);
+  return (
+    <>
+      <li>Im Grundriss bestimmt das Klickziel den Punkt: Wandlinie = Wandpunkt in der gewählten Höhe („Wand:“), im Raum = Fußboden- oder Deckenpunkt, Tür oder Durchgang = Bodenübergang. Übergänge zwischen Wand und Raumfläche liegen auf der Wandachse und werden mitgesetzt.</li>
+      <li>„Durchführung hier“ (U): Klick auf eine gemeinsame Bauwand legt dort eine neue Durchführung an – sie entsteht erst beim Speichern der Leitung.</li>
+      <li data-testid="grundriss-steighalte">
+        {halte.length > 0
+          ? `Steighalte auf diesem Geschoss (Quadrat im Plan): ${halte.join(", ")} – Klick auf einen Halt nutzt den Steigweg.`
+          : "Auf diesem Geschoss gibt es keinen Steighalt."}
+      </li>
+    </>
   );
 }
 

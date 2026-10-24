@@ -234,9 +234,11 @@ describe("Wand und Decke in derselben Arbeitsfläche (L1)", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Bedienung, Tastenkürzel und Legende …" }));
     expect(await screen.findByRole("dialog", { name: "Grundriss – Bedienung und Tastenkürzel" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Schließen" }));
-    // L1-Zwischenstand: „Leitung hinzufügen“ öffnet den bestehenden Einstieg im Panel.
+    // L2: „Leitung hinzufügen“ startet sofort den Zeichenablauf – kein Panel, keine Stromkreiswahl.
     fireEvent.click(within(leiste).getByRole("button", { name: "Leitung hinzufügen" }));
-    expect(eigenschaftenKnopf()).toHaveAttribute("aria-expanded", "true");
+    expect(within(leiste).getByRole("button", { name: "Leitung hinzufügen" })).toHaveAttribute("aria-pressed", "true");
+    expect(eigenschaftenKnopf()).toHaveAttribute("aria-expanded", "false");
+    expect(await screen.findByTestId("zeichenleiste")).toHaveTextContent("1 Startgerät wählen");
   });
 
   it("Pfad und Rückweg; der Grundriss ist während der Wand ausgehängt; Entwurf, Undo und Grundriss-Ausschnitt bleiben", async () => {

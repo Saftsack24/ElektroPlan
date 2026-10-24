@@ -14,16 +14,26 @@ export function istBreit(): boolean {
  * als Menü, Pfad und Kopf gekürzt. Folgt Größenänderungen des Fensters; nur Ansicht.
  */
 export function useKompakt(): boolean {
-  const [kompakt, setKompakt] = useState(() => !istBreit());
+  return !useMedium(BREIT);
+}
+
+/** Ab dieser Breite hat die Werkzeugzeile auch im maximierten Zustand Platz für Knopftexte (§21.6 Nacharbeit). */
+export const SEHR_BREIT = "(min-width: 80rem)";
+
+/**
+ * Trifft die Medienabfrage zu? Folgt Größenänderungen; ohne `matchMedia` (Tests) gilt sie als erfüllt.
+ */
+export function useMedium(abfrage: string): boolean {
+  const [trifft, setTrifft] = useState(() => typeof window.matchMedia !== "function" || window.matchMedia(abfrage).matches);
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return undefined;
-    const medien = window.matchMedia(BREIT);
-    const folgen = () => setKompakt(!medien.matches);
+    const medien = window.matchMedia(abfrage);
+    const folgen = () => setTrifft(medien.matches);
     folgen();
     medien.addEventListener("change", folgen);
     return () => medien.removeEventListener("change", folgen);
-  }, []);
-  return kompakt;
+  }, [abfrage]);
+  return trifft;
 }
 
 /**

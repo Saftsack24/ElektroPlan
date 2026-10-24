@@ -24,6 +24,8 @@ export interface Leitungskontext {
   /** Grund, warum gerade kein neuer Entwurf beginnen kann - sonst `null`. */
   readonly sperrgrund: string | null;
   arbeitsflaecheWechseln(ziel: Arbeitsflaeche): void;
+  /** Zurück in den Grundriss desselben Entwurfs (6c L2) - nichts wird gespeichert oder verworfen. */
+  zumGrundriss(): void;
   raumName(raumId: string): string;
   /** „Wand 2“ eines Raums - für verständliche Orte ohne IDs. */
   wandName(wandId: string): string;
@@ -31,4 +33,9 @@ export interface Leitungskontext {
   zuordnungSchliessen(): Promise<boolean>;
   /** Schließt den Leitungsentwurf (nach Rückfrage bei ungespeicherten Änderungen). */
   leitungSchliessen(): Promise<boolean>;
+  /**
+   * „Leitung hinzufügen“ (Phase 6c, L2): startet den Zeichenablauf oder setzt ihn am offenen Entwurf
+   * fort. Liefert einen Grund, wenn gerade nicht möglich (etwa ungespeicherter Raumentwurf).
+   */
+  leitungZeichnen(): string | null;
 }

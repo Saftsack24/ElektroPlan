@@ -97,11 +97,17 @@ describe("Leitung in 3D", () => {
     fireEvent.click(within(auswahl).getByRole("button", { name: "Im Grundriss bearbeiten" }));
     // Editor mit geöffnetem Entwurf und gewähltem Werkzeug „Leitung“ - nichts gespeichert.
     await screen.findByRole("application", { name: /Grundriss/ });
-    expect(await screen.findByTestId("entwurf-offen")).toHaveTextContent("Leitungsentwurf offen");
-    expect(within(screen.getByRole("region", { name: "Leitung im Grundriss" })).getByRole("button", { name: "Leitung" })).toHaveAttribute("aria-pressed", "true");
-    // Eine Änderung im Entwurf …
-    fireEvent.change(screen.getByLabelText("Bezeichnung"), { target: { value: "L1 neu" } });
-    fireEvent.blur(screen.getByLabelText("Bezeichnung"));
+    expect(await screen.findByTestId("zeichenleiste")).toHaveTextContent("Verlauf bearbeiten");
+    expect(screen.queryByTestId("entwurf-offen")).toBeNull();
+    expect(within(screen.getByTestId("zeichenleiste")).getByRole("button", { name: "Zurück zur 3D-Ansicht" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Leitung hinzufügen" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("zeichenleiste")).toHaveTextContent("Verlauf bearbeiten");
+    // Eine Änderung im Entwurf (Angaben im Dialog) …
+    fireEvent.click(within(screen.getByTestId("zeichenleiste")).getByRole("button", { name: "Angaben …" }));
+    const dialog = await screen.findByRole("dialog", { name: /Angaben/ });
+    fireEvent.change(within(dialog).getByLabelText("Bezeichnung"), { target: { value: "L1 neu" } });
+    fireEvent.blur(within(dialog).getByLabelText("Bezeichnung"));
+    fireEvent(dialog, new Event("cancel", { cancelable: true }));
 
     fireEvent.click(screen.getByRole("button", { name: "Zurück zur 3D-Ansicht" }));
     const wieder = await in3d();

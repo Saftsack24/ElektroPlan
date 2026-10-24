@@ -26,6 +26,11 @@
   .leitung-kandidat--fehler { fill: var(--ep-danger); stroke: var(--ep-danger); }
   .leitung-kandidat-strecke { stroke: var(--ep-plan-cable); stroke-width: 2; stroke-dasharray: 6 4; pointer-events: none; }
   .leitung-kandidat-strecke--fehler { stroke: var(--ep-danger); }
+  /* Zeichenablauf (6c, L2): Wirkung bzw. Grund am Zeiger, mögliche Startgeräte markiert. */
+  .leitung-kandidat-text { fill: var(--ep-text); font-size: 11px; pointer-events: none; paint-order: stroke; stroke: var(--ep-surface); stroke-width: 3px; }
+  .leitung-kandidat-text--fehler { fill: var(--ep-danger); }
+  .leitung-start-ring { fill: none; stroke: var(--ep-plan-cable); stroke-width: 2.5; pointer-events: none; }
+  .leitung-start-ring--nein { stroke: var(--ep-text-muted); stroke-width: 1; stroke-dasharray: 2 3; opacity: 0.6; }
 
   .leitung-durchfuehrung { fill: var(--ep-surface); stroke: var(--ep-plan-cable); stroke-width: 2; cursor: pointer; }
   .leitung-durchfuehrung--fehler { stroke: var(--ep-danger); }

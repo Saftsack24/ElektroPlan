@@ -845,6 +845,7 @@ export function WandZeichenflaeche(props: Props) {
           }
         }}
         onContextMenu={(event) => event.preventDefault()}
+        onDoubleClick={() => props.zusatz?.doppelklick?.()}
       >
         <rect x={lu.x} y={ro.y} width={Math.max(ro.x - lu.x, 1)} height={Math.max(lu.y - ro.y, 1)} className="ansicht__wand" data-testid="wandflaeche" />
         <path d={raster.join("")} className="ansicht__raster" aria-hidden="true" />

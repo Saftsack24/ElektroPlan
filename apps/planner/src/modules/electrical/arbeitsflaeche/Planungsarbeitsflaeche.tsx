@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { AKTION } from "../../../core/ui/aktionssymbole";
 import { seitenScrollSperren } from "../../../core/ui/scrollsperre";
 import { SymbolKnopf } from "../../../core/ui/SymbolKnopf";
-import { istBreit, useKompakt } from "./kompakt";
+import { SEHR_BREIT, istBreit, useKompakt, useMedium } from "./kompakt";
 import { useStabil } from "./stabil";
 
 /**
@@ -55,6 +55,18 @@ function fremdeEingabe(event: KeyboardEvent, wurzel: HTMLElement): boolean {
     if (!dialog.contains(wurzel)) return true;
   }
   return false;
+}
+
+/**
+ * Bringt die (nicht maximierte) Arbeitsfläche ganz ins Bild, wenn sie es nicht ist - etwa beim Start des
+ * Leitungswerkzeugs (6c, §21.5): Über ihr stehen Seiten- und Projektkopf; nach der Höhenregel füllt sie
+ * nach diesem einen Scrollen das Fenster. Ändert nichts, wenn sie schon sichtbar ist.
+ */
+export function arbeitsflaecheZeigen(): void {
+  const flaeche = document.querySelector<HTMLElement>("[data-arbeitsflaeche]:not([data-maximiert])");
+  if (flaeche === null || typeof flaeche.scrollIntoView !== "function") return;
+  const r = flaeche.getBoundingClientRect();
+  if (r.top < 0 || r.bottom > window.innerHeight + 1) flaeche.scrollIntoView({ block: "start" });
 }
 
 /** Kleinste sinnvolle Höhe der Zeichenfläche; darunter scrollt die Seite (einziger Scrollbereich). */
@@ -119,6 +131,16 @@ export function Planungsarbeitsflaeche({
   const koerperRef = useRef<HTMLDivElement>(null);
   const panelKopf = useRef<HTMLHeadingElement>(null);
   const panelId = useId();
+  /**
+   * Scrollposition vor dem Maximieren (§21.6 Nacharbeit): Maximiert entfällt die feste Höhe, die Seite wird
+   * kurz und der Browser setzt die Position auf 0. Zurück in der normalen Ansicht steht die eingerollte
+   * Arbeitsfläche wieder dort, wo sie war.
+   */
+  const scrollVorMax = useRef<number | null>(null);
+  const maximierenSetzen = (neu: boolean) => {
+    if (neu && !maximiert) scrollVorMax.current = window.scrollY;
+    setMaximiert(neu);
+  };
   /** Eine Zeigerbewegung läuft: Layoutwechsel erst danach (Bild- und Weltkoordinaten springen sonst). */
   const zieht = useRef(false);
   /** Fokus nach dem Öffnen per Knopf in den Panelkopf, nach dem Schließen zurück zum Auslöser. */
@@ -144,7 +166,7 @@ export function Planungsarbeitsflaeche({
   // nicht bei jedem Neuzeichnen der Zeichenfläche (Profil der langen Integrationstests).
   const eigenschaftenUmschalten = useStabil(() => (offen ? schliessen() : oeffnen(true)));
   const maximierenUmschalten = useStabil(() => {
-    if (!zieht.current) setMaximiert(!maximiert);
+    if (!zieht.current) maximierenSetzen(!maximiert);
   });
 
   useEffect(() => {
@@ -177,6 +199,11 @@ export function Planungsarbeitsflaeche({
       if (root.style.height !== neu) root.style.height = neu;
     };
     messen();
+    // Nach dem Maximieren: Die Seite ist wieder so lang wie vorher - jetzt greift die gemerkte Position.
+    if (scrollVorMax.current !== null) {
+      if (window.scrollY !== scrollVorMax.current) window.scrollTo(0, scrollVorMax.current);
+      scrollVorMax.current = null;
+    }
     window.addEventListener("resize", messen);
     const beobachter = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(messen);
     // Was über dem Rahmen steht (Kopf der Seite) und die eigenen Leisten ändern ihre Höhe.
@@ -196,7 +223,7 @@ export function Planungsarbeitsflaeche({
     const k = event.key.toLowerCase();
     if (k === "m") {
       event.preventDefault();
-      setMaximiert(!maximiert);
+      maximierenSetzen(!maximiert);
     } else if (k === "e") {
       event.preventDefault();
       if (offen) schliessen();
@@ -292,6 +319,9 @@ const Flaechenknoepfe = memo(function Flaechenknoepfe({
   onEigenschaften: () => void;
   onMaximieren: () => void;
 }) {
+  // Maximiert steht „Normale Ansicht“ nur als Text da, wo die Werkzeugzeile dafür Platz hat - sonst bräche sie
+  // um, und die maximierte Fläche wäre kleiner als die normale (§21.6 Nacharbeit). Name und Kürzel bleiben.
+  const sehrBreit = useMedium(SEHR_BREIT);
   return (
     <div className="ml-auto flex shrink-0 items-center gap-1" role="group" aria-label="Arbeitsfläche">
       <span className="relative inline-flex" data-eigenschaften-knopf="">
@@ -315,7 +345,7 @@ const Flaechenknoepfe = memo(function Flaechenknoepfe({
       <SymbolKnopf
         icon={maximiert ? AKTION.normaleAnsicht : AKTION.maximieren}
         label={maximiert ? "Normale Ansicht" : "Zeichenfläche maximieren"}
-        {...(maximiert && !kompakt ? { text: "Normale Ansicht" } : {})}
+        {...(maximiert && sehrBreit ? { text: "Normale Ansicht" } : {})}
         kuerzel="M"
         ariaKuerzel="M"
         hinweisAm="ende"

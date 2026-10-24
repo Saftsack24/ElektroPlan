@@ -241,8 +241,9 @@ describe("Mengenübersicht", () => {
     fireEvent.click(within(screen.getByTestId("mengen-leitung-l1")).getByRole("button", { name: "Bearbeiten" }));
     // Grundriss mit geöffnetem Entwurf und Werkzeug „Leitung“ - nichts gespeichert.
     await screen.findByRole("application", { name: /Grundriss/ });
-    expect(await screen.findByTestId("entwurf-offen")).toBeInTheDocument();
-    expect(within(screen.getByRole("region", { name: "Leitung im Grundriss" })).getByRole("button", { name: "Leitung" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(await screen.findByTestId("zeichenleiste")).getByRole("button", { name: "Zurück zur Mengenübersicht" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Leitung hinzufügen" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("zeichenleiste")).toHaveTextContent("Verlauf bearbeiten");
     // Angaben und Wegpunkte des Entwurfs stehen im Eigenschaftenpanel (6c.0).
     await eigenschaftenOeffnen();
     expect(screen.getByRole("region", { name: "Leitungsentwurf" })).toHaveTextContent("Leitung L1");

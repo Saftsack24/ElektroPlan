@@ -4,6 +4,7 @@ import {
   ArrowRightIcon,
   CableIcon,
   ChevronRightIcon,
+  CircleHelpIcon,
   CopyIcon,
   DownloadIcon,
   EllipsisIcon,
@@ -74,4 +75,5 @@ export const AKTION = {
   ansichtEinstellungen: SlidersHorizontalIcon,
   mehr: EllipsisIcon,
   pfadTrenner: ChevronRightIcon,
+  hilfe: CircleHelpIcon,
 } as const;

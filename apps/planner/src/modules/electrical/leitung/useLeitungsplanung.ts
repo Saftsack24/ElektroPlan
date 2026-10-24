@@ -29,11 +29,21 @@ import {
   liste,
   wegpunktAlsAnfrage,
 } from "./daten";
-import type { Leitungsaktion, Leitungsentwurf, Leitungsfehler, Leitungswerte } from "./entwurf";
+import type { Leitungsaktion, Leitungsentwurf, Leitungsfehler, Leitungswerte, Wertequelle } from "./entwurf";
 import type { NeueDurchfuehrung } from "./durchfuehrung";
-import { entwurfAus, leiterzahlLesen, leitungUngespeichert, leitungsReducer, ungenutzteDurchfuehrungenEntfernen } from "./entwurf";
+import {
+  BESTAND_QUELLEN,
+  NEUE_QUELLEN,
+  entwurfAus,
+  leiterzahlLesen,
+  leitungUngespeichert,
+  leitungsReducer,
+  ungenutzteDurchfuehrungenEntfernen,
+} from "./entwurf";
 import type { Kandidatenpruefung } from "./flaechen";
 import { kandidatPruefen } from "./flaechen";
+import type { Wandhoehe } from "./grundriss";
+import { geraetEignung } from "./stromkreisableitung";
 import type { Leitung, Leitungsergebnis, Leitungsplan, VorbereiteterPlan } from "./laenge";
 import { leitungAuswerten, planVorbereiten } from "./laenge";
 
@@ -70,7 +80,36 @@ function durchfuehrungenSammeln(ergebnisse: readonly { data?: unknown }[]) {
  * * Der Server prüft Rechte, Schreibschutz, Versionen und den Weg selbst.
  */
 
+/** Schritt des Zeichenablaufs (Entwurf §18.3): 1 Startgerät, 2 Verlauf und Ziel. */
+export type Ablaufschritt = "start" | "verlauf";
+
+/**
+ * Zeichenablauf „Leitung hinzufügen“ (Phase 6c, L2) - gehört wie der Entwurf zum Gebäude und übersteht
+ * Flächen- und Geschosswechsel. Reine Bedienung, nie Teil des Entwurfs oder seiner Historie.
+ */
+export interface Zeichenablauf {
+  readonly schritt: Ablaufschritt;
+  /** L-Führung: zuerst waagerecht (Standard) oder zuerst senkrecht - gilt bis zum nächsten Punkt. */
+  readonly ecke: "waagerecht" | "senkrecht";
+  /** Fußboden und Decke: rechtwinklig (Standard, F6) oder gerade. An der Wand immer rechtwinklig. */
+  readonly fuehrung: "rechtwinklig" | "gerade";
+  /** Grundriss: ein Klick im Raum setzt einen Fußboden- oder Deckenpunkt. */
+  readonly raumpunkt: "fussboden" | "decke";
+  /** Ausdrückliches Einfügen: der nächste Punkt folgt diesem Wegpunkt - sonst kommt er ans Ende. */
+  readonly einfuegenNach: number | null;
+  /**
+   * Grundriss: Höhe neuer Wandpunkte - „folgen“ übernimmt sie vom Vorgänger (Wandpunkt, Fußboden 0,
+   * Decke, Gerätemitte); sonst ausdrücklich gewählt. Genau wird in der Wandfläche gearbeitet.
+   */
+  readonly wandhoehe: "folgen" | Wandhoehe;
+}
+
+export const NEUER_ABLAUF: Zeichenablauf = { schritt: "start", ecke: "waagerecht", fuehrung: "rechtwinklig", raumpunkt: "fussboden", einfuegenNach: null, wandhoehe: "folgen" };
+
+export type Geraetepruefung = { readonly ok: true } | { readonly ok: false; readonly grund: string };
+
 export interface Leitungsplanung {
+  readonly projektId: string;
   readonly geladen: boolean;
   readonly ladefehler: boolean;
   readonly leitungen: readonly LeitungAusServer[];
@@ -106,13 +145,40 @@ export interface Leitungsplanung {
    * Prüft geänderte Werte des Entwurfs an Wegpunkt `index` - mit genau den neuen
    * Durchführungen dieser Werte. `null`, solange der Plan nicht geladen ist.
    */
-  pruefen(werte: Leitungswerte, index: number): Kandidatenpruefung | null;
+  pruefen(werte: Leitungswerte, index: number | readonly number[]): Kandidatenpruefung | null;
   /** Lagegerät der Verteilung und zugeordnete Geräte des Stromkreises. */
   endpunkte(circuitId: string): Planergeraet[];
   /** Hat diese gespeicherte Leitung Wegpunkte, die nicht gelesen werden können? */
   unlesbar(cable: LeitungAusServer): boolean;
-  neueLeitung(circuitId: string): void;
-  bearbeiten(cable: LeitungAusServer): void;
+  /** Zeichenablauf - `null`: kein Leitungswerkzeug aktiv. */
+  readonly ablauf: Zeichenablauf | null;
+  /** Abschluss- bzw. Angabendialog offen. */
+  readonly dialogOffen: boolean;
+  /**
+   * Kennzeichen des sichtbaren Ablaufzustands (Entwurf neu/bestehend/keiner, Schritt, Dialog). Ändert es
+   * sich, sind Rückmeldungen der Flächen zum vorigen Zustand veraltet und werden verworfen (6c L2/L3).
+   */
+  readonly ablaufSchluessel: string;
+  setAblauf(aenderung: Partial<Omit<Zeichenablauf, "schritt">>): void;
+  /** „Leitung hinzufügen“: neuer Entwurf ohne Stromkreis, Schritt 1 - oder weiter am offenen Entwurf. */
+  leitungZeichnen(): void;
+  /** Kann dieses Gerät Start oder Ziel sein? Mit verständlichem Grund. */
+  geraetPruefen(id: string): Geraetepruefung;
+  /** Klick auf ein Gerät im Zeichenablauf - liefert den Text für die Statuszeile. */
+  geraetGewaehlt(id: string): string;
+  /** Doppelklick, Enter oder „Abschließen …“: Zeichnen endet, der Dialog öffnet. `null` = geöffnet ohne Hinweis. */
+  abschliessen(): string | null;
+  /** Dialog → zurück zu 2: Verlauf und Eingaben bleiben, das Ziel einer neuen Leitung wird gelöst. */
+  weiterzeichnen(): void;
+  /** Dialog schließen, ohne zu zeichnen (Angaben einer bestehenden Leitung). */
+  dialogSchliessen(): void;
+  /** Werkzeug beenden; ein leerer neuer Entwurf entfällt, sonst bleibt er. */
+  ablaufBeenden(): void;
+  /** Bestehende Leitung: Verlauf in der Fläche bearbeiten. */
+  verlaufBearbeiten(cable: LeitungAusServer): void;
+  /** Bestehende Leitung: Angaben im Dialog bearbeiten. */
+  angabenBearbeiten(cable: LeitungAusServer): void;
+  bearbeiten(cable: LeitungAusServer): boolean;
   schliessen(): void;
   speichern(): Promise<boolean>;
   verwerfenUndNeuLaden(): Promise<void>;
@@ -137,8 +203,34 @@ function werteAusServer(c: LeitungAusServer, wegpunkte: Leitungswerte["wegpunkte
     reserveProzent: c.reserve_mode === "percent" ? c.reserve_percent : null,
     wegpunkte,
     neueDurchfuehrungen: [],
+    // Bloßes Öffnen und unverändertes Speichern ändert nichts - auch nicht die Herkunft.
+    quellen: BESTAND_QUELLEN,
+    zuordnen: [],
   };
 }
+
+/** Leerer Entwurf einer neuen Leitung - Stromkreis und Angaben folgen im Abschlussdialog. */
+export function neueLeitungswerte(): Leitungswerte {
+  return {
+    circuitId: "",
+    label: "",
+    startId: null,
+    endId: null,
+    kabeltyp: "",
+    leiterzahl: "",
+    querschnitt: "",
+    startzugabeMm: 0,
+    endzugabeMm: 0,
+    reserveMm: 0,
+    reserveProzent: null,
+    wegpunkte: [],
+    neueDurchfuehrungen: [],
+    quellen: NEUE_QUELLEN,
+    zuordnen: [],
+  };
+}
+
+const QUELLE_API: Record<Wertequelle, "defaults" | "manual" | null> = { vorgabe: "defaults", manuell: "manual", bestand: null };
 
 /** Eingabe der Längenfunktion aus dem Entwurf - Kabelangaben nur für „vollständig angegeben“. */
 export function leitungAusWerten(id: string, w: Leitungswerte): Leitung {
@@ -196,11 +288,14 @@ function meldung(error: unknown, rueckfall: string): string {
 }
 
 export function useLeitungsplanung({
+  projectId = "",
   buildingId,
   darfLeitungen,
   darfStromkreise,
   onGeschrieben,
 }: {
+  /** Projekt - für die wirksamen Planungsvorgaben (Phase 6c). */
+  projectId?: string | undefined;
   buildingId: string | undefined;
   /** `electrical.route.write` und Projekt nicht schreibgeschützt. */
   darfLeitungen: boolean;
@@ -215,6 +310,8 @@ export function useLeitungsplanung({
   const aktiv = buildingId !== undefined;
   const [entwurf, dispatch] = useReducer(leitungsReducer, null);
   const [hinweis, setHinweis] = useState<string | null>(null);
+  const [ablauf, setAblaufState] = useState<Zeichenablauf | null>(null);
+  const [dialogOffen, setDialogOffen] = useState(false);
 
   const geschosse = useQuery({
     queryKey: ["floors", haus],
@@ -274,7 +371,7 @@ export function useLeitungsplanung({
   }, [gespeicherterPlan, vorbereitet, neueImEntwurf]);
 
   const pruefen = useCallback(
-    (werte: Leitungswerte, index: number): Kandidatenpruefung | null => {
+    (werte: Leitungswerte, index: number | readonly number[]): Kandidatenpruefung | null => {
       if (gespeicherterPlan === null || vorbereitet === null) return null;
       const neue = werte.neueDurchfuehrungen;
       const plan =
@@ -350,52 +447,113 @@ export function useLeitungsplanung({
 
   const unlesbar = useCallback((c: LeitungAusServer) => leitungAusServer(c).unlesbar > 0, []);
 
-  const neueLeitung = useCallback(
-    (circuitId: string) => {
-      const kreis = kreise.find((k) => k.id === circuitId);
-      if (kreis === undefined) return;
-      const lage = verteilungen.find((v) => v.id === kreis.board_id)?.placement_device_id ?? null;
-      const anzahl = leitungen.filter((l) => l.circuit_id === circuitId).length;
-      // Kabelangaben aus dem **aktuellen** Vorschlag vorgefüllt und als solche gekennzeichnet.
-      dispatch({
-        typ: "oeffnen",
-        entwurf: entwurfAus(null, null, {
-          circuitId,
-          label: `L${anzahl + 1}`,
-          startId: lage,
-          endId: null,
-          kabeltyp: kreis.proposed_cable_type ?? "",
-          leiterzahl: kreis.proposed_conductor_count === null ? "" : String(kreis.proposed_conductor_count),
-          querschnitt: querschnittAlsEingabe(kreis.proposed_cross_section_mm2),
-          startzugabeMm: 0,
-          endzugabeMm: 0,
-          reserveMm: 0,
-          reserveProzent: null,
-          wegpunkte: [],
-          neueDurchfuehrungen: [],
-        }),
-      });
-      setHinweis(null);
-    },
-    [kreise, verteilungen, leitungen],
-  );
-
-  const bearbeiten = useCallback((c: LeitungAusServer) => {
+  const bearbeiten = useCallback((c: LeitungAusServer): boolean => {
     const { leitung, unlesbar: fehlend } = leitungAusServer(c);
     if (fehlend > 0) {
       // Nie bearbeiten, was beim Speichern still verloren ginge.
       setHinweis("Diese Leitung enthält Wegpunkte, die hier nicht gelesen werden können. Sie wird nicht bearbeitet, damit nichts verloren geht.");
-      return;
+      return false;
     }
     dispatch({ typ: "oeffnen", entwurf: entwurfAus(c.id, c.version, werteAusServer(c, leitung.wegpunkte)) });
     setHinweis(null);
+    return true;
   }, []);
+
+  const verlaufBearbeiten = useCallback(
+    (c: LeitungAusServer) => {
+      if (entwurf?.cableId !== c.id && !bearbeiten(c)) return;
+      setDialogOffen(false);
+      setAblaufState((a) => ({ ...(a ?? NEUER_ABLAUF), schritt: "verlauf" }));
+    },
+    [bearbeiten, entwurf?.cableId],
+  );
+
+  const angabenBearbeiten = useCallback(
+    (c: LeitungAusServer) => {
+      if (entwurf?.cableId !== c.id && !bearbeiten(c)) return;
+      setDialogOffen(true);
+    },
+    [bearbeiten, entwurf?.cableId],
+  );
 
   const schliessen = useCallback(() => {
     dispatch({ typ: "schliessen" });
+    setAblaufState(null);
+    setDialogOffen(false);
     // Ein Hinweis zum geschlossenen Entwurf wäre danach veraltet.
     setHinweis(null);
   }, []);
+
+  // ------------------------------------------------------------ Zeichenablauf (6c, L2)
+
+  const setAblauf = useCallback((aenderung: Partial<Omit<Zeichenablauf, "schritt">>) => {
+    setAblaufState((a) => (a === null ? a : { ...a, ...aenderung }));
+  }, []);
+
+  const leitungZeichnen = useCallback(() => {
+    setDialogOffen(false);
+    setHinweis(null);
+    if (entwurf !== null) {
+      // Weiter am offenen Entwurf: ohne Startgerät wieder bei Schritt 1.
+      const schritt: Ablaufschritt = entwurf.werte.startId === null ? "start" : "verlauf";
+      setAblaufState((a) => ({ ...(a ?? NEUER_ABLAUF), schritt }));
+      return;
+    }
+    dispatch({ typ: "oeffnen", entwurf: entwurfAus(null, null, neueLeitungswerte()) });
+    setAblaufState((a) => ({ ...(a ?? NEUER_ABLAUF), schritt: "start" }));
+  }, [entwurf]);
+
+  const geraetPruefen = useCallback(
+    (id: string): Geraetepruefung => geraetEignung(id, geraete, verteilungen, (x) => vorbereitet?.geraete.get(x)?.flaeche === "wall_exterior"),
+    [geraete, verteilungen, vorbereitet],
+  );
+
+  const geraetGewaehlt = useCallback(
+    (id: string): string => {
+      if (entwurf === null) return "Kein Leitungsentwurf offen.";
+      const geprueft = geraetPruefen(id);
+      if (!geprueft.ok) return `Nicht möglich: ${geprueft.grund}`;
+      const w = entwurf.werte;
+      if (w.startId === null) {
+        dispatch({ typ: "aendern", werte: { ...w, startId: id } });
+        setAblaufState((a) => ({ ...(a ?? NEUER_ABLAUF), schritt: "verlauf" }));
+        // „Leitung … gespeichert“ gehörte zur vorigen Leitung.
+        setHinweis(null);
+        return `Start: ${geraetName(id)} – jetzt den Verlauf zeichnen; ein Klick auf das Zielgerät schließt ab.`;
+      }
+      if (id === w.startId) return "Dieses Gerät ist bereits das Startgerät – ein anderes Gerät beendet die Leitung.";
+      if (id !== w.endId) dispatch({ typ: "aendern", werte: { ...w, endId: id } });
+      setDialogOffen(true);
+      return `Ziel: ${geraetName(id)} – Angaben im Dialog prüfen.`;
+    },
+    [entwurf, geraetPruefen, geraetName],
+  );
+
+  const abschliessen = useCallback((): string | null => {
+    if (entwurf === null || dialogOffen) return null;
+    if (entwurf.werte.startId === null) return "Zuerst das Startgerät wählen.";
+    setDialogOffen(true);
+    return entwurf.werte.endId === null ? "Offen abgeschlossen – ohne Zielgerät." : null;
+  }, [entwurf, dialogOffen]);
+
+  const weiterzeichnen = useCallback(() => {
+    setDialogOffen(false);
+    if (entwurf === null) return;
+    // Das Ziel einer neuen Leitung wird gelöst, der letzte Punkt bleibt (Entwurf §18.3 G).
+    if (entwurf.cableId === null && entwurf.werte.endId !== null) dispatch({ typ: "ziel-loesen" });
+    const schritt: Ablaufschritt = entwurf.werte.startId === null ? "start" : "verlauf";
+    setAblaufState((a) => ({ ...(a ?? NEUER_ABLAUF), schritt }));
+  }, [entwurf]);
+
+  const dialogSchliessen = useCallback(() => setDialogOffen(false), []);
+
+  const ablaufBeenden = useCallback(() => {
+    setAblaufState(null);
+    // Ein neuer Entwurf ohne Eingaben ist nichts - er entfällt still (kein vorgetäuschtes „ungespeichert“).
+    if (entwurf !== null && entwurf.cableId === null && !leitungUngespeichert(entwurf)) {
+      dispatch({ typ: "schliessen" });
+    }
+  }, [entwurf]);
 
   const nachSchreiben = useCallback(async () => {
     await neuLaden();
@@ -404,16 +562,30 @@ export function useLeitungsplanung({
 
   const speichern = useCallback(async (): Promise<boolean> => {
     if (entwurf === null || !darfLeitungen || entwurf.status === "speichert") return false;
+    // Eine neue Leitung wird nur aus dem Abschlussdialog gespeichert: Stromkreis, Angaben und
+    // Zuordnung entscheidet der Benutzer dort (Strg+S öffnet ihn).
+    if (entwurf.cableId === null && !dialogOffen) {
+      if (entwurf.werte.startId !== null) setDialogOffen(true);
+      return false;
+    }
     const w = entwurf.werte;
     const zahl = leiterzahlLesen(w.leiterzahl);
     const querschnitt = querschnittLesen(w.querschnitt);
     const lokal: Leitungsfehler["eintraege"][number][] = [];
-    if (w.endId === null) lokal.push({ code: "end-required", meldung: "Bitte ein Endgerät wählen.", feld: "end_device_id" });
+    const kreis = kreise.find((k) => k.id === w.circuitId);
+    if (kreis === undefined) lokal.push({ code: "circuit-required", meldung: "Bitte einen Stromkreis wählen.", feld: "circuit_id" });
     if (!zahl.ok) lokal.push({ code: "conductor-count", meldung: zahl.fehler, feld: "conductor_count" });
     if (!querschnitt.ok) lokal.push({ code: "cross-section", meldung: querschnitt.fehler, feld: "cross_section_mm2" });
     if (w.kabeltyp.trim().length > 40) lokal.push({ code: "cable-type", meldung: "Der Leitungstyp ist zu lang (höchstens 40 Zeichen).", feld: "cable_type" });
     if (w.label.trim().length > 60) lokal.push({ code: "label", meldung: "Die Bezeichnung ist zu lang (höchstens 60 Zeichen).", feld: "label" });
-    if (lokal.length > 0 || w.endId === null || !zahl.ok || !querschnitt.ok) {
+    const ausVorgaben = Object.values(w.quellen).includes("vorgabe");
+    if (ausVorgaben && entwurf.vorgabenBasis === null) {
+      lokal.push({ code: "defaults-pending", meldung: "Die Planungsvorgaben sind noch nicht geladen.", feld: "defaults_basis" });
+    }
+    if (w.zuordnen.length > 0 && !darfStromkreise) {
+      lokal.push({ code: "assign-right", meldung: "Für die Zuordnung zum Stromkreis fehlt das Recht „Stromkreise bearbeiten“.", feld: "assign_devices" });
+    }
+    if (lokal.length > 0 || kreis === undefined || !zahl.ok || !querschnitt.ok) {
       dispatch({ typ: "gescheitert", status: "fehler", fehler: { meldung: "Nicht gespeichert – bitte die Angaben prüfen.", eintraege: lokal } });
       return false;
     }
@@ -422,6 +594,7 @@ export function useLeitungsplanung({
     const body = {
       label: w.label.trim() === "" ? null : w.label.trim(),
       start_device_id: w.startId,
+      // Ohne Ziel: bewusst offene Planung (V1) - die Leitung bleibt unvollständig.
       end_device_id: w.endId,
       cable_type: w.kabeltyp.trim() === "" ? null : w.kabeltyp.trim(),
       conductor_count: zahl.wert,
@@ -432,6 +605,12 @@ export function useLeitungsplanung({
       // Eine Prozentreserve (Phase 6c V1) bleibt beim Speichern erhalten - nie still zu 0 mm.
       reserve_mode: w.reserveProzent === null ? ("fixed" as const) : ("percent" as const),
       reserve_percent: w.reserveProzent,
+      // Herkunft je Gruppe: Vorgaben prüft der Server selbst; „bestand“ lässt sie unverändert.
+      spec_source: QUELLE_API[w.quellen.kabel],
+      reserve_source: QUELLE_API[w.quellen.reserve],
+      allowance_source: QUELLE_API[w.quellen.zugaben],
+      ...(ausVorgaben && entwurf.vorgabenBasis !== null ? { defaults_basis: entwurf.vorgabenBasis } : {}),
+      ...(w.zuordnen.length > 0 ? { assign_devices: [...w.zuordnen], expected_circuit_version: kreis.version } : {}),
       // Neue Durchführungen entstehen atomar mit der Leitung - nur die, die ein Wegpunkt nutzt.
       waypoints: w.wegpunkte.map((wp) => wegpunktAlsAnfrage(wp, neueSchluessel)),
       new_penetrations: genutzt.neueDurchfuehrungen.map((d) => ({
@@ -452,22 +631,39 @@ export function useLeitungsplanung({
               body,
             });
       const { leitung } = leitungAusServer(gespeichert);
-      dispatch({ typ: "gespeichert", cableId: gespeichert.id, version: gespeichert.version, werte: werteAusServer(gespeichert, leitung.wegpunkte) });
       queryClient.setQueryData(leitungenSchluessel(haus), (alt: unknown) => {
         const bisher = liste<LeitungAusServer>(alt, "cables");
         if (bisher.length === 0 && (alt === undefined || Array.isArray(alt))) return alt;
         const ohne = bisher.filter((l) => l.id !== gespeichert.id);
         return { building_id: haus, cables: [...ohne, gespeichert] };
       });
+      setDialogOffen(false);
+      if (entwurf.cableId === null && ablauf !== null) {
+        // Das Werkzeug bleibt aktiv: gleich die nächste Leitung (Entwurf §18.3 G); Escape beendet es.
+        dispatch({ typ: "oeffnen", entwurf: entwurfAus(null, null, neueLeitungswerte()) });
+        setAblaufState({ ...ablauf, schritt: "start" });
+      } else {
+        dispatch({ typ: "gespeichert", cableId: gespeichert.id, version: gespeichert.version, werte: werteAusServer(gespeichert, leitung.wegpunkte) });
+      }
       setHinweis(`Leitung „${gespeichert.label ?? "ohne Bezeichnung"}“ gespeichert.`);
       await nachSchreiben();
       return true;
     } catch (error: unknown) {
+      if (error instanceof ApiError && error.status === 409 && error.errorType === "planning-defaults-changed") {
+        const eintraege = (error.problem?.errors ?? []).map((e) => ({ code: e.code, meldung: e.message, feld: e.field }));
+        dispatch({
+          typ: "gescheitert",
+          status: "konflikt",
+          vorgabenGeaendert: true,
+          fehler: { meldung: "Die Planungsvorgaben wurden inzwischen geändert. Es wurde nichts gespeichert – bitte entscheiden.", eintraege },
+        });
+        return false;
+      }
       const a = fehlerAus(error, "Die Leitung konnte nicht gespeichert werden.");
       dispatch({ typ: "gescheitert", status: a.status, fehler: a.fehler });
       return false;
     }
-  }, [api, darfLeitungen, entwurf, haus, nachSchreiben, queryClient]);
+  }, [api, ablauf, darfLeitungen, darfStromkreise, dialogOffen, entwurf, haus, kreise, nachSchreiben, queryClient]);
 
   /** Nach einem Konflikt: Entwurf bewusst verwerfen und die Leitung frisch laden. */
   const verwerfenUndNeuLaden = useCallback(async () => {
@@ -564,6 +760,7 @@ export function useLeitungsplanung({
   );
 
   return {
+    projektId: projectId,
     geladen: !geschosse.isPending && plaeneGeladen && !leitungenQ.isPending && !kreiseQ.isPending,
     ladefehler: leitungenQ.isError || kreiseQ.isError,
     leitungen,
@@ -578,6 +775,7 @@ export function useLeitungsplanung({
     ergebnisse,
     entwurf,
     ungespeichert: leitungUngespeichert(entwurf),
+    ablaufSchluessel: `${entwurf === null ? "zu" : (entwurf.cableId ?? "neu")}|${ablauf?.schritt ?? "aus"}|${dialogOffen ? "dialog" : "flaeche"}`,
     ergebnis,
     entwurfsleitung,
     dispatch,
@@ -593,7 +791,18 @@ export function useLeitungsplanung({
     pruefen,
     endpunkte,
     unlesbar,
-    neueLeitung,
+    ablauf,
+    dialogOffen,
+    setAblauf,
+    leitungZeichnen,
+    geraetPruefen,
+    geraetGewaehlt,
+    abschliessen,
+    weiterzeichnen,
+    dialogSchliessen,
+    ablaufBeenden,
+    verlaufBearbeiten,
+    angabenBearbeiten,
     bearbeiten,
     schliessen,
     speichern,

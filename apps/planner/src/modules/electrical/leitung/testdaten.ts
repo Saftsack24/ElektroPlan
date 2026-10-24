@@ -194,3 +194,78 @@ export const TYPEN = [
     is_active: true,
   },
 ];
+
+/** Kabelvorlage (synthetisch, keine Betriebsvorgabe). */
+export function vorlage(over: Partial<Schemas["CableTemplateOut"]> = {}): Schemas["CableTemplateOut"] {
+  return {
+    id: "vorlage-dose",
+    name: "Test Dose",
+    cable_type: "TEST-A",
+    conductor_count: 3,
+    cross_section_mm2: "1.50",
+    is_active: true,
+    sort_order: 0,
+    in_use: false,
+    version: 1,
+    created_at: ZEIT,
+    updated_at: ZEIT,
+    ...over,
+  };
+}
+
+/**
+ * Wirksame Planungsvorgaben (Phase 6c) wie vom Server - synthetisch. `for_cable` folgt der Abfrage
+ * (Stromkreis, Start, Ziel), sonst `null`.
+ */
+export function wirksam(
+  query: { circuit_id?: string; start_device_id?: string; end_device_id?: string } | undefined,
+  over: {
+    reserve?: string;
+    zugaben?: [number, number];
+    kabel?: [string | null, number | null, string | null];
+    kabelHerkunft?: Schemas["EffectiveSpecOut"]["origin"];
+    vorlageId?: string | null;
+    basis?: Partial<Schemas["DefaultsBasisOut"]>;
+    hinweise?: string[];
+  } = {},
+): Schemas["EffectivePlanningDefaultsOut"] {
+  const reserve = { percent: over.reserve ?? "20.00", origin: "project_default" as const };
+  const basis = { office_version: 1, project_version: 1, ...(over.basis ?? {}) };
+  const [start, ende] = over.zugaben ?? [500, 200];
+  const [typ, leiter, quer] = over.kabel ?? ["TEST-A", 3, "1.50"];
+  return {
+    project_id: "projekt-1",
+    project_status: "active",
+    basis,
+    reserve,
+    allowances: [
+      { endpoint_kind: "board", value_mm: start, origin: "office_default" },
+      { endpoint_kind: "junction", value_mm: 0, origin: "none" },
+      { endpoint_kind: "device", value_mm: ende, origin: "office_default" },
+    ],
+    default_template: null,
+    device_type_templates: [],
+    templates: [vorlage()],
+    for_cable:
+      query?.circuit_id === undefined
+        ? null
+        : {
+            circuit_id: query.circuit_id,
+            start_device_id: query.start_device_id ?? null,
+            end_device_id: query.end_device_id ?? null,
+            spec: {
+              origin: over.kabelHerkunft ?? "device_type_template",
+              cable_type: typ,
+              conductor_count: leiter,
+              cross_section_mm2: quer,
+              cable_template_id: over.vorlageId === undefined ? "vorlage-dose" : over.vorlageId,
+              level: "office",
+              deciding_device_id: query.end_device_id ?? null,
+            },
+            reserve,
+            allowances: { origin: "office_default", start_mm: start, end_mm: ende, start_origin: "office_default", end_origin: "office_default" },
+            hints: (over.hinweise ?? []).map((code) => ({ code, template_id: null, device_id: null })),
+            basis: { ...basis, cable_template_id: over.vorlageId === undefined ? "vorlage-dose" : over.vorlageId, cable_template_version: 1 },
+          },
+  };
+}

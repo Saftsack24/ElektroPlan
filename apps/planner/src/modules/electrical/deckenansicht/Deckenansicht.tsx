@@ -25,6 +25,7 @@ import type { AnsichtsDeckengeraet, Richtung, Wandtreffer } from "./deckengeraet
 import { deckengeraeteAus, deckenlage, deckenlagePruefen, wandabstaende } from "./deckengeraete";
 import { deckenmodell, imRaum, naechsteWand } from "./deckenmodell";
 import { useDeckenleitungen } from "../leitung/Deckenleitungen";
+import { Zeichenleiste } from "../leitung/Zeichenleiste";
 import type { Leitungskontext } from "../leitung/kontext";
 import { Leitungsbereich } from "../leitung/Leitungsbereich";
 import { Planungsarbeitsflaeche } from "../arbeitsflaeche/Planungsarbeitsflaeche";
@@ -151,6 +152,13 @@ export function Deckenansicht({
   const grenzen = useMemo(() => grenzenVon(walls.flatMap((w) => [{ x: w.x1_mm, y: w.y1_mm }, { x: w.x2_mm, y: w.y2_mm }])), [walls]);
   const [viewport, setViewport] = useState<Viewport>(() => einpassen(grenzen, RUECKFALL, 56));
   const [zeiger, setZeiger] = useState<string>("Zeiger über die Decke bewegen.");
+  // Wie in der Wandansicht: Ein Ablaufwechsel verwirft die Rückmeldung zum vorigen Zustand (6c L2/L3).
+  const ablaufSchluessel = leitungen?.planung.ablaufSchluessel;
+  const zeichnetJetzt = leitungen?.planung.ablauf != null;
+  useEffect(() => {
+    setZeiger(zeichnetJetzt ? "" : "Zeiger über die Decke bewegen.");
+    // Nur beim Wechsel des Ablaufs - nicht bei jeder Meldung.
+  }, [ablaufSchluessel]);
   const [werkzeug, setWerkzeug] = useState<Deckenwerkzeug>("auswahl");
   /** Panel und Maximierung – reine Ansicht (Phase 6c.0). */
   const af = arbeitsflaeche;
@@ -539,6 +547,7 @@ export function Deckenansicht({
   /** Escape: erst die Bewegung, dann das Werkzeug, dann die Auswahl - zuletzt schließen. */
   const escape = (): boolean => {
     if (abbrechen()) return true;
+    if (dl.escape()) return true;
     if (werkzeug !== "auswahl") {
       setWerkzeug("auswahl");
       setVorschau(null);
@@ -660,15 +669,18 @@ export function Deckenansicht({
       )}
     </div>
   );
-  // „Leitung hinzufügen“ (L1): mit Entwurf das Werkzeug „Leitung“, sonst der bestehende Einstieg im Panel.
+  // „Leitung hinzufügen“ (6c, L2): direkt zeichnen – 1 Startgerät anklicken.
   const leitungMoeglich = leitungen !== undefined && leitungen.planung.darfLeitungen;
+  const zeichnet = leitungen?.planung.ablauf != null;
   const leitungHinzufuegen = useStabil(() => {
-    if (leitungsentwurf !== null) {
-      setWerkzeug("leitung");
-      return;
-    }
-    af.setEigenschaftenOffen(true);
-    setTimeout(() => flaechenRef.current?.querySelector<HTMLElement>("[data-leitung-einstieg]")?.focus(), 0);
+    if (leitungen === undefined) return;
+    setWerkzeug("auswahl");
+    setZeiger(leitungen.leitungZeichnen() ?? "1 Startgerät wählen – auf ein markiertes Gerät klicken.");
+  });
+  /** Ein anderes Werkzeug beendet den Zeichenablauf (der Entwurf bleibt). */
+  const werkzeugWaehlen = useStabil((w: typeof werkzeug) => {
+    if (w !== "zuordnen" && leitungen?.planung.ablauf != null) leitungen.planung.ablaufBeenden();
+    setWerkzeug(w);
   });
   const rueckgaengig = useStabil(() => (leitungsentwurf !== null ? leitungen?.planung.dispatch({ typ: "rueckgaengig" }) : dispatch?.({ typ: "rueckgaengig" })));
   const wiederholen = useStabil(() => (leitungsentwurf !== null ? leitungen?.planung.dispatch({ typ: "wiederholen" }) : dispatch?.({ typ: "wiederholen" })));
@@ -684,12 +696,12 @@ export function Deckenansicht({
   const werkzeugleiste = useMemo(() => (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5" role="toolbar" aria-label="Werkzeuge der Deckenansicht">
       <Werkzeuggruppe label="Auswahl">
-        <Werkzeugknopf label="Auswählen" taste="V" icon={WERKZEUGSYMBOL.auswaehlen} aktiv={werkzeug === "auswahl"} onClick={() => setWerkzeug("auswahl")} />
-        <Werkzeugknopf label="Ansicht verschieben" taste="H" icon={WERKZEUGSYMBOL.verschieben} aktiv={werkzeug === "pan"} onClick={() => setWerkzeug("pan")} />
+        <Werkzeugknopf label="Auswählen" taste="V" icon={WERKZEUGSYMBOL.auswaehlen} aktiv={werkzeug === "auswahl" && !zeichnet} onClick={() => werkzeugWaehlen("auswahl")} />
+        <Werkzeugknopf label="Ansicht verschieben" taste="H" icon={WERKZEUGSYMBOL.verschieben} aktiv={werkzeug === "pan"} onClick={() => werkzeugWaehlen("pan")} />
       </Werkzeuggruppe>
       {darfAendern && (
         <Werkzeuggruppe label="Gerät">
-          <Werkzeugknopf label="Gerät" taste="G" hinweis="Deckengerät setzen" icon={WERKZEUGSYMBOL.geraet} aktiv={werkzeug === "geraet"} onClick={() => setWerkzeug("geraet")} />
+          <Werkzeugknopf label="Gerät" taste="G" hinweis="Deckengerät setzen" icon={WERKZEUGSYMBOL.geraet} aktiv={werkzeug === "geraet"} onClick={() => werkzeugWaehlen("geraet")} />
           {werkzeug === "geraet" && (
             <div className="min-w-[200px]">
               <TypAuswahl id="decke-werkzeug-typ" label="Deckengerät" typen={typen} flaeche="ceiling" wert={typKey} onWahl={setTypWahl} />
@@ -699,10 +711,7 @@ export function Deckenansicht({
       )}
       {(leitungMoeglich || zuordnenErlaubt) && (
         <Werkzeuggruppe label="Leitung">
-          {!hatLeitungsentwurf && !hatZuordnungsentwurf && leitungMoeglich && (
-            <LeitungHinzufuegenKnopf aktiv={false} gesperrtGrund={null} onClick={leitungHinzufuegen} />
-          )}
-          {leitungErlaubt && <Werkzeugknopf label="Leitung" taste="L" icon={WERKZEUGSYMBOL.leitung} aktiv={werkzeug === "leitung"} onClick={() => setWerkzeug("leitung")} />}
+          {!hatZuordnungsentwurf && leitungMoeglich && <LeitungHinzufuegenKnopf aktiv={zeichnet} gesperrtGrund={null} onClick={leitungHinzufuegen} />}
           {zuordnenErlaubt && <Werkzeugknopf label="Zuordnen" taste="Z" icon={WERKZEUGSYMBOL.zuordnen} aktiv={werkzeug === "zuordnen"} onClick={() => setWerkzeug("zuordnen")} />}
         </Werkzeuggruppe>
       )}
@@ -721,7 +730,7 @@ export function Deckenansicht({
       <AnsichtMenue fangAktiv={fangAktiv} onFang={fangStabil} fangLabel="Einrasten" rasterMm={rasterMm} onRaster={onRaster} onHilfe={() => setHilfe(true)} />
     </div>
     // Rückrufe sind stabil (Zustandssetzer, `useStabil`); abhängig ist die Leiste nur von dem, was sie zeigt.
-  ), [werkzeug, darfAendern, typen, typKey, leitungMoeglich, hatLeitungsentwurf, hatZuordnungsentwurf, zuordnenErlaubt, leitungErlaubt, kannZurueck, kannVor, fangAktiv, rasterMm, onRaster, leitungHinzufuegen, rueckgaengig, wiederholen, zoomStabil, ganzStabil, fangStabil]);
+  ), [werkzeug, darfAendern, typen, typKey, leitungMoeglich, zeichnet, hatLeitungsentwurf, hatZuordnungsentwurf, zuordnenErlaubt, kannZurueck, kannVor, fangAktiv, rasterMm, onRaster, leitungHinzufuegen, werkzeugWaehlen, rueckgaengig, wiederholen, zoomStabil, ganzStabil, fangStabil]);
 
   const hilfeInhalt = (
     <>
@@ -770,11 +779,16 @@ export function Deckenansicht({
             werkzeuge={werkzeugleiste}
             kontext={
               <div className="flex flex-col gap-1.5">
-                <p className="m-0 h-6 overflow-hidden text-[0.82rem] text-muted" aria-live="polite" data-testid="decke-zeiger">
-                  {zeiger}
-                </p>
+                {!zeichnetJetzt && (
+                  <p className="m-0 h-6 overflow-hidden text-[0.82rem] text-muted" aria-live="polite" data-testid="decke-zeiger">
+                    {zeiger}
+                  </p>
+                )}
                 {zustand !== undefined && dispatch !== undefined && (
                   <Raumrueckmeldung fehler={zustand.serverFehler} konflikt={zustand.status === "konflikt"} onSchliessen={() => dispatch({ typ: "hinweis-schliessen" })} />
+                )}
+                {leitungen !== undefined && raumId !== undefined && (
+                  <Zeichenleiste k={leitungen} flaeche={{ art: "decke", raumId }} meldung={zeiger} meldungTestId="decke-zeiger" />
                 )}
                 <Entwurfsleiste k={leitungen} panelOffen={af.eigenschaftenOffen} onDetails={() => af.setEigenschaftenOffen(true)} nachSchliessen={() => setWerkzeug("auswahl")} />
               </div>
@@ -855,6 +869,7 @@ export function Deckenansicht({
                     zusatz?.abbrechen();
                   }
                 }}
+                onDoubleClick={() => zusatz?.doppelklick?.()}
               >
                 <path d={raster.join("")} className="ansicht__raster" aria-hidden="true" />
                 <polygon points={punkte} className="ansicht__decke-flaeche" data-testid="deckenkontur" />

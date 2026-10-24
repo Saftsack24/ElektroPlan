@@ -3,11 +3,13 @@ import type { ReactNode } from "react";
 
 import { useUngespeicherteAenderungen } from "../../../core/ui/ungespeichert";
 import type { Ebene, Wandhoehe } from "./grundriss";
+import { Leitungsdialog } from "./Leitungsdialog";
 import type { Leitungsplanung } from "./useLeitungsplanung";
 import { useLeitungsplanung } from "./useLeitungsplanung";
 
-/** Meldung des Navigationsschutzes für einen ungespeicherten Leitungsentwurf. */
-export const LEITUNG_MELDUNG = "Es gibt einen ungespeicherten Leitungsentwurf. Wenn Sie fortfahren, geht er verloren.";
+import { LEITUNG_MELDUNG } from "./meldungen";
+
+export { LEITUNG_MELDUNG };
 
 const Kontext = createContext<Leitungsplanung | null>(null);
 
@@ -46,6 +48,7 @@ const EinstellungKontext = createContext<Grundrisseinstellung | null>(null);
  * Navigationsschutz.
  */
 export function LeitungsplanungProvider({
+  projectId,
   buildingId,
   darfLeitungen,
   darfStromkreise,
@@ -54,6 +57,8 @@ export function LeitungsplanungProvider({
   onPlanung,
   children,
 }: {
+  /** Projekt - für die wirksamen Planungsvorgaben im Abschlussdialog (Phase 6c). */
+  projectId?: string | undefined;
   buildingId: string | undefined;
   darfLeitungen: boolean;
   darfStromkreise: boolean;
@@ -64,7 +69,7 @@ export function LeitungsplanungProvider({
   onPlanung?: ((planung: Leitungsplanung) => void) | undefined;
   children: ReactNode;
 }) {
-  const planung = useLeitungsplanung({ buildingId, darfLeitungen, darfStromkreise, onGeschrieben });
+  const planung = useLeitungsplanung({ projectId, buildingId, darfLeitungen, darfStromkreise, onGeschrieben });
   useUngespeicherteAenderungen(planung.ungespeichert, LEITUNG_MELDUNG);
   useEffect(() => onUngespeichert?.(planung.ungespeichert), [planung.ungespeichert, onUngespeichert]);
   useEffect(() => () => onUngespeichert?.(false), [onUngespeichert]);
@@ -80,7 +85,11 @@ export function LeitungsplanungProvider({
   const einstellung = useMemo(() => ({ werkzeug, ebene, wandhoehe, setWerkzeug, setEbene, setWandhoehe }), [werkzeug, ebene, wandhoehe]);
   return (
     <Kontext.Provider value={planung}>
-      <EinstellungKontext.Provider value={einstellung}>{children}</EinstellungKontext.Provider>
+      <EinstellungKontext.Provider value={einstellung}>
+        {children}
+        {/* Ein Dialog für alle Flächen des Gebäudes: Er gehört zum Entwurf, nicht zu einer Ansicht. */}
+        {planung.dialogOffen && planung.entwurf !== null && <Leitungsdialog planung={planung} />}
+      </EinstellungKontext.Provider>
     </Kontext.Provider>
   );
 }

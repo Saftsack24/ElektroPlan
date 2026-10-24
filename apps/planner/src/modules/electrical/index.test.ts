@@ -28,11 +28,9 @@ describe("Elektroplanungs-Modul", () => {
     expect(tab?.permission).toBe("electrical.plan.read");
   });
 
-  it("registriert weder Navigation noch Routen noch Einstellungen", () => {
-    // Phase 3 hat keine eigene Seite ausserhalb des Projekts und keine
-    // Stammdatenpflege - das kommt mit den Geraetetypen (Phase 5).
-    expect(electricalModule.navigation).toBeUndefined();
-    expect(electricalModule.routes).toBeUndefined();
+  it("registriert genau eine eigene Seite: Elektro-Vorgaben (Phase 6c, L3) - lesbar mit plan.read", () => {
+    expect(electricalModule.navigation?.map((n) => [n.label, n.to, n.permission])).toEqual([["Elektro-Vorgaben", "/elektro-vorgaben", "electrical.plan.read"]]);
+    expect(electricalModule.routes?.map((r) => [r.path, r.permission])).toEqual([["/elektro-vorgaben", "electrical.plan.read"]]);
     expect(electricalModule.settingsSections).toBeUndefined();
   });
 

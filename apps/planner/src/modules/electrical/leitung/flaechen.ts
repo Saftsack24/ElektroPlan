@@ -208,11 +208,23 @@ export type Kandidatenpruefung =
   | { readonly ok: true; readonly ergebnis: Leitungsergebnis }
   | { readonly ok: false; readonly grund: string; readonly ergebnis: Leitungsergebnis };
 
-/** Prüft eine geänderte Wegpunktliste mit der gemeinsamen Längenfunktion. */
-export function kandidatPruefen(vorbereitet: VorbereiteterPlan, leitung: Leitung, index: number): Kandidatenpruefung {
+/**
+ * Prüft eine geänderte Wegpunktliste mit der gemeinsamen Längenfunktion - an einem neuen Punkt oder
+ * an mehreren (Ecke und Endpunkt einer L-Führung: beide Teilstrecken müssen gültig sein).
+ */
+export function kandidatPruefen(vorbereitet: VorbereiteterPlan, leitung: Leitung, index: number | readonly number[]): Kandidatenpruefung {
   const ergebnis = leitungAuswerten(vorbereitet, leitung);
-  const konflikt = konfliktAn(ergebnis, betroffeneOrte(index, leitung.wegpunkte.length));
-  return konflikt === null ? { ok: true, ergebnis } : { ok: false, grund: leitungsbefundText(konflikt.code), ergebnis };
+  const indizes = typeof index === "number" ? [index] : index;
+  const orte = indizes.flatMap((i) => betroffeneOrte(i, leitung.wegpunkte.length));
+  const konflikt = konfliktAn(ergebnis, orte);
+  if (konflikt === null) return { ok: true, ergebnis };
+  // Bei einer Ecke: welche Teilstrecke? (Entwurf §18.4: „Teilstrecke 2 verlässt die Raumkontur“) -
+  // Teilstrecke k endet am k-ten neuen Punkt.
+  const strecke = /^w\d+-w(\d+)$/.exec(konflikt.ort);
+  const bis = strecke !== null ? Number(strecke[1]) : konflikt.ort === "start" ? 0 : null;
+  const teil = indizes.length > 1 && bis !== null ? indizes.indexOf(bis) : -1;
+  const vorsatz = teil >= 0 ? `Teilstrecke ${teil + 1}: ` : "";
+  return { ok: false, grund: `${vorsatz}${leitungsbefundText(konflikt.code)}`, ergebnis };
 }
 
 /** Verständlicher Ort eines Befunds („Wegpunkt 3“, „Strecke 2 – 3“, „Anschluss Startgerät“). */

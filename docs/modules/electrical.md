@@ -1065,6 +1065,21 @@ ins Zielgeschoss (`leitung/Grundrissleitungen.tsx`, `leitung/grundriss.ts`, `lei
 fortgesetzt (`ansicht3d/leitungen3d.ts`); die Auswahl öffnet die passende Bearbeitungsfläche, die
 Rückkehr stellt Kamera und Auswahl her. Details: [`phase-6b-design.md`](../phase-6b-design.md) §20.
 
+### Leitung hinzufügen, Abschlussdialog und Vorgaben (Phase 6c L2/L3) — umgesetzt, nicht committet
+
+„Leitung hinzufügen“ (L) in Grundriss, Wand und Decke startet den **Zeichenablauf** des gebäudeweiten Entwurfs
+(`leitung/useLeitungsplanung.ts`: `ablauf`, `leitungZeichnen`, `geraetGewaehlt`, `abschliessen`,
+`weiterzeichnen`): 1 Startgerät → 2 Verlauf → 3 Zielgerät oder offen abschließen; die Leiste
+`leitung/Zeichenleiste.tsx` zeigt Schritte, Ecke, Führung, Höhe neuer Wandpunkte, Einfügen und Flächenwechsel.
+Gemeinsame Zeichenregeln in `leitung/zeichnen.ts` (L-Ecke, Klicktoleranz, Doppelklick, Gerät im Ring), die
+Stromkreisableitung in `leitung/stromkreisableitung.ts`. Ein Dialog für neue und bestehende Leitungen
+(`leitung/Leitungsdialog.tsx`) belegt über `…/planning-defaults/effective` vor, zeigt Herkunft je Teil und
+speichert mit `spec_source`/`reserve_source`/`allowance_source`, `defaults_basis` und bei Bedarf
+`assign_devices`. Verwaltung: Seite „Elektro-Vorgaben“ (`vorgaben/VorgabenSeite.tsx`, Route `/elektro-vorgaben`),
+Projektdialog „Planungsvorgaben“ (`vorgaben/VorgabenDialog.tsx`), Schalter am Stromkreis. Das lange
+Leitungsformular im Panel und die Ebenenwahl im Grundriss entfallen. Details:
+[`phase-6c-design.md`](../phase-6c-design.md) §21.
+
 ### Mengenübersicht (Phase 6b.6) — umgesetzt, committet
 
 Ansicht „Mengen“ im Tab „Räume & Grundriss“ (`mengen/`): nur Anzeige des Serverergebnisses, keine

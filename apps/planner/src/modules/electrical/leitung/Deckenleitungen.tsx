@@ -12,13 +12,17 @@ import type { Fangziel } from "../wandansicht/wandfang";
 import "./leitung.css";
 import { inAnsichtBearbeitbar } from "./daten";
 import type { Leitungswerte } from "./entwurf";
-import { wegpunktEinfuegen, wegpunktEntfernen, wegpunktErsetzen } from "./entwurf";
+import { wegpunktEinfuegen, wegpunktEntfernen, wegpunktErsetzen, wegpunkteEinfuegenAn } from "./entwurf";
 import type { Anschlusspunkt, Fangeinstellung } from "./flaechen";
 import { achseFangen, anschlussFangen, deckenstrecken } from "./flaechen";
 import type { Leitungskontext } from "./kontext";
 import type { Wegpunkt } from "./laenge";
 import type { Leitungswerkzeug } from "./Wandleitungen";
-import type { Flaechenzusatz } from "./zusatz";
+import { DOPPELKLICK_MS, andereEcke, geraetImRing, istKlick, lEcke, wiederholtLetzten } from "./zeichnen";
+import type { Flaechenzusatz, Zeigerereignis } from "./zusatz";
+
+/** Markierungsring eines Geräts in Schritt 1 - zugleich der Fangradius für Geräteklicks (Bildpunkte). */
+const START_RING_PX = 17;
 
 interface Kandidat {
   readonly x: number;
@@ -31,6 +35,9 @@ interface Kandidat {
   readonly zielY: Fangziel | null;
   readonly anschluss: string | null;
   readonly von: Punkt | null;
+  /** Ecke der rechtwinkligen Führung (6c, L2, F6) - ein Schritt mit dem Punkt. */
+  readonly ecke?: Punkt | null;
+  readonly hinweis?: string | null;
 }
 
 /** Punkt auf der Wandachse im Abstand `abstand` - nur, wenn er auf ganzen Millimetern liegt. */
@@ -45,9 +52,10 @@ function achspunkt(w: Pick<Deckenwand, "start" | "ende">, abstand: number): Punk
 }
 
 /**
- * Leitungsplanung in der Deckenansicht (Phase 6b.4) - dieselben Gesten wie an
- * der Wand. Deckenstrecken sind gerade und liegen vollständig in der echten
- * Raumkontur (auch im L-Raum); geprüft wird mit der gemeinsamen Längenfunktion.
+ * Leitungsplanung in der Deckenansicht (Phase 6b.4, Zeichenablauf seit 6c L2) - dieselben Gesten wie an
+ * der Wand. Standard ist die rechtwinklige Führung mit sichtbarer Ecke (F6); „Gerade“ (W) setzt
+ * einzelne gerade Strecken. Jede Teilstrecke liegt vollständig in der echten Raumkontur (auch im
+ * L-Raum); geprüft wird mit der gemeinsamen Längenfunktion.
  */
 export function useDeckenleitungen({
   k,
@@ -80,7 +88,10 @@ export function useDeckenleitungen({
     setKandidatState(c);
   };
   const [gewaehlt, setGewaehlt] = useState<string | null>(null);
-  const laufend = useRef<{ art: "setzen" } | { art: "ziehen"; index: number; gueltig: boolean } | null>(null);
+  const laufend = useRef<
+    { art: "setzen"; start: { x: number; y: number }; massstab: number; bewegt: boolean } | { art: "ziehen"; index: number; gueltig: boolean } | null
+  >(null);
+  const zuletzt = useRef<{ zeit: number; schluessel: string } | null>(null);
   const vorher = useRef<{ x: string | null; y: string | null }>({ x: null, y: null });
   const [werkzeugVorher, setWerkzeugVorher] = useState(werkzeug);
   if (werkzeugVorher !== werkzeug) {
@@ -91,6 +102,8 @@ export function useDeckenleitungen({
   const p = k?.planung;
   const e = p?.entwurf ?? null;
   const darf = p !== undefined && p.darfLeitungen && e !== null && e.status !== "speichert" && raumId !== undefined;
+  const zeichnet = p?.ablauf != null && !p.dialogOffen && werkzeug !== "zuordnen" && werkzeug !== "pan";
+  const schritt = p?.ablauf?.schritt ?? null;
   const raum = raumId === undefined ? undefined : p?.vorbereitet?.raeume.get(raumId);
 
   const andere = useMemo(() => {
@@ -206,6 +219,76 @@ export function useDeckenleitungen({
     return { x, y, ok: geprueft.ok, grund: geprueft.ok ? null : geprueft.grund, werte, index, zielX, zielY, anschluss: ap?.text ?? null, von };
   };
 
+  /** Neuer Deckenpunkt im Zeichenablauf: ans Ende, rechtwinklig mit sichtbarer Ecke oder gerade (F6). */
+  const neuerKandidat = (rohX: number, rohY: number, ev: { altKey: boolean; massstab: number }): Kandidat | null => {
+    if (e === null || p === undefined || p.vorbereitetEntwurf === null || raumId === undefined) return null;
+    const w = e.werte;
+    const nach = p.ablauf?.einfuegenNach ?? null;
+    const index = nach === null || nach >= w.wegpunkte.length ? w.wegpunkte.length : nach + 1;
+    const vor = w.wegpunkte[index - 1];
+    const f = fang(ev.massstab, ev.altKey);
+    const von = vor?.art === "ceiling" && vor.raumId === raumId ? { x: vor.x, y: vor.y } : null;
+    const rechtwinklig = (p.ablauf?.fuehrung ?? "rechtwinklig") === "rechtwinklig";
+    const eckenwahl = p.ablauf?.ecke ?? "waagerecht";
+    const versuchen = (x: number, y: number, ecke: typeof eckenwahl) => {
+      const knick = rechtwinklig && von !== null ? lEcke({ a: von.x, b: von.y }, { a: x, b: y }, ecke) : null;
+      const neue: Wegpunkt[] = [...(knick === null ? [] : [{ art: "ceiling" as const, raumId, x: knick.a, y: knick.b }]), { art: "ceiling", raumId, x: x + 0, y: y + 0 }];
+      const werte = wegpunkteEinfuegenAn(w, index, neue);
+      const geprueft = p.pruefen(werte, neue.map((_, i) => index + i)) ?? { ok: false as const, grund: "Der Plan ist noch nicht geladen." };
+      return { werte, geprueft, ecke: knick === null ? null : { x: knick.a, y: knick.b } };
+    };
+    const ap = anschlussFangen({ a: rohX, b: rohY }, anschluesse([vor]), f);
+    let x: number;
+    let y: number;
+    let zielX: Fangziel | null = null;
+    let zielY: Fangziel | null = null;
+    if (ap !== null) {
+      x = ap.a;
+      y = ap.b;
+    } else {
+      const z = ziele(von === null ? [] : [von]);
+      const fx = achseFangen(rohX, z.x, f, vorher.current.x);
+      const fy = achseFangen(rohY, z.y, f, vorher.current.y);
+      x = fx.wert;
+      y = fy.wert;
+      zielX = fx.ziel;
+      zielY = fy.ziel;
+    }
+    let versuch = versuchen(x, y, eckenwahl);
+    let hinweis: string | null = null;
+    const echteZiele = [zielX, zielY].filter((z): z is Fangziel => z !== null && z.art !== "raster");
+    if (!versuch.geprueft.ok && ap === null && echteZiele.length > 0) {
+      const frei = versuchen(Math.round(rohX), Math.round(rohY), eckenwahl);
+      if (frei.geprueft.ok) {
+        hinweis = `Fang ausgesetzt: ${echteZiele.map((z) => z.text).join(", ")} wäre ungültig`;
+        x = Math.round(rohX);
+        y = Math.round(rohY);
+        versuch = frei;
+        zielX = null;
+        zielY = null;
+      }
+    }
+    if (!versuch.geprueft.ok && versuch.ecke !== null && versuchen(x, y, andereEcke(eckenwahl)).geprueft.ok) {
+      hinweis = "Andere Ecke wäre gültig: Ecke wechseln (K)";
+    }
+    vorher.current = { x: zielX?.id ?? null, y: zielY?.id ?? null };
+    return {
+      x,
+      y,
+      ok: versuch.geprueft.ok,
+      grund: versuch.geprueft.ok ? null : versuch.geprueft.grund,
+      werte: versuch.werte,
+      index,
+      zielX,
+      zielY,
+      anschluss: ap?.text ?? null,
+      von,
+      ecke: versuch.ecke,
+      hinweis,
+    };
+  };
+
+
   const status = (c: Kandidat, aktion: string) => {
     if (!c.ok) {
       onStatus(`Nicht möglich: ${c.grund ?? ""}`);
@@ -214,25 +297,24 @@ export function useDeckenleitungen({
     const eingerastet = [c.anschluss, ...[c.zielX, c.zielY].filter((z): z is Fangziel => z !== null && z.art !== "raster").map((z) => z.text)].filter(
       (t): t is string => t !== null,
     );
-    onStatus(`Wegpunkt ${c.index + 1} ${aktion}: ${masse.punkt(c.x, c.y)}${eingerastet.length > 0 ? ` · eingerastet: ${[...new Set(eingerastet)].join(", ")}` : ""}`);
+    onStatus(
+      `${aktion === "setzen" ? "Nächster Klick: " : ""}${c.ecke != null ? "Ecke und " : ""}Wegpunkt ${c.index + 1 + (c.ecke != null ? 1 : 0)} ${aktion}: ${masse.punkt(c.x, c.y)}${eingerastet.length > 0 ? ` · eingerastet: ${[...new Set(eingerastet)].join(", ")}` : ""}${c.hinweis != null ? ` · ${c.hinweis}` : ""}`,
+    );
   };
 
   const geraetGeklickt = (id: string) => {
-    if (e === null || p === undefined) return;
-    const w = e.werte;
-    if (!p.endpunkte(w.circuitId).some((g) => g.id === id)) {
-      onStatus("Dieses Gerät ist weder die Verteilung noch dem Stromkreis zugeordnet – erst zuordnen, dann anschließen.");
-      return;
-    }
-    if (w.startId === null && id !== w.endId) {
-      p.dispatch({ typ: "aendern", werte: { ...w, startId: id } });
-      onStatus(`Startgerät: ${p.geraetName(id)} – jetzt den Verlauf setzen.`);
-    } else if (id === w.startId) {
-      onStatus("Dieses Gerät ist bereits das Startgerät.");
-    } else {
-      p.dispatch({ typ: "aendern", werte: { ...w, endId: id } });
-      onStatus(`Endgerät: ${p.geraetName(id)} – Länge und Befunde prüfen, dann speichern.`);
-    }
+    if (p === undefined) return;
+    setKandidat(null);
+    onStatus(p.geraetGewaehlt(id));
+  };
+
+  const geraetVorschau = (id: string) => {
+    if (p === undefined || e === null) return;
+    const g = p.geraetPruefen(id);
+    if (!g.ok) onStatus(`Nicht möglich: ${g.grund}`);
+    else if (e.werte.startId === null) onStatus(`Nächster Klick: Startgerät ${p.geraetName(id)}`);
+    else if (id === e.werte.startId) onStatus("Das ist das Startgerät – ein anderes Gerät beendet die Leitung.");
+    else onStatus(`Nächster Klick: beendet am Zielgerät ${p.geraetName(id)}`);
   };
 
   const zuordnungUmschalten = (id: string) => {
@@ -253,10 +335,42 @@ export function useDeckenleitungen({
     onStatus(art === "dieser" ? "Zuordnung im Entwurf entfernt – noch nicht gespeichert." : "Im Entwurf zugeordnet – noch nicht gespeichert.");
   };
 
+  const setzen = (c: Kandidat) => {
+    if (!c.ok) {
+      onStatus(`Nicht gesetzt: ${c.grund ?? ""}`);
+      return;
+    }
+    const neu = c.werte.wegpunkte[c.index + (c.ecke != null ? 1 : 0)];
+    const jetzt = Date.now();
+    const z = zuletzt.current;
+    const schluessel = JSON.stringify(neu);
+    if (neu === undefined || wiederholtLetzten(c.werte.wegpunkte.slice(0, c.index), neu) || (z !== null && jetzt - z.zeit < DOPPELKLICK_MS && z.schluessel === schluessel)) return;
+    zuletzt.current = { zeit: jetzt, schluessel };
+    if (p?.ablauf?.einfuegenNach != null) p.setAblauf({ einfuegenNach: null });
+    p?.dispatch({ typ: "aendern", werte: c.werte, auswahl: null });
+    onStatus(`${c.ecke != null ? "Ecke und " : ""}Wegpunkt ${c.index + 1 + (c.ecke != null ? 1 : 0)} gesetzt – noch nicht gespeichert.`);
+  };
+
+  // Gerät unter dem Zeiger - auch wenn eine bestehende Leitung darüber liegt (Ring wie in Schritt 1).
+  const geraetBei = (ev: Zeigerereignis): string | null => {
+    const getroffen = ev.ziel?.closest?.("[data-geraet]")?.getAttribute("data-geraet") ?? null;
+    if (getroffen !== null) return getroffen;
+    // Ersatz über den Ring nur in Schritt 1 (dort reagieren nur Geräte) oder wenn eine bestehende Leitung
+    // über dem Gerät liegt - sonst bleibt ein Klick neben einem Gerät ein Wegpunkt.
+    if (schritt !== "start" && ev.ziel?.closest?.(".leitung-treffer") == null) return null;
+    return geraetImRing(ev.welt, ev.massstab, geraete, START_RING_PX);
+  };
+
   const zusatz: Flaechenzusatz = {
-    cursor: werkzeug === "leitung" && darf ? "crosshair" : werkzeug === "zuordnen" ? "pointer" : null,
+    cursor: zeichnet && darf ? "crosshair" : werkzeug === "zuordnen" ? "pointer" : null,
     druecken: (ev) => {
       if (k === undefined || p === undefined) return false;
+      const geraet = geraetBei(ev);
+      if (zeichnet && darf && schritt === "start") {
+        if (geraet !== null) geraetGeklickt(geraet);
+        else onStatus("Zuerst ein Startgerät anklicken – markierte Geräte sind möglich.");
+        return true;
+      }
       const punkt = ev.ziel?.closest?.("[data-wegpunkt]")?.getAttribute("data-wegpunkt") ?? null;
       if (punkt !== null && e !== null) {
         const index = Number(punkt);
@@ -265,23 +379,21 @@ export function useDeckenleitungen({
           p.dispatch({ typ: "ziehen-beginnen" });
           laufend.current = { art: "ziehen", index, gueltig: false };
         }
-        onStatus(`Wegpunkt ${index + 1} gewählt – ziehen verschiebt ihn, Entf entfernt ihn, neue Punkte folgen ihm.`);
+        setKandidat(null);
+        onStatus(`Wegpunkt ${index + 1} gewählt – ziehen verschiebt ihn, Entf entfernt ihn. Neue Punkte kommen weiter ans Ende.`);
         return true;
       }
-      const geraet = ev.ziel?.closest?.("[data-geraet]")?.getAttribute("data-geraet") ?? null;
       if (werkzeug === "zuordnen" && k.zuordnung.entwurf !== null) {
         if (geraet !== null) zuordnungUmschalten(geraet);
         return true;
       }
-      if (werkzeug === "leitung" && darf) {
+      if (zeichnet && darf) {
         if (geraet !== null) {
           geraetGeklickt(geraet);
           return true;
         }
-        const c = kandidatFuer(ev.welt.x, ev.welt.y, ev, null);
-        setKandidat(c);
-        if (c !== null) status(c, "setzen");
-        laufend.current = { art: "setzen" };
+        if (kandidatRef.current === null) setKandidat(neuerKandidat(ev.welt.x, ev.welt.y, ev));
+        laufend.current = { art: "setzen", start: ev.welt, massstab: ev.massstab, bewegt: false };
         return true;
       }
       const leitung = ev.ziel?.closest?.("[data-leitung]")?.getAttribute("data-leitung") ?? null;
@@ -304,8 +416,23 @@ export function useDeckenleitungen({
         }
         return true;
       }
-      if ((aktiv && l?.art === "setzen") || (!aktiv && werkzeug === "leitung" && darf)) {
-        const c = kandidatFuer(ev.welt.x, ev.welt.y, ev, null);
+      if (aktiv && l?.art === "setzen") {
+        if (!istKlick(l.start, ev.welt, l.massstab)) l.bewegt = true;
+        return true;
+      }
+      if (!aktiv && zeichnet && darf) {
+        const geraet = geraetBei(ev);
+        if (geraet !== null) {
+          setKandidat(null);
+          geraetVorschau(geraet);
+          return true;
+        }
+        if (schritt === "start") {
+          setKandidat(null);
+          onStatus("1 Startgerät wählen – auf ein markiertes Gerät klicken.");
+          return true;
+        }
+        const c = neuerKandidat(ev.welt.x, ev.welt.y, ev);
         setKandidat(c);
         if (c !== null) status(c, "setzen");
         return true;
@@ -323,14 +450,12 @@ export function useDeckenleitungen({
       }
       if (l?.art === "setzen") {
         const c = kandidatRef.current;
-        setKandidat(null);
-        if (c === null) return;
-        if (!c.ok) {
-          onStatus(`Nicht gesetzt: ${c.grund ?? ""}`);
+        if (l.bewegt) {
+          onStatus("Nicht gesetzt – zum Setzen ohne Bewegung klicken.");
           return;
         }
-        p?.dispatch({ typ: "aendern", werte: c.werte, auswahl: c.index });
-        onStatus(`Wegpunkt ${c.index + 1} gesetzt – noch nicht gespeichert.`);
+        setKandidat(null);
+        if (c !== null) setzen(c);
       }
     },
     abbrechen: () => {
@@ -344,7 +469,37 @@ export function useDeckenleitungen({
       }
       return l !== null;
     },
+    doppelklick: () => {
+      if (!zeichnet || p === undefined) return false;
+      setKandidat(null);
+      const text = p.abschliessen();
+      if (text !== null) onStatus(text);
+      return true;
+    },
     zeichnen: (b) => zeichnen(b),
+  };
+
+  /** Escape: Ziehen → Vorschau → Punktauswahl → „danach einfügen“ → Werkzeug beenden. Nie den Entwurf. */
+  const escape = (): boolean => {
+    if (zusatz.abbrechen()) return true;
+    if (kandidat !== null) {
+      setKandidat(null);
+      return true;
+    }
+    if (e !== null && e.auswahl !== null) {
+      p?.dispatch({ typ: "auswaehlen", auswahl: null });
+      return true;
+    }
+    if (p?.ablauf != null && p.ablauf.einfuegenNach !== null) {
+      p.setAblauf({ einfuegenNach: null });
+      return true;
+    }
+    if (p?.ablauf != null) {
+      p.ablaufBeenden();
+      onStatus("Werkzeug beendet – der Entwurf bleibt erhalten.");
+      return true;
+    }
+    return false;
   };
 
   const taste = (event: KeyboardEvent<HTMLDivElement>): boolean => {
@@ -378,9 +533,9 @@ export function useDeckenleitungen({
       }
       if (event.key.startsWith("Arrow") && index !== null && wp?.art === "ceiling" && wp.raumId === raumId && darf) {
         event.preventDefault();
-        const schritt = event.shiftKey ? 100 : 10;
-        const dx = event.key === "ArrowLeft" ? -schritt : event.key === "ArrowRight" ? schritt : 0;
-        const dy = event.key === "ArrowUp" ? schritt : event.key === "ArrowDown" ? -schritt : 0;
+        const schrittweite = event.shiftKey ? 100 : 10;
+        const dx = event.key === "ArrowLeft" ? -schrittweite : event.key === "ArrowRight" ? schrittweite : 0;
+        const dy = event.key === "ArrowUp" ? schrittweite : event.key === "ArrowDown" ? -schrittweite : 0;
         const werte = wegpunktErsetzen(e.werte, index, { ...wp, x: wp.x + dx, y: wp.y + dy });
         const geprueft = p.pruefen(werte, index);
         if (geprueft === null) return true;
@@ -392,17 +547,28 @@ export function useDeckenleitungen({
         onStatus(`Verschoben: ${masse.punkt(wp.x + dx, wp.y + dy)}`);
         return true;
       }
-      if (event.key === "Enter" && werkzeug === "leitung") {
+      if (event.key === "Enter" && zeichnet) {
         event.preventDefault();
-        setWerkzeug("auswahl");
         setKandidat(null);
-        onStatus(e.werte.endId === null ? "Zeichnen beendet – bitte noch das Endgerät wählen." : "Zeichnen beendet – Länge und Befunde prüfen, dann speichern.");
+        const text = p.abschliessen();
+        if (text !== null) onStatus(text);
         return true;
       }
-      if (kk === "l" && darf) {
-        setWerkzeug("leitung");
+      if (kk === "k" && zeichnet) {
+        p.setAblauf({ ecke: p.ablauf?.ecke === "senkrecht" ? "waagerecht" : "senkrecht" });
+        setKandidat(null);
         return true;
       }
+      if (kk === "w" && zeichnet) {
+        p.setAblauf({ fuehrung: p.ablauf?.fuehrung === "gerade" ? "rechtwinklig" : "gerade" });
+        setKandidat(null);
+        return true;
+      }
+    }
+    if (kk === "l" && !strg && !event.altKey && k !== undefined && p.darfLeitungen) {
+      const grund = k.leitungZeichnen();
+      if (grund !== null) onStatus(grund);
+      return true;
     }
     if (k?.zuordnung.entwurf != null && !strg && kk === "z") {
       setWerkzeug("zuordnen");
@@ -457,16 +623,39 @@ export function useDeckenleitungen({
         </g>,
       );
     }
+    if (zeichnet && schritt === "start") {
+      for (const g of geraete) {
+        const m = b(g.x, g.y);
+        const ok = p.geraetPruefen(g.id).ok;
+        teile.push(<circle key={`start-${g.id}`} cx={m.x} cy={m.y} r={START_RING_PX} className={`leitung-start-ring${ok ? "" : " leitung-start-ring--nein"}`} data-testid={`startgeraet-${g.id}`} data-moeglich={ok ? "ja" : "nein"} />);
+      }
+    }
     if (kandidat !== null) {
       const m = b(kandidat.x, kandidat.y);
-      if (kandidat.von !== null) {
+      const klasse = `leitung-kandidat-strecke${kandidat.ok ? "" : " leitung-kandidat-strecke--fehler"}`;
+      if (kandidat.von !== null && kandidat.ecke != null) {
         const a = b(kandidat.von.x, kandidat.von.y);
-        teile.push(<line key="kandidat-strecke" x1={a.x} y1={a.y} x2={m.x} y2={m.y} className={`leitung-kandidat-strecke${kandidat.ok ? "" : " leitung-kandidat-strecke--fehler"}`} />);
+        const c = b(kandidat.ecke.x, kandidat.ecke.y);
+        teile.push(<line key="kandidat-strecke-1" x1={a.x} y1={a.y} x2={c.x} y2={c.y} className={klasse} data-testid="leitung-kandidat-strecke" />);
+        teile.push(<line key="kandidat-strecke-2" x1={c.x} y1={c.y} x2={m.x} y2={m.y} className={klasse} data-testid="leitung-kandidat-strecke" />);
+        teile.push(<circle key="kandidat-ecke" cx={c.x} cy={c.y} r={4} className={`leitung-kandidat${kandidat.ok ? "" : " leitung-kandidat--fehler"}`} data-testid="leitung-kandidat-ecke" />);
+      } else if (kandidat.von !== null) {
+        const a = b(kandidat.von.x, kandidat.von.y);
+        teile.push(<line key="kandidat-strecke" x1={a.x} y1={a.y} x2={m.x} y2={m.y} className={klasse} data-testid="leitung-kandidat-strecke" />);
       }
       teile.push(
         <circle key="kandidat" cx={m.x} cy={m.y} r={6} data-testid="leitung-kandidat" data-gueltig={kandidat.ok ? "ja" : "nein"} className={`leitung-kandidat${kandidat.ok ? "" : " leitung-kandidat--fehler"}`} />,
       );
+      const text = kandidat.ok ? kandidat.hinweis : kandidat.grund;
+      if (text != null) {
+        teile.push(
+          <text key="kandidat-text" x={m.x + 10} y={m.y - 10} className={`leitung-kandidat-text${kandidat.ok ? "" : " leitung-kandidat-text--fehler"}`} data-testid="leitung-kandidat-text">
+            {text}
+          </text>,
+        );
+      }
     }
+
     if (werkzeug === "zuordnen" && k?.zuordnung.entwurf != null) {
       const zuordnung = new Map(p.kreise.flatMap((kr) => kr.device_ids.map((d) => [d, kr] as const)));
       for (const g of geraete) {
@@ -478,5 +667,5 @@ export function useDeckenleitungen({
     return <g data-testid="leitungsebene">{teile}</g>;
   };
 
-  return { zusatz, taste, relevant, gewaehlt, setGewaehlt };
+  return { zusatz, taste, escape, relevant, gewaehlt, setGewaehlt };
 }

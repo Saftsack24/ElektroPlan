@@ -28,6 +28,8 @@ export interface Flaechenzusatz {
   /** `true`, wenn eine laufende Bewegung abgebrochen wurde. */
   abbrechen(): boolean;
   zeichnen(b: (x: number, y: number) => Bildpunkt): ReactNode;
+  /** Doppelklick auf die Fläche (Phase 6c, L2): offen abschließen. `true` = verarbeitet. */
+  doppelklick?(): boolean;
   /** Zeigerform, solange ein Werkzeug der Ebene aktiv ist. */
   readonly cursor: string | null;
 }

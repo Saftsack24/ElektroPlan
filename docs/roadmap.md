@@ -1,6 +1,6 @@
 # Roadmap
 
-Stand: 2026-10-16 (nach Task 0056 — L1 technisch geprüft, Beurteilung durch den Auftraggeber offen; F6–F8 entschieden; Reihenfolge L1 → V1 → L2/L3 → P; Phase 7 zurückgestellt)
+Stand: 2026-10-24 (nach Task 0062 — L1/L2/L3 samt Nachkorrekturen technisch geprüft und als Checkpoint committet; persönliche Abnahme von Layout und Leitungsbedienung offen; Phase 7 zurückgestellt)
 Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 
 ---
@@ -31,7 +31,7 @@ Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 | 4f | Wand- und Deckenansicht; `completed` schreibgeschützt; Prüfung der Geschoss-Standardhöhe | DONE | 4e |
 | 5 | Electrical Devices | **DONE** (vom Auftraggeber manuell abgenommen, committet) | 4a |
 | 6 | Circuits & Cable Routes | IN PROGRESS (technisch umgesetzt und geprüft; manuelle Gesamtprüfung durch den Auftraggeber ausstehend) | 5 |
-| 6c | Bedienungsüberarbeitung, zentrale Planungsvorgaben, Kabelvorlagen, Verteilungsplatzierung und -aufbau (eingeschoben) | IN PROGRESS (6c.0 nicht abgenommen, überarbeitungsbedürftig; L1 technisch geprüft, Beurteilung offen; Reihenfolge L1 → V1 → L2/L3 → P) | 6 |
+| 6c | Bedienungsüberarbeitung, zentrale Planungsvorgaben, Kabelvorlagen, Verteilungsplatzierung und -aufbau (eingeschoben) | IN PROGRESS (6c.0 nicht abgenommen, überarbeitungsbedürftig; L1 technisch geprüft, Beurteilung offen; V1 committet; L2/L3 technisch geprüft, uncommittet, Abnahme offen; Reihenfolge L1 → V1 → L2/L3 → P) | 6 |
 | 7 | Materials | NOT STARTED (zurückgestellt bis 6c bearbeitet ist) | 6c |
 | 8 | Service Templates & Material Engine | NOT STARTED | 7 |
 | 9 | Calculation | NOT STARTED | 8 |
@@ -486,9 +486,9 @@ bearbeitet ist; die manuelle Gesamtprüfung von Phase 6 bleibt davon unberührt 
 |---|---|---|
 | 6c.0 | Planungsarbeitsfläche (Eigenschaften einklappbar, Maximieren, Kontextleiste), Undo/Redo-Icons, Dialogrichtlinie | technisch umgesetzt, **nicht abgenommen, überarbeitungsbedürftig** (Entwurf §17/§18), nicht committet |
 | L1 | Planungslayout: gemeinsame Breite/Höhe, einzeiliger Kopf, gruppierte Werkzeugleiste mit „Leitung hinzufügen“, Menüs, Wand/Decke in der Arbeitsfläche (Entwurf §18.2, §19) | umgesetzt, nachgearbeitet und **technisch geprüft** (§19.9), **Checkpoint `331bfbd`** (2026-10-23); persönliche Layoutabnahme offen; „Leitung hinzufügen“ führt bis L2 in den bestehenden Ablauf |
-| V1 | Vorgaben-Backend aus 6c.4 (Entwurf §18.6, §20): Kabelvorlagen, Betriebsstandard, Projektvorgabe, Gerätetypvorlagen, Stromkreisvorrang, Prozentreserve, Herkunft und Basis, offene Leitung, Zuordnung beim Speichern, `effective`, Migration `0014` | **technisch umgesetzt und geprüft** (2026-10-23; Gesamtlauf grün, Entwicklungsdatenbank migriert, API-Durchlauf 15/15), **als Checkpoint committet** (Task 0059); Oberflächen für Vorgaben folgen mit L3 |
-| L2 | Neuer Zeichenablauf (Entwurf §18.3–§18.4, F6 rechtwinklig) | Entwurf – nach V1, gemeinsam mit L3 |
-| L3 | Abschlussdialog an Vorgaben, Verwaltungsdialoge (Entwurf §18.5) | Entwurf – nach V1, gemeinsam mit L2 |
+| V1 | Vorgaben-Backend aus 6c.4 (Entwurf §18.6, §20): Kabelvorlagen, Betriebsstandard, Projektvorgabe, Gerätetypvorlagen, Stromkreisvorrang, Prozentreserve, Herkunft und Basis, offene Leitung, Zuordnung beim Speichern, `effective`, Migration `0014` | **technisch umgesetzt und geprüft** (2026-10-23; Gesamtlauf grün, Entwicklungsdatenbank migriert, API-Durchlauf 15/15), **als Checkpoint `39386c4` committet** (Task 0059); Oberflächen für Vorgaben mit L3 umgesetzt |
+| L2 | Neuer Zeichenablauf (Entwurf §18.3–§18.4, F6 rechtwinklig) | **technisch umgesetzt, automatisiert und im laufenden Stack geprüft** (2026-10-24, Entwurf §21; Nacharbeiten §21.6/§21.7), **als Checkpoint committet** (Task 0062); persönliche Abnahme offen |
+| L3 | Abschlussdialog an Vorgaben, Verwaltungsdialoge (Entwurf §18.5) | **technisch umgesetzt, automatisiert und im laufenden Stack geprüft** (2026-10-24, Entwurf §21; Nacharbeiten §21.6/§21.7), **als Checkpoint committet** (Task 0062); persönliche Abnahme offen |
 | 6c.1 | 3D „Leitungen anzeigen“, modulbezogene Anzeigeschalter (ADR 0029) | zurückgestellt |
 | 6c.2 | bestehende Formulare auf Dialoge (Gebäude/Geschoss, Steigweg, Stammdaten) | Entwurf |
 | 6c.3 | Verteilung im Plan platzieren/zeigen/umsetzen (ADR 0028) | Entwurf |

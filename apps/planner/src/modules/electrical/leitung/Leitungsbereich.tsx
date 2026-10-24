@@ -1,23 +1,20 @@
 import { useState } from "react";
-import type { KeyboardEvent, ReactNode } from "react";
 
 import { Marke } from "../../../core/ui/Marke";
 import type { MarkenArt } from "../../../core/ui/Marke";
 import { useMasse } from "../../../core/ui/masseinheit";
 import { useRueckfrage } from "../../../core/ui/Rueckfrage";
-import { FELD, FELD_BESCHRIFTUNG, FELD_FEHLER, FELD_HINWEIS, KNOPFZEILE, eingabefeld, knopf, meldungsflaeche } from "../../../core/ui/stil";
+import { FELD, FELD_BESCHRIFTUNG, KNOPFZEILE, eingabefeld, knopf, meldungsflaeche } from "../../../core/ui/stil";
 import { querschnittAnzeigen } from "../stromkreise/daten";
 import { geraetezustand } from "../stromkreise/zuordnung";
 import { MassFeld } from "../wandansicht/WandEigenschaften";
 import type { Wandbezug } from "../wandansicht/wandbezug";
 import type { DurchfuehrungAusServer, LeitungAusServer } from "./daten";
-import { WEGPUNKTART_LABEL, inAnsichtBearbeitbar } from "./daten";
-import type { Leitungswerte, Vorschlagsvergleich } from "./entwurf";
-import { vorschlagVergleichen, wegpunktEntfernen } from "./entwurf";
+import { WEGPUNKTART_LABEL } from "./daten";
 import { befundOrt, wandpunktInAnsicht } from "./flaechen";
-import type { Arbeitsflaeche, Bearbeitungsflaeche, Leitungskontext } from "./kontext";
+import type { Bearbeitungsflaeche, Leitungskontext } from "./kontext";
 import type { Leitungsplanung } from "./useLeitungsplanung";
-import type { Leitungsergebnis, Wegpunkt } from "./laenge";
+import type { Wegpunkt } from "./laenge";
 import { leitungsbefundText } from "./laenge";
 
 const STATUS: Record<string, { text: string; art: MarkenArt }> = {
@@ -26,65 +23,8 @@ const STATUS: Record<string, { text: string; art: MarkenArt }> = {
   conflict: { text: "Konflikt", art: "gefahr" },
 };
 
-const VERGLEICH: Record<Vorschlagsvergleich, { text: string; art: MarkenArt } | null> = {
-  "wie-vorschlag": { text: "aus Vorschlag", art: "info" },
-  abweichend: { text: "abweichend vom Vorschlag", art: "warnung" },
-  "kein-vorschlag": null,
-};
-
 const LISTENKNOPF = `${knopf("neutral", { klein: true })} w-full text-left`;
 const LISTENKNOPF_GEWAEHLT = `${knopf("gewaehlt", { klein: true })} w-full text-left`;
-
-/** Textfeld, das erst beim Verlassen oder mit Enter übernimmt - ein Rückgängig-Schritt je Eingabe. */
-function UebernahmeFeld({
-  id,
-  label,
-  wert,
-  gesperrt,
-  hinweis,
-  marke,
-  onUebernehmen,
-}: {
-  id: string;
-  label: string;
-  wert: string;
-  gesperrt: boolean;
-  hinweis?: string;
-  marke?: ReactNode;
-  onUebernehmen: (text: string) => void;
-}) {
-  const [text, setText] = useState(wert);
-  const [stand, setStand] = useState(wert);
-  if (stand !== wert) {
-    setStand(wert);
-    setText(wert);
-  }
-  const uebernehmen = () => {
-    if (text !== wert) onUebernehmen(text);
-  };
-  return (
-    <div className={FELD}>
-      <label className={`${FELD_BESCHRIFTUNG} flex flex-wrap items-center gap-1.5`} htmlFor={id}>
-        {label} {marke}
-      </label>
-      <input
-        id={id}
-        className={eingabefeld({ kompakt: true })}
-        value={text}
-        disabled={gesperrt}
-        onChange={(event) => setText(event.target.value)}
-        onBlur={uebernehmen}
-        onKeyDown={(event: KeyboardEvent<HTMLInputElement>) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            uebernehmen();
-          }
-        }}
-      />
-      {hinweis !== undefined && <span className={FELD_HINWEIS}>{hinweis}</span>}
-    </div>
-  );
-}
 
 /** Länge, Zugaben und Teilsumme - getrennt und ausdrücklich bezeichnet. */
 export function Laengenangabe({
@@ -124,7 +64,7 @@ export function Laengenangabe({
   );
 }
 
-function Befundliste({ befunde }: { befunde: readonly { code: string; ort: string; text?: string }[] }) {
+export function Befundliste({ befunde }: { befunde: readonly { code: string; ort: string; text?: string }[] }) {
   if (befunde.length === 0) return null;
   return (
     <ul className="my-1 pl-[18px]" aria-label="Befunde der Leitung">
@@ -138,12 +78,13 @@ function Befundliste({ befunde }: { befunde: readonly { code: string; ort: strin
 }
 
 /**
- * Seitenfeld „Leitungen“ der Wand- und Deckenansicht (Phase 6b.4).
+ * Seitenfeld „Leitungen“ (Phase 6b.4, seit 6c L2/L3 kompakt).
  *
- * Ohne Entwurf: Leitungen dieser Arbeitsfläche, Auswahl mit Angaben, Länge und
- * Befunden; neue Leitung, Bearbeiten, Vorschlag übernehmen, Entfernen und die
- * Gerätezuordnung eines Stromkreises. Mit Entwurf: Ablauf, Endgeräte,
- * Kabelangaben, Zugaben, Wegpunkte, Ergebnis und bewusstes Speichern.
+ * Ohne Entwurf: Leitungen dieser Arbeitsfläche, Auswahl mit Angaben, Länge und Befunden;
+ * „Verlauf bearbeiten“, „Angaben …“ (Abschlussdialog), Vorschlag übernehmen, Entfernen und
+ * die Gerätezuordnung eines Stromkreises. Mit Entwurf: nur eine Übersicht mit den Wegpunkten
+ * (lesen, auswählen) – das lange Formular ist entfallen; Angaben stehen im Dialog, neue
+ * Leitungen beginnen oben mit „Leitung hinzufügen“.
  */
 export function Leitungsbereich({
   k,
@@ -170,7 +111,7 @@ export function Leitungsbereich({
 }) {
   const p = k.planung;
   if (k.zuordnung.entwurf !== null) return <Zuordnungsfeld k={k} />;
-  if (p.entwurf !== null) return <Entwurfsfeld k={k} flaeche={flaeche} bezug={bezug} onWerkzeug={onWerkzeug} />;
+  if (p.entwurf !== null) return <Entwurfsuebersicht k={k} flaeche={flaeche} bezug={bezug} />;
   return (
     <section aria-label="Leitungen" className="flex flex-col gap-2 border-t border-line pt-2 text-small">
       {gewaehlteDurchfuehrung != null && onDurchfuehrung !== undefined && (
@@ -212,17 +153,6 @@ function Leitungsliste({
     return `${kr === undefined ? "Stromkreis" : kr.designation} · ${l.label ?? "Leitung"}: ${p.geraetName(l.start_device_id)} → ${p.geraetName(l.end_device_id)}`;
   };
 
-  const neu = () => {
-    if (kreis === undefined) return;
-    if (k.sperrgrund !== null) {
-      setMeldung(k.sperrgrund);
-      return;
-    }
-    setMeldung(null);
-    p.neueLeitung(kreis.id);
-    onWerkzeug("leitung");
-  };
-
   const zuordnen = () => {
     if (kreis === undefined) return;
     if (k.sperrgrund !== null) {
@@ -234,14 +164,22 @@ function Leitungsliste({
     onWerkzeug("zuordnen");
   };
 
-  const bearbeiten = (l: LeitungAusServer) => {
+  const verlauf = (l: LeitungAusServer) => {
     if (k.sperrgrund !== null) {
       setMeldung(k.sperrgrund);
       return;
     }
     setMeldung(null);
-    p.bearbeiten(l);
-    onWerkzeug("leitung");
+    p.verlaufBearbeiten(l);
+  };
+
+  const angaben = (l: LeitungAusServer) => {
+    if (k.sperrgrund !== null) {
+      setMeldung(k.sperrgrund);
+      return;
+    }
+    setMeldung(null);
+    p.angabenBearbeiten(l);
   };
 
   const entfernen = async (l: LeitungAusServer) => {
@@ -359,9 +297,14 @@ function Leitungsliste({
               )}
               <div className={KNOPFZEILE}>
                 {p.darfLeitungen && (
-                  <button type="button" className={knopf("primaer", { klein: true })} disabled={p.unlesbar(auswahl)} onClick={() => bearbeiten(auswahl)}>
-                    Leitung bearbeiten
-                  </button>
+                  <>
+                    <button type="button" className={knopf("primaer", { klein: true })} disabled={p.unlesbar(auswahl)} onClick={() => verlauf(auswahl)}>
+                      Verlauf bearbeiten
+                    </button>
+                    <button type="button" className={knopf("neutral", { klein: true })} disabled={p.unlesbar(auswahl)} onClick={() => angaben(auswahl)}>
+                      Angaben …
+                    </button>
+                  </>
                 )}
                 {p.darfStromkreise && auswahl.deviates_from_proposal && (
                   <button type="button" className={knopf("neutral", { klein: true })} onClick={() => void vorschlag(auswahl)}>
@@ -376,11 +319,11 @@ function Leitungsliste({
               </div>
             </div>
           )}
-          {(p.darfLeitungen || p.darfStromkreise) && p.kreise.length > 0 && (
+          {p.darfStromkreise && p.kreise.length > 0 && (
             <div className="flex flex-col gap-1.5 border-t border-line pt-2">
               <label className={FELD}>
-                <span className={FELD_BESCHRIFTUNG}>Stromkreis</span>
-                <select className={eingabefeld({ kompakt: true })} value={kreis?.id ?? ""} data-leitung-einstieg="" onChange={(event) => setKreisWahl(event.target.value)}>
+                <span className={FELD_BESCHRIFTUNG}>Geräte einem Stromkreis zuordnen</span>
+                <select className={eingabefeld({ kompakt: true })} value={kreis?.id ?? ""} onChange={(event) => setKreisWahl(event.target.value)}>
                   {p.kreise.map((kr) => (
                     <option key={kr.id} value={kr.id}>
                       {p.kreisName(kr)}
@@ -389,22 +332,16 @@ function Leitungsliste({
                 </select>
               </label>
               <div className="flex flex-wrap gap-2">
-                {p.darfLeitungen && (
-                  <button type="button" className={knopf("primaer", { klein: true })} onClick={neu}>
-                    Neue Leitung
-                  </button>
-                )}
-                {p.darfStromkreise && (
-                  <button type="button" className={knopf("neutral", { klein: true })} onClick={zuordnen}>
-                    Geräte zuordnen
-                  </button>
-                )}
+                <button type="button" className={knopf("neutral", { klein: true })} onClick={zuordnen}>
+                  Geräte zuordnen
+                </button>
               </div>
             </div>
           )}
           {p.kreise.length === 0 && (
             <p className="m-0 text-muted">Für Leitungen zuerst in der Ansicht „Stromkreise“ eine Verteilung und einen Stromkreis anlegen.</p>
           )}
+          {p.darfLeitungen && <p className="m-0 text-muted">Neue Leitungen: oben „Leitung hinzufügen“ (L), dann Startgerät anklicken.</p>}
         </>
       )}
     </>
@@ -462,25 +399,19 @@ export function steigwegText(
   return `${s.name}: ${halt(wp.vonHalt)} (Einstieg ${anzeigen(wp.vonHoeheMm)}) → ${halt(wp.nachHalt)} (Ausstieg ${anzeigen(wp.nachHoeheMm)})`;
 }
 
-/** Nächster Schritt des Ablaufs - verständlich, ohne Fachcodes. */
-function naechsterSchritt(w: Leitungswerte, ergebnis: Leitungsergebnis | null): string {
-  if (w.startId === null) return "1. Startgerät wählen – im Feld oder mit dem Werkzeug „Leitung“ auf ein Gerät des Stromkreises klicken.";
-  if (w.wegpunkte.length === 0) return "2. Verlauf setzen – Werkzeug „Leitung“ (L), dann auf die Wand bzw. Decke klicken.";
-  if (w.endId === null) return "3. Endgerät wählen – im Feld oder auf das Gerät klicken.";
-  if (ergebnis !== null && ergebnis.status !== "confirmed") return "4. Befunde prüfen – der Weg ist noch nicht vollständig gültig.";
-  return "4. Länge prüfen und bewusst speichern.";
-}
-
-function Entwurfsfeld({
+/**
+ * Offener Leitungsentwurf im Eigenschaftenpanel (6c, L3): kompakt - Stand, Start und Ziel,
+ * Ergebnis und die Wegpunkte zum Lesen und Auswählen. Angaben stehen im Abschlussdialog,
+ * Punkte werden in der Fläche gesetzt, verschoben und (mit Entf) entfernt.
+ */
+function Entwurfsuebersicht({
   k,
   flaeche,
   bezug,
-  onWerkzeug,
 }: {
   k: Leitungskontext;
   flaeche: Bearbeitungsflaeche;
   bezug: Pick<Wandbezug, "anfangLinks" | "laengeMm" | "wandId"> | undefined;
-  onWerkzeug: (w: "leitung" | "zuordnen" | "auswahl") => void;
 }) {
   const p = k.planung;
   const masse = useMasse();
@@ -488,22 +419,7 @@ function Entwurfsfeld({
   if (e === null) return null;
   const w = e.werte;
   const kreis = p.kreisVon(w.circuitId);
-  const darf = p.darfLeitungen && e.status !== "speichert";
-  const aendern = (neu: Leitungswerte) => p.dispatch({ typ: "aendern", werte: neu });
-  const vergleich = kreis === undefined ? null : vorschlagVergleichen(w, kreis);
-  const marke = (feld: "kabeltyp" | "leiterzahl" | "querschnitt") => {
-    const v = vergleich === null ? null : VERGLEICH[vergleich[feld]];
-    return v === null ? undefined : <Marke art={v.art}>{v.text}</Marke>;
-  };
-  const endpunkte = p.endpunkte(w.circuitId);
-  const geraetOption = (id: string | null) => (
-    <option key={id ?? "leer"} value={id ?? ""}>
-      {id === null ? "– noch nicht gewählt –" : p.geraetName(id)}
-    </option>
-  );
   const ergebnis = p.ergebnis;
-  const lokaleFehler = new Map((e.fehler?.eintraege ?? []).map((x) => [x.feld, x.meldung]));
-
   return (
     <section aria-label="Leitungsentwurf" className="flex flex-col gap-2 border-t border-line pt-2 text-small">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -512,15 +428,7 @@ function Entwurfsfeld({
           {kreis !== undefined ? ` · ${p.kreisName(kreis)}` : ""}
         </h4>
         <Marke art={e.fehler !== null ? "gefahr" : p.ungespeichert ? "warnung" : "neutral"}>
-          {e.status === "speichert"
-            ? "Wird gespeichert …"
-            : e.status === "konflikt"
-              ? "Konflikt – nicht gespeichert"
-              : e.fehler !== null
-                ? "Nicht gespeichert"
-                : p.ungespeichert
-                  ? "Ungespeichert"
-                  : "Gespeichert"}
+          {e.status === "speichert" ? "Wird gespeichert …" : e.fehler !== null ? "Nicht gespeichert" : p.ungespeichert ? "Ungespeichert" : "Gespeichert"}
         </Marke>
       </div>
       {p.hinweis !== null && (
@@ -528,119 +436,11 @@ function Entwurfsfeld({
           {p.hinweis}
         </p>
       )}
-      <p className="m-0 text-muted" data-testid="leitung-schritt">
-        {naechsterSchritt(w, ergebnis)}
+      <p className="m-0">
+        {w.startId === null ? "Startgerät noch nicht gewählt" : p.geraetName(w.startId)} → {w.endId === null ? "offen" : p.geraetName(w.endId)}
       </p>
-
-      <UebernahmeFeld id="leitung-label" label="Bezeichnung" wert={w.label} gesperrt={!darf} onUebernehmen={(t) => aendern({ ...w, label: t.trim() })} />
-      <label className={FELD}>
-        <span className={FELD_BESCHRIFTUNG}>Startgerät</span>
-        <select
-          className={eingabefeld({ kompakt: true })}
-          value={w.startId ?? ""}
-          disabled={!darf}
-          onChange={(event) => aendern({ ...w, startId: event.target.value === "" ? null : event.target.value })}
-        >
-          {geraetOption(null)}
-          {endpunkte.filter((g) => g.id !== w.endId).map((g) => geraetOption(g.id))}
-        </select>
-      </label>
-      <label className={FELD}>
-        <span className={FELD_BESCHRIFTUNG}>Endgerät</span>
-        <select
-          className={eingabefeld({ kompakt: true, fehler: lokaleFehler.has("end_device_id") })}
-          value={w.endId ?? ""}
-          disabled={!darf}
-          onChange={(event) => aendern({ ...w, endId: event.target.value === "" ? null : event.target.value })}
-        >
-          {geraetOption(null)}
-          {endpunkte.filter((g) => g.id !== w.startId).map((g) => geraetOption(g.id))}
-        </select>
-        {lokaleFehler.has("end_device_id") && <span className={FELD_FEHLER}>{lokaleFehler.get("end_device_id")}</span>}
-      </label>
-      <p className="m-0 text-muted">
-        Endgeräte: die Verteilung und dem Stromkreis zugeordnete Geräte. Außen montierte Geräte werden noch nicht angeschlossen.
-      </p>
-
-      <fieldset className="m-0 flex flex-col gap-1.5 rounded-ep border border-line p-2">
-        <legend className="px-1 text-label text-muted">Kabelangaben an dieser Leitung</legend>
-        <UebernahmeFeld id="leitung-typ" label="Leitungstyp" wert={w.kabeltyp} gesperrt={!darf} marke={marke("kabeltyp")} onUebernehmen={(t) => aendern({ ...w, kabeltyp: t })} />
-        <UebernahmeFeld id="leitung-leiter" label="Leiterzahl" wert={w.leiterzahl} gesperrt={!darf} marke={marke("leiterzahl")} onUebernehmen={(t) => aendern({ ...w, leiterzahl: t })} />
-        <UebernahmeFeld
-          id="leitung-querschnitt"
-          label="Querschnitt (mm²)"
-          wert={w.querschnitt}
-          gesperrt={!darf}
-          marke={marke("querschnitt")}
-          onUebernehmen={(t) => aendern({ ...w, querschnitt: t })}
-        />
-        {(lokaleFehler.has("conductor_count") || lokaleFehler.has("cross_section_mm2")) && (
-          <span className={FELD_FEHLER}>{lokaleFehler.get("conductor_count") ?? lokaleFehler.get("cross_section_mm2")}</span>
-        )}
-        <p className="m-0 text-muted">Angaben der Elektrofachkraft – ElektroPlan prüft und bemisst nichts.</p>
-      </fieldset>
-
-      <fieldset className="m-0 grid grid-cols-1 gap-1.5 rounded-ep border border-line p-2">
-        <legend className="px-1 text-label text-muted">Zugaben (ausdrücklich je Leitung)</legend>
-        <MassFeld id="leitung-zugabe-start" label="Zugabe am Start" wertMm={w.startzugabeMm} gesperrt={!darf} onUebernehmen={(mm) => zugabe(mm, (v) => aendern({ ...w, startzugabeMm: v }))} />
-        <MassFeld id="leitung-zugabe-ende" label="Zugabe am Ende" wertMm={w.endzugabeMm} gesperrt={!darf} onUebernehmen={(mm) => zugabe(mm, (v) => aendern({ ...w, endzugabeMm: v }))} />
-        {w.reserveProzent === null ? (
-          <MassFeld id="leitung-reserve" label="Reserve" wertMm={w.reserveMm} gesperrt={!darf} onUebernehmen={(mm) => zugabe(mm, (v) => aendern({ ...w, reserveMm: v }))} />
-        ) : (
-          // Prozentreserve (Phase 6c V1): bleibt erhalten; eine feste Reserve ersetzt sie nur ausdrücklich.
-          <p className="m-0 flex flex-wrap items-center gap-1.5" data-testid="leitung-reserve-prozent">
-            Reserve {w.reserveProzent.replace(".", ",")} % der geometrischen Länge
-            <button type="button" className={knopf("einfach", { klein: true })} disabled={!darf} onClick={() => aendern({ ...w, reserveProzent: null, reserveMm: 0 })}>
-              Feste Reserve eingeben
-            </button>
-          </p>
-        )}
-      </fieldset>
-
-      <div>
-        <h5 className="m-0 mb-1">Wegpunkte ({w.wegpunkte.length})</h5>
-        {w.wegpunkte.length === 0 ? (
-          <p className="m-0 text-muted">Noch kein Wegpunkt gesetzt.</p>
-        ) : (
-          <ol className="m-0 flex flex-col gap-0.5 pl-[22px]" aria-label="Wegpunkte">
-            {w.wegpunkte.map((wp, i) => {
-              const bearbeitbar = inAnsichtBearbeitbar(wp, flaeche.art === "grundriss");
-              return (
-                <li key={i}>
-                  <span className="flex flex-wrap items-center gap-1.5">
-                    <button
-                      type="button"
-                      className={e.auswahl === i ? LISTENKNOPF_GEWAEHLT : LISTENKNOPF}
-                      aria-current={e.auswahl === i ? "true" : undefined}
-                      onClick={() => p.dispatch({ typ: "auswaehlen", auswahl: e.auswahl === i ? null : i })}
-                    >
-                      {WEGPUNKTART_LABEL[wp.art]} · {wegpunktText(wp, k, bezug, masse.anzeigen)}
-                    </button>
-                    {!bearbeitbar && <Marke art="neutral">im Grundriss bearbeiten – bleibt hier unverändert</Marke>}
-                    {bearbeitbar && darf && (
-                      <button
-                        type="button"
-                        className={knopf("einfach", { klein: true })}
-                        aria-label={`Wegpunkt ${i + 1} entfernen`}
-                        onClick={() => p.dispatch({ typ: "aendern", werte: wegpunktEntfernen(w, i), auswahl: null })}
-                      >
-                        Entfernen
-                      </button>
-                    )}
-                  </span>
-                </li>
-              );
-            })}
-          </ol>
-        )}
-        <p className="m-0 mt-1 text-muted">
-          Ein neuer Punkt folgt dem gewählten Wegpunkt, sonst kommt er ans Ende. Fußboden-, Bodenübergangs- und Steigwegpunkte
-          werden im Grundriss bearbeitet; in Wand- und Deckenansicht bleiben sie unverändert erhalten.
-        </p>
-      </div>
-
       {ergebnis !== null && (
-        <div className="border-t border-line pt-2" role="group" aria-label="Ergebnis der Leitung">
+        <>
           <Laengenangabe
             status={ergebnis.status}
             geometrischMm={ergebnis.geometrischMm}
@@ -650,94 +450,34 @@ function Entwurfsfeld({
             reserveOffen={ergebnis.reserveOffen}
           />
           <Befundliste befunde={ergebnis.befunde} />
-        </div>
+        </>
       )}
-
-      {/* Rückmeldung zum Speichern direkt an den Knöpfen - sonst läge sie außerhalb des sichtbaren Bereichs. */}
-      {e.fehler !== null && (
-        <div className={meldungsflaeche()} role="alert">
-          <p className="m-0">{e.fehler.meldung}</p>
-          {e.fehler.eintraege.length > 0 && (
-            <ul className="my-1 pl-[18px]">
-              {e.fehler.eintraege.map((x, i) => (
-                <li key={`${x.code}-${i}`}>{x.meldung}</li>
-              ))}
-            </ul>
-          )}
-          <div className={KNOPFZEILE}>
-            {e.status === "konflikt" && (
-              <button type="button" className={knopf("neutral", { klein: true })} onClick={() => void p.verwerfenUndNeuLaden()}>
-                Entwurf verwerfen und Serverstand laden
-              </button>
-            )}
-            <button type="button" className={knopf("neutral", { klein: true })} onClick={() => p.dispatch({ typ: "hinweis-schliessen" })}>
-              {e.status === "konflikt" ? "Entwurf vorerst behalten" : "Hinweis schließen"}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {p.darfLeitungen && (
-        <div className={KNOPFZEILE}>
-          <button type="button" className={knopf("primaer")} disabled={!p.ungespeichert || e.status === "speichert"} onClick={() => void p.speichern()}>
-            Leitung speichern
-          </button>
-          <button type="button" className={knopf()} disabled={!p.ungespeichert || e.status === "speichert"} onClick={() => p.dispatch({ typ: "verwerfen" })}>
-            Änderungen verwerfen
-          </button>
-          <button type="button" className={knopf()} disabled={e.status === "speichert"} onClick={() => void k.leitungSchliessen().then((ok) => ok && onWerkzeug("auswahl"))}>
-            Entwurf schließen
-          </button>
-        </div>
-      )}
-      <Arbeitsflaechen k={k} flaeche={flaeche} />
-      <details className="text-[0.85rem] text-muted">
-        <summary className="cursor-pointer">Modellgrenzen</summary>
-        <p className="m-0">
-          Gemessen wird auf der Wandachse; Übergänge über Ecken, zur Decke und durch Durchführungen haben die Länge 0. Keine
-          Wegfindung, keine Bemessung, keine Normaussage. Hilfslinien sind eine unverbindliche Planungshilfe. Außen- und
-          gebäudeübergreifende Leitungen sind nicht vorgesehen.
+      <div>
+        <h5 className="m-0 mb-1">Wegpunkte ({w.wegpunkte.length})</h5>
+        {w.wegpunkte.length === 0 ? (
+          <p className="m-0 text-muted">Noch kein Wegpunkt gesetzt.</p>
+        ) : (
+          <ol className="m-0 flex flex-col gap-0.5 pl-[22px]" aria-label="Wegpunkte">
+            {w.wegpunkte.map((wp, i) => (
+              <li key={i}>
+                <button
+                  type="button"
+                  className={e.auswahl === i ? LISTENKNOPF_GEWAEHLT : LISTENKNOPF}
+                  aria-current={e.auswahl === i ? "true" : undefined}
+                  onClick={() => p.dispatch({ typ: "auswaehlen", auswahl: e.auswahl === i ? null : i })}
+                >
+                  {WEGPUNKTART_LABEL[wp.art]} · {wegpunktText(wp, k, bezug, masse.anzeigen)}
+                </button>
+              </li>
+            ))}
+          </ol>
+        )}
+        <p className="m-0 mt-1 text-muted">
+          Neue Punkte kommen immer ans Ende. Ein gewählter Punkt lässt sich in der Fläche ziehen, mit den Pfeiltasten verschieben und
+          mit Entf entfernen.{flaeche.art === "grundriss" ? "" : " Fußboden-, Bodenübergangs- und Steigwegpunkte bearbeitet der Grundriss."}
         </p>
-      </details>
-    </section>
-  );
-}
-
-function zugabe(mm: number, setzen: (v: number) => void): string | undefined {
-  if (!Number.isInteger(mm) || mm < 0 || mm > 20000) return "Zugaben liegen zwischen 0 und 20 m.";
-  setzen(mm);
-  return undefined;
-}
-
-/** Wechsel der Arbeitsfläche im selben Entwurf - nichts wird gespeichert oder verworfen. */
-function Arbeitsflaechen({ k, flaeche }: { k: Leitungskontext; flaeche: Bearbeitungsflaeche }) {
-  const p = k.planung;
-  if (flaeche.art === "grundriss") return null;
-  const raum = p.vorbereitet?.raeume.get(flaeche.raumId);
-  if (raum === undefined) return null;
-  const wand = flaeche.art === "wand" ? raum.waende.findIndex((x) => x.id === flaeche.wandId) : -1;
-  const n = raum.waende.length;
-  const ziele: { label: string; ziel: Arbeitsflaeche }[] = [];
-  if (flaeche.art === "wand" && wand >= 0) {
-    const vor = raum.waende[(wand - 1 + n) % n];
-    const nach = raum.waende[(wand + 1) % n];
-    if (vor !== undefined) ziele.push({ label: `${k.wandName(vor.id)} (Ecke am Wandanfang)`, ziel: { art: "wand", raumId: raum.id, wandId: vor.id } });
-    if (nach !== undefined && nach.id !== vor?.id) ziele.push({ label: `${k.wandName(nach.id)} (Ecke am Wandende)`, ziel: { art: "wand", raumId: raum.id, wandId: nach.id } });
-    ziele.push({ label: "Decke dieses Raums", ziel: { art: "decke", raumId: raum.id } });
-  } else {
-    raum.waende.forEach((x) => ziele.push({ label: k.wandName(x.id), ziel: { art: "wand", raumId: raum.id, wandId: x.id } }));
-  }
-  return (
-    <details className="text-small">
-      <summary className="cursor-pointer">Arbeitsfläche wechseln (Entwurf bleibt erhalten)</summary>
-      <div className="mt-1 flex flex-wrap gap-1">
-        {ziele.map((z) => (
-          <button key={z.label} type="button" className={knopf("neutral", { klein: true })} onClick={() => k.arbeitsflaecheWechseln(z.ziel)}>
-            {z.label}
-          </button>
-        ))}
       </div>
-    </details>
+    </section>
   );
 }
 

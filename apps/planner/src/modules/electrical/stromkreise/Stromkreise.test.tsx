@@ -219,8 +219,29 @@ describe("Verteilungen und Stromkreise", () => {
         rcd_group: null,
         phase_count: null,
         note: null,
+        // Phase 6c: Vorrang der Stromkreisvorgabe nur ausdrücklich - Standard aus.
+        proposal_overrides_templates: false,
       },
     });
+  });
+
+  it("Vorrang der Stromkreisvorgabe nur ausdrücklich; unvollständig wird beim Aktivieren benannt (6c, F1)", async () => {
+    api.post.mockResolvedValue(kreis("f3", "hv", "F3", []));
+    zeigen();
+    await geladen();
+    fireEvent.click(within(screen.getByRole("region", { name: "Verteilung HV" })).getByRole("button", { name: "Stromkreis anlegen" }));
+    const dialog = await screen.findByRole("dialog");
+    const vorrang = within(dialog).getByLabelText("Für neue Leitungen dieses Stromkreises diese Kabelvorgabe verwenden");
+    expect(vorrang).not.toBeChecked();
+    expect(within(dialog).getByTestId("kreis-vorrang-hinweis")).toHaveTextContent("Nicht aktiviert");
+    fireEvent.change(within(dialog).getByLabelText(/^Bezeichnung/), { target: { value: "F3" } });
+    fireEvent.change(within(dialog).getByLabelText(/^Name/), { target: { value: "Bad" } });
+    fireEvent.change(within(dialog).getByLabelText("Leitungstyp (Vorschlag)"), { target: { value: "TEST-K" } });
+    fireEvent.click(vorrang);
+    expect(within(dialog).getByTestId("kreis-vorrang-unvollstaendig")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(api.post).toHaveBeenCalled());
+    expect((api.post.mock.calls[0]?.[1] as { body: Record<string, unknown> }).body).toMatchObject({ proposed_cable_type: "TEST-K", proposal_overrides_templates: true });
   });
 
   it("verweigert das Entfernen einer Verteilung mit Stromkreisen verständlich und fragt beim Stromkreis nach", async () => {
