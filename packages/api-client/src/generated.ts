@@ -1260,19 +1260,53 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Geraetetypen des Systemkatalogs
-         * @description Der ausgelieferte Geraetekatalog (Phase 5) in Katalogreihenfolge.
+         * Geraetetypen: Systemkatalog und eigene Typen des Betriebs
+         * @description Systemtypen und eigene Typen des Betriebs (K2) in Katalogreihenfolge.
          *
-         *     Global fuer alle Betriebe; deaktivierte Typen stehen mit ``is_active =
-         *     false`` dabei, damit vorhandene Geraete benannt werden koennen.
+         *     Typen anderer Betriebe erscheinen nie. Deaktivierte Typen stehen mit ``is_active =
+         *     false`` dabei, damit vorhandene Geraete benannt werden koennen. Die Verweiszahlen
+         *     gelten im eigenen Betrieb.
          */
         get: operations["listElectricalDeviceTypes"];
         put?: never;
-        post?: never;
+        /**
+         * Eigenen Geraetetyp anlegen
+         * @description Legt einen betriebseigenen Typ an (K2, ADR 0030). Schluessel und Betrieb vergibt der Server.
+         *
+         *     Kategorie nie ``distribution``; Symbol nur aus der mitgelieferten Liste. Betriebsweit -
+         *     unabhaengig vom Status eines Projekts.
+         */
+        post: operations["createElectricalDeviceType"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/modules/electrical/device-types/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Eigenen Geraetetyp entfernen
+         * @description Nur ohne Geraete und Vorlagen je Typ (sonst ``409 device-type-in-use`` - deaktivieren).
+         */
+        delete: operations["deleteElectricalDeviceType"];
+        options?: never;
+        head?: never;
+        /**
+         * Eigenen Geraetetyp aendern
+         * @description Aendert einen eigenen Typ (``If-Match``). Verwendet: Kategorie und Planungsmass gesperrt
+         *     (``409 device-type-in-use``), belegte Montageflaeche bleibt (``device-type-surface-in-use``).
+         *     Systemtypen: ``409 device-type-system``.
+         */
+        patch: operations["updateElectricalDeviceType"];
         trace?: never;
     };
     "/api/v1/modules/electrical/rooms/{room_id}/walls": {
@@ -3264,24 +3298,83 @@ export interface components {
             updated_at: string;
         };
         /**
+         * DeviceTypeCreate
+         * @description Neuer eigener Typ. Schluessel und Betrieb vergibt der Server.
+         */
+        DeviceTypeCreate: {
+            /** Label */
+            label: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "socket" | "switch" | "light" | "data" | "junction" | "connection";
+            /** Symbol Key */
+            symbol_key: string;
+            /**
+             * Allows Wall Interior
+             * @default false
+             */
+            allows_wall_interior: boolean;
+            /**
+             * Allows Wall Exterior
+             * @default false
+             */
+            allows_wall_exterior: boolean;
+            /**
+             * Allows Ceiling
+             * @default false
+             */
+            allows_ceiling: boolean;
+            /** Default Center Height Mm */
+            default_center_height_mm?: number | null;
+            /** Width Mm */
+            width_mm: number;
+            /** Height Mm */
+            height_mm: number;
+            /**
+             * Sort Order
+             * @default 1000
+             */
+            sort_order: number;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
+        };
+        /**
          * DeviceTypeOut
-         * @description Ein Geraetetyp des Systemkatalogs.
+         * @description Ein Geraetetyp: Systemtyp oder betriebseigener Typ (K2, ADR 0030).
          *
          *     ``width_mm``/``height_mm`` sind das **Planungsmass** fuer die
          *     Platzierungspruefung (an der Wand Breite x Hoehe, an der Decke in x und y)
          *     - keine Herstellerangabe. ``default_center_height_mm`` ist ein Startwert,
          *     keine Normvorgabe. ``is_active = false``: nicht mehr fuer neue Geraete.
+         *
+         *     ``origin``: ``system`` (Seed, unveraenderlich) oder ``organization`` (eigener Typ).
+         *     ``device_count``/``template_count``: Verweise **im eigenen Betrieb** - ein eigener Typ
+         *     mit Verweisen ist „verwendet“ (Kategorie und Planungsmass gesperrt).
          */
         DeviceTypeOut: {
             /** Key */
             key: string;
+            /**
+             * Origin
+             * @enum {string}
+             */
+            origin: "system" | "organization";
             /** Label */
             label: string;
+            /** Description */
+            description: string | null;
             /**
              * Category
              * @enum {string}
              */
-            category: "socket" | "switch" | "light" | "data" | "distribution" | "junction";
+            category: "socket" | "switch" | "light" | "data" | "distribution" | "junction" | "connection";
             /** Symbol Key */
             symbol_key: string;
             /** Allows Wall Interior */
@@ -3300,6 +3393,12 @@ export interface components {
             sort_order: number;
             /** Is Active */
             is_active: boolean;
+            /** Version */
+            version: number;
+            /** Device Count */
+            device_count: number;
+            /** Template Count */
+            template_count: number;
         };
         /** DeviceTypeTemplateIn */
         DeviceTypeTemplateIn: {
@@ -3320,6 +3419,36 @@ export interface components {
              * Format: uuid
              */
             cable_template_id: string;
+        };
+        /**
+         * DeviceTypeUpdate
+         * @description Teilaenderung (``If-Match``). Verwendete Typen: Kategorie und Planungsmass gesperrt.
+         */
+        DeviceTypeUpdate: {
+            /** Label */
+            label?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Category */
+            category?: ("socket" | "switch" | "light" | "data" | "junction" | "connection") | null;
+            /** Symbol Key */
+            symbol_key?: string | null;
+            /** Allows Wall Interior */
+            allows_wall_interior?: boolean | null;
+            /** Allows Wall Exterior */
+            allows_wall_exterior?: boolean | null;
+            /** Allows Ceiling */
+            allows_ceiling?: boolean | null;
+            /** Default Center Height Mm */
+            default_center_height_mm?: number | null;
+            /** Width Mm */
+            width_mm?: number | null;
+            /** Height Mm */
+            height_mm?: number | null;
+            /** Sort Order */
+            sort_order?: number | null;
+            /** Is Active */
+            is_active?: boolean | null;
         };
         /**
          * DirectoryEntryOut
@@ -8997,6 +9126,143 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeviceTypeOut"][];
+                };
+            };
+        };
+    };
+    createElectricalDeviceType: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceTypeCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceTypeOut"];
+                };
+            };
+            /** @description Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    deleteElectricalDeviceType: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Nicht gefunden (auch: Typ eines anderen Betriebs) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, Systemtyp, verwendeter Typ (gesperrte Angabe) oder belegte Flaeche */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    updateElectricalDeviceType: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceTypeUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceTypeOut"];
+                };
+            };
+            /** @description Nicht gefunden (auch: Typ eines anderen Betriebs) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Versionskonflikt, Systemtyp, verwendeter Typ (gesperrte Angabe) oder belegte Flaeche */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
                 };
             };
         };

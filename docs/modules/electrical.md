@@ -158,7 +158,26 @@ mm, vereinfachtes Rahmen-/Auslassmaß – Grundlage der Prüfung), Standard-Mont
 (Startwert, keine Normvorgabe), Symbolschlüssel, Reihenfolge, `is_active`. Kein Herstellerartikel,
 keine Materialposition, kein ServiceTemplate (folgt mit Phase 7/8). Gepflegt nur vom
 idempotenten Seed (`reference_data.py`, Contract `ReferenceDataSeeder`); entfallene Typen werden
-deaktiviert, nie gelöscht. Betriebseigene Typen: nicht in Phase 5.
+deaktiviert, nie gelöscht.
+
+**Seit 6c K2 (ADR 0030, Migration `0015`) ein Katalog mit Geltungsbereich:** `organization_id` NULL =
+Systemtyp (Seed, unveränderlich), sonst **eigener Typ** eines Betriebs mit serververgebenem Schlüssel
+`c_<32 hex>`; dazu `description`, `version`, Zeitstempel. CHECK `key_scope` bindet Präfix und Eigentümer,
+CHECK `custom_not_distribution` schließt die Verteilung für eigene Typen aus; ein Trigger macht Schlüssel und
+Eigentümer unveränderlich; Name eindeutig unter aktiven eigenen Typen je Betrieb (`lower(label)`).
+Referenzierende Tabellen (`electrical_devices`, `electrical_type_templates`,
+`electrical_proj_type_templates`) tragen die berechnete Spalte `device_type_org_id` (`CASE WHEN
+device_type_key LIKE 'c\_%' THEN organization_id END`, stored) mit zusammengesetztem FK auf
+`(organization_id, key)` – die Datenbank verhindert Verweise auf fremde eigene Typen; für Systemtypen ist die
+Spalte NULL. Alle Lesepfade (Katalog, Typauflösung, Meldungstexte, Geräteprüfung, Mengen, Vorgaben) filtern
+auf „System oder eigener Betrieb“. Neue Kategorie **`connection` „Geräteanschluss/Festanschluss“** mit
+Systemtyp `device_connection` (Wand innen und Decke, 80 × 80 mm, Mitte 300 mm): zuordenbar, Gerätezugabe,
+Vorlage je Typ, Symbol `connection_outlet`.
+
+**Bestandsschutz:** Verwendet (Gerät oder Vorlage je Typ verweist) → Kategorie und Planungsmaß gesperrt
+(`409 device-type-in-use`), eine Fläche mit Geräten nicht abwählbar (`409 device-type-surface-in-use`);
+Entfernen nur ohne Verweis, sonst deaktivieren. **Sperren:** Jeder Verwendungsweg sperrt eigene Typen
+`FOR KEY SHARE` (`lock_device_types_for_use`), Ändern/Entfernen sperrt `FOR UPDATE` und zählt erst danach.
 
 ### `electrical_devices` — umgesetzt (Phase 5, ADR 0023)
 Gerät eines Raums mit dauerhaft gespeicherter **Montagefläche** und **Gerätemitte**:
@@ -359,7 +378,8 @@ Meter × Minuten-pro-Meter des Verlegeart-Schlüssels.
 | `electrical.circuit.write` | Verteilungen, Stromkreise, Gerätezuordnung bearbeiten | **registriert (Phase 6b.0)**, Rolle Planer |
 | `electrical.route.write` | Leitungen, Wegpunkte, Durchführungen bearbeiten, Leitungsunterbrechungen bestätigen; seit 6c V1 auch die Projektvorgabe | **registriert (Phase 6b.3)**, Rolle Planer |
 | `electrical.defaults.manage` | Betriebsstandard, Kabelvorlagen und Vorlage je Gerätetyp pflegen | **registriert (Phase 6c V1, ADR 0027)**, keine Standardrolle – nur Administrator |
-| `electrical.settings.write` | Gerätetypen und Zonen-Standardwerte pflegen | offen – der Gerätekatalog ist in Phase 5 ein Systemkatalog aus dem Seed |
+| `electrical.device_types.manage` | eigene Gerätetypen anlegen, bearbeiten, (de)aktivieren, entfernen | **registriert (Phase 6c K2, ADR 0030)**, keine Standardrolle – nur Administrator; Auswahl und Platzierung weiter mit `plan.write` |
+| `electrical.settings.write` | Zonen-Standardwerte pflegen | offen |
 
 Phase 3 registriert bewusst nur **zwei** Schlüssel: ansehen und bearbeiten. Wer die
 Kontur eines Raums erfassen darf, darf auch die Öffnungen darin erfassen — eine feinere
@@ -487,6 +507,19 @@ Name, dann ID; Wände nach `sort_order`, dann ID).
 GET    /device-types                       Systemkatalog (aktiv und deaktiviert)
 PUT    /rooms/{room_id}/contour            zusätzlich devices (vollständig) + removed_device_ids
 ```
+
+**Seit 6c K2 (ADR 0030):** `GET /device-types` liefert Systemtypen und die eigenen Typen des Betriebs mit
+`origin` (`system`/`organization`), `description`, `version`, `device_count`, `template_count`.
+
+```
+POST   /device-types                       eigenen Typ anlegen (201; Schlüssel vergibt der Server)
+PATCH  /device-types/{key}                 If-Match; Feldsperren bei Verwendung (409 device-type-in-use)
+DELETE /device-types/{key}                 If-Match; nur ohne Verweis (sonst 409 device-type-in-use)
+```
+
+Alle drei mit `electrical.device_types.manage`. Systemtyp: `409 device-type-system`; fremder oder unbekannter
+Schlüssel: `404`. Symbole nur aus `SYMBOL_KEYS` ohne Verteilungssymbol (`device-type-symbol-unknown`);
+gemeinsame Prüfdatei `testdata/katalog/symbole.v1.json`.
 
 Geräte haben **keinen eigenen Schreibendpunkt**: Sie werden mit dem Raumentwurf unter der
 Raumversion gespeichert – Geometrie und Geräte gemeinsam. Fehlt `devices`, bleiben sie
@@ -1027,6 +1060,13 @@ Ansicht. Verschoben wird nur in Wand- bzw. Deckenansicht.
 nicht platzierbar. Im Grundriss folgt die Wand- bzw. Raumwahl, dann das Werkzeug der passenden Fläche.
 „Typ ändern …“ nutzt denselben Dialog. „Verteilung“ ist keine Kachel; „Verteilung platzieren …“ führt in VP.
 Details: [`geraetekatalog-design.md`](../geraetekatalog-design.md) §11.
+
+**Eigene Gerätetypen (6c, K2):** Mit `electrical.device_types.manage` führt „Eigenen Typ anlegen …“ im selben
+Katalogdialog zum Formular (`geraete/TypFormular.tsx`); danach ist der neue Typ gewählt und fokussiert,
+„Abbrechen“ behält Auswahl und Entwurf. Eigene Typen sind als „eigen“ markiert. Auf „Elektro-Vorgaben“
+verwaltet der Abschnitt „Gerätetypen“ sie (Bearbeiten, Als neuen Typ anlegen, (De-)Aktivieren, Entfernen nur
+unbenutzt); Systemtypen dort nur zum Kopieren. Nach jeder Änderung wird der Katalogschlüssel neu geladen.
+Details: [`geraetekatalog-design.md`](../geraetekatalog-design.md) §12.
 
 **Wandansicht:** Werkzeug „Gerät“ (G, Typ aus dem Katalog) nur mit den auf dieser Seite zulässigen Typen; die
 betrachtete Seite ist die Montagefläche (innen = `wall_interior`, außen = `wall_exterior`).

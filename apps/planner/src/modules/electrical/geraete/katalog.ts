@@ -1,7 +1,8 @@
 /**
  * Gerätekatalog (Phase 5, ADR 0023) - geladen vom Server, nie im Browser erfunden.
  *
- * Der Katalog ist ein Systemkatalog des Servers (`GET …/device-types`). Hier
+ * Der Katalog kommt vom Server (`GET …/device-types`): Systemtypen und seit K2
+ * (ADR 0030) die eigenen Typen des Betriebs. Hier
  * stehen nur die Abfrage und die deutschen Bezeichnungen der Flächen und
  * Kategorien - an genau einer Stelle, damit Wand-, Decken-, Grundriss- und
  * 3D-Ansicht dieselben Wörter benutzen.
@@ -21,8 +22,9 @@ export function katalogSchluessel() {
 export function katalogAbfrage(api: ApiClient) {
   return {
     queryKey: katalogSchluessel(),
-    queryFn: () => api.get("/api/v1/modules/electrical/device-types"),
-    // Der Katalog ändert sich nur mit einem Seed - nicht während einer Sitzung.
+    queryFn: ({ signal }: { signal: AbortSignal }) => api.get("/api/v1/modules/electrical/device-types", { signal }),
+    // Systemtypen ändern sich nur mit einem Seed; eigene Typen (K2) invalidieren den Schlüssel
+    // nach jeder Änderung selbst.
     staleTime: 10 * 60 * 1000,
   };
 }
@@ -45,9 +47,24 @@ export const KATEGORIE_LABEL: Record<Geraetekategorie, string> = {
   // Phase 6b.0 (ADR 0026): Lage einer Verteilung und Abzweigdose - Geräte wie alle anderen.
   distribution: "Verteilungen",
   junction: "Abzweigdosen",
+  // Phase 6c K2 (ADR 0030): fest angeschlossene Verbraucher (Herd, Durchlauferhitzer …).
+  connection: "Geräteanschluss/Festanschluss",
 };
 
-export const KATEGORIEN: readonly Geraetekategorie[] = ["socket", "switch", "light", "data", "distribution", "junction"];
+export const KATEGORIEN: readonly Geraetekategorie[] = ["socket", "switch", "light", "data", "distribution", "junction", "connection"];
+
+/** Kategorien für eigene Typen (K2) – nie die Verteilung (Spiegel von `CUSTOM_TYPE_CATEGORIES`). */
+export const EIGENE_KATEGORIEN: readonly Exclude<Geraetekategorie, "distribution">[] = ["socket", "switch", "light", "data", "junction", "connection"];
+
+/** Eigener Typ des Betriebs (K2) – sonst ein Systemtyp des Katalogs. */
+export function istEigenerTyp(typ: Pick<Geraetetyp, "origin">): boolean {
+  return typ.origin === "organization";
+}
+
+/** Verwendet: Geräte oder Vorlagenzuordnungen verweisen darauf – Kategorie und Planungsmaß gesperrt. */
+export function istVerwendet(typ: Pick<Geraetetyp, "device_count" | "template_count">): boolean {
+  return typ.device_count > 0 || typ.template_count > 0;
+}
 
 export function erlaubt(typ: Geraetetyp, flaeche: Montageflaeche): boolean {
   return flaeche === "ceiling" ? typ.allows_ceiling : flaeche === "wall_exterior" ? typ.allows_wall_exterior : typ.allows_wall_interior;

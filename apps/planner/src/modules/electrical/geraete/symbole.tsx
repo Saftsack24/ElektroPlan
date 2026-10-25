@@ -134,6 +134,33 @@ const ZEICHNUNGEN: Record<string, () => ReactNode> = {
       <circle cx={12} cy={12} r={2} {...FLAECHE} />
     </>
   ),
+  // Phase 6c K2: Geräteanschluss/Festanschluss als Kasten mit abgehender Anschlussleitung.
+  connection_outlet: () => (
+    <>
+      <rect x={5} y={5} width={14} height={11} rx={1.5} {...LINIE} />
+      <path d="M8.5 10.5H15.5M12 16V21M9 21H15" {...LINIE} />
+    </>
+  ),
+};
+
+/** Deutsche Namen der Zeichnungen – für die kontrollierte Symbolauswahl eigener Typen (K2). */
+export const SYMBOL_LABEL: Readonly<Record<string, string>> = {
+  socket_single: "Steckdose",
+  socket_double: "Steckdose zweifach",
+  socket_triple: "Steckdose dreifach",
+  socket_outdoor: "Steckdose außen",
+  switch_single: "Schalter",
+  switch_two_way: "Wechselschalter",
+  switch_series: "Serienschalter",
+  light_ceiling: "Deckenleuchte",
+  light_recessed: "Einbauleuchte",
+  light_wall: "Wandleuchte",
+  light_outdoor: "Außenleuchte",
+  data_single: "Netzwerkdose",
+  data_double: "Netzwerkdose zweifach",
+  distribution_board: "Verteilung",
+  junction_box: "Abzweigdose",
+  connection_outlet: "Geräteanschluss",
 };
 
 /** Rückfall je Kategorie für einen unbekannten Symbolschlüssel. */
@@ -144,7 +171,13 @@ const KATEGORIE_ZEICHNUNG: Record<Geraetekategorie, string> = {
   data: "data_single",
   distribution: "distribution_board",
   junction: "junction_box",
+  connection: "connection_outlet",
 };
+
+/** Symbol, mit dem ein neuer eigener Typ einer Kategorie startet (K2). */
+export function symbolFuerKategorie(kategorie: Geraetekategorie): string {
+  return KATEGORIE_ZEICHNUNG[kategorie];
+}
 
 function zeichnung(symbolKey: string, kategorie: Geraetekategorie | undefined): ReactNode {
   const z = ZEICHNUNGEN[symbolKey] ?? ZEICHNUNGEN[KATEGORIE_ZEICHNUNG[kategorie ?? "socket"]];
@@ -220,7 +253,10 @@ export function Geraetelegende({ typen }: { typen: Geraetetypen }) {
   );
 }
 
-/** Für Tests: alle Symbolschlüssel, die eine eigene Zeichnung haben. */
+/** Alle Symbolschlüssel mit eigener Zeichnung – zugleich die kontrollierte Auswahl (K2). */
 export const SYMBOLSCHLUESSEL: readonly string[] = Object.keys(ZEICHNUNGEN);
+
+/** Symbole für eigene Typen: ohne Verteilung (die ist nie ein eigener Typ). */
+export const WAEHLBARE_SYMBOLE: readonly string[] = SYMBOLSCHLUESSEL.filter((k) => k !== "distribution_board");
 
 export type { Geraetetypen };

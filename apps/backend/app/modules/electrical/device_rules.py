@@ -35,10 +35,11 @@ import uuid
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, or_, select
 from sqlalchemy.orm import Session
 
 from app.errors import ProblemFieldError, ValidationFailedError
+from app.modules.electrical.catalog import CUSTOM_TYPE_KEY_PREFIX
 from app.modules.electrical.devices import (
     DeviceFinding,
     DeviceTypeSpec,
@@ -65,14 +66,53 @@ DeviceBaseline = dict[tuple[str, ...], Severity]
 WORSENED = " Der bestehende Konflikt wuerde dadurch groesser."
 
 
-def load_device_types(session: Session) -> dict[str, ElectricalDeviceType]:
-    """Alle Typen des Systemkatalogs nach Schluessel (aktiv und deaktiviert)."""
+def visible_device_types(organization_id: uuid.UUID) -> ColumnElement[bool]:
+    """Sichtbar sind Systemtypen und die eigenen Typen dieses Betriebs (ADR 0030)."""
+    return or_(
+        ElectricalDeviceType.organization_id.is_(None),
+        ElectricalDeviceType.organization_id == organization_id,
+    )
+
+
+def load_device_types(
+    session: Session, organization_id: uuid.UUID
+) -> dict[str, ElectricalDeviceType]:
+    """Systemtypen und eigene Typen des Betriebs nach Schluessel (aktiv und deaktiviert).
+
+    Typen anderer Betriebe erscheinen nie - auch nicht in Fehlertexten, Pruefungen
+    oder Mengen, die diesen Katalog lesen.
+    """
     rows = session.execute(
-        select(ElectricalDeviceType).order_by(
-            ElectricalDeviceType.sort_order.asc(), ElectricalDeviceType.key.asc()
-        )
+        select(ElectricalDeviceType)
+        .where(visible_device_types(organization_id))
+        .order_by(ElectricalDeviceType.sort_order.asc(), ElectricalDeviceType.key.asc())
     ).scalars()
     return {row.key: row for row in rows}
+
+
+def lock_device_types_for_use(
+    session: Session, organization_id: uuid.UUID, keys: Iterable[str]
+) -> None:
+    """Verwendung eines eigenen Typs: dessen Zeile ``FOR KEY SHARE`` sperren (ADR 0030).
+
+    Jeder Weg, der einen eigenen Typ neu verwendet (Geraet im Raumentwurf, Vorlage je
+    Typ), haelt diese Sperre bis zum Commit und liest den Typ erst danach. Die
+    Typverwaltung sperrt dieselbe Zeile ``FOR UPDATE`` und zaehlt die Verweise erst
+    danach - eine Aenderung der gesperrten Angaben und die erste Verwendung koennen sich
+    so nicht ueberholen. Systemtypen aendert nur der Seed; sie brauchen die Sperre nicht.
+    """
+    eigene = sorted({key for key in keys if key.startswith(CUSTOM_TYPE_KEY_PREFIX)})
+    if not eigene:
+        return
+    session.execute(
+        select(ElectricalDeviceType.key)
+        .where(
+            ElectricalDeviceType.organization_id == organization_id,
+            ElectricalDeviceType.key.in_(eigene),
+        )
+        .order_by(ElectricalDeviceType.key.asc())
+        .with_for_update(key_share=True)
+    ).all()
 
 
 def type_specs(types: Mapping[str, ElectricalDeviceType]) -> dict[str, DeviceTypeSpec]:
@@ -302,7 +342,7 @@ class FloorDeviceCheck:
             )
             for room in rooms
         ]
-        types = load_device_types(self.session)
+        types = load_device_types(self.session, self.organization_id)
         # Wandkopplungen (Phase 6a): ``separate`` uebertraegt keine Nachbaroeffnung.
         links = [
             topo_link(link)

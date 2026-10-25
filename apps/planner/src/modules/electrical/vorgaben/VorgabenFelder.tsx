@@ -3,6 +3,7 @@ import { useId } from "react";
 import { useMasse } from "../../../core/ui/masseinheit";
 import { FELD_FEHLER, FORMULARRASTER_BLOCK, FORMULARRASTER_LEGENDE, eingabefeld } from "../../../core/ui/stil";
 import type { Geraetetyp } from "../geraete/katalog";
+import { istEigenerTyp } from "../geraete/katalog";
 import type { Betriebsstandard, Endpunktart, Kabelvorlage, WirksameVorgaben } from "./daten";
 import { ENDPUNKTART_TEXT, herkunftText, prozentAnzeigen, vorlageText } from "./daten";
 import type { Feldname, Formularfehler, Vorgabenformular } from "./formular";
@@ -43,7 +44,7 @@ export function VorgabenFelder({
   fehler: Formularfehler;
   gesperrt: boolean;
   vorlagen: readonly Kabelvorlage[];
-  /** Zuordenbare Gerätetypen (Steckdose, Schalter, Leuchte, Abzweigdose). */
+  /** Zuordenbare Gerätetypen (Steckdose, Schalter, Leuchte, Abzweigdose, Geräteanschluss) – auch eigene (K2); deaktivierte nur mit Zuordnung. */
   typen: readonly Geraetetyp[];
   /** Betriebsstandard - für „Betriebsstandard übernehmen“ in der Projektvorgabe. */
   betrieb?: Betriebsstandard | undefined;
@@ -150,7 +151,7 @@ export function VorgabenFelder({
           )}
           {typen.map((t) =>
             vorlagenwahl(
-              `Gerätetyp ${t.label}`,
+              `Gerätetyp ${t.label}${istEigenerTyp(t) ? " (eigen)" : ""}${t.is_active ? "" : " (deaktiviert)"}`,
               form.typen[t.key] ?? null,
               (v) => onForm(typSetzen(form, t.key, v)),
               `vorgabe-typ-${t.key}`,

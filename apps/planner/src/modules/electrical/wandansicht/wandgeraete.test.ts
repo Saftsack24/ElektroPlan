@@ -21,6 +21,11 @@ const STECKDOSE: Geraetetyp = {
   height_mm: 80,
   sort_order: 10,
   is_active: true,
+  origin: "system",
+  description: null,
+  version: 1,
+  device_count: 0,
+  template_count: 0,
 };
 const AUSSENLEUCHTE: Geraetetyp = { ...STECKDOSE, key: "light_outdoor", label: "Außenleuchte (Wand)", category: "light", allows_wall_interior: false, allows_wall_exterior: true, default_center_height_mm: 2000, width_mm: 100, height_mm: 100 };
 const TYPEN = new Map([STECKDOSE, AUSSENLEUCHTE].map((t) => [t.key, t]));

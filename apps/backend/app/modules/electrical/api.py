@@ -42,6 +42,7 @@ from app.modules.electrical.cabling_summary import (
     CablingSummary,
     StatusBucket,
 )
+from app.modules.electrical.device_types import DeviceTypeService, DeviceTypeView
 from app.modules.electrical.distribution import (
     CircuitView,
     DistributionService,
@@ -55,6 +56,7 @@ from app.modules.electrical.models import ElectricalOpening
 from app.modules.electrical.permissions import (
     CIRCUIT_WRITE,
     DEFAULTS_MANAGE,
+    DEVICE_TYPES_MANAGE,
     PLAN_READ,
     PLAN_WRITE,
     ROUTE_WRITE,
@@ -100,9 +102,12 @@ from app.modules.electrical.schemas import (
     CircuitOut,
     CircuitUpdate,
     DefaultsBasisOut,
+    DeviceCategoryValue,
     DeviceOut,
+    DeviceTypeCreate,
     DeviceTypeOut,
     DeviceTypeTemplateOut,
+    DeviceTypeUpdate,
     DistributionBoardCreate,
     DistributionBoardListOut,
     DistributionBoardOut,
@@ -620,19 +625,128 @@ def replace_contour(
     "/device-types",
     response_model=list[DeviceTypeOut],
     operation_id="listElectricalDeviceTypes",
-    summary="Geraetetypen des Systemkatalogs",
+    summary="Geraetetypen: Systemkatalog und eigene Typen des Betriebs",
 )
 def list_device_types(
     current_user: CurrentUser = Depends(require_permission(PLAN_READ)),
     session: Session = Depends(get_session),
 ) -> list[DeviceTypeOut]:
-    """Der ausgelieferte Geraetekatalog (Phase 5) in Katalogreihenfolge.
+    """Systemtypen und eigene Typen des Betriebs (K2) in Katalogreihenfolge.
 
-    Global fuer alle Betriebe; deaktivierte Typen stehen mit ``is_active =
-    false`` dabei, damit vorhandene Geraete benannt werden koennen.
+    Typen anderer Betriebe erscheinen nie. Deaktivierte Typen stehen mit ``is_active =
+    false`` dabei, damit vorhandene Geraete benannt werden koennen. Die Verweiszahlen
+    gelten im eigenen Betrieb.
     """
-    service = ElectricalRoomService(session, current_user.organization_id)
-    return [DeviceTypeOut.model_validate(row) for row in service.list_device_types()]
+    return [
+        _device_type_out(view)
+        for view in DeviceTypeService(session, current_user.organization_id).list_types()
+    ]
+
+
+_DEVICE_TYPE_WRITE_RESPONSES: dict[int | str, dict[str, object]] = {
+    404: {
+        "model": ProblemDetail,
+        "description": "Nicht gefunden (auch: Typ eines anderen Betriebs)",
+    },
+    409: {
+        "model": ProblemDetail,
+        "description": (
+            "Versionskonflikt, Systemtyp, verwendeter Typ (gesperrte Angabe) oder belegte Flaeche"
+        ),
+    },
+    422: {"model": ProblemDetail, "description": "Eingabe unzulaessig"},
+}
+
+
+def _device_type_out(view: DeviceTypeView) -> DeviceTypeOut:
+    kind = view.kind
+    return DeviceTypeOut(
+        key=kind.key,
+        origin="system" if kind.organization_id is None else "organization",
+        label=kind.label,
+        description=kind.description,
+        category=cast(DeviceCategoryValue, kind.category),
+        symbol_key=kind.symbol_key,
+        allows_wall_interior=kind.allows_wall_interior,
+        allows_wall_exterior=kind.allows_wall_exterior,
+        allows_ceiling=kind.allows_ceiling,
+        default_center_height_mm=kind.default_center_height_mm,
+        width_mm=kind.width_mm,
+        height_mm=kind.height_mm,
+        sort_order=kind.sort_order,
+        is_active=kind.is_active,
+        version=kind.version,
+        device_count=view.device_count,
+        template_count=view.template_count,
+    )
+
+
+@router.post(
+    "/device-types",
+    response_model=DeviceTypeOut,
+    status_code=status.HTTP_201_CREATED,
+    operation_id="createElectricalDeviceType",
+    summary="Eigenen Geraetetyp anlegen",
+    responses={422: _DEVICE_TYPE_WRITE_RESPONSES[422]},
+)
+def create_device_type(
+    payload: DeviceTypeCreate,
+    current_user: CurrentUser = Depends(require_permission(DEVICE_TYPES_MANAGE)),
+    session: Session = Depends(get_session),
+) -> DeviceTypeOut:
+    """Legt einen betriebseigenen Typ an (K2, ADR 0030). Schluessel und Betrieb vergibt der Server.
+
+    Kategorie nie ``distribution``; Symbol nur aus der mitgelieferten Liste. Betriebsweit -
+    unabhaengig vom Status eines Projekts.
+    """
+    view = DeviceTypeService(session, current_user.organization_id).create(payload)
+    session.commit()
+    return _device_type_out(view)
+
+
+@router.patch(
+    "/device-types/{key}",
+    response_model=DeviceTypeOut,
+    operation_id="updateElectricalDeviceType",
+    summary="Eigenen Geraetetyp aendern",
+    responses=_DEVICE_TYPE_WRITE_RESPONSES,
+)
+def update_device_type(
+    key: str,
+    payload: DeviceTypeUpdate,
+    current_user: CurrentUser = Depends(require_permission(DEVICE_TYPES_MANAGE)),
+    session: Session = Depends(get_session),
+    expected_version: int = Depends(require_if_match),
+) -> DeviceTypeOut:
+    """Aendert einen eigenen Typ (``If-Match``). Verwendet: Kategorie und Planungsmass gesperrt
+    (``409 device-type-in-use``), belegte Montageflaeche bleibt (``device-type-surface-in-use``).
+    Systemtypen: ``409 device-type-system``.
+    """
+    view = DeviceTypeService(session, current_user.organization_id).update(
+        key, payload, expected_version=expected_version
+    )
+    session.commit()
+    return _device_type_out(view)
+
+
+@router.delete(
+    "/device-types/{key}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    operation_id="deleteElectricalDeviceType",
+    summary="Eigenen Geraetetyp entfernen",
+    responses=_DEVICE_TYPE_WRITE_RESPONSES,
+)
+def delete_device_type(
+    key: str,
+    current_user: CurrentUser = Depends(require_permission(DEVICE_TYPES_MANAGE)),
+    session: Session = Depends(get_session),
+    expected_version: int = Depends(require_if_match),
+) -> None:
+    """Nur ohne Geraete und Vorlagen je Typ (sonst ``409 device-type-in-use`` - deaktivieren)."""
+    DeviceTypeService(session, current_user.organization_id).delete(
+        key, expected_version=expected_version
+    )
+    session.commit()
 
 
 # ----------------------------------------------------------------------- Wand

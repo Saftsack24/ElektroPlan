@@ -137,10 +137,13 @@ Ergänzt in Phase 5 (Electrical Devices, ADR 0023):
 | Deutsch | Englisch (Code/API) | Anmerkung |
 |---|---|---|
 | Gerät | `device` (`electrical_devices`) | geplantes Elektrogerät eines Raums; kein Herstellerartikel, keine Materialposition |
-| Gerätetyp | `device type` (`electrical_device_types`) | Eintrag des globalen Systemkatalogs, per Seed gepflegt |
-| Eigener Gerätetyp *(Entwurf)* | `organization device type` (`origin = organization`) | betriebseigener Planungstyp im selben Katalog; Rolle nur über die Kategorie, nie „Verteilung“ – Entwurf Gerätekatalog, ADR 0030 proposed |
+| Gerätetyp | `device type` (`electrical_device_types`) | Eintrag des Gerätekatalogs: Systemtyp (per Seed) oder eigener Typ eines Betriebs |
+| Systemtyp | `system device type` (`origin = system`, `organization_id IS NULL`) | mit ElektroPlan ausgelieferter Gerätetyp, nur per Seed gepflegt, nicht änderbar – **6c K2** |
+| Eigener Gerätetyp | `organization device type` (`origin = organization`, Schlüssel `c_…`) | betriebseigener Planungstyp im selben Katalog; Rolle nur über die Kategorie, nie „Verteilung“; verwendet: Kategorie und Planungsmaß gesperrt – **6c K2 umgesetzt** (ADR 0030) |
+| Geräteanschluss/Festanschluss | `connection` | Gerätekategorie für fest angeschlossene Verbraucher (z. B. Herd); zuordenbar, Gerätezugabe, keine Bemessung – **6c K2** |
+| Bestandsschutz (Gerätetyp) | `device-type-in-use` | Sperre von Kategorie, Planungsmaß und belegten Montageflächen eines verwendeten eigenen Typs, damit vorhandene Geräte nie still ihre Bedeutung oder ihr Maß ändern – **6c K2** |
 | Planungsmaß | `width_mm`, `height_mm` | Breite × Höhe eines Gerätetyps für Prüfung und Darstellung; kein Herstellermaß |
-| Gerätekatalog *(Entwurf)* | `device catalog` | Dialog zur Auswahl und Platzierung von Gerätetypen (Suche, Kategorien, Kacheln) – Entwurf K1 |
+| Gerätekatalog | `device catalog` | Dialog zur Auswahl und Platzierung von Gerätetypen (Suche, Kategorien, Kacheln); seit K2 mit „Eigenen Typ anlegen …“ – **6c K1/K2 umgesetzt** |
 | Montagefläche | `mounting_surface`: `wall_interior` / `wall_exterior` / `ceiling` | Wand innen, Fassade außen, Decke – dauerhaft gespeichert |
 | Gerätemitte | `center_offset_mm`, `center_height_mm` bzw. `x_mm`/`y_mm` | Bezugspunkt jeder Gerätelage |
 | Planungsmaß | `width_mm` × `height_mm` des Typs | vereinfachtes Rahmen-/Auslassmaß zur Prüfung, keine Herstellerangabe |

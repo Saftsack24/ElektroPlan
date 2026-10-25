@@ -6,18 +6,20 @@ import { Marke } from "../../../core/ui/Marke";
 import { useMasse } from "../../../core/ui/masseinheit";
 import { useRueckfrage } from "../../../core/ui/Rueckfrage";
 import { KARTENKOPF, KARTENTITEL, TABELLE, TABELLENRAHMEN, karte, knopf, meldungsflaeche } from "../../../core/ui/stil";
-import { katalogAbfrage } from "../geraete/katalog";
+import { istEigenerTyp, katalogAbfrage } from "../geraete/katalog";
 import { ZUORDENBAR, querschnittAnzeigen } from "../stromkreise/daten";
 import type { Kabelvorlage } from "./daten";
 import { VORGABEN_RECHT, betriebsstandardAbfrage, prozentAnzeigen, vorlageText, vorlagenAbfrage, vorlagenSchluessel } from "./daten";
 import { apiFehlerText } from "./fehler";
+import { Geraetetypen } from "./Geraetetypen";
 import { VorgabenDialog } from "./VorgabenDialog";
 import { VorlageDialog } from "./VorlageDialog";
 
 /**
  * „Elektro-Vorgaben“ des Betriebs (Phase 6c, L3, Entwurf §8.1): technische Kabelvorlagen,
- * Betriebsstandard und Vorlage je Gerätetyp. Lesen mit `electrical.plan.read`; ändern nur mit
- * `electrical.defaults.manage`. Anlegen und Bearbeiten in Dialogen. Es gibt keine ausgelieferten
+ * Betriebsstandard und Vorlage je Gerätetyp; seit K2 auch die eigenen Gerätetypen. Lesen mit
+ * `electrical.plan.read`; ändern nur mit `electrical.defaults.manage` bzw. – für Gerätetypen –
+ * `electrical.device_types.manage`. Anlegen und Bearbeiten in Dialogen. Es gibt keine ausgelieferten
  * Vorlagen oder Standardwerte – was hier steht, hat der Betrieb selbst eingetragen.
  */
 export default function VorgabenSeite() {
@@ -34,10 +36,13 @@ export default function VorgabenSeite() {
   const [meldung, setMeldung] = useState<string | null>(null);
 
   const liste = vorlagen.data?.templates ?? [];
-  const typen = useMemo(
-    () => (Array.isArray(katalog.data) ? katalog.data : []).filter((t) => t.is_active && ZUORDENBAR.has(t.category)).sort((a, b) => a.sort_order - b.sort_order),
-    [katalog.data],
-  );
+  // Aktive Typen und deaktivierte mit Zuordnung (K2) – wie im Dialog.
+  const typen = useMemo(() => {
+    const zugeordnet = new Set((betrieb.data?.device_type_templates ?? []).map((t) => t.device_type_key));
+    return (Array.isArray(katalog.data) ? katalog.data : [])
+      .filter((t) => (t.is_active || zugeordnet.has(t.key)) && ZUORDENBAR.has(t.category))
+      .sort((a, b) => a.sort_order - b.sort_order);
+  }, [katalog.data, betrieb.data]);
   const name = (id: string | null | undefined) => {
     const v = liste.find((x) => x.id === id);
     return v === undefined ? "keine" : `${vorlageText(v)}${v.is_active ? "" : " (deaktiviert)"}`;
@@ -191,13 +196,19 @@ export default function VorgabenSeite() {
             <dd className="m-0">{name(b.default_cable_template_id)}</dd>
             {typen.map((t) => (
               <div key={t.key} className="contents">
-                <dt className="text-muted">Gerätetyp {t.label}</dt>
+                <dt className="text-muted">
+                  Gerätetyp {t.label}
+                  {istEigenerTyp(t) ? " (eigen)" : ""}
+                  {t.is_active ? "" : " (deaktiviert)"}
+                </dt>
                 <dd className="m-0">{name(b.device_type_templates.find((x) => x.device_type_key === t.key)?.cable_template_id)}</dd>
               </div>
             ))}
           </dl>
         )}
       </section>
+
+      <Geraetetypen />
 
       {vorlageDialog !== null && (
         <VorlageDialog

@@ -1,3 +1,7 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
@@ -22,11 +26,23 @@ const KATALOG = [
   // Phase 6b.0/6b.1 (ADR 0026)
   "distribution_board",
   "junction_box",
+  // Phase 6c K2 (ADR 0030)
+  "connection_outlet",
 ];
+
+/** Gemeinsame Prüfdatei mit dem Backend (`SYMBOL_KEYS` in catalog.py). */
+const SYMBOLDATEI = JSON.parse(
+  readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../../../../../../testdata/katalog/symbole.v1.json"), "utf-8"),
+) as { version: number; symbole: string[] };
 
 describe("Planungssymbole (T1)", () => {
   it("jeder ausgelieferte Gerätetyp hat ein eigenes Symbol", () => {
     expect(KATALOG.filter((k) => !SYMBOLSCHLUESSEL.includes(k))).toEqual([]);
+  });
+
+  it("kontrollierte Symbolauswahl: genau die Zeichnungen der gemeinsamen Prüfdatei (K2)", () => {
+    expect(SYMBOLDATEI.version).toBe(1);
+    expect([...SYMBOLSCHLUESSEL]).toEqual(SYMBOLDATEI.symbole);
   });
 
   it("Verteilung und Abzweigdose: eigene Symbole, nur in Textfarbe (hell/dunkel über das Theme)", () => {
@@ -66,6 +82,11 @@ describe("Planungssymbole (T1)", () => {
       height_mm: 80,
       sort_order: 1,
       is_active: true,
+      origin: "system",
+      description: null,
+      version: 1,
+      device_count: 0,
+      template_count: 0,
       ...teile,
     });
     render(

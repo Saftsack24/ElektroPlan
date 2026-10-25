@@ -111,6 +111,7 @@ export function Deckenansicht({
   zurueckZu3d = false,
   startTyp = null,
   verteilungsangebot,
+  typAnlegen = false,
 }: {
   raumId?: string;
   raumName: string;
@@ -151,6 +152,8 @@ export function Deckenansicht({
   startTyp?: string | null;
   /** K1: „Verteilung platzieren …“ im Katalog – an der Decke gesperrt, mit Grund. */
   verteilungsangebot?: Verteilungsangebot | undefined;
+  /** K2: Recht „Gerätetypen verwalten“ – „Eigenen Typ anlegen …“ im Katalog. */
+  typAnlegen?: boolean;
 }) {
   const masse = useMasse();
   const huelle = useRef<HTMLDivElement>(null);
@@ -945,6 +948,7 @@ export function Deckenansicht({
         <Geraetekatalog
           typen={typen}
           modus={katalog.modus}
+          typAnlegen={typAnlegen}
           onClose={() => setKatalog(null)}
           onWahl={(key) => {
             if (katalog.geraetId !== null) {

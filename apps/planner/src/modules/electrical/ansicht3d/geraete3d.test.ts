@@ -5,7 +5,7 @@ import { plan, raum, rechteck } from "./testplan";
 
 describe("Geräte in 3D (Phase 5)", () => {
   const typen = new Map([
-    ["light_ceiling", { key: "light_ceiling", label: "Deckenleuchte (Auslass)", category: "light" as const, symbol_key: "light_ceiling", allows_wall_interior: false, allows_wall_exterior: false, allows_ceiling: true, default_center_height_mm: null, width_mm: 100, height_mm: 100, sort_order: 80, is_active: true }],
+    ["light_ceiling", { key: "light_ceiling", label: "Deckenleuchte (Auslass)", category: "light" as const, symbol_key: "light_ceiling", allows_wall_interior: false, allows_wall_exterior: false, allows_ceiling: true, default_center_height_mm: null, width_mm: 100, height_mm: 100, sort_order: 80, is_active: true, origin: "system" as const, description: null, version: 1, device_count: 0, template_count: 0 }],
   ]);
 
   it("Deckengeräte sitzen auf der effektiven Höhe ihres Raums - unterschiedlich hohe Räume", () => {

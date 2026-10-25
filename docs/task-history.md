@@ -4040,3 +4040,38 @@ Funktionsabnahme VP offen.
   `git diff --check` sauber. Nicht aufgenommen: eine unabhängige Datei unter `output/`.
 * **Offen:** Ursache des einmaligen `tsc`-Abbruchs beim ersten Build-Aufruf unbekannt (nicht behoben, nicht
   wieder aufgetreten).
+
+## Task 0068 – K2: Eigene Gerätetypen und Kategorie „Geräteanschluss/Festanschluss“
+
+**Datum:** 2026-10-25 · **Status:** technisch umgesetzt und geprüft, **nicht committet**. Persönliche Abnahme offen.
+
+* **Vorher:** K1 als Checkpoint `f2ea140` committet (Task 0067).
+* **Backend:** Migration `0015_organization_device_types` (Geltungsbereich, CHECKs, Trigger, berechnete Spalte
+  mit zusammengesetztem FK an Geräten und Vorlagen je Typ, Kategorie `connection`), `device_types.py`
+  (Anlegen, Ändern mit Feldsperren, Entfernen mit Verweisschutz, Sperren `FOR UPDATE`), gefilterte Lesepfade und
+  `FOR KEY SHARE` bei jeder Verwendung, Recht `electrical.device_types.manage`, Seed nur für Systemzeilen,
+  Systemtyp `device_connection`, Symbolauswahl ohne Verteilungssymbol, ADR 0030 *accepted*.
+* **Frontend:** `TypFormular`, „Eigenen Typ anlegen …“ im Katalog (Rückkehr mit Auswahl und Fokus),
+  Abschnitt „Gerätetypen“ auf „Elektro-Vorgaben“, Markierung eigen/System, `connection` in allen Listen, Symbol
+  `connection_outlet`, Abbruchsignal der Katalogabfrage, gemeinsame Prüfdatei `testdata/katalog/symbole.v1.json`.
+* **Prüfung:** siehe `geraetekatalog-design.md` §12 – Backend-Gesamtlauf 1 416/1 418 (zwei veraltete
+  Erwartungslisten angepasst), Frontend-Gesamtlauf 1 276/1 288 unter Spiellast (Zeitüberschreitungen, Dateien
+  einzeln 84/84), Qualitätsschranken grün, Dev-DB gesichert, migriert, geseedet; Stack-Durchlauf bestanden, zwei
+  Befunde behoben, Daten entfernt.
+
+## Task 0069 – K2: technische Abschlussprüfung und Checkpoint
+
+**Datum:** 2026-10-25 · **Status:** committet, nicht gepusht. Persönliche und optische Abnahme von VP, K1 und K2 offen.
+
+* **Fehlender Button untersucht:** „Nicht speichern“ in `Leitungsplanung.test.tsx` – laut gesicherter Ausgabe stand
+  der zweite Rückfragedialog ohne `open` im DOM; der Test bediente ihn vor dem Öffnen (Wettlauf im Test, kein
+  Oberflächenfehler). Test wartet jetzt auf den offenen Dialog; das Muster kam sonst nirgends vor.
+* **Frontend-Gesamtlauf bei normaler Last:** 1 289/1 289 grün (6 Worker, reguläre Fristen, 120 s), einschließlich
+  der Tests zu beiden Browserbefunden (Verwendungszahl nach Vorgabenänderung, Zuordnung eines deaktivierten Typs).
+* **Backend-Prüfgrundlage:** Gesamtlauf 1 416/1 418 mit zwei danach gezielt korrigierten Erwartungen (nur
+  `connection` ergänzt) und erneut geprüften Dateien (38/38); kein vollständig grüner Gesamtlauf behauptet.
+  Architekturtest gemischter Kataloge verschärft (CHECK `custom_not_distribution`), Gegenproben erkannt, 11/11.
+* **Schranken für den Endstand:** Typprüfung, ESLint, Modulgrenzen (Frontend, Backend), Ruff, mypy, ein
+  Alembic-Head, API-Drift, Build, `git diff --check` grün.
+* **Commitumfang:** K2-Quellen, Tests, Migration `0015`, OpenAPI und API-Client, gemeinsame Prüfdatei,
+  Dokumentation; ältere Migrationen unverändert; nicht aufgenommen: `output/`.

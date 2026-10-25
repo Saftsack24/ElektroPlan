@@ -9,7 +9,8 @@ synthetische Daten:
   geloescht, der Stand bleibt ``0013``; ohne sie gelingt es, der Bestand bleibt,
 * Autogenerate meldet danach keinen Unterschied zum ORM (auf dem jeweiligen Head - seit
   Phase 6c folgt ``0014``; der Bestand vor 6b.3 wird deshalb per SQL angelegt, nicht ueber
-  ORM-Klassen, deren Tabellen spaeter Spalten erhalten haben),
+  ORM-Klassen, deren Tabellen spaeter Spalten erhalten haben; seit K2 (``0015``) gilt das
+  auch fuer Geraete und den Systemkatalog - dessen Zeilen stehen hier im Schema von ``0012``),
 * die Datenbank erzwingt Wegpunktform, Reihenfolge, verschiedene Endgeraete,
   Halt-zu-Steigweg-Zugehoerigkeit und Mandantenreinheit.
 """
@@ -20,6 +21,7 @@ import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from unittest import mock
 
 import pytest
 from alembic import command
@@ -31,19 +33,21 @@ from sqlalchemy import Engine, create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.contracts.v1.reference_data import ReferenceDataResult
 from app.core.customers.models import Customer
 from app.core.module_registry.registry import ModuleRegistry
 from app.core.projects.models import Building, Floor, Project
 from app.core.seed import seed_initial_data
 from app.model_registry import metadata
+from app.modules.electrical.catalog import DEVICE_TYPE_CATALOG, DeviceCategory
 from app.modules.electrical.models import (
-    ElectricalDevice,
     ElectricalDistributionBoard,
     ElectricalRiser,
     ElectricalRiserStop,
     ElectricalRoom,
     ElectricalWall,
 )
+from app.modules.electrical.reference_data import ElectricalReferenceData
 from tests.conftest import (
     ADMIN_PASSWORD,
     TEST_DATABASE_URL,
@@ -90,12 +94,52 @@ class Bestand:
     other_wall: uuid.UUID
 
 
+def _katalog_alt(session: Session) -> ReferenceDataResult:
+    """Systemkatalog im Schema vor K2 (``0012``-``0014``): nur damalige Spalten und Kategorien."""
+    angelegt = 0
+    for definition in DEVICE_TYPE_CATALOG:
+        if definition.category is DeviceCategory.CONNECTION:
+            continue
+        session.execute(
+            text(
+                "INSERT INTO electrical_device_types (key, label, category, symbol_key, "
+                "allows_wall_interior, allows_wall_exterior, allows_ceiling, "
+                "default_center_height_mm, width_mm, height_mm, sort_order, is_active) VALUES "
+                "(:key, :label, :category, :symbol, :innen, :aussen, :decke, :hoehe, :breite, "
+                ":tiefe, :reihe, true) ON CONFLICT (key) DO NOTHING"
+            ),
+            {
+                "key": definition.key,
+                "label": definition.label,
+                "category": definition.category.value,
+                "symbol": definition.symbol_key,
+                "innen": definition.allows_wall_interior,
+                "aussen": definition.allows_wall_exterior,
+                "decke": definition.allows_ceiling,
+                "hoehe": definition.default_center_height_mm,
+                "breite": definition.width_mm,
+                "tiefe": definition.height_mm,
+                "reihe": definition.sort_order,
+            },
+        )
+        angelegt += 1
+    return ReferenceDataResult(module_id="electrical", created=angelegt, updated=0, deactivated=0)
+
+
 def _struktur(
     session: Session, registry: ModuleRegistry, name: str, email: str
 ) -> dict[str, uuid.UUID]:
-    org = seed_initial_data(
-        session, registry, organization_name=name, admin_email=email, admin_password=ADMIN_PASSWORD
-    ).organization_id
+    # Der Seed des Systemkatalogs schreibt das heutige Schema - im Bestand vor K2 per SQL.
+    with mock.patch.object(
+        ElectricalReferenceData, "seed_reference_data", lambda _self, s: _katalog_alt(s)
+    ):
+        org = seed_initial_data(
+            session,
+            registry,
+            organization_name=name,
+            admin_email=email,
+            admin_password=ADMIN_PASSWORD,
+        ).organization_id
     kunde = Customer(organization_id=org, customer_number="KD-00001", kind="company", name="Kunde")
     session.add(kunde)
     session.flush()
@@ -129,32 +173,34 @@ def _struktur(
         session.flush()
         raeume.append(raum.id)
         waende.append(wand.id)
-    lage = ElectricalDevice(
-        organization_id=org,
-        room_id=raeume[0],
-        device_type_key="distribution_board",
-        mounting_surface="wall_interior",
-        wall_id=waende[0],
-        center_offset_mm=1_000,
-        center_height_mm=1_400,
-    )
-    dose = ElectricalDevice(
-        organization_id=org,
-        room_id=raeume[0],
-        device_type_key="socket_single",
-        mounting_surface="wall_interior",
-        wall_id=waende[0],
-        center_offset_mm=2_500,
-        center_height_mm=300,
-    )
-    session.add_all([lage, dose])
-    session.flush()
+    # Geraete per SQL: Seit K2 hat die Tabelle eine berechnete Spalte, die es hier noch nicht gibt.
+    lage_id, dose_id = uuid.uuid4(), uuid.uuid4()
+    for geraet_id, typ, mitte, hoehe in (
+        (lage_id, "distribution_board", 1_000, 1_400),
+        (dose_id, "socket_single", 2_500, 300),
+    ):
+        session.execute(
+            text(
+                "INSERT INTO electrical_devices (id, organization_id, room_id, device_type_key, "
+                "mounting_surface, wall_id, center_offset_mm, center_height_mm) VALUES "
+                "(:id, :org, :raum, :typ, 'wall_interior', :wand, :mitte, :hoehe)"
+            ),
+            {
+                "id": geraet_id,
+                "org": org,
+                "raum": raeume[0],
+                "typ": typ,
+                "wand": waende[0],
+                "mitte": mitte,
+                "hoehe": hoehe,
+            },
+        )
     verteilung = ElectricalDistributionBoard(
         organization_id=org,
         building_id=haus.id,
         code="UV1",
         name="UV1",
-        placement_device_id=lage.id,
+        placement_device_id=lage_id,
     )
     session.add(verteilung)
     session.flush()
@@ -187,8 +233,8 @@ def _struktur(
         "wall_a": waende[0],
         "wall_b": waende[1],
         "room": raeume[0],
-        "board_device": lage.id,
-        "socket": dose.id,
+        "board_device": lage_id,
+        "socket": dose_id,
         "circuit": kreis_id,
         "riser": steigwege[0],
         "stop": halte[0],

@@ -27,8 +27,10 @@ import uuid
 from decimal import Decimal
 
 from sqlalchemy import (
+    DDL,
     Boolean,
     CheckConstraint,
+    Computed,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
@@ -38,6 +40,7 @@ from sqlalchemy import (
     SmallInteger,
     String,
     UniqueConstraint,
+    event,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -52,9 +55,12 @@ from app.db.mixins import (
     tenant_identity,
 )
 from app.modules.electrical.catalog import (
+    CUSTOM_TYPE_KEY_LIKE,
     DEVICE_CATEGORIES,
     MAX_DEVICE_LABEL_LENGTH,
     MAX_DEVICE_SIZE_MM,
+    MAX_DEVICE_TYPE_DESCRIPTION_LENGTH,
+    MAX_DEVICE_TYPE_LABEL_LENGTH,
     MIN_DEVICE_SIZE_MM,
     MOUNTING_SURFACES,
     ROOM_TYPES,
@@ -69,6 +75,27 @@ from app.modules.electrical.geometry import (
     MIN_WALL_THICKNESS_MM,
     OPENING_KINDS,
 )
+
+#: Berechneter Eigentuemer eines Typverweises (ADR 0030): der eigene Betrieb bei
+#: betriebseigenen Schluesseln (``c_...``), sonst ``NULL`` (Systemtyp, kein Abgleich).
+DEVICE_TYPE_OWNER_SQL = (
+    f"CASE WHEN device_type_key LIKE '{CUSTOM_TYPE_KEY_LIKE}' THEN organization_id END"
+)
+#: Eindeutigkeit (Betrieb, Schluessel) - Ziel der zusammengesetzten Typverweise.
+DEVICE_TYPE_SCOPE_CONSTRAINT = "uq_el_device_types_org_key"
+#: Name eines aktiven eigenen Typs je Betrieb eindeutig (ohne Gross-/Kleinschreibung).
+DEVICE_TYPE_LABEL_CONSTRAINT = "uq_el_device_types_org_label"
+
+
+def _device_type_scope_fk(name: str) -> ForeignKeyConstraint:
+    """Typverweis auf einen eigenen Typ nur im selben Betrieb - von der Datenbank erzwungen."""
+    return ForeignKeyConstraint(
+        ["device_type_org_id", "device_type_key"],
+        ["electrical_device_types.organization_id", "electrical_device_types.key"],
+        name=name,
+        ondelete="RESTRICT",
+    )
+
 
 #: Name des eindeutigen Index auf die optionale Raumnummer. Kurz gehalten, weil
 #: PostgreSQL Bezeichner bei 63 Zeichen abschneidet.
@@ -294,21 +321,38 @@ class ElectricalOpening(UUIDPrimaryKey, TenantScoped, Timestamped, Versioned, Ba
     )
 
 
-class ElectricalDeviceType(Base):
-    """Geraetetyp des ausgelieferten Systemkatalogs (Phase 5, ADR 0023).
+class ElectricalDeviceType(Timestamped, Versioned, Base):
+    """Geraetetyp: Systemkatalog (Phase 5, ADR 0023) und betriebseigene Typen (K2, ADR 0030).
 
-    **Global, ohne ``organization_id``:** Der Katalog ist fuer alle Betriebe
-    gleich und wird nur vom idempotenten Seed gepflegt (``reference_data.py``).
-    Er enthaelt keine Daten eines Mandanten. Betriebseigene Typen sind nicht
-    Teil von Phase 5; kommen sie, braucht es einen eigenen ADR.
+    * **Systemtyp:** ``organization_id IS NULL``, stabiler Schluessel aus dem
+      Katalog, nur vom idempotenten Seed gepflegt (``reference_data.py``).
+    * **Eigener Typ:** ``organization_id`` des Betriebs, serververgebener Schluessel
+      ``c_<32 hex>``. Schluessel und Eigentuemer aendern sich nie (Trigger der Migration
+      ``0015``); die Kategorie ``distribution`` bleibt dem Systemtyp der Verteilung.
 
-    Der stabile technische Schluessel ist der Primaerschluessel. Ein Typ wird
-    nie geloescht, sondern deaktiviert (``is_active``) - Geraete verweisen mit
-    ``RESTRICT`` auf ihn.
+    CHECK ``key_scope`` bindet Praefix und Eigentuemer aneinander - ein eigener Typ
+    kann sich nicht als Systemtyp ausgeben und umgekehrt. Verweise (Geraete,
+    Vorlagen je Typ) pruefen den Betrieb ueber ``(device_type_org_id, device_type_key)``.
+    Ein Typ wird nie geloescht, solange etwas auf ihn verweist (``RESTRICT``).
     """
 
     __tablename__ = "electrical_device_types"
     __table_args__ = (
+        UniqueConstraint("organization_id", "key", name=DEVICE_TYPE_SCOPE_CONSTRAINT),
+        CheckConstraint(
+            f"(organization_id IS NULL) = (key NOT LIKE '{CUSTOM_TYPE_KEY_LIKE}')",
+            name="key_scope",
+        ),
+        CheckConstraint(
+            "organization_id IS NULL OR category <> 'distribution'", name="custom_not_distribution"
+        ),
+        Index(
+            DEVICE_TYPE_LABEL_CONSTRAINT,
+            "organization_id",
+            text("lower(label)"),
+            unique=True,
+            postgresql_where=text("organization_id IS NOT NULL AND is_active"),
+        ),
         CheckConstraint(f"category IN ({_value_list(DEVICE_CATEGORIES)})", name="category_known"),
         CheckConstraint(
             "allows_wall_interior OR allows_wall_exterior OR allows_ceiling",
@@ -328,7 +372,14 @@ class ElectricalDeviceType(Base):
     )
 
     key: Mapped[str] = mapped_column(String(40), primary_key=True)
-    label: Mapped[str] = mapped_column(String(80), nullable=False)
+    #: ``NULL`` = Systemtyp; sonst der besitzende Betrieb (unveraenderlich).
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    label: Mapped[str] = mapped_column(String(MAX_DEVICE_TYPE_LABEL_LENGTH), nullable=False)
+    description: Mapped[str | None] = mapped_column(
+        String(MAX_DEVICE_TYPE_DESCRIPTION_LENGTH), nullable=True, default=None
+    )
     category: Mapped[str] = mapped_column(String(16), nullable=False)
     symbol_key: Mapped[str] = mapped_column(String(40), nullable=False)
     allows_wall_interior: Mapped[bool] = mapped_column(Boolean, nullable=False)
@@ -342,6 +393,26 @@ class ElectricalDeviceType(Base):
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("true")
+    )
+
+
+#: Schluessel und Eigentuemer eines Geraetetyps sind unveraenderlich (ADR 0030) - dieselbe
+#: Regel wie Migration ``0015``; hier, damit auch ein per Metadaten erzeugtes Schema sie hat.
+DEVICE_TYPE_SCOPE_TRIGGER = (
+    "CREATE OR REPLACE FUNCTION electrical_device_types_scope_fixed() RETURNS trigger "
+    "LANGUAGE plpgsql AS $$ BEGIN "
+    "IF NEW.key IS DISTINCT FROM OLD.key "
+    "OR NEW.organization_id IS DISTINCT FROM OLD.organization_id "
+    "THEN RAISE EXCEPTION 'Schluessel und Eigentuemer eines Geraetetyps sind unveraenderlich' "
+    "USING ERRCODE = 'check_violation'; END IF; RETURN NEW; END; $$",
+    "CREATE TRIGGER trg_el_device_types_scope_fixed BEFORE UPDATE ON electrical_device_types "
+    "FOR EACH ROW EXECUTE FUNCTION electrical_device_types_scope_fixed()",
+)
+for _anweisung in DEVICE_TYPE_SCOPE_TRIGGER:
+    event.listen(
+        ElectricalDeviceType.__table__,
+        "after_create",
+        DDL(_anweisung).execute_if(dialect="postgresql"),  # type: ignore[no-untyped-call]
     )
 
 
@@ -396,6 +467,7 @@ class ElectricalDevice(UUIDPrimaryKey, TenantScoped, Timestamped, Base):
         Index("ix_electrical_devices_organization_id_room_id", "organization_id", "room_id"),
         Index("ix_electrical_devices_organization_id_wall_id", "organization_id", "wall_id"),
         Index("ix_electrical_devices_device_type_key", "device_type_key"),
+        _device_type_scope_fk("fk_el_devices_device_type_scope"),
     )
 
     room_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
@@ -403,6 +475,10 @@ class ElectricalDevice(UUIDPrimaryKey, TenantScoped, Timestamped, Base):
         String(40),
         ForeignKey("electrical_device_types.key", ondelete="RESTRICT"),
         nullable=False,
+    )
+    #: Berechnet: Betrieb eines eigenen Typs, sonst ``NULL`` (ADR 0030) - nie geschrieben.
+    device_type_org_id: Mapped[uuid.UUID | None] = mapped_column(
+        Computed(DEVICE_TYPE_OWNER_SQL, persisted=True), nullable=True
     )
     mounting_surface: Mapped[str] = mapped_column(String(16), nullable=False)
     wall_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True, default=None)
@@ -1081,10 +1157,14 @@ class ElectricalDeviceTypeCableTemplate(TenantScoped, Timestamped, Base):
             ondelete="RESTRICT",
         ),
         Index("ix_el_type_templates_template", "organization_id", "cable_template_id"),
+        _device_type_scope_fk("fk_el_type_templates_type_scope"),
     )
 
     device_type_key: Mapped[str] = mapped_column(String(40), nullable=False)
     cable_template_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    device_type_org_id: Mapped[uuid.UUID | None] = mapped_column(
+        Computed(DEVICE_TYPE_OWNER_SQL, persisted=True), nullable=True
+    )
 
 
 class ElectricalProjectPlanningDefaults(
@@ -1153,8 +1233,12 @@ class ElectricalProjectDeviceTypeCableTemplate(TenantScoped, Timestamped, Base):
             ondelete="RESTRICT",
         ),
         Index("ix_el_proj_type_templates_template", "organization_id", "cable_template_id"),
+        _device_type_scope_fk("fk_el_proj_type_templates_type_scope"),
     )
 
     project_defaults_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
     device_type_key: Mapped[str] = mapped_column(String(40), nullable=False)
     cable_template_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    device_type_org_id: Mapped[uuid.UUID | None] = mapped_column(
+        Computed(DEVICE_TYPE_OWNER_SQL, persisted=True), nullable=True
+    )

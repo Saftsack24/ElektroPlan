@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "zweck": "Kontrollierte Symbolauswahl fuer Geraetetypen (Phase 6c K2, ADR 0030). Backend (SYMBOL_KEYS in catalog.py) und Oberflaeche (geraete/symbole.tsx) muessen genau diese Schluessel kennen. Kein Upload, keine freien Zeichnungen. Neue Zeichnung = neue Version dieser Datei.",
+  "symbole": [
+    "socket_single",
+    "socket_double",
+    "socket_triple",
+    "socket_outdoor",
+    "switch_single",
+    "switch_two_way",
+    "switch_series",
+    "light_ceiling",
+    "light_recessed",
+    "light_wall",
+    "light_outdoor",
+    "data_single",
+    "data_double",
+    "distribution_board",
+    "junction_box",
+    "connection_outlet"
+  ]
+}

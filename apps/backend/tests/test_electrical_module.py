@@ -39,6 +39,7 @@ from app.modules.electrical import DESCRIPTOR
 from app.modules.electrical.permissions import (
     CIRCUIT_WRITE,
     DEFAULTS_MANAGE,
+    DEVICE_TYPES_MANAGE,
     PLAN_READ,
     PLAN_WRITE,
     ROUTE_WRITE,
@@ -242,6 +243,7 @@ def test_oeffentlicher_einstiegspunkt_exportiert_nur_den_descriptor() -> None:
         "catalog",
         "defaults_chain",
         "device_rules",
+        "device_types",
         "devices",
         "distribution",
         "events",
@@ -335,6 +337,7 @@ def test_permissions_liegen_im_eigenen_namensraum() -> None:
         CIRCUIT_WRITE,
         ROUTE_WRITE,
         DEFAULTS_MANAGE,
+        DEVICE_TYPES_MANAGE,
     )
     for key in DESCRIPTOR.permission_keys:
         assert key.startswith("electrical.")

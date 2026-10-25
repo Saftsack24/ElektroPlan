@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 
 import { Dialog, DialogAktionen } from "../../../core/ui/Dialog";
@@ -8,8 +8,11 @@ import { eingabefeld, knopf, meldungsflaeche } from "../../../core/ui/stil";
 import { useKompakt } from "../arbeitsflaeche/kompakt";
 import type { Montageflaeche } from "../editor/entwurf";
 import type { Geraetekategorie, Geraetetyp, Geraetetypen } from "./katalog";
-import { FLAECHE_LABEL, KATEGORIE_LABEL, KATEGORIEN, erlaubt } from "./katalog";
+import { FLAECHE_LABEL, KATEGORIE_LABEL, KATEGORIEN, erlaubt, istEigenerTyp } from "./katalog";
 import { Geraetesymbol } from "./symbole";
+import { TypFormular } from "./TypFormular";
+import type { Typwerte } from "./typen";
+import { leereTypwerte } from "./typen";
 
 /**
  * Gerätekatalog als Dialog (Phase 6c, K1, `docs/geraetekatalog-design.md` §2).
@@ -25,7 +28,12 @@ import { Geraetesymbol } from "./symbole";
  * * Die Verteilung ist keine Kachel: „Verteilung platzieren …“ führt in den VP-Ablauf.
  *
  * Kategorien und Bezeichnungen kommen aus den Daten; eine unbekannte Kategorie erscheint mit
- * ihrem Schlüssel, damit spätere Typen (K2) ohne Umbau sichtbar sind.
+ * ihrem Schlüssel.
+ *
+ * K2 (ADR 0030): Eigene Typen des Betriebs stehen im selben Katalog, als „eigen“ markiert. Mit
+ * dem Recht „Gerätetypen verwalten“ führt „Eigenen Typ anlegen …“ im selben Dialog zum Formular;
+ * nach dem Speichern ist der neue Typ gewählt und fokussiert. „Abbrechen“ kehrt zur Auswahl
+ * zurück – die bisherige Wahl und der Formularentwurf bleiben, der Raumentwurf ist unberührt.
  */
 export type Katalogmodus =
   | { readonly art: "platzieren"; readonly flaeche: Montageflaeche | null; readonly start: string | null }
@@ -49,6 +57,7 @@ const SUCHBEGRIFFE: Partial<Record<Geraetekategorie, string>> = {
   light: "leuchte lampe licht auslass strahler",
   data: "netzwerk daten lan datendose rj45",
   junction: "abzweigdose verbindungsdose dose",
+  connection: "geraeteanschluss festanschluss anschluss herd durchlauferhitzer",
 };
 
 const FLAECHE_KURZ: Record<Montageflaeche, string> = {
@@ -82,6 +91,7 @@ export function Geraetekatalog({
   onWahl,
   onClose,
   verteilung,
+  typAnlegen = false,
 }: {
   typen: Geraetetypen;
   modus: Katalogmodus;
@@ -89,6 +99,8 @@ export function Geraetekatalog({
   onWahl: (key: string) => string | undefined;
   onClose: () => void;
   verteilung?: Verteilungsangebot | undefined;
+  /** Recht „Gerätetypen verwalten“ – dann „Eigenen Typ anlegen …“ im Dialog. */
+  typAnlegen?: boolean;
 }) {
   const masse = useMasse();
   const kompakt = useKompakt();
@@ -118,6 +130,9 @@ export function Geraetekatalog({
   );
   const [fehler, setFehler] = useState<string | null>(null);
   const kachelnRef = useRef<HTMLDivElement>(null);
+  const [anlegen, setAnlegen] = useState(false);
+  const [entwurf, setEntwurf] = useState<Typwerte | null>(null);
+  const [neu, setNeu] = useState<{ key: string; label: string; fokus: boolean } | null>(null);
 
   const woerter = normalisiert(suche).split(/\s+/).filter((w) => w !== "");
   const sichtbar =
@@ -132,6 +147,15 @@ export function Geraetekatalog({
           return woerter.every((w) => text.includes(w));
         });
   const typ = gewaehlt === null ? undefined : sichtbar.find((t) => t.key === gewaehlt);
+
+  // Nach „Typ anlegen“: die neue Kachel fokussieren, sobald der neu geladene Katalog sie zeigt.
+  useEffect(() => {
+    if (neu === null || !neu.fokus || anlegen) return;
+    const kachel = kachelnRef.current?.querySelector<HTMLButtonElement>(`[data-testid="katalog-kachel-${neu.key}"]`);
+    if (kachel === null || kachel === undefined) return;
+    kachel.focus();
+    setNeu({ ...neu, fokus: false });
+  });
   // Genau eine Kachel ist per Tab erreichbar: die gewählte, sonst die erste (Roving Tabindex).
   const fokusIndex = Math.max(0, sichtbar.findIndex((t) => t.key === gewaehlt));
   const grund = typ === undefined ? null : flaechengrund(typ, flaeche);
@@ -189,6 +213,19 @@ export function Geraetekatalog({
   };
   const anzahl = (k: string) => angebot.filter((t) => t.category === k).length;
 
+  const anlegenKnopf = typAnlegen && (
+    <button
+      type="button"
+      className={`${knopf("einfach", { klein: true })} text-left text-fg`}
+      onClick={() => {
+        setAnlegen(true);
+        setFehler(null);
+      }}
+    >
+      Eigenen Typ anlegen …
+    </button>
+  );
+
   const kategorienListe = kompakt ? (
     <label className="flex flex-col gap-1 text-label text-muted" htmlFor="katalog-kategorie">
       Kategorie
@@ -201,6 +238,7 @@ export function Geraetekatalog({
         ))}
         {verteilung !== undefined && <option value={VERTEILUNG}>Verteilung platzieren …</option>}
       </select>
+      {anlegenKnopf}
     </label>
   ) : (
     <nav aria-label="Kategorien" className="flex flex-col gap-1">
@@ -226,8 +264,36 @@ export function Geraetekatalog({
           Verteilung platzieren …
         </button>
       )}
+      {anlegenKnopf !== false && <div className="mt-1 flex flex-col">{anlegenKnopf}</div>}
     </nav>
   );
+
+  if (anlegen) {
+    return (
+      <Dialog
+        offen
+        titel="Eigenen Gerätetyp anlegen"
+        beschreibung="Gilt im ganzen Betrieb. Keine Artikel, Preise oder Bemessung – nur Planungsangaben."
+        onClose={() => setAnlegen(false)}
+      >
+        <TypFormular
+          stand={null}
+          start={entwurf ?? leereTypwerte(flaeche)}
+          onEntwurf={setEntwurf}
+          onAbbrechen={() => setAnlegen(false)}
+          onGespeichert={(angelegt) => {
+            setEntwurf(null);
+            setAnlegen(false);
+            setSuche("");
+            setKategorie(ALLE);
+            setGewaehlt(angelegt.key);
+            setFehler(null);
+            setNeu({ key: angelegt.key, label: angelegt.label, fokus: true });
+          }}
+        />
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog
@@ -320,6 +386,7 @@ export function Geraetekatalog({
                         <Geraetesymbol typ={t} groesse={28} />
                         <span className="text-small font-semibold">{t.label}</span>
                         <span className="text-[0.78rem] text-muted">{kurzangabe(t)}</span>
+                        {istEigenerTyp(t) && <span className="text-[0.78rem] text-accent">eigen</span>}
                         {t.key === aktuell && <span className="text-[0.78rem]">aktuell</span>}
                         {nicht && (
                           <span id={`katalog-grund-${t.key}`} className="text-[0.78rem] text-muted">
@@ -337,9 +404,11 @@ export function Geraetekatalog({
                     <Geraetesymbol typ={typ} groesse={24} />
                     <strong>{typ.label}</strong>
                     <span className="text-muted">{kategorieLabel(typ.category)}</span>
+                    {istEigenerTyp(typ) ? <Marke art="info">eigener Typ</Marke> : <span className="text-[0.8rem] text-muted">Systemtyp</span>}
                     {istAktuell && <Marke>aktueller Typ</Marke>}
                     {nichtMehrAngeboten && <Marke art="warnung">nicht mehr angeboten</Marke>}
                   </div>
+                  {typ.description !== null && typ.description !== "" && <p className="m-0">{typ.description}</p>}
                   <p className="m-0">
                     Montage: {flaechenVon(typ).map((f) => FLAECHE_LABEL[f]).join(", ")}
                     {typ.default_center_height_mm !== null && flaechenVon(typ).some((f) => f !== "ceiling")
@@ -359,6 +428,13 @@ export function Geraetekatalog({
             </div>
           )}
         </div>
+        {neu !== null && (
+          <p className={meldungsflaeche("schlicht")} role="status" data-testid="katalog-neu">
+            {angebot.some((t) => t.key === neu.key && flaechengrund(t, flaeche) === null)
+              ? `„${neu.label}“ angelegt und ausgewählt.`
+              : `„${neu.label}“ angelegt – auf dieser Fläche bzw. inaktiv nicht wählbar.`}
+          </p>
+        )}
         {fehler !== null && (
           <p className={meldungsflaeche()} role="alert">
             Nicht übernommen: {fehler}

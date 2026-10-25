@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import { alsFormularfehler } from "../../../core/api/fehler";
-import { useAuth } from "../../../core/auth/AuthProvider";
+import { useAuth, usePermission } from "../../../core/auth/AuthProvider";
 import { BEHALTEN_LABEL, VERWERFEN_LABEL, useRueckfrage, verwerfenOptionen } from "../../../core/ui/Rueckfrage";
 import { useUngespeicherteAenderungen } from "../../../core/ui/ungespeichert";
 import { knopf, meldungsflaeche } from "../../../core/ui/stil";
@@ -74,6 +74,7 @@ import { Leitungsbereich } from "../leitung/Leitungsbereich";
 import { Zeichenleiste } from "../leitung/Zeichenleiste";
 import { ZUORDNUNG_MELDUNG } from "../stromkreise/texte";
 import type { Platzierungsfehler, Verteilungsplatzierung } from "../stromkreise/platzierung";
+import { GERAETETYPEN_RECHT } from "../geraete/typen";
 import { Geraetekatalog } from "../geraete/Geraetekatalog";
 import type { Verteilungsangebot } from "../geraete/Geraetekatalog";
 import { Geraetesymbol } from "../geraete/symbole";
@@ -255,6 +256,7 @@ function GrundrissEditorInhalt({
   onZurueckStromkreise?: (() => void) | undefined;
 }) {
   const { api } = useAuth();
+  const darfTypen = usePermission(GERAETETYPEN_RECHT);
   const queryClient = useQueryClient();
   const fragen = useRueckfrage();
   const [zustand, dispatch] = useReducer(editorReducer, ANFANG);
@@ -1817,6 +1819,7 @@ function GrundrissEditorInhalt({
                 }
           }
           verteilungsangebot={platzierung === null ? verteilungsangebot : undefined}
+          typAnlegen={darfTypen}
         />
       )}
       {deckenansicht !== null && (
@@ -1858,6 +1861,7 @@ function GrundrissEditorInhalt({
           zurueckZu3d={herkunft.current === "3d"}
           startTyp={deckenansicht.geraetetyp ?? null}
           verteilungsangebot={verteilungsangebot}
+          typAnlegen={darfTypen}
         />
       )}
       {katalogOffen && (
@@ -1867,6 +1871,7 @@ function GrundrissEditorInhalt({
           onWahl={geraetUebernehmen}
           onClose={() => setKatalogOffen(false)}
           verteilung={platzierung === null ? verteilungsangebot : undefined}
+          typAnlegen={darfTypen}
         />
       )}
       {neuerRaum !== null && (

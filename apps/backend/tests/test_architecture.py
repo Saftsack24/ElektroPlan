@@ -45,6 +45,13 @@ PERMISSION_EXEMPT_PATHS = frozenset(
 MONEY_COLUMN_HINTS = ("price", "cost", "amount", "total", "rate", "quantity", "percent")
 
 
+#: Gemischte Kataloge (ADR 0030): Systemzeilen ohne Betrieb (``organization_id IS NULL``)
+#: und eigene Zeilen eines Betriebs in **einer** Tabelle. Verweise darauf laufen ueber den
+#: Schluessel und zusaetzlich ueber ``(<berechneter Eigentuemer>, <Schluessel>)`` - geprueft
+#: in ``test_gemischte_kataloge_sind_abgesichert``. Jede weitere Tabelle hier braucht einen ADR.
+GEMISCHTE_KATALOGE: dict[str, str] = {"electrical_device_types": "device_type_org_id"}
+
+
 def tenant_tables() -> list[Table]:
     """Alle Tabellen mit Mandantenbezug."""
     return [table for table in metadata.sorted_tables if "organization_id" in table.c]
@@ -55,6 +62,8 @@ def tenant_tables() -> list[Table]:
 
 def test_mandantentabellen_haben_organization_id_not_null() -> None:
     for table in tenant_tables():
+        if table.name in GEMISCHTE_KATALOGE:
+            continue
         column = table.c["organization_id"]
         assert not column.nullable, f"{table.name}.organization_id darf nicht NULL sein"
 
@@ -89,6 +98,8 @@ def test_referenzen_zwischen_mandantentabellen_sind_zusammengesetzt() -> None:
             target = constraint.referred_table.name
             if target not in tenant_table_names or target == table.name:
                 continue
+            if target in GEMISCHTE_KATALOGE:
+                continue  # eigene Regel: test_gemischte_kataloge_sind_abgesichert
             columns = {element.parent.name for element in constraint.elements}
             if "organization_id" not in columns:
                 problems.append(f"{table.name} -> {target} ueber {sorted(columns)}")
@@ -96,6 +107,38 @@ def test_referenzen_zwischen_mandantentabellen_sind_zusammengesetzt() -> None:
     assert not problems, (
         "Einspaltige Fremdschluessel zwischen Mandantentabellen gefunden: " + ", ".join(problems)
     )
+
+
+def test_gemischte_kataloge_sind_abgesichert() -> None:
+    """ADR 0030: Ein gemischter Katalog bindet Praefix und Eigentuemer per CHECK, und jede
+    Mandantentabelle, die auf ihn verweist, hat den zusammengesetzten Fremdschluessel
+    ``(<berechneter Eigentuemer>, <Schluessel>) -> (organization_id, key)``."""
+    problems: list[str] = []
+    for katalog, eigentuemer in GEMISCHTE_KATALOGE.items():
+        tabelle = metadata.tables[katalog]
+        checks = {constraint.name for constraint in tabelle.constraints}
+        for regel in ("key_scope", "custom_not_distribution"):
+            if f"ck_{katalog}_{regel}" not in checks:
+                problems.append(f"{katalog}: CHECK {regel} fehlt")
+        for table in tenant_tables():
+            verweise = [
+                constraint
+                for constraint in table.foreign_key_constraints
+                if constraint.referred_table.name == katalog
+            ]
+            if not verweise or table.name == katalog:
+                continue
+            gesichert = any(
+                {element.parent.name for element in constraint.elements}
+                == {eigentuemer, "device_type_key"}
+                and {element.column.name for element in constraint.elements}
+                == {"organization_id", "key"}
+                for constraint in verweise
+            )
+            berechnet = eigentuemer in table.c and table.c[eigentuemer].computed is not None
+            if not (gesichert and berechnet):
+                problems.append(f"{table.name} -> {katalog} ohne Eigentuemerbindung")
+    assert not problems, problems
 
 
 # ------------------------------------------------------------------- Geld

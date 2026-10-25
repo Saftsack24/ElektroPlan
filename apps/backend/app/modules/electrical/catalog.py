@@ -29,6 +29,12 @@ Der Katalog ist ein Systemkatalog: Er wird mit dem idempotenten Seed
 ausgeliefert (``reference_data.py``). Ein Typ, der hier entfaellt, wird nicht
 geloescht, sondern deaktiviert - vorhandene Geraete behalten ihn, neue
 koennen ihn nicht mehr waehlen.
+
+**Betriebseigene Typen (Phase 6c, K2, ADR 0030)** stehen in derselben Tabelle mit
+``organization_id`` und einem serververgebenen Schluessel mit dem reservierten Praefix
+``c_`` (Systemschluessel tragen es nie). Ihre fachliche Rolle ergibt sich allein aus der
+Kategorie; ``distribution`` bleibt dem Systemtyp der Verteilung vorbehalten. Symbole nur
+aus ``SYMBOL_KEYS`` - der Liste der mitgelieferten Zeichnungen.
 """
 
 from __future__ import annotations
@@ -89,6 +95,9 @@ class DeviceCategory(StrEnum):
     DISTRIBUTION = "distribution"
     #: Abzweigdose (Phase 6b.0) - Verzweigungspunkt kuenftiger Leitungen, kein Verbraucher.
     JUNCTION = "junction"
+    #: Geraeteanschluss/Festanschluss (Phase 6c, K2, R1) - etwa Herd, Durchlauferhitzer,
+    #: Rollladen. Zuordenbar und Leitungsendpunkt wie ein Verbraucher; keine Auslegung.
+    CONNECTION = "connection"
 
 
 DEVICE_CATEGORIES: tuple[str, ...] = tuple(item.value for item in DeviceCategory)
@@ -104,8 +113,20 @@ ASSIGNABLE_CATEGORIES: frozenset[str] = frozenset(
         DeviceCategory.SWITCH.value,
         DeviceCategory.LIGHT.value,
         DeviceCategory.JUNCTION.value,
+        DeviceCategory.CONNECTION.value,
     }
 )
+#: Kategorien, die ein betriebseigener Typ haben darf - nie die Lage einer Verteilung.
+CUSTOM_TYPE_CATEGORIES: tuple[str, ...] = tuple(
+    value for value in DEVICE_CATEGORIES if value != DeviceCategory.DISTRIBUTION.value
+)
+#: Reserviertes Praefix serververgebener Schluessel betriebseigener Typen (ADR 0030).
+CUSTOM_TYPE_KEY_PREFIX = "c_"
+#: SQL-Muster dafuer (``LIKE``, Unterstrich maskiert) - dieselbe Regel in CHECK und Spalten.
+CUSTOM_TYPE_KEY_LIKE = "c\\_%"
+#: Laengen der Angaben eines Geraetetyps.
+MAX_DEVICE_TYPE_LABEL_LENGTH = 80
+MAX_DEVICE_TYPE_DESCRIPTION_LENGTH = 300
 #: Katalogtyp, dessen Geraet die Lage einer Verteilung ist (D1, ADR 0026).
 DISTRIBUTION_BOARD_TYPE = "distribution_board"
 
@@ -236,4 +257,44 @@ DEVICE_TYPE_CATALOG: tuple[DeviceTypeDef, ...] = (
         height_mm=80,
         sort_order=150,
     ),
+    # Phase 6c (K2, R1): Geraeteanschluss/Festanschluss. Standardhoehe ist ein Startwert,
+    # keine Norm und keine Anschlussvorgabe - die Werte legt der Betrieb fest.
+    DeviceTypeDef(
+        key="device_connection",
+        label="Geräteanschluss/Festanschluss",
+        category=DeviceCategory.CONNECTION,
+        symbol_key="connection_outlet",
+        allows_wall_interior=True,
+        allows_wall_exterior=False,
+        allows_ceiling=True,
+        default_center_height_mm=300,
+        width_mm=80,
+        height_mm=80,
+        sort_order=160,
+    ),
 )
+
+#: Kontrollierte Symbolauswahl: die mitgelieferten Zeichnungen der Oberflaeche
+#: (``geraete/symbole.tsx``). Gemeinsame Pruefdatei: ``testdata/katalog/symbole.v1.json``.
+SYMBOL_KEYS: tuple[str, ...] = (
+    "socket_single",
+    "socket_double",
+    "socket_triple",
+    "socket_outdoor",
+    "switch_single",
+    "switch_two_way",
+    "switch_series",
+    "light_ceiling",
+    "light_recessed",
+    "light_wall",
+    "light_outdoor",
+    "data_single",
+    "data_double",
+    "distribution_board",
+    "junction_box",
+    "connection_outlet",
+)
+
+#: Symbole fuer eigene Typen: ohne das Verteilungssymbol - ein eigener Typ ist nie eine
+#: Verteilung und soll auch nicht wie eine aussehen.
+CUSTOM_SYMBOL_KEYS: frozenset[str] = frozenset(SYMBOL_KEYS) - {"distribution_board"}

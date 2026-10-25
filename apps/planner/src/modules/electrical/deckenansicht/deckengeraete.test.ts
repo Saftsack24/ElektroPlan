@@ -18,6 +18,11 @@ const LEUCHTE: Geraetetyp = {
   height_mm: 100,
   sort_order: 80,
   is_active: true,
+  origin: "system",
+  description: null,
+  version: 1,
+  device_count: 0,
+  template_count: 0,
 };
 
 function waende(punkte: readonly [number, number][]): EntwurfWand[] {

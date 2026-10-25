@@ -21,7 +21,14 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.validation import reject_explicit_null
-from app.modules.electrical.catalog import MAX_DEVICE_LABEL_LENGTH, MAX_DEVICES_PER_ROOM
+from app.modules.electrical.catalog import (
+    MAX_DEVICE_LABEL_LENGTH,
+    MAX_DEVICE_SIZE_MM,
+    MAX_DEVICE_TYPE_DESCRIPTION_LENGTH,
+    MAX_DEVICE_TYPE_LABEL_LENGTH,
+    MAX_DEVICES_PER_ROOM,
+    MIN_DEVICE_SIZE_MM,
+)
 from app.modules.electrical.geometry import (
     DEFAULT_WALL_THICKNESS_MM,
     MAX_COORDINATE_MM,
@@ -64,7 +71,12 @@ WallLinkCandidateReasonValue = Literal[
 ]
 #: Tatsaechliche Montageflaeche eines Geraets (``catalog.MountingSurface``).
 MountingSurfaceValue = Literal["wall_interior", "wall_exterior", "ceiling"]
-DeviceCategoryValue = Literal["socket", "switch", "light", "data", "distribution", "junction"]
+DeviceCategoryValue = Literal[
+    "socket", "switch", "light", "data", "distribution", "junction", "connection"
+]
+#: Kategorien eines betriebseigenen Typs (K2, ADR 0030) - nie ``distribution``.
+CustomDeviceCategoryValue = Literal["socket", "switch", "light", "data", "junction", "connection"]
+DeviceTypeOriginValue = Literal["system", "organization"]
 
 
 def _coordinate(*, required: bool) -> Any:
@@ -450,18 +462,22 @@ class DeviceOut(BaseModel):
 
 
 class DeviceTypeOut(BaseModel):
-    """Ein Geraetetyp des Systemkatalogs.
+    """Ein Geraetetyp: Systemtyp oder betriebseigener Typ (K2, ADR 0030).
 
     ``width_mm``/``height_mm`` sind das **Planungsmass** fuer die
     Platzierungspruefung (an der Wand Breite x Hoehe, an der Decke in x und y)
     - keine Herstellerangabe. ``default_center_height_mm`` ist ein Startwert,
     keine Normvorgabe. ``is_active = false``: nicht mehr fuer neue Geraete.
+
+    ``origin``: ``system`` (Seed, unveraenderlich) oder ``organization`` (eigener Typ).
+    ``device_count``/``template_count``: Verweise **im eigenen Betrieb** - ein eigener Typ
+    mit Verweisen ist „verwendet“ (Kategorie und Planungsmass gesperrt).
     """
 
-    model_config = ConfigDict(from_attributes=True)
-
     key: str
+    origin: DeviceTypeOriginValue
     label: str
+    description: str | None
     category: DeviceCategoryValue
     symbol_key: str
     allows_wall_interior: bool
@@ -472,6 +488,72 @@ class DeviceTypeOut(BaseModel):
     height_mm: int
     sort_order: int
     is_active: bool
+    version: int
+    device_count: int
+    template_count: int
+
+
+def _typtext(value: str | None) -> str | None:
+    """Leerraum entfernen; ein leerer Text wird ``None`` (Name ist dann ungueltig)."""
+    if value is None:
+        return None
+    value = value.strip()
+    return value or None
+
+
+class _DeviceTypeFields(_Strict):
+    """Gemeinsame Angaben eines eigenen Geraetetyps (K2, ADR 0030).
+
+    Symbol nur aus der mitgelieferten Liste, Planungsmass gerade Millimeter. Die
+    Standardhoehe ist ein Startwert fuer Wandgeraete - keine Norm, keine Anschlussvorgabe.
+    """
+
+    label: str | None = Field(default=None, min_length=1, max_length=MAX_DEVICE_TYPE_LABEL_LENGTH)
+    description: str | None = Field(default=None, max_length=MAX_DEVICE_TYPE_DESCRIPTION_LENGTH)
+    category: CustomDeviceCategoryValue | None = None
+    symbol_key: str | None = Field(default=None, min_length=1, max_length=40)
+    allows_wall_interior: bool | None = None
+    allows_wall_exterior: bool | None = None
+    allows_ceiling: bool | None = None
+    default_center_height_mm: int | None = Field(default=None, ge=0, le=MAX_ROOM_HEIGHT_MM)
+    width_mm: int | None = Field(default=None, ge=MIN_DEVICE_SIZE_MM, le=MAX_DEVICE_SIZE_MM)
+    height_mm: int | None = Field(default=None, ge=MIN_DEVICE_SIZE_MM, le=MAX_DEVICE_SIZE_MM)
+    sort_order: int | None = Field(default=None, ge=0, le=100_000)
+    is_active: bool | None = None
+
+    _texte = field_validator("label", "description")(_typtext)
+
+
+class DeviceTypeCreate(_DeviceTypeFields):
+    """Neuer eigener Typ. Schluessel und Betrieb vergibt der Server."""
+
+    label: str = Field(min_length=1, max_length=MAX_DEVICE_TYPE_LABEL_LENGTH)
+    category: CustomDeviceCategoryValue
+    symbol_key: str = Field(min_length=1, max_length=40)
+    allows_wall_interior: bool = False
+    allows_wall_exterior: bool = False
+    allows_ceiling: bool = False
+    width_mm: int = Field(ge=MIN_DEVICE_SIZE_MM, le=MAX_DEVICE_SIZE_MM)
+    height_mm: int = Field(ge=MIN_DEVICE_SIZE_MM, le=MAX_DEVICE_SIZE_MM)
+    sort_order: int = Field(default=1_000, ge=0, le=100_000)
+    is_active: bool = True
+
+
+class DeviceTypeUpdate(_DeviceTypeFields):
+    """Teilaenderung (``If-Match``). Verwendete Typen: Kategorie und Planungsmass gesperrt."""
+
+    _not_nullable = field_validator(
+        "label",
+        "category",
+        "symbol_key",
+        "allows_wall_interior",
+        "allows_wall_exterior",
+        "allows_ceiling",
+        "width_mm",
+        "height_mm",
+        "sort_order",
+        "is_active",
+    )(reject_explicit_null)
 
 
 class WallPlanOut(WallOut):

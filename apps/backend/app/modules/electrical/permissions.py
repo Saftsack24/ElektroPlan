@@ -10,7 +10,8 @@ zerlegen. Seit Phase 6b.0 gibt es ``electrical.circuit.write`` fuer
 Verteilungen, Stromkreise und Geraetezuordnung (ADR 0026), seit Phase 6b.3
 ``electrical.route.write`` fuer Leitungen und Durchfuehrungen, seit Phase 6c (V1,
 ADR 0027) ``electrical.defaults.manage`` fuer betriebsweite Planungsvorgaben und
-Kabelvorlagen; weitere Schluessel entstehen mit den Phasen, die sie brauchen
+Kabelvorlagen, seit K2 ``electrical.device_types.manage`` fuer eigene
+Geraetetypen; weitere Schluessel entstehen mit den Phasen, die sie brauchen
 (docs/modules/electrical.md, Abschnitt 7).
 
 ``default_roles`` nennt die ausgelieferten Systemrollen, die den Schluessel
@@ -32,6 +33,9 @@ ROUTE_WRITE = "electrical.route.write"
 #: Betriebsstandard, Kabelvorlagen und Vorlage je Geraetetyp (Phase 6c, V1, ADR 0027).
 #: Betriebsweit - ein Projektbearbeiter aendert damit nie die Vorgaben aller Projekte.
 DEFAULTS_MANAGE = "electrical.defaults.manage"
+#: Betriebseigene Geraetetypen anlegen, aendern, deaktivieren, entfernen (Phase 6c, K2,
+#: ADR 0030). Betriebsweit; Auswahl und Platzieren bleiben bei ``electrical.plan.write``.
+DEVICE_TYPES_MANAGE = "electrical.device_types.manage"
 
 ELECTRICAL_PERMISSIONS: tuple[PermissionDef, ...] = (
     PermissionDef(
@@ -58,6 +62,12 @@ ELECTRICAL_PERMISSIONS: tuple[PermissionDef, ...] = (
     PermissionDef(
         DEFAULTS_MANAGE,
         "Betriebsweite Planungsvorgaben und Kabelvorlagen verwalten",
+        default_roles=(),
+    ),
+    # Standard: nur der Administrator (erhaelt jede Berechtigung) - Entscheidung R2 (K2).
+    PermissionDef(
+        DEVICE_TYPES_MANAGE,
+        "Betriebseigene Geraetetypen anlegen, aendern, deaktivieren und entfernen",
         default_roles=(),
     ),
 )

@@ -70,6 +70,7 @@ from app.modules.electrical.device_rules import (
     FloorDeviceCheck,
     links_of_walls,
     load_device_types,
+    lock_device_types_for_use,
 )
 from app.modules.electrical.distribution import boards_placed_on, circuits_of_devices
 from app.modules.electrical.geometry import (
@@ -306,12 +307,12 @@ class ElectricalRoomService:
         )
 
     def list_device_types(self) -> list[ElectricalDeviceType]:
-        """Der Systemkatalog - aktive und deaktivierte Typen, in Katalogreihenfolge.
+        """Systemkatalog und eigene Typen des Betriebs - aktiv und deaktiviert, in Reihenfolge.
 
         Deaktivierte Typen bleiben sichtbar, damit vorhandene Geraete benannt
         werden koennen; fuer neue Geraete sind sie gesperrt.
         """
-        return list(load_device_types(self.session).values())
+        return list(load_device_types(self.session, self.organization_id).values())
 
     def get_room(self, room_id: uuid.UUID) -> RoomView:
         room = self.rooms.get_or_404(room_id)
@@ -922,7 +923,12 @@ class ElectricalRoomService:
                     keys=tuple(missing),
                 )
             )
-        types = load_device_types(self.session)
+        # Eigene Typen: erst sperren (FOR KEY SHARE), dann frisch lesen - eine
+        # gleichzeitige Typaenderung ueberholt die Verwendung nicht (ADR 0030).
+        lock_device_types_for_use(
+            self.session, self.organization_id, [item.device_type_key for item in devices_in]
+        )
+        types = load_device_types(self.session, self.organization_id)
         for device_id, device_in in zip(device_ids, devices_in, strict=True):
             key = str(device_id)
             existing = current_devices.get(device_id)

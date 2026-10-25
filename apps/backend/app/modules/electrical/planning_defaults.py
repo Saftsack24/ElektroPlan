@@ -67,6 +67,7 @@ from app.modules.electrical.defaults_chain import (
     resolve_reserve,
     resolve_spec,
 )
+from app.modules.electrical.device_rules import lock_device_types_for_use, visible_device_types
 from app.modules.electrical.models import (
     CABLE_TEMPLATE_NAME_CONSTRAINT,
     PLANNING_DEFAULTS_ORG_CONSTRAINT,
@@ -712,11 +713,14 @@ class PlanningDefaultsService:
                 "Geraetetyp doppelt.",
                 *doubled,
             )
+        # Eigene Typen: Verwendung sperren, dann lesen (ADR 0030); fremde bleiben unbekannt.
+        lock_device_types_for_use(self.session, self.organization_id, keys)
         categories: dict[str, str] = {
             row[0]: row[1]
             for row in self.session.execute(
                 select(ElectricalDeviceType.key, ElectricalDeviceType.category).where(
-                    ElectricalDeviceType.key.in_(keys or [""])
+                    ElectricalDeviceType.key.in_(keys or [""]),
+                    visible_device_types(self.organization_id),
                 )
             ).all()
         }
@@ -733,8 +737,8 @@ class PlanningDefaultsService:
         if not_assignable:
             raise _invalid(
                 "Kabelvorlagen gibt es nur fuer Geraetetypen mit Leitungsanschluss an einem "
-                "Stromkreis (Steckdose, Schalter, Leuchte, Abzweigdose) - nie fuer die Verteilung "
-                "oder Datendosen.",
+                "Stromkreis (Steckdose, Schalter, Leuchte, Abzweigdose, Geraeteanschluss) - nie "
+                "fuer die Verteilung oder Datendosen.",
                 "device_type_templates",
                 "device-type-not-assignable",
                 "Geraetetyp ohne Kabelvorlage.",

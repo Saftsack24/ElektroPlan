@@ -6,7 +6,7 @@ import { useAuth } from "../../../core/auth/AuthProvider";
 import { Dialog, DialogAktionen } from "../../../core/ui/Dialog";
 import { useMasse } from "../../../core/ui/masseinheit";
 import { knopf, meldungsflaeche } from "../../../core/ui/stil";
-import { katalogAbfrage } from "../geraete/katalog";
+import { katalogAbfrage, katalogSchluessel } from "../geraete/katalog";
 import { ZUORDENBAR } from "../stromkreise/daten";
 import type { Betriebsstandard, Projektvorgabe } from "./daten";
 import {
@@ -56,12 +56,15 @@ export function VorgabenDialog({
   const vorgabe = useQuery({ ...projektvorgabeAbfrage(api, projekt), enabled: modus === "projekt" });
   const wirksam = useQuery({ ...wirksamAbfrage(api, projekt, null), enabled: modus === "projekt" });
   const katalog = useQuery(katalogAbfrage(api));
-  const typen = useMemo(
-    () => (Array.isArray(katalog.data) ? katalog.data : []).filter((t) => t.is_active && ZUORDENBAR.has(t.category)).sort((a, b) => a.sort_order - b.sort_order),
-    [katalog.data],
-  );
-
   const stand: Betriebsstandard | Projektvorgabe | undefined = modus === "projekt" ? vorgabe.data : betrieb.data;
+  // Aktive Typen – und deaktivierte mit gespeicherter Zuordnung, damit sie sich lösen lässt (K2).
+  const typen = useMemo(() => {
+    const zugeordnet = new Set((stand?.device_type_templates ?? []).map((t) => t.device_type_key));
+    return (Array.isArray(katalog.data) ? katalog.data : [])
+      .filter((t) => (t.is_active || zugeordnet.has(t.key)) && ZUORDENBAR.has(t.category))
+      .sort((a, b) => a.sort_order - b.sort_order);
+  }, [katalog.data, stand]);
+
   const [form, setForm] = useState<{ version: number; werte: Vorgabenformular } | null>(null);
   if (form === null && stand !== undefined) setForm({ version: stand.version, werte: formularAus(stand, masse) });
   const [fehler, setFehler] = useState<Formularfehler>({});
@@ -92,6 +95,8 @@ export function VorgabenDialog({
         await queryClient.invalidateQueries({ queryKey: ["electrical", "effective-defaults"] });
       }
       await queryClient.invalidateQueries({ queryKey: vorlagenSchluessel() });
+      // K2: Vorlagen je Typ zählen als Verwendung eigener Gerätetypen.
+      await queryClient.invalidateQueries({ queryKey: katalogSchluessel() });
       onClose();
     } catch (error: unknown) {
       const versionskonflikt = error instanceof ApiError && error.errorType === "version-conflict";

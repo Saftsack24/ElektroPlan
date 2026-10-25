@@ -25,6 +25,11 @@ const typ = (key: string, label: string, category: string, teile: Partial<Geraet
   height_mm: 80,
   sort_order: 10,
   is_active: true,
+  origin: "system",
+  description: null,
+  version: 1,
+  device_count: 0,
+  template_count: 0,
   ...teile,
 });
 const TYPEN = typenNachSchluessel([

@@ -138,6 +138,7 @@ export function Wandansicht({
   geschossLabel,
   platzierung,
   verteilungsangebot,
+  typAnlegen = false,
 }: {
   ziel: Wandziel;
   zustand: EditorZustand;
@@ -180,6 +181,8 @@ export function Wandansicht({
   platzierung?: Wandplatzierung | undefined;
   /** K1: „Verteilung platzieren …“ im Gerätekatalog (führt in den VP-Ablauf). */
   verteilungsangebot?: Verteilungsangebot | undefined;
+  /** K2: Recht „Gerätetypen verwalten“ – „Eigenen Typ anlegen …“ im Katalog. */
+  typAnlegen?: boolean;
 }) {
   const masse = useMasse();
   const [werkzeug, setWerkzeug] = useState<Wandwerkzeug>(ziel.werkzeug ?? "auswahl");
@@ -948,6 +951,7 @@ export function Wandansicht({
         <Geraetekatalog
           typen={typen}
           modus={katalog.modus}
+          typAnlegen={typAnlegen}
           onClose={() => setKatalog(null)}
           onWahl={(key) => {
             if (katalog.geraetId !== null) {

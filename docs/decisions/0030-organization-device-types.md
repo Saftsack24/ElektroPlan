@@ -1,6 +1,7 @@
 # 0030 — Betriebseigene Gerätetypen im Gerätekatalog
 
-Status: **proposed** (2026-10-25) – Entwurf, nicht umgesetzt, nicht freigegeben
+Status: **accepted** (2026-10-25) – mit K2 freigegeben und umgesetzt (Migration `0015_organization_device_types`;
+Umsetzungsstand: [`geraetekatalog-design.md`](../geraetekatalog-design.md) §12)
 Betrifft: Gerätekatalog, Schritt K2 ([`docs/geraetekatalog-design.md`](../geraetekatalog-design.md) §4–§5)
 Erweitert: [ADR 0023](0023-electrical-devices-symbols-room-types.md) (globaler Systemkatalog; dort:
 „Betriebseigene Typen … brauchen einen eigenen ADR“)
@@ -15,7 +16,7 @@ zweite Liste und ohne dass bestehende Geräte still ihre Lage, ihr Maß oder ihr
 Betriebs- und Projektvorlagen je Gerätetyp verweisen über `device_type_key` auf den Katalog. Die fachliche
 Rolle eines Typs hängt an der Kategorie; nur die Verteilung hängt am festen Schlüssel `distribution_board`.
 
-## Decision (Vorschlag)
+## Decision
 
 1. **Ein Katalog mit Geltungsbereich.** `electrical_device_types` erhält `organization_id` (NULL = Systemtyp),
    `description`, `version`, Zeitstempel. Eigene Typen erhalten einen serververgebenen Schlüssel `c_<32 hex>`;
@@ -36,8 +37,22 @@ Rolle eines Typs hängt an der Kategorie; nur die Verteilung hängt am festen Sc
    Leitungsendpunkt, Gerätezugabe, Vorlage je Typ, eigenes Symbol, in Mengen gezählt; Systemtyp per Seed;
    mit derselben Migration (Kategorie-CHECK).
 
-R2 (eigenes Recht, nur Administrator) und R3 (Reihenfolge VP → K1 → K2) sind entschieden; der ADR bleibt
-*proposed*, bis K2 freigegeben wird.
+R2 (eigenes Recht, nur Administrator) und R3 (Reihenfolge VP → K1 → K2) sind entschieden; K2 ist freigegeben.
+
+**Bei der Umsetzung präzisiert:**
+
+* Schlüssel und Eigentümer sind per Trigger unveränderlich (`trg_el_device_types_scope_fixed`); Name eindeutig
+  unter aktiven eigenen Typen je Betrieb (`lower(label)`, `device-type-label-taken`).
+* **Sperrstrategie:** Jeder Weg, der einen eigenen Typ verwendet (Raumentwurf, Vorlagen je Typ), sperrt dessen
+  Zeile `FOR KEY SHARE`; Ändern und Entfernen sperren `FOR UPDATE` und zählen die Verweise erst danach. Eine
+  vorherige Zählung allein wäre kein Schutz.
+* `GET /device-types` liefert `device_count`/`template_count` (statt `in_use`) und kein `placeable` – die
+  Verteilung erkennt die Oberfläche an der Kategorie. Systemtyp ändern: `409 device-type-system`; fremder
+  Schlüssel: `404`.
+* Eigene Typen dürfen auch das Verteilungssymbol nicht verwenden (kein Typ, der wie eine Verteilung aussieht).
+* Architekturtest: `electrical_device_types` ist als **gemischter Katalog** ausdrücklich von
+  „`organization_id NOT NULL`“ ausgenommen; stattdessen muss jede verweisende Mandantentabelle den berechneten,
+  zusammengesetzten FK tragen (`test_gemischte_kataloge_sind_abgesichert`).
 
 ## Alternatives
 

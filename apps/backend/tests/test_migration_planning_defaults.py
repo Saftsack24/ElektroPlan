@@ -141,7 +141,7 @@ def _anzahl(engine: Engine, tabelle: str) -> int:
 
 
 def test_bestand_unveraendert_reserve_fest_herkunft_legacy(bestand: Bestand) -> None:
-    assert basis._version(bestand.engine) == basis._head() == "0014_planning_defaults"
+    assert basis._version(bestand.engine) == basis._head()
     assert set(inspect(bestand.engine).get_table_names()) >= NEUE_TABELLEN
     # Die Migration legt keine Vorgaben an - weder Vorlagen noch Standards.
     for tabelle in NEUE_TABELLEN:

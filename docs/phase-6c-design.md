@@ -2022,6 +2022,17 @@ im selben Dialog; „Verteilung platzieren …“ führt in VP (§23). Ablauf, P
 [`geraetekatalog-design.md`](geraetekatalog-design.md) §11. Als Checkpoint committet (Task 0067); persönliche und
 optische Abnahme offen.
 
+## 25. Umsetzungsstand K2 – eigene Gerätetypen (2026-10-25)
+
+Nach dem K1-Checkpoint `f2ea140`: betriebseigene Gerätetypen im einen Gerätekatalog (ADR 0030 *accepted*,
+Migration `0015`), Recht `electrical.device_types.manage` (nur Administrator), Kategorie
+„Geräteanschluss/Festanschluss“ (`connection`) mit Systemtyp. Anlegen im Katalogdialog, Verwaltung auf
+„Elektro-Vorgaben“ (Abschnitt „Gerätetypen“). Eigene Typen sind bei Platzierung, Stromkreiszuordnung und
+Vorlage je Gerätetyp nutzbar. Keine Artikel, Preise, Bestände, Artikelzuordnung, zentrale Anwendung (6c.6) oder
+Verteilungsaufbau (6c.7). Details, Prüfung und Stack-Durchlauf:
+[`geraetekatalog-design.md`](geraetekatalog-design.md) §12. Als Checkpoint committet (Task 0069); persönliche und
+optische Abnahme offen.
+
 ## 16. Geänderte Dokumentation durch diesen Entwurf
 
 Neu: dieser Entwurf, ADR 0027–0029 (proposed). Aktualisiert: `current-status.md` (Phase 6c, Phase 7

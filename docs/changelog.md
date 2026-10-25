@@ -5,6 +5,19 @@ Einträge entstehen nach relevanten Änderungen, nicht nach jedem Commit.
 
 ---
 
+## 2026-10-25 — Phase 6c K2: Eigene Gerätetypen und „Geräteanschluss/Festanschluss“
+
+Administratoren (Recht „Gerätetypen verwalten“) legen eigene Gerätetypen an – im Gerätekatalog über „Eigenen
+Typ anlegen …“ oder auf „Elektro-Vorgaben“ im Abschnitt „Gerätetypen“: Name, Beschreibung, Kategorie, Symbol
+aus der mitgelieferten Auswahl, Montageflächen, Planungsmaß, Standardhöhe. Eigene Typen gelten im ganzen
+Betrieb, sind im Katalog als „eigen“ markiert und lassen sich platzieren, Stromkreisen zuordnen und mit einer
+Kabelvorlage je Gerätetyp verbinden. Wird ein Typ verwendet, bleiben Kategorie und Planungsmaß fest; für
+Varianten gibt es „Als neuen Typ anlegen“, ein neues Symbol fragt mit der Zahl der betroffenen Geräte nach.
+Entfernen nur unbenutzt, sonst deaktivieren – vorhandene Geräte behalten ihren Typ. Neue Kategorie
+„Geräteanschluss/Festanschluss“ mit Systemtyp. API: `POST/PATCH/DELETE /api/v1/modules/electrical/device-types`;
+`GET` liefert zusätzlich `origin`, `description`, `version`, `device_count`, `template_count`. Migration `0015`;
+nach dem Update den Seed ausführen.
+
 ## 2026-10-25 — Phase 6c K1: Gerätekatalog
 
 „Gerät“ (Taste G) öffnet in Grundriss, Wand- und Deckenansicht einen Katalog mit Suche, Kategorien und Kacheln.

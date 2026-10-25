@@ -39,6 +39,7 @@ from app.modules.electrical.models import (
     ElectricalCircuit,
     ElectricalCircuitDevice,
     ElectricalDevice,
+    ElectricalDeviceType,
     ElectricalDistributionBoard,
     ElectricalOpening,
     ElectricalRiser,
@@ -87,6 +88,8 @@ class Tenant:
     cable_id: uuid.UUID
     #: Technische Kabelvorlage des Betriebs (Phase 6c V1; synthetisch).
     template_id: uuid.UUID
+    #: Betriebseigener Geraetetyp (Phase 6c K2, ADR 0030; synthetisch).
+    device_type_key: str
     #: Benutzerverwaltung (Phase 4.2): ein weiteres Mitglied und eine offene
     #: Einladung je Betrieb.
     member_id: uuid.UUID
@@ -325,6 +328,20 @@ def two_tenants(
                 cross_section_mm2=Decimal("1.5"),
             )
             session.add(vorlage)
+            eigener_typ = ElectricalDeviceType(
+                key="c_" + uuid.uuid4().hex,
+                organization_id=result.organization_id,
+                label="Testanschluss",
+                category="connection",
+                symbol_key="connection_outlet",
+                allows_wall_interior=True,
+                allows_wall_exterior=False,
+                allows_ceiling=False,
+                width_mm=80,
+                height_mm=80,
+                sort_order=1000,
+            )
+            session.add(eigener_typ)
             session.flush()
             tenants.append(
                 Tenant(
@@ -351,6 +368,7 @@ def two_tenants(
                     penetration_id=durchfuehrung.id,
                     cable_id=leitung.id,
                     template_id=vorlage.id,
+                    device_type_key=eigener_typ.key,
                     member_id=mitglied.id,
                     invitation_id=einladung.id,
                 )
@@ -461,6 +479,7 @@ def fremde_ids(tenant: Tenant) -> dict[str, str]:
         "cable_id": str(tenant.cable_id),
         "penetration_id": str(tenant.penetration_id),
         "template_id": str(tenant.template_id),
+        "key": tenant.device_type_key,
         "member_id": str(tenant.member_id),
         "invitation_id": str(tenant.invitation_id),
     }

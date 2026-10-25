@@ -408,7 +408,7 @@ class CableStateLoader:
                 .order_by(ElectricalCableWaypoint.cable_id, ElectricalCableWaypoint.seq)
             ):
                 waypoints[row.cable_id].append(row)
-        types = load_device_types(self.session)
+        types = load_device_types(self.session, org)
         plan = build_plan(
             context,
             rooms=rooms,

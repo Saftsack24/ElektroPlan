@@ -45,7 +45,13 @@ class ElectricalReferenceData:
     """Gleicht ``electrical_device_types`` mit dem ausgelieferten Katalog ab."""
 
     def seed_reference_data(self, session: Session) -> ReferenceDataResult:
-        existing = {row.key: row for row in session.execute(select(ElectricalDeviceType)).scalars()}
+        # Nur Systemtypen: eigene Typen der Betriebe (ADR 0030) fasst der Seed nie an.
+        existing = {
+            row.key: row
+            for row in session.execute(
+                select(ElectricalDeviceType).where(ElectricalDeviceType.organization_id.is_(None))
+            ).scalars()
+        }
         created = updated = deactivated = 0
         known: set[str] = set()
         for definition in DEVICE_TYPE_CATALOG:

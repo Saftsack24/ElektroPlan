@@ -1,7 +1,8 @@
 # Entwurf: Gerätekatalog – Auswahl, Platzierung und eigene Gerätetypen
 
-**Status:** Entwurf, 2. Fassung (2026-10-25) – **R1–R3 entschieden** (§10). **K1 umgesetzt** (§11, als Checkpoint committet);
-K2 und die neue Kategorie werden erst in ihrem ausdrücklich freigegebenen Schritt implementiert.
+**Status:** 2. Fassung (2026-10-25) – **R1–R3 entschieden** (§10). **K1 umgesetzt** (§11, Checkpoint `f2ea140`);
+**K2 freigegeben, umgesetzt und als Checkpoint committet** (§12, eigene Gerätetypen und Kategorie
+„Geräteanschluss/Festanschluss“, Task 0069); persönliche und optische Abnahme von K1 und K2 offen.
 **Einordnung:** Erweiterung von Phase 6c (Bedienung), Schritte **K1/K2** nach **VP** (Verteilung direkt platzieren,
 6c.3) – siehe §9. Schrittbezeichnung: **VP** statt des früheren „P“, weil „P“ im 6c-Entwurf (§18.7) die
 gemeinsame Bedienungsprüfung bezeichnet. Phase 7 bleibt zurückgestellt.
@@ -11,8 +12,8 @@ Stromkreise), [ADR 0027](decisions/0027-planning-defaults-cable-templates-and-re
 Kabelvorlagen), [ADR 0028](decisions/0028-distribution-board-placement-and-layout.md) (Verteilungslage),
 [`phase-6c-design.md`](phase-6c-design.md) §6, [`modules/materials.md`](modules/materials.md),
 [`modules/inventory.md`](modules/inventory.md).
-**ADR-Entwurf:** [ADR 0030 – Betriebseigene Gerätetypen im Gerätekatalog](decisions/0030-organization-device-types.md)
-(*proposed*).
+**ADR:** [ADR 0030 – Betriebseigene Gerätetypen im Gerätekatalog](decisions/0030-organization-device-types.md)
+(*accepted* mit K2).
 
 > ElektroPlan plant und dokumentiert. Ein Gerätetyp beschreibt, **was geplant wird** – Symbol, Planungsmaß,
 > Montageflächen und fachliche Rolle. Er ist kein Herstellerartikel, kein Preis und kein Lagerbestand und
@@ -463,4 +464,99 @@ gesetzt (Kontoeinstellung „hell“ unverändert); sichtbarer Tastaturfokus per
 
 Zusätzlich festgelegt: Bestandsschutz eigener Typen wie §4.3 (Kategorie und Maße verwendeter Typen gesperrt,
 „Als neuen Typ anlegen“ für Varianten); spätere Artikelanbindung mit unterscheidbarer Artikelauswahl je
-Planungstyp (§6.2), umgesetzt erst in Phase 7. Freigegeben zur Umsetzung ist **nur VP**.
+Planungstyp (§6.2), umgesetzt erst in Phase 7. Freigegeben wurden nacheinander VP, K1 und K2.
+
+## 12. Umsetzungsstand K2 – eigene Gerätetypen (2026-10-25)
+
+**Umgesetzt wie §3.1, §4 und §5**, mit diesen Präzisierungen bzw. Abweichungen vom Entwurf:
+
+| Entwurf | Umsetzung | Grund |
+|---|---|---|
+| Code `device-type-name-taken` | `device-type-label-taken` (Name = `label`, eindeutig unter aktiven eigenen Typen, ohne Groß-/Kleinschreibung) | Feldname der API |
+| `GET` mit `in_use`, `placeable` | `device_count`, `template_count`; „verwendet“ = Summe > 0; kein `placeable` | Anzahl für die Rückfrage beim Symbolwechsel nötig; die Verteilung erkennt die Oberfläche an der Kategorie |
+| Systemtypen `403`/`409` | `409 device-type-system`; fremde/unbekannte Schlüssel `404` (gleiche Antwort) | Recht vorhanden, Zustand verbietet es; fremde Typen nicht erkennbar |
+| Symbolliste | ohne Verteilungssymbol für eigene Typen | ein eigener Typ soll nicht wie eine Verteilung aussehen |
+| – | Trigger macht Schlüssel und Eigentümer unveränderlich | auch direkte SQL-Änderungen ausgeschlossen |
+| Flächen „nur hinzufügen“ | Abwählen nur gesperrt, wenn Geräte dieses Typs auf der Fläche sitzen (`409 device-type-surface-in-use`) | wie Tabelle §4.3 („Entfernen einer Fläche, auf der Geräte sitzen“) |
+
+**Datenbank (Migration `0015_organization_device_types`):** Spalten `organization_id`, `description`, `version`,
+Zeitstempel; CHECK `key_scope` und `custom_not_distribution`; Kategorie-CHECK um `connection` erweitert;
+eindeutiger Teilindex auf `(organization_id, lower(label))` aktiver eigener Typen; Trigger
+`trg_el_device_types_scope_fixed`; berechnete Spalte `device_type_org_id` mit zusammengesetztem FK an Geräten,
+Betriebs- und Projektvorlagen je Typ. Downgrade bricht mit eigenen Typen oder `connection`-Verweisen ab.
+**Gegenproben direkt in der Testdatenbank:** Gerät, Betriebs- und Projektvorlage eines fremden Betriebs mit
+eigenem Typ eines anderen Betriebs scheitern an den FKs; dieselbe Zeile mit einem Systemtyp gelingt;
+`c_`-Schlüssel ohne Betrieb, Systemschlüssel mit Betrieb, eigene Verteilung scheitern an den CHECKs; Änderung von
+Schlüssel oder Eigentümer am Trigger.
+
+**Sperrstrategie:** Verwendung (Raumentwurf, Vorlagen je Typ in Betriebsstandard und Projektvorgabe) sperrt die
+eigenen Typzeilen `FOR KEY SHARE`; Ändern und Entfernen sperren `FOR UPDATE` und zählen danach. Drei Tests
+belegen mit gehaltenen Sperren (`pg_locks`, wartend), dass Erstverwendung und gesperrte Änderung bzw. Entfernen
+sich nicht überholen.
+
+**Oberfläche:** Im Katalogdialog „Eigenen Typ anlegen …“ (nur mit Recht) – Formular im selben Dialog, Fläche des
+Katalogs vorbelegt, Symbol folgt der Kategorie bis zur bewussten Wahl. Nach dem Speichern zurück zur Auswahl, der
+neue Typ gewählt und fokussiert; „Abbrechen“ behält Auswahl und Formularentwurf, der Raumentwurf bleibt
+unberührt. Eigene Typen als „eigen“ markiert, Details „eigener Typ“ bzw. „Systemtyp“. „Elektro-Vorgaben“ →
+„Gerätetypen“: Tabelle eigener Typen (Symbol, Kategorie, Montage, Planungsmaß, Status, Verwendung), Bearbeiten,
+Als neuen Typ anlegen, (De-)Aktivieren, Entfernen nur unbenutzt; Systemtypen aufklappbar, nur kopierbar.
+Verwendete Typen: Kategorie und Planungsmaß gesperrt mit Hinweis; Symbolwechsel mit Rückfrage, die die Zahl der
+Geräte nennt. In der Vorlage je Gerätetyp erscheinen aktive eigene Typen mit „(eigen)“. Technische Schlüssel
+werden nirgends als Bezeichnung gezeigt.
+
+**Kategorie `connection`:** Label, Symbol `connection_outlet` mit Kategorie-Rückfall, Suchbegriffe, Zuordnung
+(`ASSIGNABLE_CATEGORIES`, `ZUORDENBAR`), Leitungsendpunkt und Gerätezugabe, Vorlage je Typ, Ableitung von
+Stromkreisen, Mengen; Systemtyp `device_connection`. Gemeinsame Symbolprüfdatei
+`testdata/katalog/symbole.v1.json` (Backend und Frontend). Keine automatische Bemessung.
+
+**Prüfung:** Backend gegen PostgreSQL: 18 Tests eigene Gerätetypen (Rechte, Versionen, fremde Typen in Pfad,
+Körper und Verweisen, DB-Gegenproben, Feldsperren, Löschschutz, Deaktivierung, `connection`, Sperren unter
+Nebenläufigkeit, Symbol-Parität), 4 Migrationstests auf eigener Datenbank (Upgrade mit Bestand, kein Unterschied
+zum Modell, Seed idempotent ohne eigene Typen, Downgrade-Schutz und sicherer Downgrade), Architekturtest für
+gemischte Kataloge, Mandanten-Sweep um `key` ergänzt. **Backend-Prüfgrundlage (zusammengesetzt, kein
+vollständig grüner Gesamtlauf):** Gesamtlauf gegen PostgreSQL 1 416/1 418 (44 min unter Spiellast); die zwei
+Fehlschläge waren fest erwartete Kategorienlisten (`test_electrical_circuits.py`,
+`test_electrical_devices_geometry.py`), die ausschließlich um `connection` ergänzt wurden – nichts entfernt oder
+abgeschwächt; beide Dateien danach vollständig grün (38/38). Danach keine Backend-Quelländerung mehr; nur der
+Architekturtest für gemischte Kataloge wurde verschärft (zusätzlich CHECK `custom_not_distribution` verlangt;
+Gegenprobe: fehlender Typ-FK bzw. fehlender CHECK werden erkannt), Datei grün (11/11). Frontend: 18 neue Tests (Formularprüfung, Kategorie, Symbol-Parität, Katalog-Anlegen mit Rückkehr
+und Fokus, Abbrechen mit Entwurf, Typwechsel, Deaktivierung, Bestandsschutz, „Als neuen Typ anlegen“,
+Vorlagenzuordnung, Rechte, Abbruchsignal; dazu ein Test für beide Befunde des Stack-Durchlaufs).
+**Frontend:** erster Gesamtlauf unter Spiellast (CPU 85 %) 1 276/1 288 – 11 Zeitüberschreitungen (5 s) in langen
+Integrationsdateien und ein Fehler „Button ‚Nicht speichern‘ nicht gefunden“ (`Leitungsplanung.test.tsx`,
+„neu betroffene Leitungen“). Dessen Ausgabe belegt die Ursache: Der zweite Rückfragedialog stand schon im DOM,
+aber **ohne `open`** – der Test fand den Text (`findByText` prüft keine Zugänglichkeit) und suchte den Knopf
+synchron, bevor der Dialog per Effekt (`showModal`) geöffnet war. Ein Wettlauf im Test, kein falscher Zustand
+der Oberfläche; behoben, indem der Test auf den offenen Dialog wartet (keine Fristerhöhung, keine Pause).
+**Abschließender Gesamtlauf bei normaler Last (CPU 24–49 %, 6 Worker, reguläre Fristen): 1 289/1 289 grün**
+(113 Dateien, 120 s). Ruff,
+mypy, ESLint, Typprüfung, Modulgrenzen (Backend und Frontend), ein Alembic-Head, Lockfile (`uv lock --check`
+mit eigenem Cache-Verzeichnis; der Standardcache scheiterte an einer Umgebungsfrage), API-Drift, Build grün.
+Entwicklungsdatenbank vorher gesichert (`pg_dump`, lesbar geprüft), auf `0015` migriert, Seed im
+Backend-Container (+1 Recht nur Administrator, +1 Systemtyp), `alembic check` ohne Unterschied.
+
+**Stack-Durchlauf (synthetisch, PR-2026-0010):** Kabelvorlage „TEST-K2 Herdzuleitung“ angelegt → im Grundriss
+„Gerät“ → „Eigenen Typ anlegen …“ → „TEST-K2 Herdanschluss“ (Geräteanschluss, Wand innen, 12 × 12 cm, Mitte
+85 cm; zuerst ohne Fläche: Clientprüfung hielt an, nichts gesendet) → zurück in der Auswahl, gewählt und
+fokussiert, „eigen“ → Platzieren → Küchenwand → gesetzt und gespeichert (DB: `device_type_org_id` = Betrieb) →
+„Stromkreise“: als zuordenbar gelistet, F1 zugeordnet → Betriebsstandard: Vorlage je Typ „(eigen)“ gesetzt →
+„Leitung hinzufügen“ von UV1 zum Gerät: Abschlussdialog mit „Vorlage des Gerätetyps (Betriebsstandard)“ und
+Stromkreis aus der Zuordnung; Entwurf verworfen (keine Leitung gespeichert) → Neuladen: Gerät und Typ da →
+Bearbeiten: Kategorie und Planungsmaß gesperrt; manipulierte Breite → Server `409`, Maß und Version unverändert →
+Deaktiviert: im Katalog nicht mehr angeboten, Gerät behält den Typ → aufgeräumt (Gerät samt Zuordnung,
+Vorlagenzuordnung, Typ, Kabelvorlage entfernt; Leitungen unverändert 12). Dialog und Formular breit (720 px, 15
+Symbole in 3 Reihen) und schmal (390 px: kein Querscrollen, kein Überstand, Aktionen unten sichtbar), hell und
+dunkel (Symbolknöpfe in Vordergrundfarbe) – gemessen, nicht per Bild beurteilt; das dunkle Theme nur
+vorübergehend im DOM (Kontoeinstellung „hell“ unverändert).
+
+**Befunde aus dem Durchlauf, behoben:** (1) Die Verwendung eines Typs („verwendet: …“) blieb nach dem Speichern
+des Betriebsstandards veraltet – der Abschnitt „Gerätetypen“ lädt jetzt immer frisch, Speichern der Vorgaben
+lädt den Katalog neu (der Server sperrte unabhängig davon richtig). (2) Die Vorlagenzuordnung eines
+**deaktivierten** Typs war im Vorgabendialog unsichtbar und damit nicht lösbar – deaktivierte Typen mit
+Zuordnung erscheinen jetzt mit „(deaktiviert)“.
+
+**Einschränkungen:** Bildschirmbilder nur stark verkleinert, keine optische Beurteilung; Interaktion im Stack
+teils per Skript (Zeiger- und Tastaturereignisse, Wertsetzung), nicht per echter Maus; die persönliche Abnahme
+von K1 und K2 bleibt beim Auftraggeber.
+
+**Checkpoint:** nach der technischen Abschlussprüfung als K2-Checkpoint committet (Task 0069), nicht gepusht.

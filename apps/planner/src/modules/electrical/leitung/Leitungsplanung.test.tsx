@@ -542,8 +542,12 @@ describe("Änderungen, die Leitungen unterbrechen", () => {
     const d = await tuerSetzenUndSpeichern();
     fireEvent.click(within(await screen.findByRole("dialog", { name: "Eine Leitung würde unterbrochen" })).getByRole("button", { name: "Speichern – Leitung wird Konflikt" }));
     const erneut = await screen.findByText(/Der Stand hat sich seit Ihrer Bestätigung geändert/);
-    expect(within(erneut.closest("dialog") as HTMLElement).getByTestId("betroffene-leitungen")).toHaveTextContent("F4 · L7: Licht");
-    fireEvent.click(within(erneut.closest("dialog") as HTMLElement).getByRole("button", { name: "Nicht speichern" }));
+    // Der Text steht schon im DOM, bevor der Dialog per Effekt geöffnet (showModal) und damit
+    // bedienbar ist – erst auf den offenen Dialog warten, dann bedienen (unter Last sonst ein Wettlauf).
+    const zweiteFrage = erneut.closest("dialog") as HTMLElement;
+    await waitFor(() => expect(zweiteFrage).toHaveAttribute("open"));
+    expect(within(zweiteFrage).getByTestId("betroffene-leitungen")).toHaveTextContent("F4 · L7: Licht");
+    fireEvent.click(within(zweiteFrage).getByRole("button", { name: "Nicht speichern" }));
     await waitFor(() => expect(screen.queryByText(/Der Stand hat sich/)).toBeNull());
     expect(api.put).toHaveBeenCalledTimes(2);
     expect(within(d).getByText(/Ungespeicherte Änderungen/)).toBeInTheDocument();

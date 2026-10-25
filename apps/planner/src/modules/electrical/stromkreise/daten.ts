@@ -52,7 +52,7 @@ export function stromkreiseAbfrage(api: ApiClient, buildingId: string) {
 }
 
 /** Kategorien, die einem Stromkreis zugeordnet werden können - Spiegel von `ASSIGNABLE_CATEGORIES`. */
-export const ZUORDENBAR: ReadonlySet<Geraetekategorie> = new Set<Geraetekategorie>(["socket", "switch", "light", "junction"]);
+export const ZUORDENBAR: ReadonlySet<Geraetekategorie> = new Set<Geraetekategorie>(["socket", "switch", "light", "junction", "connection"]);
 
 /** Ein gespeichertes Gerät des Gebäudes mit Lage im Grundriss seines Geschosses. */
 export interface Planergeraet {

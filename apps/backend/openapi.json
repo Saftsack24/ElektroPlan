@@ -4858,8 +4858,8 @@
         "tags": [
           "electrical"
         ],
-        "summary": "Geraetetypen des Systemkatalogs",
-        "description": "Der ausgelieferte Geraetekatalog (Phase 5) in Katalogreihenfolge.\n\nGlobal fuer alle Betriebe; deaktivierte Typen stehen mit ``is_active =\nfalse`` dabei, damit vorhandene Geraete benannt werden koennen.",
+        "summary": "Geraetetypen: Systemkatalog und eigene Typen des Betriebs",
+        "description": "Systemtypen und eigene Typen des Betriebs (K2) in Katalogreihenfolge.\n\nTypen anderer Betriebe erscheinen nie. Deaktivierte Typen stehen mit ``is_active =\nfalse`` dabei, damit vorhandene Geraete benannt werden koennen. Die Verweiszahlen\ngelten im eigenen Betrieb.",
         "operationId": "listElectricalDeviceTypes",
         "responses": {
           "200": {
@@ -4872,6 +4872,205 @@
                   },
                   "type": "array",
                   "title": "Response Listelectricaldevicetypes"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Eigenen Geraetetyp anlegen",
+        "description": "Legt einen betriebseigenen Typ an (K2, ADR 0030). Schluessel und Betrieb vergibt der Server.\n\nKategorie nie ``distribution``; Symbol nur aus der mitgelieferten Liste. Betriebsweit -\nunabhaengig vom Status eines Projekts.",
+        "operationId": "createElectricalDeviceType",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceTypeCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceTypeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/modules/electrical/device-types/{key}": {
+      "patch": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Eigenen Geraetetyp aendern",
+        "description": "Aendert einen eigenen Typ (``If-Match``). Verwendet: Kategorie und Planungsmass gesperrt\n(``409 device-type-in-use``), belegte Montageflaeche bleibt (``device-type-surface-in-use``).\nSystemtypen: ``409 device-type-system``.",
+        "operationId": "updateElectricalDeviceType",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceTypeUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceTypeOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden (auch: Typ eines anderen Betriebs)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, Systemtyp, verwendeter Typ (gesperrte Angabe) oder belegte Flaeche",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Eigenen Geraetetyp entfernen",
+        "description": "Nur ohne Geraete und Vorlagen je Typ (sonst ``409 device-type-in-use`` - deaktivieren).",
+        "operationId": "deleteElectricalDeviceType",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "404": {
+            "description": "Nicht gefunden (auch: Typ eines anderen Betriebs)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versionskonflikt, Systemtyp, verwendeter Typ (gesperrte Angabe) oder belegte Flaeche",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
                 }
               }
             }
@@ -11845,15 +12044,137 @@
         "title": "DeviceOut",
         "description": "Ein gespeichertes Geraet (Phase 5). Bezugspunkt ist die Geraetemitte."
       },
+      "DeviceTypeCreate": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "socket",
+              "switch",
+              "light",
+              "data",
+              "junction",
+              "connection"
+            ],
+            "title": "Category"
+          },
+          "symbol_key": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Symbol Key"
+          },
+          "allows_wall_interior": {
+            "type": "boolean",
+            "title": "Allows Wall Interior",
+            "default": false
+          },
+          "allows_wall_exterior": {
+            "type": "boolean",
+            "title": "Allows Wall Exterior",
+            "default": false
+          },
+          "allows_ceiling": {
+            "type": "boolean",
+            "title": "Allows Ceiling",
+            "default": false
+          },
+          "default_center_height_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 6000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Center Height Mm"
+          },
+          "width_mm": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 20.0,
+            "title": "Width Mm"
+          },
+          "height_mm": {
+            "type": "integer",
+            "maximum": 1000.0,
+            "minimum": 20.0,
+            "title": "Height Mm"
+          },
+          "sort_order": {
+            "type": "integer",
+            "maximum": 100000.0,
+            "minimum": 0.0,
+            "title": "Sort Order",
+            "default": 1000
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "label",
+          "category",
+          "symbol_key",
+          "width_mm",
+          "height_mm"
+        ],
+        "title": "DeviceTypeCreate",
+        "description": "Neuer eigener Typ. Schluessel und Betrieb vergibt der Server."
+      },
       "DeviceTypeOut": {
         "properties": {
           "key": {
             "type": "string",
             "title": "Key"
           },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "system",
+              "organization"
+            ],
+            "title": "Origin"
+          },
           "label": {
             "type": "string",
             "title": "Label"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
           },
           "category": {
             "type": "string",
@@ -11863,7 +12184,8 @@
               "light",
               "data",
               "distribution",
-              "junction"
+              "junction",
+              "connection"
             ],
             "title": "Category"
           },
@@ -11909,12 +12231,26 @@
           "is_active": {
             "type": "boolean",
             "title": "Is Active"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "device_count": {
+            "type": "integer",
+            "title": "Device Count"
+          },
+          "template_count": {
+            "type": "integer",
+            "title": "Template Count"
           }
         },
         "type": "object",
         "required": [
           "key",
+          "origin",
           "label",
+          "description",
           "category",
           "symbol_key",
           "allows_wall_interior",
@@ -11924,10 +12260,13 @@
           "width_mm",
           "height_mm",
           "sort_order",
-          "is_active"
+          "is_active",
+          "version",
+          "device_count",
+          "template_count"
         ],
         "title": "DeviceTypeOut",
-        "description": "Ein Geraetetyp des Systemkatalogs.\n\n``width_mm``/``height_mm`` sind das **Planungsmass** fuer die\nPlatzierungspruefung (an der Wand Breite x Hoehe, an der Decke in x und y)\n- keine Herstellerangabe. ``default_center_height_mm`` ist ein Startwert,\nkeine Normvorgabe. ``is_active = false``: nicht mehr fuer neue Geraete."
+        "description": "Ein Geraetetyp: Systemtyp oder betriebseigener Typ (K2, ADR 0030).\n\n``width_mm``/``height_mm`` sind das **Planungsmass** fuer die\nPlatzierungspruefung (an der Wand Breite x Hoehe, an der Decke in x und y)\n- keine Herstellerangabe. ``default_center_height_mm`` ist ein Startwert,\nkeine Normvorgabe. ``is_active = false``: nicht mehr fuer neue Geraete.\n\n``origin``: ``system`` (Seed, unveraenderlich) oder ``organization`` (eigener Typ).\n``device_count``/``template_count``: Verweise **im eigenen Betrieb** - ein eigener Typ\nmit Verweisen ist „verwendet“ (Kategorie und Planungsmass gesperrt)."
       },
       "DeviceTypeTemplateIn": {
         "properties": {
@@ -11969,6 +12308,167 @@
           "cable_template_id"
         ],
         "title": "DeviceTypeTemplateOut"
+      },
+      "DeviceTypeUpdate": {
+        "properties": {
+          "label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "socket",
+                  "switch",
+                  "light",
+                  "data",
+                  "junction",
+                  "connection"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "symbol_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol Key"
+          },
+          "allows_wall_interior": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allows Wall Interior"
+          },
+          "allows_wall_exterior": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allows Wall Exterior"
+          },
+          "allows_ceiling": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allows Ceiling"
+          },
+          "default_center_height_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 6000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Center Height Mm"
+          },
+          "width_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1000.0,
+                "minimum": 20.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width Mm"
+          },
+          "height_mm": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1000.0,
+                "minimum": 20.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height Mm"
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "DeviceTypeUpdate",
+        "description": "Teilaenderung (``If-Match``). Verwendete Typen: Kategorie und Planungsmass gesperrt."
       },
       "DirectoryEntryOut": {
         "properties": {

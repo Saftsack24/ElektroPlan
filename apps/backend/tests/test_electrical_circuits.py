@@ -235,7 +235,8 @@ def _db(engine: Engine) -> tuple[int, int, int]:
 
 def test_kategorien_und_zuordenbarkeit_sind_konsistent() -> None:
     assert tuple(DeviceCategoryValue.__args__) == DEVICE_CATEGORIES  # type: ignore[attr-defined]
-    assert {"socket", "switch", "light", "junction"} == ASSIGNABLE_CATEGORIES
+    # Seit K2 (ADR 0030) auch Geraeteanschluss/Festanschluss.
+    assert {"socket", "switch", "light", "junction", "connection"} == ASSIGNABLE_CATEGORIES
 
 
 def test_katalog_enthaelt_verteilung_und_abzweigdose(api: TestClient, token: str) -> None:
