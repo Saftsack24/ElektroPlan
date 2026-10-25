@@ -108,8 +108,12 @@ const dlg = () => screen.getByRole("region", { name: /Wandansicht/ });
 describe("Geräte in der Wandansicht (Phase 5)", () => {
   it("setzen per Zeiger, Ziehen als ein Rückgängig-Schritt, Speichern mit der Gerätemitte ab Wandanfang", async () => {
     await wandansicht();
+    // „Gerät“ öffnet den Katalog (K1): erster passender Typ gewählt, „Platzieren“ aktiviert das Werkzeug.
     fireEvent.click(within(dlg()).getByRole("button", { name: "Gerät" }));
-    await waitFor(() => expect(within(dlg()).getByRole<HTMLSelectElement>("combobox", { name: /Gerät für die Innenseite/ }).value).toBe("socket_single"));
+    const katalog = await screen.findByRole("dialog", { name: "Gerät auswählen" });
+    expect(within(katalog).getByRole("radio", { name: /Steckdose/, checked: true })).toBeInTheDocument();
+    fireEvent.click(within(katalog).getByRole("button", { name: "Platzieren" }));
+    expect(await within(dlg()).findByRole("button", { name: /Gerät: Steckdose – anderen Typ wählen/ })).toBeInTheDocument();
     zeiger(ansicht(), "pointermove", 1000, 330);
     expect(screen.getByTestId("geraet-vorschau")).toHaveAttribute("data-gueltig", "ja");
     zeiger(ansicht(), "pointerdown", 1000, 330);
@@ -140,7 +144,15 @@ describe("Geräte in der Wandansicht (Phase 5)", () => {
     fireEvent.click(within(dlg()).getByRole("button", { name: "Außenseite ansehen" }));
     expect(within(dlg()).getByTestId("wandseite")).toHaveTextContent("Außenseite");
     fireEvent.click(within(dlg()).getByRole("button", { name: "Gerät" }));
-    await waitFor(() => expect(within(dlg()).getByRole<HTMLSelectElement>("combobox", { name: /Gerät für die Fassade/ }).value).toBe("socket_outdoor"));
+    const katalog = await screen.findByRole("dialog", { name: "Gerät auswählen" });
+    // Auf der Fassade ist nur der außentaugliche Typ platzierbar; die Steckdose nennt den Grund.
+    expect(within(katalog).getByRole("radio", { name: /Steckdose, außen geeignet/, checked: true })).toBeInTheDocument();
+    fireEvent.click(within(katalog).getByRole("radio", { name: /^Steckdose Wand/ }));
+    expect(within(katalog).getByTestId("katalog-details")).toHaveTextContent("nicht vorgesehen");
+    expect(within(katalog).getByRole("button", { name: "Platzieren" })).toBeDisabled();
+    fireEvent.click(within(katalog).getByRole("radio", { name: /Steckdose, außen geeignet/ }));
+    fireEvent.click(within(katalog).getByRole("button", { name: "Platzieren" }));
+    await within(dlg()).findByRole("button", { name: /Gerät: Steckdose, außen geeignet/ });
     zeiger(ansicht(), "pointermove", 1000, 1500);
     expect(screen.getByTestId("geraet-vorschau")).toHaveAttribute("data-gueltig", "nein");
     expect(screen.getByTestId("wand-statuszeile")).toHaveTextContent("grenzt an einen anderen Raum");

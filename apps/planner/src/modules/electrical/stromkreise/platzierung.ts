@@ -24,8 +24,8 @@ export interface Verteilungsplatzierung {
   /** Bisheriges Lagegerät („Position ändern“) oder `null` („Im Plan platzieren“). */
   readonly geraetId: string | null;
   readonly floorId: string;
-  /** Raum, dessen Wand gewählt werden soll. */
-  readonly raumId: string;
+  /** Raum, dessen Wand gewählt werden soll; `null`: jede Wand des Geschosses (Einstieg aus dem Gerätekatalog, K1). */
+  readonly raumId: string | null;
 }
 
 /** Gewählte Lage auf einer Wand (Innenseite) - Mitte ab Wandanfang und Höhe über Fußboden. */

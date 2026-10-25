@@ -45,6 +45,8 @@ export const Werkzeugleiste = memo(function Werkzeugleiste({
   leitungAktiv,
   onLeitungHinzufuegen,
   darfSchreiben,
+  onGeraet,
+  geraetAktiv,
 }: {
   werkzeug: Werkzeug;
   onWerkzeug: (w: Werkzeug) => void;
@@ -68,6 +70,9 @@ export const Werkzeugleiste = memo(function Werkzeugleiste({
   leitungAktiv: boolean;
   onLeitungHinzufuegen: () => void;
   darfSchreiben: boolean;
+  /** K1: „Gerät“ öffnet den Gerätekatalog; danach Wand bzw. Raum wählen. */
+  onGeraet: () => void;
+  geraetAktiv: boolean;
 }) {
   const wandwerkzeug = (w: Wandwahl) => {
     onWandwahl(w);
@@ -115,9 +120,9 @@ export const Werkzeugleiste = memo(function Werkzeugleiste({
               label="Gerät"
               taste="G"
               icon={WERKZEUGSYMBOL.geraet}
-              hinweis="Gerät: Wand anklicken – die Wandansicht öffnet sich zum Setzen (Deckengeräte in der Deckenfläche)"
-              aktiv={werkzeug === "oeffnung" && wandwahl === "geraet"}
-              onClick={() => wandwerkzeug("geraet")}
+              hinweis="Gerät: Gerätekatalog öffnen – danach Wand bzw. Raum wählen, gesetzt wird in der Wand- oder Deckenansicht"
+              aktiv={geraetAktiv}
+              onClick={onGeraet}
             />
           </Werkzeuggruppe>
         </>

@@ -2014,6 +2014,14 @@ die gesetzte Lage blieb. Aufräumen: VPT entfernt (das Gerät erschien wie vorge
 ‚Verteilung‘ ohne Verteilung“), Gerät in der Wandansicht entfernt und gespeichert; Bestand wie vorher
 („1 von 6“ nicht zugeordnet, UV1 unverändert). Keine Konsolenfehler aus dem Ablauf.
 
+## 24. Umsetzungsstand K1 – Gerätekatalogdialog (2026-10-25)
+
+Umgesetzt nach dem VP-Checkpoint `1a64b7f`, nur Frontend: „Gerät“/G öffnet in Grundriss, Wand- und Deckenansicht
+den Katalogdialog; Platzierung über die vorhandenen Werkzeuge, Speicherung über den Raumentwurf; „Typ ändern …“
+im selben Dialog; „Verteilung platzieren …“ führt in VP (§23). Ablauf, Prüfung und Stack-Durchlauf:
+[`geraetekatalog-design.md`](geraetekatalog-design.md) §11. Als Checkpoint committet (Task 0067); persönliche und
+optische Abnahme offen.
+
 ## 16. Geänderte Dokumentation durch diesen Entwurf
 
 Neu: dieser Entwurf, ADR 0027–0029 (proposed). Aktualisiert: `current-status.md` (Phase 6c, Phase 7

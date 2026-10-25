@@ -1022,7 +1022,13 @@ Zuordnungslinie auf ihren markierten Montagepunkt; mehr werden zum Gruppensymbol
 wählt (Seitenleiste mit „An Wand/Decke bearbeiten“, „Gerät entfernen“), Doppelklick öffnet die
 Ansicht. Verschoben wird nur in Wand- bzw. Deckenansicht.
 
-**Wandansicht:** Werkzeug „Gerät“ (G) mit Typwahl nur der auf dieser Seite zulässigen Typen; die
+**Gerätekatalog (6c, K1):** „Gerät“ (G) öffnet in Grundriss, Wand- und Deckenansicht einen Katalogdialog
+über den Serverkatalog (Suche, Kategorien, Kacheln, Details); unpassende Typen der Fläche sind sichtbar, aber
+nicht platzierbar. Im Grundriss folgt die Wand- bzw. Raumwahl, dann das Werkzeug der passenden Fläche.
+„Typ ändern …“ nutzt denselben Dialog. „Verteilung“ ist keine Kachel; „Verteilung platzieren …“ führt in VP.
+Details: [`geraetekatalog-design.md`](../geraetekatalog-design.md) §11.
+
+**Wandansicht:** Werkzeug „Gerät“ (G, Typ aus dem Katalog) nur mit den auf dieser Seite zulässigen Typen; die
 betrachtete Seite ist die Montagefläche (innen = `wall_interior`, außen = `wall_exterior`).
 Vorschau unter dem Zeiger, Einrasten (Wandkanten, Wandmitte, Kanten und Achsen anderer Geräte und
 Öffnungen, Standardhöhe des Typs, gleiche Höhe anderer Geräte, Boden, Decke; Raster als Rückfall,

@@ -11,7 +11,10 @@ import { geraetAendern, geraetEntfernen } from "../geraete/geraeteentwurf";
 import type { Geraetetypen } from "../geraete/katalog";
 import { typenFuer } from "../geraete/katalog";
 import { Geraetelegende } from "../geraete/symbole";
-import { GeraetEigenschaften, TypAuswahl } from "./GeraetEigenschaften";
+import { GeraetEigenschaften } from "./GeraetEigenschaften";
+import { Geraetekatalog } from "../geraete/Geraetekatalog";
+import type { Katalogmodus, Verteilungsangebot } from "../geraete/Geraetekatalog";
+import { Geraetesymbol } from "../geraete/symbole";
 import { flaecheDerSeite, geraeteInAnsicht, geraetLagePruefen, mitteInAnsicht } from "./wandgeraete";
 import { MassFeld } from "./WandEigenschaften";
 import type { Platzierungsfehler } from "../stromkreise/platzierung";
@@ -68,6 +71,8 @@ export interface Wandziel {
   readonly oeffnungId?: string;
   /** Beim Öffnen ausgewähltes Gerät (Phase 5, etwa „An Wand bearbeiten“ aus 3D). */
   readonly geraetId?: string;
+  /** Typ für das Werkzeug „Gerät“ (K1: im Grundriss aus dem Gerätekatalog gewählt). */
+  readonly geraetetyp?: string;
   /**
    * Betrachtete Seite (Ansichtskontext, Phase 4f): Innenseite des Raums oder
    * Außenseite. Standard: innen. Bearbeitet wird immer dieselbe Raumwand.
@@ -132,6 +137,7 @@ export function Wandansicht({
   ansichten,
   geschossLabel,
   platzierung,
+  verteilungsangebot,
 }: {
   ziel: Wandziel;
   zustand: EditorZustand;
@@ -172,6 +178,8 @@ export function Wandansicht({
   geschossLabel?: string;
   /** Phase 6c (VP): Lage einer Verteilung setzen - statt den Raum zu bearbeiten. */
   platzierung?: Wandplatzierung | undefined;
+  /** K1: „Verteilung platzieren …“ im Gerätekatalog (führt in den VP-Ablauf). */
+  verteilungsangebot?: Verteilungsangebot | undefined;
 }) {
   const masse = useMasse();
   const [werkzeug, setWerkzeug] = useState<Wandwerkzeug>(ziel.werkzeug ?? "auswahl");
@@ -184,13 +192,18 @@ export function Wandansicht({
   }, [ziel.wandId, ziel.seite]);
   const flaechenRef = useRef<HTMLElement>(null);
   const kompakt = useKompakt();
-  const [statuszeile, setStatuszeile] = useState("Eine Öffnung anklicken oder ein Werkzeug wählen.");
+  // Aus dem Gerätekatalog im Grundriss geöffnet (K1): zum Setzen auffordern statt des allgemeinen Hinweises.
+  const grundtext =
+    ziel.geraetetyp !== undefined
+      ? `${typen.get(ziel.geraetetyp)?.label ?? "Gerät"}: in die Wand klicken – Vorschau, Fang und Prüfung wie gewohnt.`
+      : "Eine Öffnung anklicken oder ein Werkzeug wählen.";
+  const [statuszeile, setStatuszeile] = useState(grundtext);
   // Ein Wechsel des Zeichenablaufs (Escape, Dialog, Speichern, nächste Leitung) macht die Rückmeldung
   // zum vorigen Zustand ungültig (6c L2/L3); beim Zeichnen gilt dann die Anweisung der Zeichenleiste.
   const ablaufSchluessel = leitungen?.planung.ablaufSchluessel;
   const zeichnetJetzt = leitungen?.planung.ablauf != null;
   useEffect(() => {
-    setStatuszeile(zeichnetJetzt ? "" : "Eine Öffnung anklicken oder ein Werkzeug wählen.");
+    setStatuszeile(zeichnetJetzt ? "" : grundtext);
     // Nur beim Wechsel des Ablaufs - nicht bei jeder Meldung.
   }, [ablaufSchluessel]);
   const flaeche = useRef<ZeichenflaecheGriff>(null);
@@ -223,7 +236,9 @@ export function Wandansicht({
   const andereSeite = raumGeraete.filter((g) => g.wall_id === ziel.wandId && g.mounting_surface !== flaecheDerSeite(seite)).length;
   // Typ für das Werkzeug „Gerät“ - nur Typen, die auf dieser Seite zulässig sind.
   const waehlbar = typenFuer(typen, flaecheDerSeite(seite));
-  const [geraetetypWahl, setGeraetetypWahl] = useState<string | null>(null);
+  const [geraetetypWahl, setGeraetetypWahl] = useState<string | null>(ziel.geraetetyp ?? null);
+  // Gerätekatalog (K1): Platzieren mit dem Werkzeug „Gerät“ oder „Typ ändern …“ eines Geräts.
+  const [katalog, setKatalog] = useState<{ modus: Katalogmodus; geraetId: string | null } | null>(null);
   const geraetetyp = waehlbar.find((t) => t.key === geraetetypWahl) ?? waehlbar[0] ?? null;
 
   // Auswahl: im aktiven Raum dieselbe wie im Grundriss; sonst nur hier.
@@ -240,6 +255,7 @@ export function Wandansicht({
     setGezeigt(ziel);
     setLokal(ziel.oeffnungId ?? ziel.geraetId ?? ausGrundriss);
     setWerkzeug(ziel.werkzeug ?? "auswahl");
+    if (ziel.geraetetyp !== undefined) setGeraetetypWahl(ziel.geraetetyp);
   }
   const gewaehlt = modell?.oeffnungen.some((o) => o.id === lokal) === true || geraete.some((g) => g.id === lokal) ? lokal : null;
   const gewaehltesGeraet = geraete.find((g) => g.id === gewaehlt);
@@ -336,6 +352,12 @@ export function Wandansicht({
     dispatch({ typ: "aendern", entwurf: geraetEntfernen(zustand.entwurf, id, gespeichert) });
     waehlen(null);
     setStatuszeile("Gerät entfernt - noch nicht gespeichert.");
+  };
+
+  /** „Typ übernehmen“ aus dem Katalog: dieselbe Prüfung wie jede Lageänderung, nichts wird gespeichert. */
+  const typAendern = (id: string, key: string): string | undefined => {
+    const g = geraete.find((x) => x.id === id);
+    return g === undefined ? "Gerät nicht gefunden." : geraetLageSetzen(id, g.u, g.h, key);
   };
 
   const geraetLabelSetzen = (id: string, label: string | null) => {
@@ -503,7 +525,8 @@ export function Wandansicht({
     const werkzeuge: Record<string, Wandwerkzeug> = { v: "auswahl", h: "pan" };
     if (editierbar) Object.assign(werkzeuge, { t: "door", n: "window", d: "passage", g: "geraet" });
     const w = werkzeuge[k];
-    if (w !== undefined) setWerkzeug(w);
+    if (w === "geraet") katalogOeffnen();
+    else if (w !== undefined) setWerkzeug(w);
     else if (k === "f") flaeche.current?.ansichtZuruecksetzen();
   };
 
@@ -628,9 +651,18 @@ export function Wandansicht({
     setWerkzeug("auswahl");
     setStatuszeile(leitungen.leitungZeichnen() ?? "1 Startgerät wählen – auf ein markiertes Gerät klicken.");
   });
+  /** „Gerät“ (Knopf, Taste G, Typ-Chip) öffnet den Gerätekatalog dieser Seite (K1). */
+  const katalogOeffnen = useStabil(() => {
+    if (!editierbar) return;
+    setKatalog({ modus: { art: "platzieren", flaeche: flaecheDerSeite(seite), start: geraetetypWahl }, geraetId: null });
+  });
   /** Ein anderes Werkzeug beendet den Zeichenablauf (der Entwurf bleibt); Durchführung und Zuordnen ergänzen ihn. */
   const werkzeugWaehlen = useStabil((w: Wandwerkzeug) => {
     if (w !== "durchfuehrung" && w !== "zuordnen" && leitungen?.planung.ablauf != null) leitungen.planung.ablaufBeenden();
+    if (w === "geraet") {
+      katalogOeffnen();
+      return;
+    }
     setWerkzeug(w);
   });
   const rueckgaengig = useStabil(() => (leitungsentwurf !== null ? leitungen?.planung.dispatch({ typ: "rueckgaengig" }) : dispatch({ typ: "rueckgaengig" })));
@@ -663,17 +695,18 @@ export function Wandansicht({
           />
           <Werkzeuggruppe label="Gerät">
             {WERKZEUGE.filter((w) => w.wert === "geraet").map(werkzeugknopf)}
-            {werkzeug === "geraet" && (
-              <div className="min-w-[200px]">
-                <TypAuswahl
-                  id="wand-werkzeug-typ"
-                  label={seite === "innen" ? "Gerät für die Innenseite" : "Gerät für die Fassade"}
-                  typen={typen}
-                  flaeche={flaecheDerSeite(seite)}
-                  wert={typKey}
-                  onWahl={setGeraetetypWahl}
-                />
-              </div>
+            {werkzeug === "geraet" && geraetetyp !== null && (
+              <button
+                type="button"
+                className={`${knopf("neutral", { klein: true })} inline-flex items-center gap-1.5`}
+                aria-label={`Gerät: ${geraetetyp.label} – anderen Typ wählen`}
+                title="Gerätekatalog öffnen (G)"
+                onClick={katalogOeffnen}
+                data-testid="geraet-chip"
+              >
+                <Geraetesymbol typ={geraetetyp} groesse={16} />
+                Gerät: {geraetetyp.label}
+              </button>
             )}
           </Werkzeuggruppe>
         </>
@@ -699,7 +732,7 @@ export function Wandansicht({
       <AnsichtMenue fangAktiv={fangAktiv} onFang={onFang} fangLabel="Einrasten" rasterMm={rasterMm} onRaster={onRaster} onHilfe={() => setHilfe(true)} />
     </div>
     // Rückrufe sind stabil (Zustandssetzer, `useStabil`); abhängig ist die Leiste nur von dem, was sie zeigt.
-  ), [werkzeug, editierbar, seite, typen, typKey, leitungMoeglich, zeichnet, hatLeitungsentwurf, hatZuordnungsentwurf, zuordnenErlaubt, leitungErlaubt, kannZurueck, kannVor, fangAktiv, rasterMm, onFang, onRaster]);
+  ), [werkzeug, editierbar, seite, geraetetyp, typKey, leitungMoeglich, zeichnet, hatLeitungsentwurf, hatZuordnungsentwurf, zuordnenErlaubt, leitungErlaubt, kannZurueck, kannVor, fangAktiv, rasterMm, onFang, onRaster]);
 
   const hilfeInhalt = (
     <>
@@ -709,7 +742,7 @@ export function Wandansicht({
         <li>Öffnung ziehen verschiebt sie (Fenster auch in der Höhe); die Griffe ändern Breite, Höhe und Brüstung.</li>
         <li>Einrasten an Wandkanten, Wandmitte, Kanten und Mitten anderer Öffnungen, gleicher Brüstung und Oberkante, sonst am Raster. Alt hält es beim Ziehen aus.</li>
         <li>Pfeiltasten verschieben die gewählte Öffnung um 1 cm, mit Umschalt um 10 cm. Entf entfernt sie, Escape bricht ab.</li>
-        <li>Gerät (G): Typ wählen, Vorschau folgt dem Zeiger, ein Klick setzt es auf genau dieser Seite. Ziehen verschiebt es; Pfeiltasten 1 cm, mit Umschalt 10 cm; Entf entfernt es. Eingerastet wird an Wandmitte, Kanten, Achsen anderer Geräte, der Standardhöhe des Typs, Boden und Decke.</li>
+        <li>Gerät (G): Gerätekatalog öffnen, Typ wählen, „Platzieren“ – Vorschau folgt dem Zeiger, ein Klick setzt es auf genau dieser Seite. Der Typ-Chip „Gerät: …“ öffnet den Katalog erneut. Ziehen verschiebt es; Pfeiltasten 1 cm, mit Umschalt 10 cm; Entf entfernt es. Eingerastet wird an Wandmitte, Kanten, Achsen anderer Geräte, der Standardhöhe des Typs, Boden und Decke.</li>
         <li>Innen und außen sind getrennte Montageflächen: Ein Gerät außen bleibt außen, der Seitenwechsel der Ansicht ändert nichts.</li>
         <li>Strg+Z / Strg+Y gelten für den gemeinsamen Entwurf mit dem Grundriss. Schließen behält alle Änderungen – gespeichert wird nur mit „Speichern“.</li>
       </ul>
@@ -846,14 +879,13 @@ export function Wandansicht({
                   bezug={ergebnis.bezug}
                   geraete={geraete}
                   gewaehlt={gewaehlt}
-                  typen={typen}
                   editierbar={editierbar}
                   andereSeite={andereSeite}
                   onWaehlen={waehlen}
                   onLage={(id, u, h) => geraetLageSetzen(id, u, h)}
-                  onTyp={(id, key) => {
+                  onTypAendern={(id) => {
                     const g = geraete.find((x) => x.id === id);
-                    return g === undefined ? "Gerät nicht gefunden." : geraetLageSetzen(id, g.u, g.h, key);
+                    if (g !== undefined && editierbar) setKatalog({ modus: { art: "typ", flaeche: flaecheDerSeite(seite), aktuell: g.schluessel }, geraetId: id });
                   }}
                   onLabel={geraetLabelSetzen}
                   onEntfernen={geraetEntfernenAktion}
@@ -912,6 +944,39 @@ export function Wandansicht({
           </Planungsarbeitsflaeche>
         )}
       </div>
+      {katalog !== null && (
+        <Geraetekatalog
+          typen={typen}
+          modus={katalog.modus}
+          onClose={() => setKatalog(null)}
+          onWahl={(key) => {
+            if (katalog.geraetId !== null) {
+              const grund = typAendern(katalog.geraetId, key);
+              if (grund !== undefined) return grund;
+              setKatalog(null);
+              setStatuszeile(`Typ geändert: ${typen.get(key)?.label ?? key} – noch nicht gespeichert.`);
+              return undefined;
+            }
+            setGeraetetypWahl(key);
+            setWerkzeug("geraet");
+            setKatalog(null);
+            setStatuszeile(`${typen.get(key)?.label ?? key}: in die Wand klicken – Vorschau, Fang und Prüfung wie gewohnt.`);
+            return undefined;
+          }}
+          verteilung={
+            katalog.geraetId === null && verteilungsangebot !== undefined
+              ? {
+                  ...verteilungsangebot,
+                  gesperrt: seite === "innen" ? verteilungsangebot.gesperrt : "Verteilungen sitzen innen an der Wand – bitte die Innenseite ansehen.",
+                  onWahl: (id) => {
+                    setKatalog(null);
+                    verteilungsangebot.onWahl(id);
+                  },
+                }
+              : undefined
+          }
+        />
+      )}
       <HilfeDialog offen={hilfe} titel="Wandfläche – Bedienung und Legende" onClose={() => setHilfe(false)}>
         {hilfeInhalt}
       </HilfeDialog>

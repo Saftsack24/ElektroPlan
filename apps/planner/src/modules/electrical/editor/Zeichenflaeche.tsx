@@ -109,6 +109,11 @@ interface Props {
   onWandFuerOeffnung: (raumId: string, wandId: string) => void;
   /** Eine vorhandene Öffnung in ihrer Wandansicht bearbeiten (an der Eigentümerwand). */
   onOeffnungBearbeiten: (raumId: string, wandId: string, oeffnungId: string) => void;
+  /**
+   * K1: Klick neben jede Wand bei aktiver Wandwahl (etwa ein Deckengerät aus dem Katalog: in
+   * den Raum klicken). `true`: verarbeitet, kein Hinweis „Auf eine Wand klicken“.
+   */
+  onFlaechenklick?: ((welt: Punkt) => boolean) | undefined;
   /** Kurzer Hinweis über der Zeichenfläche; `null` räumt ihn. */
   onHinweis: (text: string | null) => void;
   /** Was ein Klick auf eine Wand öffnet (L1: auch das Gerätewerkzeug). */
@@ -457,6 +462,7 @@ export function Zeichenflaeche(props: Props) {
         // Nur die Wand wählen - gesetzt wird in der Wandansicht (Phase 4f).
         const e = raumwand(welt);
         if (e === null) {
+          if (props.onFlaechenklick?.(welt) === true) return;
           props.onHinweis("Auf eine Wand klicken - die Wandansicht öffnet sich zum Setzen.");
           return;
         }

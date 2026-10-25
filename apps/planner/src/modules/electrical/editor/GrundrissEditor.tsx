@@ -74,6 +74,10 @@ import { Leitungsbereich } from "../leitung/Leitungsbereich";
 import { Zeichenleiste } from "../leitung/Zeichenleiste";
 import { ZUORDNUNG_MELDUNG } from "../stromkreise/texte";
 import type { Platzierungsfehler, Verteilungsplatzierung } from "../stromkreise/platzierung";
+import { Geraetekatalog } from "../geraete/Geraetekatalog";
+import type { Verteilungsangebot } from "../geraete/Geraetekatalog";
+import { Geraetesymbol } from "../geraete/symbole";
+import { erlaubt } from "../geraete/katalog";
 import { platzierungSpeichern, platzierungsfehler } from "../stromkreise/platzierung";
 import { useZuordnungsentwurf } from "../stromkreise/zuordnung";
 
@@ -103,6 +107,8 @@ const STATUS_FARBE: Record<Speicherstatus, string> = {
 export interface Deckenziel {
   readonly raumId: string;
   readonly geraetId?: string;
+  /** K1: aus dem Gerätekatalog gewählter Typ – das Werkzeug „Gerät“ ist beim Öffnen aktiv. */
+  readonly geraetetyp?: string;
   readonly herkunft?: "2d" | "3d";
 }
 
@@ -998,7 +1004,7 @@ function GrundrissEditorInhalt({
     if (platzierung === null || platzierungGestartet.current || !plan.isSuccess) return;
     platzierungGestartet.current = true;
     // Raum hervorheben und die Wandwahl aktivieren - gesetzt wird in der Wandansicht.
-    void raumAktivierenRef.current(platzierung.raumId, { art: "raum", raumId: platzierung.raumId });
+    if (platzierung.raumId !== null) void raumAktivierenRef.current(platzierung.raumId, { art: "raum", raumId: platzierung.raumId });
     setWandwahl("geraet");
     dispatch({ typ: "werkzeug", werkzeug: "oeffnung" });
   }, [platzierung, plan.isSuccess]);
@@ -1006,7 +1012,7 @@ function GrundrissEditorInhalt({
   /** Klick auf eine Wand während der Platzierung: nur Wände des gewählten Raums, Innenseite. */
   const platzierungswand = async (raumId: string, wandId: string) => {
     if (platzierung === null) return;
-    if (raumId !== platzierung.raumId) {
+    if (platzierung.raumId !== null && raumId !== platzierung.raumId) {
       setHinweis(`Bitte eine Wand von „${raumName(platzierung.raumId)}“ anklicken – dort wird ${platzierung.code} platziert.`);
       return;
     }
@@ -1019,10 +1025,102 @@ function GrundrissEditorInhalt({
   };
 
   const platzierungBeenden = (meldung: string | null) => {
+    if (platzierungAusKatalog.current && meldung === null) {
+      // Aus dem Gerätekatalog (K1): Abbrechen bleibt im Editor - Fläche und Entwurf wie vorher.
+      platzierungAusKatalog.current = false;
+      platzierungGestartet.current = false;
+      setPlatzierung(null);
+      dispatch({ typ: "werkzeug", werkzeug: "auswahl" });
+      return;
+    }
+    platzierungAusKatalog.current = false;
     setWandansicht(null);
     dispatch({ typ: "werkzeug", werkzeug: "auswahl" });
     onVerteilungEnde?.(meldung);
   };
+
+  // ------------------------------------------------------ Gerätekatalog (K1)
+
+  const [katalogOffen, setKatalogOffen] = useState(false);
+  /** Im Katalog gewählter Typ - danach Wand bzw. Raum anklicken. */
+  const [geraetewahl, setGeraetewahl] = useState<string | null>(null);
+  const platzierungAusKatalog = useRef(false);
+  const geraetewahlTyp = geraetewahl === null ? undefined : typen.get(geraetewahl);
+  const geraetewahlAktiv = geraetewahlTyp !== undefined && zustand.werkzeug === "oeffnung" && wandwahl === "geraet";
+  const geraetWand = geraetewahlTyp !== undefined && (erlaubt(geraetewahlTyp, "wall_interior") || erlaubt(geraetewahlTyp, "wall_exterior"));
+  const geraetDecke = geraetewahlTyp !== undefined && erlaubt(geraetewahlTyp, "ceiling");
+
+  /** „Gerät“ (Knopf, Taste G, Typ-Chip): Katalog - nie neben einem Leitungs- oder Zuordnungsentwurf. */
+  const katalogOeffnen = () => {
+    if (!schreibbar) {
+      if (darfSchreiben && sperrgrund !== null) setHinweis(sperrgrund);
+      return;
+    }
+    setKatalogOffen(true);
+  };
+
+  /** Nach „Platzieren“: Wand oder Raum wählen - die passende Fläche öffnet sich mit Werkzeug und Typ. */
+  const geraetUebernehmen = (key: string): string | undefined => {
+    setGeraetewahl(key);
+    setWandwahl("geraet");
+    dispatch({ typ: "werkzeug", werkzeug: "oeffnung" });
+    setHinweis(null);
+    setKatalogOffen(false);
+    return undefined;
+  };
+
+  /** Wandklick mit gewähltem Typ: Wandtyp → Wandansicht (innen, sonst außen), reiner Deckentyp → Decke des Raums. */
+  const geraetAnWand = (raumId: string, wandId: string) => {
+    if (geraetewahlTyp === undefined) return;
+    if (erlaubt(geraetewahlTyp, "wall_interior") || erlaubt(geraetewahlTyp, "wall_exterior")) {
+      void wandansichtOeffnen({
+        raumId,
+        wandId,
+        werkzeug: "geraet",
+        geraetetyp: geraetewahlTyp.key,
+        seite: erlaubt(geraetewahlTyp, "wall_interior") ? "innen" : "aussen",
+      });
+    } else {
+      void deckenansichtOeffnen({ raumId, geraetetyp: geraetewahlTyp.key });
+    }
+  };
+
+  /** Klick ins Rauminnere: Deckentyp → Deckenansicht des Raums; sonst der übliche Hinweis. */
+  const geraetFlaechenklick = (welt: Punkt): boolean => {
+    if (!geraetewahlAktiv || geraetewahlTyp === undefined || !erlaubt(geraetewahlTyp, "ceiling")) return false;
+    const raum = darstellung.find((r) => r.walls.length >= 3 && punktImPolygon(welt, r.walls.map((w) => ({ x: w.x1_mm, y: w.y1_mm }))));
+    if (raum === undefined) {
+      setHinweis(`In einen Raum klicken – die Deckenansicht öffnet sich zum Setzen von „${geraetewahlTyp.label}“.`);
+      return true;
+    }
+    void deckenansichtOeffnen({ raumId: raum.id, geraetetyp: geraetewahlTyp.key });
+    return true;
+  };
+
+  /** „Verteilung platzieren …“ aus dem Katalog: derselbe VP-Ablauf - auf der offenen Wand oder per Wandwahl. */
+  const verteilungAusKatalog = (boardId: string) => {
+    const board = verteilungen.data?.boards.find((b) => b.id === boardId);
+    setKatalogOffen(false);
+    if (board === undefined) return;
+    setGeraetewahl(null);
+    platzierungAusKatalog.current = true;
+    platzierungGestartet.current = false;
+    setPlatzierung({ boardId: board.id, code: board.code, name: board.name, version: board.version, geraetId: board.placement_device_id, floorId, raumId: wandansicht?.raumId ?? null });
+    if (wandansicht !== null) setWandansicht({ raumId: wandansicht.raumId, wandId: wandansicht.wandId, seite: "innen", herkunft: wandansicht.herkunft ?? "2d" });
+  };
+
+  const verteilungsangebot: Verteilungsangebot | undefined =
+    buildingId === undefined
+      ? undefined
+      : {
+          verteilungen: (verteilungen.data?.boards ?? []).filter((b) => b.placement_device_id === null).map((b) => ({ id: b.id, code: b.code, name: b.name })),
+          gesperrt: !darfStromkreise
+            ? "Verteilungen platziert, wer Verteilungen und Stromkreise bearbeiten darf."
+            : offen
+              ? `Im Raum „${zustand.basis?.raum.name ?? ""}“ gibt es ungespeicherte Änderungen – bitte zuerst speichern oder verwerfen. Die Platzierung speichert nur die Verteilung.`
+              : null,
+          onWahl: verteilungAusKatalog,
+        };
 
   const platzierungNeuLaden = async () => {
     if (platzierung === null || buildingId === undefined) return;
@@ -1254,7 +1352,11 @@ function GrundrissEditorInhalt({
     const werkzeuge: Record<string, Werkzeug> = { v: "auswahl", h: "pan" };
     if (schreibbar) Object.assign(werkzeuge, { r: "rechteck", p: "polygon", o: "oeffnung" });
     // Tür (T), Fenster (N), Durchgang (D) - wie in der Wandansicht.
-    const arten: Record<string, Wandwahl> = { t: "door", n: "window", d: "passage", g: "geraet" };
+    if (k === "g") {
+      katalogOeffnen();
+      return;
+    }
+    const arten: Record<string, Wandwahl> = { t: "door", n: "window", d: "passage" };
     const w = werkzeuge[k];
     const art = schreibbar ? arten[k] : undefined;
     if (art !== undefined) {
@@ -1289,6 +1391,7 @@ function GrundrissEditorInhalt({
   const stabilEinpassen = useStabil(einpassenAlle);
   const stabilHilfe = useStabil(() => setHilfe(true));
   const stabilLeitung = useStabil(leitungHinzufuegen);
+  const stabilKatalog = useStabil(katalogOeffnen);
 
   if (plan.isPending) return <p className="text-muted">Grundriss wird geladen ...</p>;
   if (plan.isError) {
@@ -1442,6 +1545,8 @@ function GrundrissEditorInhalt({
             leitungAktiv={planung.ablauf !== null}
             onLeitungHinzufuegen={stabilLeitung}
             darfSchreiben={schreibbar}
+            onGeraet={stabilKatalog}
+            geraetAktiv={geraetewahlAktiv || katalogOffen}
           />
 
         }
@@ -1509,11 +1614,45 @@ function GrundrissEditorInhalt({
                 )}
               </div>
             )}
+            {geraetewahlAktiv && geraetewahlTyp !== undefined && (
+              <div className={`${meldungsflaeche("erfolg")} flex flex-wrap items-center justify-between gap-2`} role="status" data-testid="geraet-wandwahl">
+                <span className="inline-flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className={`${knopf("neutral", { klein: true })} inline-flex items-center gap-1.5`}
+                    aria-label={`Gerät: ${geraetewahlTyp.label} – anderen Typ wählen`}
+                    onClick={katalogOeffnen}
+                    data-testid="geraet-chip"
+                  >
+                    <Geraetesymbol typ={geraetewahlTyp} groesse={16} />
+                    Gerät: {geraetewahlTyp.label}
+                  </button>
+                  <span>
+                    {geraetWand && geraetDecke
+                      ? "Wand anklicken für die Wandmontage oder in einen Raum klicken für die Decke."
+                      : geraetWand
+                        ? `Eine Wand anklicken – die Wandansicht${erlaubt(geraetewahlTyp, "wall_interior") ? "" : " (Außenseite)"} öffnet sich zum Setzen.`
+                        : "In einen Raum klicken – die Deckenansicht öffnet sich zum Setzen."}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  className={knopf("neutral", { klein: true })}
+                  onClick={() => {
+                    setGeraetewahl(null);
+                    dispatch({ typ: "werkzeug", werkzeug: "auswahl" });
+                  }}
+                >
+                  Abbrechen
+                </button>
+              </div>
+            )}
             {platzierung !== null && (
               <div className={`${meldungsflaeche("erfolg")} flex flex-wrap items-center justify-between gap-2`} role="status" data-testid="verteilung-wandwahl">
                 <span>
-                  <strong>{platzierung.code} platzieren</strong> – eine Wand von „{raumName(platzierung.raumId)}“ anklicken; gesetzt wird in der
-                  Wandansicht.
+                  <strong>{platzierung.code} platzieren</strong> –{" "}
+                  {platzierung.raumId === null ? "eine Wand anklicken" : `eine Wand von „${raumName(platzierung.raumId)}“ anklicken`}; gesetzt wird in
+                  der Wandansicht.
                 </span>
                 <button type="button" className={knopf("neutral", { klein: true })} onClick={() => platzierungBeenden(null)}>
                   Abbrechen
@@ -1594,9 +1733,12 @@ function GrundrissEditorInhalt({
           onWaehlen={waehlen}
           onPolygonFertig={polygonFertig}
           onRechteckFertig={rechteckFertig}
-          onWandFuerOeffnung={(raumId, wandId) =>
-            void (platzierung !== null ? platzierungswand(raumId, wandId) : wandansichtOeffnen({ raumId, wandId, werkzeug: wandwahl }))
-          }
+          onWandFuerOeffnung={(raumId, wandId) => {
+            if (platzierung !== null) void platzierungswand(raumId, wandId);
+            else if (wandwahl === "geraet" && geraetewahlTyp !== undefined) geraetAnWand(raumId, wandId);
+            else void wandansichtOeffnen({ raumId, wandId, werkzeug: wandwahl });
+          }}
+          onFlaechenklick={geraetFlaechenklick}
           onOeffnungBearbeiten={(raumId, wandId, oeffnungId) => void wandansichtOeffnen({ raumId, wandId, oeffnungId })}
           onHinweis={setHinweis}
           oeffnungsart={wandwahl}
@@ -1674,11 +1816,12 @@ function GrundrissEditorInhalt({
                   abbrechen: () => platzierungBeenden(null),
                 }
           }
+          verteilungsangebot={platzierung === null ? verteilungsangebot : undefined}
         />
       )}
       {deckenansicht !== null && (
         <Deckenansicht
-          key={deckenansicht.raumId}
+          key={`${deckenansicht.raumId}|${deckenansicht.geraetetyp ?? ""}`}
           raumId={deckenansicht.raumId}
           raumName={raumName(deckenansicht.raumId)}
           walls={waendeVon(deckenansicht.raumId)}
@@ -1713,6 +1856,17 @@ function GrundrissEditorInhalt({
           ansichten={flaechenansichten}
           geschossLabel={geschossLabel}
           zurueckZu3d={herkunft.current === "3d"}
+          startTyp={deckenansicht.geraetetyp ?? null}
+          verteilungsangebot={verteilungsangebot}
+        />
+      )}
+      {katalogOffen && (
+        <Geraetekatalog
+          typen={typen}
+          modus={{ art: "platzieren", flaeche: null, start: geraetewahl }}
+          onWahl={geraetUebernehmen}
+          onClose={() => setKatalogOffen(false)}
+          verteilung={platzierung === null ? verteilungsangebot : undefined}
         />
       )}
       {neuerRaum !== null && (

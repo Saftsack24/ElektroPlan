@@ -18,7 +18,9 @@ import type { Geraetetyp, Geraetetypen } from "../geraete/katalog";
 import { typenFuer } from "../geraete/katalog";
 import { Geraetelegende, Geraetesymbol, SymbolImPlan } from "../geraete/symbole";
 import { flaecheText } from "../editor/Eigenschaften";
-import { BeschriftungsFeld, TypAuswahl } from "../wandansicht/GeraetEigenschaften";
+import { BeschriftungsFeld, TypFeld } from "../wandansicht/GeraetEigenschaften";
+import { Geraetekatalog } from "../geraete/Geraetekatalog";
+import type { Katalogmodus, Verteilungsangebot } from "../geraete/Geraetekatalog";
 import { MassFeld } from "../wandansicht/WandEigenschaften";
 import type { Fangziel } from "../wandansicht/wandfang";
 import type { AnsichtsDeckengeraet, Richtung, Wandtreffer } from "./deckengeraete";
@@ -107,6 +109,8 @@ export function Deckenansicht({
   ansichten,
   geschossLabel,
   zurueckZu3d = false,
+  startTyp = null,
+  verteilungsangebot,
 }: {
   raumId?: string;
   raumName: string;
@@ -143,6 +147,10 @@ export function Deckenansicht({
   geschossLabel?: string;
   /** Aus 3D geöffnet: Der Rückweg führt dorthin. */
   zurueckZu3d?: boolean;
+  /** K1: im Grundriss aus dem Gerätekatalog gewählter Typ – das Werkzeug „Gerät“ ist dann aktiv. */
+  startTyp?: string | null;
+  /** K1: „Verteilung platzieren …“ im Katalog – an der Decke gesperrt, mit Grund. */
+  verteilungsangebot?: Verteilungsangebot | undefined;
 }) {
   const masse = useMasse();
   const huelle = useRef<HTMLDivElement>(null);
@@ -159,7 +167,9 @@ export function Deckenansicht({
     setZeiger(zeichnetJetzt ? "" : "Zeiger über die Decke bewegen.");
     // Nur beim Wechsel des Ablaufs - nicht bei jeder Meldung.
   }, [ablaufSchluessel]);
-  const [werkzeug, setWerkzeug] = useState<Deckenwerkzeug>("auswahl");
+  const [werkzeug, setWerkzeug] = useState<Deckenwerkzeug>(startTyp !== null && editierbar ? "geraet" : "auswahl");
+  // Gerätekatalog (K1): Platzieren mit dem Werkzeug „Gerät“ oder „Typ ändern …“ eines Geräts.
+  const [katalog, setKatalog] = useState<{ modus: Katalogmodus; geraetId: string | null } | null>(null);
   /** Panel und Maximierung – reine Ansicht (Phase 6c.0). */
   const af = arbeitsflaeche;
   const [hilfe, setHilfe] = useState(false);
@@ -173,7 +183,7 @@ export function Deckenansicht({
   }, []);
   const [gewaehlt, setGewaehlt] = useState<string | null>(startGeraetId ?? null);
   const [vorschau, setVorschau] = useState<Vorschau | null>(null);
-  const [typWahl, setTypWahl] = useState<string | null>(null);
+  const [typWahl, setTypWahl] = useState<string | null>(startTyp);
   const laufend = useRef<Laufend | null>(null);
   // Beschriftung 14 px ins Rauminnere - in Millimetern des aktuellen Maßstabs.
   const modell = useMemo(() => deckenmodell(walls, 16 / viewport.massstab), [walls, viewport.massstab]);
@@ -541,7 +551,7 @@ export function Deckenansicht({
     if (k === "f") zuruecksetzen();
     else if (k === "v") setWerkzeug("auswahl");
     else if (k === "h") setWerkzeug("pan");
-    else if (k === "g" && darfAendern) setWerkzeug("geraet");
+    else if (k === "g" && darfAendern) katalogOeffnen();
   };
 
   /** Escape: erst die Bewegung, dann das Werkzeug, dann die Auswahl - zuletzt schließen. */
@@ -678,8 +688,17 @@ export function Deckenansicht({
     setZeiger(leitungen.leitungZeichnen() ?? "1 Startgerät wählen – auf ein markiertes Gerät klicken.");
   });
   /** Ein anderes Werkzeug beendet den Zeichenablauf (der Entwurf bleibt). */
+  /** „Gerät“ (Knopf, Taste G, Typ-Chip) öffnet den Gerätekatalog der Decke (K1). */
+  const katalogOeffnen = useStabil(() => {
+    if (!darfAendern) return;
+    setKatalog({ modus: { art: "platzieren", flaeche: "ceiling", start: typWahl }, geraetId: null });
+  });
   const werkzeugWaehlen = useStabil((w: typeof werkzeug) => {
     if (w !== "zuordnen" && leitungen?.planung.ablauf != null) leitungen.planung.ablaufBeenden();
+    if (w === "geraet") {
+      katalogOeffnen();
+      return;
+    }
     setWerkzeug(w);
   });
   const rueckgaengig = useStabil(() => (leitungsentwurf !== null ? leitungen?.planung.dispatch({ typ: "rueckgaengig" }) : dispatch?.({ typ: "rueckgaengig" })));
@@ -702,10 +721,18 @@ export function Deckenansicht({
       {darfAendern && (
         <Werkzeuggruppe label="Gerät">
           <Werkzeugknopf label="Gerät" taste="G" hinweis="Deckengerät setzen" icon={WERKZEUGSYMBOL.geraet} aktiv={werkzeug === "geraet"} onClick={() => werkzeugWaehlen("geraet")} />
-          {werkzeug === "geraet" && (
-            <div className="min-w-[200px]">
-              <TypAuswahl id="decke-werkzeug-typ" label="Deckengerät" typen={typen} flaeche="ceiling" wert={typKey} onWahl={setTypWahl} />
-            </div>
+          {werkzeug === "geraet" && geraetetyp !== null && (
+            <button
+              type="button"
+              className={`${knopf("neutral", { klein: true })} inline-flex items-center gap-1.5`}
+              aria-label={`Gerät: ${geraetetyp.label} – anderen Typ wählen`}
+              title="Gerätekatalog öffnen (G)"
+              onClick={katalogOeffnen}
+              data-testid="geraet-chip"
+            >
+              <Geraetesymbol typ={geraetetyp} groesse={16} />
+              Gerät: {geraetetyp.label}
+            </button>
           )}
         </Werkzeuggruppe>
       )}
@@ -735,7 +762,7 @@ export function Deckenansicht({
   const hilfeInhalt = (
     <>
       <ul className="pl-[18px] text-muted">
-        <li>Gerät (G): Typ wählen, Vorschau folgt dem Zeiger, ein Klick setzt es. Ziehen verschiebt es; Pfeiltasten 1 cm, mit Umschalt 10 cm; Entf entfernt es.</li>
+        <li>Gerät (G): Gerätekatalog öffnen, Typ wählen, „Platzieren“ – Vorschau folgt dem Zeiger, ein Klick setzt es. Ziehen verschiebt es; Pfeiltasten 1 cm, mit Umschalt 10 cm; Entf entfernt es.</li>
         <li>Eingerastet wird bündig an achsparallelen Wänden, in der Flucht anderer Deckengeräte, sonst am Raster. Alt hält es beim Ziehen aus.</li>
         <li>Die Maße gehen von der Gerätemitte bis zur ersten tatsächlichen Wand in jeder Richtung – auch in L-förmigen Räumen.</li>
         <li>Strg+Z / Strg+Y gelten für den gemeinsamen Entwurf mit dem Grundriss. Schließen behält alle Änderungen – gespeichert wird nur mit „Speichern“.</li>
@@ -827,12 +854,15 @@ export function Deckenansicht({
                 <Deckengeraeteliste
                   geraete={deckengeraete}
                   gewaehlt={gewaehlt}
-                  typen={typen}
                   darfAendern={darfAendern}
                   deckenhoeheMm={deckenhoeheMm}
                   treffer={treffer}
                   onWaehlen={waehlen}
                   onLage={lageSetzen}
+                  onTypAendern={(id) => {
+                    const g = deckengeraete.find((x) => x.id === id);
+                    if (g !== undefined && darfAendern) setKatalog({ modus: { art: "typ", flaeche: "ceiling", aktuell: g.schluessel }, geraetId: id });
+                  }}
                   onLabel={(id, label) => {
                     if (entwurf !== null && darfAendern) dispatch?.({ typ: "aendern", entwurf: geraetAendern(entwurf, id, { label }) });
                   }}
@@ -911,6 +941,33 @@ export function Deckenansicht({
           </Planungsarbeitsflaeche>
         )}
       </div>
+      {katalog !== null && (
+        <Geraetekatalog
+          typen={typen}
+          modus={katalog.modus}
+          onClose={() => setKatalog(null)}
+          onWahl={(key) => {
+            if (katalog.geraetId !== null) {
+              const g = deckengeraete.find((x) => x.id === katalog.geraetId);
+              const grund = g === undefined ? "Gerät nicht gefunden." : lageSetzen(g.id, g.x, g.y, key);
+              if (grund !== undefined) return grund;
+              setKatalog(null);
+              setZeiger(`Typ geändert: ${typen.get(key)?.label ?? key} – noch nicht gespeichert.`);
+              return undefined;
+            }
+            setTypWahl(key);
+            setWerkzeug("geraet");
+            setKatalog(null);
+            setZeiger(`${typen.get(key)?.label ?? key}: in den Raum klicken – Vorschau, Fang und Prüfung wie gewohnt.`);
+            return undefined;
+          }}
+          verteilung={
+            katalog.geraetId === null && verteilungsangebot !== undefined
+              ? { ...verteilungsangebot, gesperrt: "Verteilungen sitzen an der Wand – bitte eine Wandansicht öffnen oder im Grundriss eine Wand wählen." }
+              : undefined
+          }
+        />
+      )}
       <HilfeDialog offen={hilfe} titel="Deckenfläche – Bedienung und Legende" onClose={() => setHilfe(false)}>
         {hilfeInhalt}
       </HilfeDialog>
@@ -970,29 +1027,28 @@ function Wandmasse({
 function Deckengeraeteliste({
   geraete,
   gewaehlt,
-  typen,
   darfAendern,
   deckenhoeheMm,
   treffer,
   onWaehlen,
   onLage,
+  onTypAendern,
   onLabel,
   onEntfernen,
 }: {
   geraete: readonly AnsichtsDeckengeraet[];
   gewaehlt: string | null;
-  typen: Geraetetypen;
   darfAendern: boolean;
   deckenhoeheMm: number;
   treffer: Record<Richtung, Wandtreffer | null> | null;
   onWaehlen: (id: string) => void;
   onLage: (id: string, x: number, y: number, typKey?: string) => string | undefined;
+  onTypAendern: (id: string) => void;
   onLabel: (id: string, label: string | null) => void;
   onEntfernen: (id: string) => void;
 }) {
   const masse = useMasse();
   const g = geraete.find((x) => x.id === gewaehlt);
-  const [typfehler, setTypfehler] = useState<string | null>(null);
   /** Ein Abstand zur Wand in einer Richtung - verschiebt das Gerät entlang dieser Achse. */
   const abstandFeld = (richtung: Richtung) => {
     const t = treffer?.[richtung] ?? null;
@@ -1024,7 +1080,7 @@ function Deckengeraeteliste({
         die Decke, folgen die Geräte.
       </p>
       {geraete.length === 0 ? (
-        <p className="m-0 text-muted">Noch kein Deckengerät.{darfAendern ? " Werkzeug „Gerät“ (G) wählen und in den Raum klicken." : ""}</p>
+        <p className="m-0 text-muted">Noch kein Deckengerät.{darfAendern ? " „Gerät“ (G) öffnet den Katalog: Typ wählen, „Platzieren“, in den Raum klicken." : ""}</p>
       ) : (
         <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
           {geraete.map((x, i) => (
@@ -1043,20 +1099,7 @@ function Deckengeraeteliste({
       )}
       {g !== undefined && (
         <div className="flex flex-col gap-1.5 border-t border-line pt-2" aria-label="Gewähltes Deckengerät">
-          <TypAuswahl
-            id="decke-geraet-typ"
-            label="Gerätetyp"
-            typen={typen}
-            flaeche="ceiling"
-            wert={g.schluessel}
-            gesperrt={!darfAendern}
-            onWahl={(key) => setTypfehler(onLage(g.id, g.x, g.y, key) ?? null)}
-          />
-          {typfehler !== null && (
-            <p className="m-0 text-danger" role="alert">
-              Typ nicht geändert: {typfehler}
-            </p>
-          )}
+          <TypFeld typ={g.typ} schluessel={g.schluessel} editierbar={darfAendern} onAendern={() => onTypAendern(g.id)} />
           <div className="grid grid-cols-2 gap-1.5">{(["links", "rechts", "oben", "unten"] as const).map(abstandFeld)}</div>
           <BeschriftungsFeld id="decke-geraet-label" wert={g.label} gesperrt={!darfAendern} onUebernehmen={(text) => onLabel(g.id, text)} />
           <p className="m-0 text-muted">

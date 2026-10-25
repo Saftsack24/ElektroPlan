@@ -1,7 +1,7 @@
 # Entwurf: Gerätekatalog – Auswahl, Platzierung und eigene Gerätetypen
 
-**Status:** Entwurf, 2. Fassung (2026-10-25) – **R1–R3 entschieden** (§10). **Nicht umgesetzt**; K1, K2 und die
-neue Kategorie werden erst in ihren ausdrücklich freigegebenen Schritten implementiert.
+**Status:** Entwurf, 2. Fassung (2026-10-25) – **R1–R3 entschieden** (§10). **K1 umgesetzt** (§11, als Checkpoint committet);
+K2 und die neue Kategorie werden erst in ihrem ausdrücklich freigegebenen Schritt implementiert.
 **Einordnung:** Erweiterung von Phase 6c (Bedienung), Schritte **K1/K2** nach **VP** (Verteilung direkt platzieren,
 6c.3) – siehe §9. Schrittbezeichnung: **VP** statt des früheren „P“, weil „P“ im 6c-Entwurf (§18.7) die
 gemeinsame Bedienungsprüfung bezeichnet. Phase 7 bleibt zurückgestellt.
@@ -391,6 +391,67 @@ Frontendtests, Typprüfung, ESLint, Grenzen, Build, Drift; K2 zusätzlich gegen 
 * Größenordnung: K1 etwa wie L3-Verwaltungsdialoge; K2 etwa wie V1 (Backend mit Migration) plus ein Formular.
 
 ---
+
+## 11. Umsetzungsstand K1 – Gerätekatalogdialog (2026-10-25)
+
+**Freigabe:** nur K1, nach dem VP-Checkpoint `1a64b7f`. Nur Frontend, keine neue API, keine Migration, keine
+neuen Kategorien, keine Typverwaltung, keine Artikel-, Preis- oder Lagerdaten. **Als Checkpoint committet**
+(Task 0067); persönliche und optische Abnahme offen.
+
+**Tatsächlicher Ablauf unter „Gerät“:**
+* **Grundriss:** „Gerät“ bzw. Taste **G** öffnet den Katalogdialog „Gerät auswählen“. Nach „Platzieren“ steht
+  über der Fläche der Chip „Gerät: Ausschalter“ mit der Aufforderung – Wandtyp: „Eine Wand anklicken – die
+  Wandansicht öffnet sich zum Setzen.“ (nur außen geeignet: Außenseite); Deckentyp: „In einen Raum klicken –
+  die Deckenansicht öffnet sich zum Setzen.“; Wand- und Deckentyp: „Wand anklicken für die Wandmontage oder in
+  einen Raum klicken für die Decke.“ [Abbrechen]. Die Fläche öffnet sich mit dem Werkzeug „Gerät“ und dem
+  gewählten Typ; gesetzt wird mit der vorhandenen Platzierung (Vorschau, Fang, Prüfung), gespeichert mit
+  „Speichern“ des Raumentwurfs.
+* **Wandansicht / Deckenansicht:** „Gerät“ bzw. G öffnet den Katalog für die Fläche der Ansicht (Wand innen,
+  Fassade außen, Decke); unpassende Typen sind sichtbar, gedimmt, mit „nur Decke“ o. ä. und dem Grund in den
+  Details – „Platzieren“ ist dann gesperrt. Nach „Platzieren“ ist das Werkzeug aktiv; der Chip „Gerät: …“ in
+  der Werkzeugleiste öffnet den Katalog erneut.
+* **Dialog:** Suchfeld (Bezeichnung, Kategorie, Alltagsbegriffe wie „Lampe“, „LAN“, Fläche), Kategorien links
+  (schmal: Auswahlfeld), Kacheln mit Symbol, Name und kurzer Angabe („Wand · 105 cm“, „Decke“), erkennbare
+  Auswahl (Rahmen und Fläche in Akzentfarbe), kompakte Details (Montage, Standardhöhe; Planungsmaß klein und
+  gedämpft), „Platzieren“/„Abbrechen“. Tastatur: Fokus startet im Suchfeld; die Kacheln sind eine Optionsgruppe
+  mit einem Tab-Halt, Pfeile/Pos1/Ende wählen mit, Enter übernimmt, Doppelklick ebenso. Öffnen und Schließen
+  ändern weder Entwurf noch Auswahl, Ausschnitt oder Zoom; der Fokus kehrt zum Auslöser zurück.
+* **Vorhandene Geräte:** Klick wählt aus (kein Katalog). In den Eigenschaften steht der Typ mit „Typ ändern …“ →
+  derselbe Dialog „Gerätetyp ändern“ mit „Typ übernehmen“, nur Typen der Fläche; geprüft wie jede Lageänderung
+  (unzulässig: Grund im Dialog, nichts übernommen), nichts gespeichert. Ein deaktivierter Bestandstyp bleibt als
+  „aktueller Typ – nicht mehr angeboten“ sichtbar und wird nicht neu angeboten. Das Lagegerät einer Verteilung
+  hat kein „Typ ändern …“.
+* **Verteilung:** keine Kachel. „Verteilung platzieren …“ (eigene Kategorie) listet unplatzierte Verteilungen;
+  „Platzieren …“ schließt den Katalog und startet den VP-Ablauf – im Grundriss mit Wandwahl (jede Wand), in einer
+  offenen Wandansicht direkt auf dieser Wand. Gesperrt mit Grund: ohne Recht für Stromkreise, bei
+  ungespeicherten Raumänderungen, an der Decke bzw. Fassade. „Abbrechen“ aus diesem Einstieg bleibt im Editor;
+  nach dem Speichern führt VP wie bisher zu „Stromkreise“.
+* **Schutz:** Ohne Planrecht und in abgeschlossenen/archivierten Projekten kein „Gerät“; neben einem offenen
+  Leitungs- oder Zuordnungsentwurf öffnet G nicht, sondern nennt den Sperrgrund. Serverrechte und -prüfungen
+  bleiben unabhängig davon wirksam. Der Katalog liest denselben sitzungsgebundenen Abfragecache.
+
+**Vorbereitet für K2:** Kategorien und Bezeichnungen kommen aus den Daten (unbekannte Kategorie mit Schlüssel),
+keine Liste fester Typschlüssel im Dialog.
+
+**Prüfung:** 7 Dialogtests (`Geraetekatalog.test.tsx`) und 7 Ablauftests über den Projekt-Tab
+(`KatalogAblauf.test.tsx`); zwei Wandtests auf den Katalog umgestellt. Frontend-Gesamtlauf bei normaler Last
+**1 271/1 271** (81 s); ein späterer Lauf nach zwei kleinen Korrekturen (Textfarbe, Statustext) unter erneuter
+Spiellast 1 268/1 271 (drei 5-s-Zeitüberschreitungen langer Integrationstests, 242 s) – die drei Dateien samt
+Katalogtests einzeln grün (75/75). Typprüfung, ESLint, Modulgrenzen, Build, API-Drift grün.
+
+**Stack-Durchlauf (synthetisch, PR-2026-0010):** Suche „schalter“ → 3 Schalter; Ausschalter → Chip und
+Aufforderung → Südwand der Küche → Wandansicht mit „Gerät: Ausschalter“ → gesetzt → Katalog über den Chip
+geöffnet und abgebrochen (Entwurf blieb) → „Typ ändern …“ → Wechselschalter übernommen (nicht gespeichert) →
+Speichern → nach Neuladen im Plan. Deckenleuchte → Klick in die Küche → Deckenansicht mit Werkzeug → gesetzt,
+gespeichert, nach Neuladen im Plan. Katalog mit Auswahl abgebrochen: keine Anfrage, kein Gerät. „Verteilung
+platzieren …“ mit synthetischer Verteilung VPK → Wandwahl → Platzierungsmodus → Abbrechen: kein Dialogstapel,
+keine Anfrage. Daten danach entfernt, Bestand wie vorher (6 Geräte). **Befund behoben:** Im dunklen Theme waren
+Name und Symbol der Kacheln schwarz (Knöpfe erben die Textfarbe nicht) – jetzt Vordergrundfarbe in beiden
+Themes (gemessen). Breit: Kategorien und vier Kachelspalten nebeneinander; schmal (390 px): volle Breite, zwei
+Spalten, Kategorie als Auswahl, kein Querscrollen, Aktionen unten sichtbar. **Einschränkungen:** Bildschirmbilder
+nur stark verkleinert, daher keine verlässliche optische Beurteilung; das dunkle Theme nur vorübergehend im DOM
+gesetzt (Kontoeinstellung „hell“ unverändert); sichtbarer Tastaturfokus per Skript nicht auslösbar
+(`:focus-visible`), gilt über die globale Regel.
 
 ## 10. Entscheidungen (2026-10-25)
 

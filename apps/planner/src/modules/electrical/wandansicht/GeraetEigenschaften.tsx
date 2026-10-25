@@ -1,10 +1,11 @@
 import { useState } from "react";
 
+import { Marke } from "../../../core/ui/Marke";
 import { useMasse } from "../../../core/ui/masseinheit";
 import { FELD, FELD_BESCHRIFTUNG, FELD_HINWEIS, eingabefeld, knopf, meldungsflaeche } from "../../../core/ui/stil";
 import { befundText } from "../geraete/geraetepruefung";
-import type { Geraetetyp, Geraetetypen } from "../geraete/katalog";
-import { FLAECHE_LABEL, typenFuer } from "../geraete/katalog";
+import type { Geraetetyp } from "../geraete/katalog";
+import { FLAECHE_LABEL } from "../geraete/katalog";
 import { Geraetesymbol } from "../geraete/symbole";
 import type { Wandbezug } from "./wandbezug";
 import type { AnsichtsGeraet } from "./wandgeraete";
@@ -61,44 +62,38 @@ export function BeschriftungsFeld({
   );
 }
 
-/** Auswahl des Gerätetyps - nur aktive Typen, die auf dieser Fläche zulässig sind. */
-export function TypAuswahl({
-  id,
-  label,
-  typen,
-  flaeche,
-  wert,
-  gesperrt,
-  onWahl,
+/**
+ * Typ des gewählten Geräts mit „Typ ändern …“ (Phase 6c, K1): öffnet den Gerätekatalog im
+ * Modus „Typ übernehmen“. Ein deaktivierter Bestandstyp bleibt verständlich sichtbar. Das
+ * Lagegerät einer Verteilung wechselt seinen Typ nie (Server: `distribution-board-type-changed`).
+ */
+export function TypFeld({
+  typ,
+  schluessel,
+  editierbar,
+  onAendern,
 }: {
-  id: string;
-  label: string;
-  typen: Geraetetypen;
-  flaeche: Parameters<typeof typenFuer>[1];
-  wert: string | null;
-  gesperrt?: boolean;
-  onWahl: (key: string) => void;
+  typ: Geraetetyp | undefined;
+  schluessel: string;
+  editierbar: boolean;
+  onAendern: () => void;
 }) {
-  const auswahl = typenFuer(typen, flaeche);
-  const aktuell = wert !== null ? typen.get(wert) : undefined;
-  // Ein deaktivierter Typ eines vorhandenen Geräts bleibt sichtbar.
-  const liste: Geraetetyp[] = aktuell !== undefined && !auswahl.includes(aktuell) ? [aktuell, ...auswahl] : auswahl;
+  const verteilung = typ?.category === "distribution";
   return (
-    <label className={FELD} htmlFor={id}>
-      <span className={FELD_BESCHRIFTUNG}>{label}</span>
-      <span className="flex items-center gap-2">
-        <Geraetesymbol typ={aktuell} />
-        <select id={id} className={eingabefeld()} value={wert ?? ""} disabled={gesperrt === true} onChange={(event) => onWahl(event.target.value)}>
-          {wert === null && <option value="">Bitte wählen</option>}
-          {liste.map((t) => (
-            <option key={t.key} value={t.key} disabled={!t.is_active && t.key !== wert}>
-              {t.label}
-              {t.is_active ? "" : " (nicht mehr angeboten)"}
-            </option>
-          ))}
-        </select>
+    <div className="flex flex-wrap items-center gap-2">
+      <span className={FELD_BESCHRIFTUNG}>Gerätetyp</span>
+      <span className="inline-flex items-center gap-1.5 font-semibold" data-testid="geraet-typ">
+        <Geraetesymbol typ={typ} groesse={18} />
+        {typ?.label ?? schluessel}
       </span>
-    </label>
+      {typ !== undefined && !typ.is_active && <Marke art="warnung">nicht mehr angeboten</Marke>}
+      {editierbar && !verteilung && (
+        <button type="button" className={knopf("neutral", { klein: true })} onClick={onAendern}>
+          Typ ändern …
+        </button>
+      )}
+      {verteilung && <span className="text-muted">Lage einer Verteilung – Typ fest; Position über „Stromkreise“.</span>}
+    </div>
   );
 }
 
@@ -110,25 +105,24 @@ export function GeraetEigenschaften({
   bezug,
   geraete,
   gewaehlt,
-  typen,
   editierbar,
   andereSeite,
   onWaehlen,
   onLage,
-  onTyp,
+  onTypAendern,
   onLabel,
   onEntfernen,
 }: {
   bezug: Wandbezug;
   geraete: readonly AnsichtsGeraet[];
   gewaehlt: string | null;
-  typen: Geraetetypen;
   editierbar: boolean;
   /** Geräte auf der anderen Seite derselben Wand - nur als Zahl genannt. */
   andereSeite: number;
   onWaehlen: (id: string) => void;
   onLage: (id: string, u: number, h: number) => string | undefined;
-  onTyp: (id: string, key: string) => string | undefined;
+  /** „Typ ändern …“: öffnet den Gerätekatalog für dieses Gerät (K1). */
+  onTypAendern: (id: string) => void;
   onLabel: (id: string, label: string | null) => void;
   onEntfernen: (id: string) => void;
 }) {
@@ -137,7 +131,6 @@ export function GeraetEigenschaften({
   const H = bezug.hoeheMm;
   const g = geraete.find((x) => x.id === gewaehlt);
   const flaeche = flaecheDerSeite(bezug.seite);
-  const [typfehler, setTypfehler] = useState<string | null>(null);
 
   return (
     <section aria-label="Geräte dieser Wandseite" className="flex flex-col gap-1.5 border-b border-line pb-2 text-small">
@@ -146,7 +139,7 @@ export function GeraetEigenschaften({
       </h4>
       {geraete.length === 0 ? (
         <p className="m-0 text-muted">
-          Noch kein Gerät auf dieser Seite.{editierbar ? " Werkzeug „Gerät“ (G) wählen, Typ wählen und auf die Wand klicken." : ""}
+          Noch kein Gerät auf dieser Seite.{editierbar ? " „Gerät“ (G) öffnet den Katalog: Typ wählen, „Platzieren“, auf die Wand klicken." : ""}
         </p>
       ) : (
         <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
@@ -178,20 +171,7 @@ export function GeraetEigenschaften({
 
       {g !== undefined && (
         <div className="flex flex-col gap-1.5 border-t border-line pt-2" aria-label="Gewähltes Gerät">
-          <TypAuswahl
-            id="wand-geraet-typ"
-            label="Gerätetyp"
-            typen={typen}
-            flaeche={flaeche}
-            wert={g.schluessel}
-            gesperrt={!editierbar}
-            onWahl={(key) => setTypfehler(onTyp(g.id, key) ?? null)}
-          />
-          {typfehler !== null && (
-            <p className="m-0 text-danger" role="alert">
-              Typ nicht geändert: {typfehler}
-            </p>
-          )}
+          <TypFeld typ={g.typ} schluessel={g.schluessel} editierbar={editierbar} onAendern={() => onTypAendern(g.id)} />
           <div className="grid grid-cols-2 gap-1.5">
             <MassFeld id="geraet-links" label="Mitte von links" wertMm={g.u} gesperrt={!editierbar} hinweis="Achsmaß" onUebernehmen={(mm) => onLage(g.id, mm, g.h)} />
             <MassFeld id="geraet-rechts" label="Mitte von rechts" wertMm={L - g.u} gesperrt={!editierbar} hinweis="Achsmaß" onUebernehmen={(mm) => onLage(g.id, L - mm, g.h)} />

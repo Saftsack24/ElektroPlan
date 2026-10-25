@@ -497,7 +497,8 @@ bearbeitet ist; die manuelle Gesamtprüfung von Phase 6 bleibt davon unberührt 
 | 6c.6 | zentrale Anwendung der Vorgaben mit Vorschau | Entwurf |
 | 6c.7 | Verteilungsaufbau mit Vorlagen (ADR 0028) | Entwurf |
 | 6c.8 | gemeinsame Prüfung und Nachkorrekturen | Entwurf |
-| K1/K2 | Gerätekatalog: Katalogdialog (K1, nur Frontend), betriebseigene Gerätetypen (K2, ADR 0030) – [`geraetekatalog-design.md`](geraetekatalog-design.md); nach VP (R1–R3 entschieden) | Entwurf (2026-10-25), nicht freigegeben |
+| K1 | Gerätekatalogdialog (nur Frontend) – [`geraetekatalog-design.md`](geraetekatalog-design.md) §11 | **technisch umgesetzt und geprüft** (2026-10-25), **als Checkpoint committet** (Task 0067); persönliche und optische Abnahme offen |
+| K2 | betriebseigene Gerätetypen und Kategorie „Geräteanschluss“ (ADR 0030) | Entwurf, nicht freigegeben |
 
 **Layout:** Planungslayout L1–L3 vom Auftraggeber persönlich angesehen und für gut befunden (2026-10-25) – keine
 vollständige Funktionsabnahme.

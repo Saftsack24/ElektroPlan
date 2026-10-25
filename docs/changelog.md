@@ -5,7 +5,14 @@ Einträge entstehen nach relevanten Änderungen, nicht nach jedem Commit.
 
 ---
 
-## 2026-10-25 — Phase 6c VP: Verteilung direkt im Plan platzieren (nicht committet)
+## 2026-10-25 — Phase 6c K1: Gerätekatalog
+
+„Gerät“ (Taste G) öffnet in Grundriss, Wand- und Deckenansicht einen Katalog mit Suche, Kategorien und Kacheln.
+Nach „Platzieren“ setzt man das Gerät wie gewohnt in der Wand- oder Deckenansicht; im Grundriss führt eine
+Aufforderung zur passenden Wand bzw. zum Raum. Der Typ eines vorhandenen Geräts lässt sich mit „Typ ändern …“
+im selben Katalog wechseln. „Verteilung platzieren …“ startet die Platzierung einer Verteilung.
+
+## 2026-10-25 — Phase 6c VP: Verteilung direkt im Plan platzieren
 
 In der Ansicht „Stromkreise“ lässt sich eine Verteilung mit „Im Plan platzieren“ setzen: Geschoss und Raum
 wählen, Wand im Grundriss anklicken, in der Wandansicht setzen und „Platzierung speichern“. Lage und

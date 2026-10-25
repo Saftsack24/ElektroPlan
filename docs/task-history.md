@@ -4012,3 +4012,31 @@ Funktionsabnahme VP offen.
 * **Prüfung:** betroffene Backend-Dateien grün (erster Lauf deckte zwei Testaufbau-Fehler auf: kein
   `GET /floors/{id}`, Altbestand im Nebenläufigkeitstest – behoben); Ruff, mypy, Modulgrenzen grün; Frontend
   1 257/1 257 bei normaler Last (6 Worker); Typprüfung, ESLint, Build, API-Drift, `git diff --check` grün.
+
+## Task 0066 – K1: Gerätekatalogdialog
+
+**Datum:** 2026-10-25 · **Status:** technisch umgesetzt und geprüft, nicht committet. Persönliche Abnahme offen.
+
+* **Neu:** `geraete/Geraetekatalog.tsx` (Dialog mit Suche, Kategorien, Kacheln, Details, Tastatur, Typmodus,
+  Verteilungseintrag); Einstieg „Gerät“/G in Grundriss (danach Wand- bzw. Raumwahl), Wand- und Deckenansicht
+  (Werkzeug mit Typ-Chip); `TypFeld` mit „Typ ändern …“ statt der Typ-Auswahlliste; Grundriss-Klick ins
+  Rauminnere öffnet bei Deckentypen die Deckenansicht (`onFlaechenklick`); VP-Einstieg aus dem Katalog
+  (Abbrechen bleibt im Editor).
+* **Prüfung:** 14 neue Tests, 2 angepasste; Frontend 1 271/1 271 bei normaler Last; nach zwei kleinen Korrekturen
+  unter Spiellast 1 268/1 271 (Zeitüberschreitungen, Dateien einzeln grün); Typprüfung, ESLint, Modulgrenzen,
+  Build (ein erster Aufruf endete ohne belegte Ursache im `tsc`-Schritt, unverändert wiederholt grün), API-Drift.
+* **Stack:** synthetischer Durchlauf (Wand, Decke, Typwechsel, Abbrechen, VP-Einstieg), Daten entfernt; Befund
+  dunkles Theme (Kacheltext schwarz) behoben.
+
+## Task 0067 – K1-Checkpoint
+
+**Datum:** 2026-10-25 · **Status:** committet, nicht gepusht. Persönliche und optische Abnahme von VP und K1 offen.
+
+* **Grundlage:** K1-Gesamtlauf 1 271/1 271 bei normaler Last; danach nur Textfarbe der Kacheln und Statustext der
+  Wandansicht geändert; die drei im Lastlauf ausgefallenen Dateien einzeln grün; Typprüfung, ESLint,
+  Modulgrenzen, Build und API-Drift grün. Kein weiterer Gesamtlauf allein für diese kleinen Änderungen.
+* **Vorabprüfung:** nur K1-Quellen, Tests und Dokumentation; keine Secrets, `.env`, Vorschaukonfiguration,
+  Dumps, Bilder, Logs, Caches, Scratchpad-Dateien, Diagnose-Reste oder abgeschwächten Prüfungen;
+  `git diff --check` sauber. Nicht aufgenommen: eine unabhängige Datei unter `output/`.
+* **Offen:** Ursache des einmaligen `tsc`-Abbruchs beim ersten Build-Aufruf unbekannt (nicht behoben, nicht
+  wieder aufgetreten).
