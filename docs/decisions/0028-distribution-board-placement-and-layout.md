@@ -1,7 +1,9 @@
 # 0028 — Lage und Aufbau einer Verteilung (Phase 6c)
 
-Status: **proposed** (2026-10-15) – Entwurf, nicht umgesetzt. **Einzelentscheidungen bestätigt** (2026-10-15):
-F3 (Komponentenarten, manueller Aufbau, keine Auslegung) und F5 (Umsetzen mit Leitungen abgelehnt)
+Status: **proposed** (2026-10-15) – Entwurf. **Einzelentscheidungen bestätigt** (2026-10-15):
+F3 (Komponentenarten, manueller Aufbau, keine Auslegung) und F5 (Umsetzen mit Leitungen abgelehnt).
+**Teil „Lage“ umgesetzt** (Schritt VP, 2026-10-25, `PUT /distribution-boards/{id}/placement`, Entwurf 6c
+§23); Teil „Aufbau“ (6c.7) nicht umgesetzt
 Betrifft: Phase 6c (Schritte 6c.3 und 6c.7)
 Präzisiert: [ADR 0026](0026-circuits-cables-and-cable-paths.md) Nr. 1 (D1: Lage über ein Gerät
 `distribution_board`)

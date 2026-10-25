@@ -3964,3 +3964,51 @@ Beurteilung von Layout und Leitungsbedienung offen; optische Prüfung in dieser 
   Planner-Quellen, Tests und Dokumentation; keine Secrets, `.env`, Screenshots, Logs, Dumps, Caches oder
   Scratchpad-Dateien; keine Diagnose-Reste, kein `only`/`skip`, keine verlängerten Fristen; kein Backend, keine
   Migration; `git diff --check` sauber. Nicht aufgenommen: eine unabhängige Datei unter `output/`.
+
+## Task 0063 – Layoutbeurteilung und Entwurf Gerätekatalog
+
+**Datum:** 2026-10-25 · **Status:** nur Dokumentation, nicht umgesetzt, nicht committet.
+
+* **Layoutbeurteilung:** Der Auftraggeber hat das Planungslayout (L1–L3, `3cf83cd`) persönlich angesehen und für
+  gut befunden; ausdrücklich keine vollständige Funktionsabnahme.
+* **Befund:** Systemkatalog global per Seed; Geräte ohne eigene Maße; Rolle über die Kategorie, Verteilung über
+  den festen Schlüssel `distribution_board`; Symbole mit Rückfall je Kategorie; Auswahl heute als einfache Liste.
+* **Entwurf:** [`geraetekatalog-design.md`](geraetekatalog-design.md) – Katalogdialog über die vorhandene
+  Platzierung (K1), eigene Typen im selben Katalog mit Mandanten-FK und Feldsperre statt Typversionen (K2,
+  ADR 0030 proposed), Artikel (Phase 7) und Bestand (Phase 12) nur über Contracts, Platzieren bucht nichts.
+* **Verweise:** `phase-6c-design.md` §22, `roadmap.md` (Zeile K1/K2), `decisions/README.md`, `glossary.md`.
+
+## Task 0064 – VP: Verteilung direkt im Plan platzieren
+
+**Datum:** 2026-10-25 · **Status:** technisch umgesetzt, im laufenden Stack geprüft, nicht committet.
+Persönliche Abnahme offen.
+
+* **Entwurf präzisiert:** Schritt „P“ für die Verteilungsplatzierung heißt **VP** („P“ = gemeinsame
+  Bedienungsprüfung, 6c §18.7); Gerätekatalog §6.2 mit unterscheidbarer Artikelauswahl je Planungstyp
+  (Phase 7); R1–R3 entschieden (Kategorie „Geräteanschluss“ mit K2, eigenes Verwaltungsrecht, VP → K1 → K2);
+  Bestandsschutz eigener Typen unverändert.
+* **Backend:** `board_placement.py`, `PUT /distribution-boards/{board_id}/placement` (Schemas
+  `BoardPlacementUpdate`/`BoardPlacementOut`), API-Client neu erzeugt. Keine Migration, kein neues Recht.
+* **Frontend:** „Im Plan platzieren“/„Im Plan zeigen“/„Position ändern“ und Altbestandsliste in „Stromkreise“,
+  `PlatzierenDialog`, Wandwahl im Grundriss, Platzierungsmodus in Wandansicht und Zeichenfläche
+  (`Flaechenplatzierung`), Rückweg „Zurück zu Stromkreise“, `typenFuer` ohne „Verteilung“.
+* **Prüfung:** 10 neue Backend-Tests, 6 neue Frontend-Tests; Backend-Gesamtlauf 1 391/1 392 → Modulliste im
+  Architekturtest ergänzt, grün; statische Prüfungen und Build grün; Frontend-Gesamtlauf unter Spiellast
+  (1 142 s, 82 Zeitüberschreitungen) nicht belastbar, ein lastfreier Lauf steht aus. Stack-Durchlauf mit
+  synthetischer Verteilung bestanden, Daten danach entfernt (Entwurf 6c §23).
+
+## Task 0065 – VP abgeschlossen: serverseitige Sperre, Prüfung, Checkpoint
+
+**Datum:** 2026-10-25 · **Status:** technisch geprüft, als Checkpoint committet (nicht gepusht). Persönliche
+Funktionsabnahme VP offen.
+
+* **Sperre:** `PUT …/contour` lehnt neue und umtypisierte Geräte `distribution_board` ab (`422
+  distribution-board-via-placement`, vor jedem Schreiben); vorhandene Lagegeräte und Altbestand bleiben
+  speicherbar. Testaufbauten auf den VP-Weg bzw. ausdrücklichen Altbestand umgestellt; 3 neue
+  Regressionstests (Neuanlage, Umtypisierung, unverändertes Speichern samt Altbestand und VP-Verknüpfung –
+  jeweils ohne Teiländerung).
+* **Dokumentiert:** akzeptierte Abweichungen (kein Undo/Redo im Platzierungsentwurf, Rückkehr zu
+  „Stromkreise“ nach dem Speichern).
+* **Prüfung:** betroffene Backend-Dateien grün (erster Lauf deckte zwei Testaufbau-Fehler auf: kein
+  `GET /floors/{id}`, Altbestand im Nebenläufigkeitstest – behoben); Ruff, mypy, Modulgrenzen grün; Frontend
+  1 257/1 257 bei normaler Last (6 Worker); Typprüfung, ESLint, Build, API-Drift, `git diff --check` grün.

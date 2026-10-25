@@ -37,6 +37,7 @@ Format: Context · Problem · Considered Options · Decision · Consequences
 | [0027](0027-planning-defaults-cable-templates-and-reserve.md) | Planungsvorgaben (Betrieb, Projekt), Kabelvorlagen, Prioritätskette, prozentuale Leitungsreserve, zentrale Anwendung mit Vorschau; löst 0026 D5 ab (Phase 6c) | proposed | 2026-10-15 |
 | [0028](0028-distribution-board-placement-and-layout.md) | Atomare Platzierung des Lagegeräts einer Verteilung; Aufbau mit Reihen, Teilungseinheiten, Komponenten, Vorlagen und Hinweisregeln (Phase 6c) | proposed | 2026-10-15 |
 | [0029](0029-module-display-preference-flags.md) | Modulbezogene Ja/Nein-Anzeigeschalter in den persönlichen Einstellungen; erweitert 0021 (Phase 6c) | proposed | 2026-10-15 |
+| [0030](0030-organization-device-types.md) | Betriebseigene Gerätetypen im Gerätekatalog: Geltungsbereich, Mandanten-FK, Feldsperre statt Typversionen (Gerätekatalog K2) | proposed | 2026-10-25 |
 
 ## Wann ein ADR nötig ist
 

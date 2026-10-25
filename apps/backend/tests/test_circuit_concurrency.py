@@ -58,7 +58,12 @@ def _geraete(
     factory: sessionmaker[Session],  # noqa: F811
     welt: Welt,  # noqa: F811
 ) -> tuple[uuid.UUID, uuid.UUID, int]:
-    """Steckdose und Verteilungsgeraet an der Wand der Testwelt; liefert die Raumversion."""
+    """Steckdose und Verteilungsgeraet an der Wand der Testwelt; liefert die Raumversion.
+
+    Das Verteilungsgeraet ist **Altbestand** ohne Verteilung: Seit Phase 6c (VP) entsteht ein
+    Lagegeraet nicht mehr im Raumentwurf - hier wird es deshalb direkt angelegt, wie es aus
+    frueheren Planungen vorliegen kann.
+    """
     session = factory()
     try:
         steckdose, verteilung = uuid.uuid4(), uuid.uuid4()
@@ -66,21 +71,20 @@ def _geraete(
         version = service.get_room(welt.room_id).room.version
         service.replace_contour(
             welt.room_id,
-            RoomContourUpdate(
-                walls=[_wand(welt)],
-                devices=[
-                    _steckdose(welt, steckdose),
-                    ContourDeviceIn(
-                        id=verteilung,
-                        device_type_key="distribution_board",
-                        mounting_surface="wall_interior",
-                        wall_id=welt.wall_id,
-                        center_offset_mm=1_000,
-                        center_height_mm=1_400,
-                    ),
-                ],
-            ),
+            RoomContourUpdate(walls=[_wand(welt)], devices=[_steckdose(welt, steckdose)]),
             expected_version=version,
+        )
+        session.add(
+            ElectricalDevice(
+                id=verteilung,
+                organization_id=welt.organization_id,
+                room_id=welt.room_id,
+                device_type_key="distribution_board",
+                mounting_surface="wall_interior",
+                wall_id=welt.wall_id,
+                center_offset_mm=1_000,
+                center_height_mm=1_400,
+            )
         )
         session.commit()
         return steckdose, verteilung, service.get_room(welt.room_id).room.version

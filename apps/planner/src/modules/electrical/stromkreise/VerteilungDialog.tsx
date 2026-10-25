@@ -119,8 +119,8 @@ export function VerteilungDialog({
           ))}
         </Auswahl>
         <p className="col-span-full m-0 text-label text-muted">
-          Die Lage ist ein Gerät „Verteilung“, das Sie wie jedes Gerät in der Wandansicht setzen. Hier erscheinen nur
-          Geräte dieses Gebäudes, die noch keine andere Verteilung platzieren.
+          Die Lage setzen Sie mit „Im Plan platzieren“ in der Ansicht „Stromkreise“. Hier lässt sich ein vorhandenes
+          Gerät „Verteilung“ dieses Gebäudes verknüpfen, das noch keine andere Verteilung platziert.
         </p>
 
         {fehler !== null && (

@@ -1904,6 +1904,116 @@ Last einmal wiederholt.
 **Checkpoint:** L1/L2/L3 mit allen Nachkorrekturen (§21–§21.7) als technisch geprüfter Stand committet
 (Task 0062); persönliche Beurteilung von Layout und Leitungsbedienung sowie die optische Prüfung offen.
 
+## 22. Layoutbeurteilung und Gerätekatalog (2026-10-25)
+
+**Layoutbeurteilung:** Der Auftraggeber hat das aktuelle Planungslayout (Stand L1–L3, Checkpoint `3cf83cd`)
+persönlich angesehen und **für gut befunden**. Das ist **keine** vollständige Funktionsabnahme aller
+Planungsfunktionen; die Abnahme von Leitungsbedienung, Abschlussdialog und Vorgabenverwaltung im Einzelnen
+bleibt offen.
+
+**Gerätekatalog:** eigener Entwurf [`geraetekatalog-design.md`](geraetekatalog-design.md) (Katalogdialog zur
+Auswahl und Platzierung, betriebseigene Gerätetypen, spätere Artikel- und Lageranbindung; ADR 0030 *proposed*).
+Entschiedene Reihenfolge **VP → K1 → K2** (VP = Verteilung direkt platzieren, 6c.3; „P“ bleibt die gemeinsame
+Bedienungsprüfung aus §18.7); die übrigen offenen 6c-Schritte (6c.2, 6c.6–6c.8, 6c.1
+zurückgestellt) bleiben unverändert. Nur Entwurf, nicht umgesetzt.
+
+## 23. Umsetzungsstand VP – Verteilung direkt im Plan platzieren (2026-10-25)
+
+**Freigabe:** nur Schritt **VP** (6c.3, Platzierung aus §6), am 2026-10-25 nach Präzisierung des
+Gerätekatalog-Entwurfs. Schrittbezeichnung **VP**, weil „P“ (§18.7) die gemeinsame Bedienungsprüfung
+bezeichnet. Kategorie „Geräteanschluss“, K1 und K2 sind **nicht** Teil davon. Keine Migration.
+
+**Backend** (`board_placement.py`, ADR 0028 Teil „Lage“):
+`PUT /distribution-boards/{board_id}/placement` mit `If-Match` (Verteilung) und `expected_room_version`
+(Zielraum); verlangt `electrical.circuit.write` **und** `electrical.plan.write`. Eine Transaktion,
+Sperrreihenfolge Projekt → Verteilung → Räume (nach ID). Ohne Lage: Lagegerät `distribution_board`
+(Innenseite) anlegen und verknüpfen; gleiche Wand: verschieben (gleiches Gerät); andere Wand oder anderer
+Raum: neues Gerät, umhängen, altes entfernen – nur ohne Leitungen am Lagegerät (`409
+board-placement-has-cables`, die Meldung nennt jede Leitung „F1 · L1: … → …“, F5). Lageprüfung mit denselben
+Geräteregeln wie der Raumentwurf (keine neuen Befunde, das gesetzte Gerät ganz zulässig), Leitungen
+vorher/nachher (keine stille Unterbrechung). Raum- und Verteilungsversion steigen je genau einmal; je
+betroffenem Raum ein `electrical.plan.updated` (`devices_changed`) nach dem Commit. Antwort: Verteilung,
+Lagegerät, betroffene Räume mit neuer Version. Fremder Raum/anderes Gebäude `422
+board-placement-not-in-building`, fremde Wand `422 board-placement-wall-unknown`, Schreibschutz `409
+project-completed`/`project-archived`.
+
+**Oberfläche:**
+* Ansicht „Stromkreise“: neben „Noch nicht im Plan platziert“ **„Im Plan platzieren“**; bei platzierten
+  Verteilungen **„Im Plan zeigen“** (Wandansicht mit gewähltem Lagegerät, „Zurück zu Stromkreise“) und
+  **„Position ändern“**. Platzieren nur mit beiden Rechten und außerhalb abgeschlossener/archivierter Projekte.
+* Ablauf: Dialog „HV im Plan platzieren“ (Geschoss, Raum; nur Räume mit geschlossener Kontur) → Grundriss
+  des Geschosses, Raum gewählt, Kontextleiste „HV platzieren – eine Wand von „Diele“ anklicken“ [Abbrechen]
+  → Klick auf eine Wand des Raums öffnet die Wandansicht (Innenseite) im **Platzierungsmodus** → Vorschau,
+  Fang und Prüfung wie beim Werkzeug „Gerät“ (dieselbe Funktion der Zeichenfläche), Klick setzt, Ziehen
+  korrigiert, Pfeiltasten 1 cm (Umschalt 10 cm), Maßfelder „Mitte von links“/„Höhe Mitte über Boden“ →
+  **„Platzierung speichern“** (Strg+S) · „Andere Wand wählen“ (auch Escape) · „Abbrechen“. Erfolg: zurück zu
+  „Stromkreise“ mit „HV platziert: Diele (Gebäude · Geschoss), Wand 1.“
+* Entwurfsschutz: Die Platzierung ist ein eigener kleiner Entwurf in der Oberfläche; der Raum ist im
+  Platzierungsmodus nicht bearbeitbar (keine Raum-Speichern-Knöpfe, keine Raumwerkzeuge), der Raumentwurf
+  wird nie mitgespeichert. Hat der Raum ungespeicherte Änderungen, startet die Wandwahl nicht (Hinweis:
+  zuerst speichern oder verwerfen). Abbrechen oder ein Ansichtswechsel verwirft nur den Platzierungsentwurf –
+  serverseitig entsteht nichts, also kein verwaistes Lagegerät. Versionskonflikt: Meldung, „Neu laden“ holt
+  die aktuelle Verteilungsversion und den Raumstand, die gewählte Lage bleibt als Vorschlag.
+* Gerätepalette: „Verteilung“ ist in Wand- und Deckenansicht nicht mehr frei wählbar (`typenFuer`); ein
+  vorhandenes Lagegerät behält seinen Typ in der Typauswahl.
+* Altbestand: Geräte „Verteilung“ ohne Verteilung zeigt „Stromkreise“ als eigene Liste mit „Im Plan zeigen“;
+  Verknüpfen über „Bearbeiten“ der Verteilung (vorhandenes `PATCH`), Entfernen in der Wandansicht.
+
+**Akzeptierte Abweichungen vom Entwurf §6 (vom Auftraggeber bestätigt, 2026-10-25):**
+1. **Zunächst kein Rückgängig/Wiederholen** im kleinen Platzierungsentwurf. Setzen und Korrigieren sind je
+   ein Klick, ein Ziehen, eine Pfeiltaste oder ein Maßfeld; eine noch nicht gespeicherte Lage lässt sich
+   jederzeit neu setzen, „Abbrechen“ verwirft sie ganz.
+2. **Nach erfolgreichem Speichern zurück zu „Stromkreise“** mit Meldung (statt Statusleiste mit „Neue
+   Leitung ab …“).
+
+Weitere Grenzen: kein `DELETE …/placement` (nicht beauftragt); der Einstieg „Verteilung platzieren …“ aus der
+Gerätepalette folgt mit K1.
+
+**Serverseitige Sperre (VP-Nacharbeit, 2026-10-25):** Der Raumentwurf (`PUT …/contour`) lehnt ein **neues**
+Gerät `distribution_board` und das **Umtypisieren** eines Geräts zu diesem Typ ab (`422
+distribution-board-via-placement`, in der vorhandenen Vorher-/Nachher-Prüfung `_distribution_problems`, vor
+jedem Schreiben – alles oder nichts). Keine vom Client wählbare Ausnahme: Der einzige Weg zu einem neuen
+Lagegerät ist `PUT …/placement`, der dieselben Geometrieprüfungen nutzt. Vorhandene Lagegeräte – verknüpft
+oder unverknüpfter Altbestand – bleiben lesbar, verschiebbar und beim unveränderten Speichern zulässig;
+Verknüpfen von Altbestand über `PATCH` bleibt. Testaufbauten, die Lagegeräte bisher im Raumentwurf anlegten,
+nutzen jetzt den VP-Weg bzw. legen Altbestand ausdrücklich an.
+
+**Offen:** Leitungen einer bisher **unplatzierten** Verteilung
+(Start ohne Gerät) erhalten beim ersten Platzieren nicht automatisch das neue Lagegerät als Start – sie
+bleiben unverändert und werden wie bisher in der Leitung angepasst (keine stille Leitungsänderung).
+
+**Tests:** Backend `tests/test_electrical_board_placement.py` (10 Fälle gegen PostgreSQL: atomares Anlegen
+mit Event, Lageregeln, Versionen und Doppelabsendung, Verschieben, Umsetzen ohne/mit Leitungen, Gebäude- und
+Wandgrenzen, Rechte, Schreibschutz). Frontend `stromkreise/VerteilungPlatzieren.test.tsx` (6 Fälle über den
+echten Projekt-Tab: ganzer Ablauf bis zur Anfrage, unzulässige Lage und Abbrechen ohne Anfrage,
+Versionskonflikt mit „Neu laden“, Im Plan zeigen mit Rückweg, Rechte und Altbestand, Meldungstexte).
+
+**Abschlussprüfung nach der Sperre (2026-10-25):** betroffene Backend-Dateien gegen PostgreSQL grün
+(Platzierung inkl. 3 neuer Sperr-Regressionstests, Stromkreise, Leitungen, Mengen, Nebenläufigkeit von
+Leitungen und Stromkreisen, Geräte, Editor, Modul, Mandantentrennung); Ruff, mypy, Modulgrenzen grün.
+**Frontend-Gesamtlauf bei normaler Last 1 257/1 257 grün** (6 Worker, reguläre Fristen, 88 s); Typprüfung,
+ESLint, Modulgrenzen, Build, API-Drift, `git diff --check` grün. **VP technisch geprüft**; die persönliche
+Funktionsabnahme durch den Auftraggeber bleibt offen.
+
+**Erste Prüfung (2026-10-25):** Ruff, mypy `--strict`, Modulgrenzen (Backend und Frontend), ein Alembic-Head,
+Lockfile, API-Drift, Typprüfung, ESLint und Build grün. Backend-Gesamtlauf gegen PostgreSQL **1 391/1 392** –
+der eine Befund war echt: Die Liste der erlaubten Untermodule im Architekturtest
+(`test_electrical_module.py`) kannte `board_placement` nicht; ergänzt, Test grün. Frontend-Gesamtlauf
+**nicht belastbar**: Er lief unter fremder Last (Spiel, CPU 80–96 %) 1 142 s statt sonst etwa 75 s, und 82
+lange Integrationstests überschritten die 5-s-Frist. Die geänderten Bereiche (Ordner `stromkreise`, vorher
+`electrical` ohne die zwei bekannten Lastausreißer) sind einzeln grün; ein Gesamtlauf ohne Last steht aus.
+
+**Stack-Durchlauf (synthetisch, PR-2026-0010):** Verteilung „VPT“ angelegt → „Im Plan platzieren“ → EG,
+Kueche → Wandwahl im Grundriss → Wandansicht im Platzierungsmodus → gesetzt (250 cm von links, 140 cm) →
+„Platzierung speichern“: eine Anfrage `PUT …/placement` → 200, Verteilung Version 2, Raum Version 4,
+Lagegerät `distribution_board` an der Innenseite (1 300 mm ab Wandanfang, 1 400 mm). Meldung „VPT platziert:
+Kueche (Haus · EG), Wand 1.“ Nach dem Neuladen „Lage: EG · Kueche“; „Im Plan zeigen“ öffnet die Wand mit
+gewähltem Lagegerät, „Zurück zu Stromkreise“ führt zurück; „Position ändern“ übernimmt den Raum, „Abbrechen“
+sendet nichts. Eine Fehlbedienung beim Test (Klick unter den Fußboden) wurde mit „Nicht gesetzt“ abgewiesen,
+die gesetzte Lage blieb. Aufräumen: VPT entfernt (das Gerät erschien wie vorgesehen unter „Gerät
+‚Verteilung‘ ohne Verteilung“), Gerät in der Wandansicht entfernt und gespeichert; Bestand wie vorher
+(„1 von 6“ nicht zugeordnet, UV1 unverändert). Keine Konsolenfehler aus dem Ablauf.
+
 ## 16. Geänderte Dokumentation durch diesen Entwurf
 
 Neu: dieser Entwurf, ADR 0027–0029 (proposed). Aktualisiert: `current-status.md` (Phase 6c, Phase 7

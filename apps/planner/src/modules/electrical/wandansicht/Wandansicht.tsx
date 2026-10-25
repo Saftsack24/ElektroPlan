@@ -12,7 +12,10 @@ import type { Geraetetypen } from "../geraete/katalog";
 import { typenFuer } from "../geraete/katalog";
 import { Geraetelegende } from "../geraete/symbole";
 import { GeraetEigenschaften, TypAuswahl } from "./GeraetEigenschaften";
-import { flaecheDerSeite, geraeteInAnsicht, geraetLagePruefen } from "./wandgeraete";
+import { flaecheDerSeite, geraeteInAnsicht, geraetLagePruefen, mitteInAnsicht } from "./wandgeraete";
+import { MassFeld } from "./WandEigenschaften";
+import type { Platzierungsfehler } from "../stromkreise/platzierung";
+import { VERTEILUNG_STANDARDHOEHE_MM } from "../stromkreise/platzierung";
 import type { EditorEinordnung, EditorTopologie } from "../editor/platzierung";
 import { oeffnungAendern, oeffnungEntfernen } from "../editor/werkzeuge";
 import type { Aktion, EditorZustand } from "../editor/zustand";
@@ -71,7 +74,23 @@ export interface Wandziel {
    */
   readonly seite?: Wandseite;
   /** Woher die Ansicht geöffnet wurde - dorthin führt das Schließen zurück. */
-  readonly herkunft?: "2d" | "3d";
+  readonly herkunft?: "2d" | "3d" | "stromkreise";
+}
+
+/**
+ * Verteilung direkt im Plan platzieren (Phase 6c, VP): eigener kleiner Entwurf der Wandansicht.
+ * Die Lage lebt nur hier, bis `speichern` Lagegerät und Verknüpfung in einer Anfrage schreibt.
+ * Der Raumentwurf bleibt unberührt - die Ansicht ist dabei nicht zum Bearbeiten des Raums da.
+ */
+export interface Wandplatzierung {
+  readonly code: string;
+  /** Bisheriges Lagegerät - auf derselben Wand Startlage, sonst ausgeblendet (kein Hindernis). */
+  readonly geraetId: string | null;
+  readonly speichern: (lage: { mitteMm: number; hoeheMm: number }) => Promise<Platzierungsfehler | null>;
+  /** Nach einem Versionskonflikt: Verteilung und Raum neu laden - die Lage bleibt als Vorschlag. */
+  readonly neuLaden: () => Promise<void>;
+  readonly andereWand: () => void;
+  readonly abbrechen: () => void;
 }
 
 /**
@@ -112,6 +131,7 @@ export function Wandansicht({
   arbeitsflaeche,
   ansichten,
   geschossLabel,
+  platzierung,
 }: {
   ziel: Wandziel;
   zustand: EditorZustand;
@@ -150,6 +170,8 @@ export function Wandansicht({
   ansichten?: Ansichtsgedaechtnis;
   /** Geschoss für den Pfad „Grundriss › Raum › Wand“. */
   geschossLabel?: string;
+  /** Phase 6c (VP): Lage einer Verteilung setzen - statt den Raum zu bearbeiten. */
+  platzierung?: Wandplatzierung | undefined;
 }) {
   const masse = useMasse();
   const [werkzeug, setWerkzeug] = useState<Wandwerkzeug>(ziel.werkzeug ?? "auswahl");
@@ -174,7 +196,8 @@ export function Wandansicht({
   const flaeche = useRef<ZeichenflaecheGriff>(null);
 
   const aktiverRaum = zustand.entwurf?.roomId ?? null;
-  const editierbar = darfSchreiben && aktiverRaum === ziel.raumId;
+  // Beim Platzieren einer Verteilung wird der Raum nicht bearbeitet (6c, VP).
+  const editierbar = darfSchreiben && aktiverRaum === ziel.raumId && platzierung === undefined;
   const raum = raeume.find((r) => r.id === ziel.raumId);
   const raumhoehe =
     aktiverRaum === ziel.raumId ? (zustand.basis?.raum.effective_height_mm ?? raum?.effective_height_mm ?? 0) : (raum?.effective_height_mm ?? 0);
@@ -187,7 +210,12 @@ export function Wandansicht({
     [ergebnis, wand, topologie, einordnung],
   );
   const teilung = topologie.teilung.get(ziel.wandId);
-  const raumGeraete = geraeteVon(ziel.raumId);
+  const alleRaumGeraete = geraeteVon(ziel.raumId);
+  // Das bisherige Lagegerät der Verteilung ist beim Platzieren kein Hindernis und erscheint als Entwurf.
+  const raumGeraete = useMemo(
+    () => (platzierung?.geraetId == null ? alleRaumGeraete : alleRaumGeraete.filter((g) => g.id !== platzierung.geraetId)),
+    [alleRaumGeraete, platzierung?.geraetId],
+  );
   const geraete = useMemo(
     () => (ergebnis.ok ? geraeteInAnsicht(ergebnis.bezug, raumGeraete, typen, geraetebefunde) : []),
     [ergebnis, raumGeraete, typen, geraetebefunde],
@@ -234,6 +262,52 @@ export function Wandansicht({
           ? { art: "oeffnung", raumId: ziel.raumId, wandId: ziel.wandId, oeffnungId: id }
           : { art: "wand", raumId: ziel.raumId, wandId: ziel.wandId },
     });
+  };
+
+  // ------------------------------------------------- Verteilung platzieren (6c, VP)
+
+  const verteilungstyp = typen.get("distribution_board");
+  const startLage = (): { u: number; h: number } | null => {
+    const bisher = platzierung?.geraetId == null ? undefined : alleRaumGeraete.find((g) => g.id === platzierung.geraetId);
+    if (!ergebnis.ok || bisher === undefined || bisher.wall_id !== ziel.wandId || bisher.mounting_surface !== "wall_interior") return null;
+    return { u: mitteInAnsicht(ergebnis.bezug, bisher.center_offset_mm ?? 0), h: bisher.center_height_mm ?? VERTEILUNG_STANDARDHOEHE_MM };
+  };
+  const [platzLage, setPlatzLage] = useState(startLage);
+  const [platzFehler, setPlatzFehler] = useState<Platzierungsfehler | null>(null);
+  const [platzSpeichert, setPlatzSpeichert] = useState(false);
+  const [platzWand, setPlatzWand] = useState(ziel.wandId);
+  if (platzWand !== ziel.wandId) {
+    setPlatzWand(ziel.wandId);
+    setPlatzLage(startLage());
+    setPlatzFehler(null);
+  }
+
+  /** Lage des Platzierungsentwurfs setzen - geprüft wie jedes Wandgerät; unzulässig: Grund nennen. */
+  const platzLageSetzen = (u: number, h: number): string | undefined => {
+    if (!ergebnis.ok || verteilungstyp === undefined) return "Der Gerätetyp „Verteilung“ fehlt im Katalog.";
+    const wand = teilung?.wand;
+    if (wand === undefined) return "Die Wand ist im aktuellen Stand nicht vorhanden.";
+    const p = geraetLagePruefen(ergebnis.bezug, wand, teilung, verteilungstyp, u, h, geraete);
+    if (!p.ok) return p.grund;
+    setPlatzLage({ u: Math.round(u), h: p.mittelhoehe });
+    setPlatzFehler(null);
+    return undefined;
+  };
+
+  const platzSpeichern = async () => {
+    if (platzierung === undefined || platzLage === null || !ergebnis.ok || verteilungstyp === undefined || platzSpeichert) return;
+    const wand = teilung?.wand;
+    const p = wand === undefined ? null : geraetLagePruefen(ergebnis.bezug, wand, teilung, verteilungstyp, platzLage.u, platzLage.h, geraete);
+    if (p === null || !p.ok) {
+      setPlatzFehler({ text: p === null ? "Die Wand ist im aktuellen Stand nicht vorhanden." : `Nicht gespeichert: ${p.grund}`, konflikt: false });
+      return;
+    }
+    setPlatzSpeichert(true);
+    try {
+      setPlatzFehler(await platzierung.speichern({ mitteMm: p.mitte, hoeheMm: p.mittelhoehe }));
+    } finally {
+      setPlatzSpeichert(false);
+    }
   };
 
   // ------------------------------------------------------------ Geräte (Phase 5)
@@ -342,6 +416,12 @@ export function Wandansicht({
 
   // Pfeiltasten: 1 cm, mit Umschalt 10 cm - jeder Druck ein Rückgängig-Schritt.
   const schieben = (du: number, dh: number) => {
+    if (platzierung !== undefined) {
+      if (platzLage === null) return;
+      const grund = platzLageSetzen(platzLage.u + du, platzLage.h + dh);
+      setStatuszeile(grund === undefined ? `Verschoben: Mitte ${masse.anzeigen(platzLage.u + du)} von links, ${masse.anzeigen(platzLage.h + dh)} über Boden` : `Nicht verschoben: ${grund}`);
+      return;
+    }
     if (gewaehltesGeraet !== undefined) {
       const grund = geraetLageSetzen(gewaehltesGeraet.id, gewaehltesGeraet.u + du, gewaehltesGeraet.h + dh);
       setStatuszeile(grund === undefined ? `Verschoben: Mitte ${masse.anzeigen(gewaehltesGeraet.u + du)} von links, ${masse.anzeigen(gewaehltesGeraet.h + dh)} über Boden` : `Nicht verschoben: ${grund}`);
@@ -367,7 +447,8 @@ export function Wandansicht({
     if ((leitungsentwurf !== null || zuordnungsentwurf !== null) && (!imFeld || (strg && k === "s")) && wl.taste(event)) return;
     if (strg && k === "s") {
       event.preventDefault();
-      onSpeichern();
+      if (platzierung !== undefined) void platzSpeichern();
+      else onSpeichern();
       return;
     }
     if (imFeld) return;
@@ -461,7 +542,14 @@ export function Wandansicht({
   const gewaehlteOeffnung = gewaehltesGeraet === undefined ? gewaehlt : null;
   const seiteWechseln = () => onWechseln({ raumId: ziel.raumId, wandId: ziel.wandId, seite: seite === "innen" ? "aussen" : "innen", ...(ziel.herkunft !== undefined ? { herkunft: ziel.herkunft } : {}), ...(gewaehlteOeffnung !== null ? { oeffnungId: gewaehlteOeffnung } : {}) });
 
-  const zurueckText = ziel.herkunft === "3d" ? "Zurück zur 3D-Ansicht" : "Zurück zum Grundriss";
+  const zurueckText =
+    platzierung !== undefined
+      ? "Andere Wand wählen"
+      : ziel.herkunft === "3d"
+        ? "Zurück zur 3D-Ansicht"
+        : ziel.herkunft === "stromkreise"
+          ? "Zurück zu Stromkreise"
+          : "Zurück zum Grundriss";
   const kopfzeile = (
     <div className="flex min-h-8 shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
       <h2 className="sr-only">{titel}</h2>
@@ -476,7 +564,9 @@ export function Wandansicht({
         >
           {kompakt ? <Symbol icon={AKTION.zurueck} /> : <MitSymbol icon={AKTION.zurueck}>{zurueckText}</MitSymbol>}
         </button>
-        <span className="text-muted">{ziel.herkunft === "3d" ? "3D-Ansicht" : `Grundriss${geschossLabel !== undefined && !kompakt ? ` · ${geschossLabel}` : ""}`}</span>
+        <span className="text-muted">
+          {ziel.herkunft === "3d" ? "3D-Ansicht" : ziel.herkunft === "stromkreise" ? "Stromkreise" : `Grundriss${geschossLabel !== undefined && !kompakt ? ` · ${geschossLabel}` : ""}`}
+        </span>
         <Symbol icon={AKTION.pfadTrenner} />
         <span className="text-muted">{raumName(ziel.raumId)}</span>
         <Symbol icon={AKTION.pfadTrenner} />
@@ -490,7 +580,7 @@ export function Wandansicht({
           {seite === "innen" ? `Blick aus Raum „${raumName(ziel.raumId)}“` : "Blick von außen auf die Wand"}
           {ergebnis.ok ? ` · im Grundriss ${ergebnis.bezug.blick}` : ""}
         </span>
-        {ergebnis.ok && (
+        {ergebnis.ok && platzierung === undefined && (
           <button
             type="button"
             className={knopf("neutral", { klein: true })}
@@ -501,7 +591,9 @@ export function Wandansicht({
           </button>
         )}
         <span className={`text-small font-semibold ${status.farbe}`}>
-          {leitungsentwurf !== null
+          {platzierung !== undefined
+            ? `${platzierung.code}: ${platzLage === null ? "noch nicht gesetzt" : "ungespeichert"}`
+            : leitungsentwurf !== null
             ? `Leitungsentwurf: ${leitungen?.planung.ungespeichert === true ? "ungespeichert" : "gespeichert"}`
             : zuordnungsentwurf !== null
               ? `Gerätezuordnung: ${leitungen?.zuordnung.offen === true ? "ungespeichert" : "gespeichert"}`
@@ -510,7 +602,7 @@ export function Wandansicht({
                 : "Nur Ansicht"}
         </span>
       </span>
-      {darfSchreiben && aktiverRaum !== null && (
+      {darfSchreiben && aktiverRaum !== null && platzierung === undefined && (
         <span className="flex flex-wrap gap-2">
           <button type="button" className={knopf("primaer", { klein: true })} disabled={!offen || status.speichert} onClick={onSpeichern} title="Speichert den gemeinsamen Entwurf (Strg+S)">
             Speichern
@@ -667,6 +759,47 @@ export function Wandansicht({
                   {statuszeile}
                 </p>
               )}
+                {platzierung !== undefined && (
+                  <div className={`${meldungsflaeche("erfolg")} flex flex-col gap-2`} data-testid="verteilung-platzieren">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <strong>{platzierung.code} platzieren</strong>
+                      <span className="text-muted">
+                        {verteilungstyp === undefined
+                          ? "Der Gerätetyp „Verteilung“ fehlt im Katalog."
+                          : platzLage === null
+                            ? "In die Wand klicken, um die Verteilung zu setzen. Ziehen korrigiert, Pfeiltasten 1 cm (Umschalt 10 cm)."
+                            : `Wand ${ergebnis.ok ? ergebnis.bezug.wandNummer : ""} · ${raumName(ziel.raumId)} · Mitte ${masse.anzeigen(platzLage.u)} von links, ${masse.anzeigen(platzLage.h)} über Boden – noch nicht gespeichert`}
+                      </span>
+                      <span className="ml-auto flex flex-wrap gap-2">
+                        <button type="button" className={knopf("primaer", { klein: true })} disabled={platzLage === null || platzSpeichert} onClick={() => void platzSpeichern()} title="Speichert Lage und Verknüpfung der Verteilung (Strg+S)">
+                          {platzSpeichert ? "Wird gespeichert ..." : "Platzierung speichern"}
+                        </button>
+                        <button type="button" className={knopf("neutral", { klein: true })} disabled={platzSpeichert} onClick={platzierung.andereWand}>
+                          Andere Wand wählen
+                        </button>
+                        <button type="button" className={knopf("neutral", { klein: true })} disabled={platzSpeichert} onClick={platzierung.abbrechen}>
+                          Abbrechen
+                        </button>
+                      </span>
+                    </div>
+                    {platzLage !== null && ergebnis.ok && (
+                      <div className="flex flex-wrap gap-3">
+                        <MassFeld id="verteilung-links" label="Mitte von links" wertMm={platzLage.u} gesperrt={platzSpeichert} hinweis="Achsmaß" onUebernehmen={(mm) => platzLageSetzen(mm, platzLage.h)} />
+                        <MassFeld id="verteilung-hoehe" label="Höhe Mitte über Boden" wertMm={platzLage.h} gesperrt={platzSpeichert} hinweis="ab Fertigfußboden" onUebernehmen={(mm) => platzLageSetzen(platzLage.u, mm)} />
+                      </div>
+                    )}
+                    {platzFehler !== null && (
+                      <div className={meldungsflaeche()} role="alert">
+                        <p className="m-0">{platzFehler.text}</p>
+                        {platzFehler.konflikt && (
+                          <button type="button" className={`${knopf("neutral", { klein: true })} mt-2`} onClick={() => void platzierung.neuLaden().then(() => setPlatzFehler(null))}>
+                            Neu laden
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {seite === "aussen" && leitungsentwurf !== null && (
                   <p className={`${meldungsflaeche("schlicht")} m-0 mb-2`}>
                     Leitungen werden innen geplant – Außenleitungen sind nicht vorgesehen. Mit „Innenseite ansehen“ weiterzeichnen.
@@ -769,7 +902,12 @@ export function Wandansicht({
               onStatus={setStatuszeile}
               geraete={geraete}
               geraetetyp={geraetetyp}
-              zusatz={leitungen !== undefined ? wl.zusatz : undefined}
+              zusatz={leitungen !== undefined && platzierung === undefined ? wl.zusatz : undefined}
+              platzierung={
+                platzierung !== undefined && verteilungstyp !== undefined && seite === "innen"
+                  ? { typ: verteilungstyp, lage: platzLage, onLage: (u, h) => void platzLageSetzen(u, h) }
+                  : undefined
+              }
             />
           </Planungsarbeitsflaeche>
         )}

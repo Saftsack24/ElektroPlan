@@ -28,6 +28,7 @@ from app.core.preconditions import require_if_match
 from app.core.projects.planning import FloorPlanningAccess
 from app.db.session import get_session
 from app.errors import ProblemDetail
+from app.modules.electrical.board_placement import BoardPlacementService
 from app.modules.electrical.cable_rules import BuildingCableState
 from app.modules.electrical.cables import (
     CableService,
@@ -68,6 +69,8 @@ from app.modules.electrical.planning_defaults import (
 from app.modules.electrical.risers import RiserService, RiserView, RiserWriteResult
 from app.modules.electrical.schemas import (
     ApplyProposalIn,
+    BoardPlacementOut,
+    BoardPlacementUpdate,
     CableIn,
     CableListOut,
     CableOut,
@@ -121,6 +124,7 @@ from app.modules.electrical.schemas import (
     PenetrationListOut,
     PenetrationOut,
     PenetrationUpdate,
+    PlacementRoomOut,
     PlanningDefaultsIn,
     PlanningDefaultsOut,
     PositionOut,
@@ -1256,6 +1260,67 @@ def delete_distribution_board(
         board_id, expected_version=expected_version
     )
     _commit_distribution(session=session, current_user=current_user, result=result)
+
+
+@router.put(
+    "/distribution-boards/{board_id}/placement",
+    response_model=BoardPlacementOut,
+    operation_id="placeElectricalDistributionBoard",
+    summary="Verteilung im Plan platzieren oder umsetzen",
+    responses={
+        **_WRITE_RESPONSES,
+        409: {
+            "model": ProblemDetail,
+            "description": (
+                "Projekt schreibgeschuetzt, Verteilung oder Raum inzwischen geaendert, oder "
+                "Umsetzen an eine andere Wand mit Leitungen am Lagegeraet"
+            ),
+        },
+    },
+)
+def place_distribution_board(
+    board_id: uuid.UUID,
+    payload: BoardPlacementUpdate,
+    current_user: CurrentUser = Depends(require_permission(CIRCUIT_WRITE)),
+    session: Session = Depends(get_session),
+    bus: EventBus = Depends(get_event_bus),
+    expected_version: int = Depends(require_if_match),
+) -> BoardPlacementOut:
+    """Legt das Lagegeraet an bzw. verschiebt oder setzt es um - mit der Verknuepfung **atomar**.
+
+    Verlangt ``electrical.circuit.write`` **und** ``electrical.plan.write`` (Entwurf 6c
+    §10.4). Geschrieben wird nur das Lagegeraet - ein offener Raumentwurf wird nie
+    mitgespeichert. Je betroffenem Raum ein ``electrical.plan.updated``
+    (``devices_changed``) nach dem Commit.
+    """
+    current_user.require(PLAN_WRITE)
+    result = BoardPlacementService(session, current_user.organization_id).place(
+        board_id, payload, expected_version=expected_version
+    )
+    FloorPlanningAccess(session, current_user.organization_id).record_project_change(
+        result.context.project_id, actor_user_id=current_user.user_id
+    )
+    uow = UnitOfWork(session, bus)
+    for room, floor in result.rooms:
+        uow.add_event(
+            plan_updated(
+                organization_id=floor.organization_id,
+                project_id=floor.project_id,
+                floor_id=floor.floor_id,
+                room_id=room.id,
+                change_kind=PlanChangeKind.DEVICES_CHANGED,
+                actor_user_id=current_user.user_id,
+            )
+        )
+    uow.commit()
+    return BoardPlacementOut(
+        board=DistributionBoardOut.model_validate(result.board),
+        device=DeviceOut.model_validate(result.device),
+        rooms=[
+            PlacementRoomOut(id=room.id, floor_id=room.floor_id, version=room.version)
+            for room, _ in result.rooms
+        ],
+    )
 
 
 @router.get(

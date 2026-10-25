@@ -353,7 +353,6 @@ def test_trassen_einmal_leitungsmeter_je_leitung_und_getrennte_flaechen(
         floor,
         raum,
         [
-            _wandgeraet(w[2], 2_500, 1_400, typ="distribution_board"),
             _wandgeraet(w[0], 500, 2_200),
             _wandgeraet(w[0], 4_500, 2_200),
             _wandgeraet(w[0], 1_500, 2_200),
@@ -369,9 +368,8 @@ def test_trassen_einmal_leitungsmeter_je_leitung_und_getrennte_flaechen(
     a, b = nach_lage[(w[0], 500, 2_200)], nach_lage[(w[0], 4_500, 2_200)]
     c, d = nach_lage[(w[0], 1_500, 2_200)], nach_lage[(w[0], 3_500, 2_200)]
     g, h = nach_lage[(w[0], 2_500, 300)], nach_lage[(w[0], 4_000, 300)]
-    board = kreise._angelegte_verteilung(
-        api, token, haus, placement_device_id=nach_lage[(w[2], 2_500, 1_400)]
-    )
+    board = kreise._angelegte_verteilung(api, token, haus)
+    board = kreise._platziert(api, token, board, raum, w[2], 2_500, 1_400)
     f1 = kreise._angelegter_stromkreis(api, token, board["id"], "F1")
     f2 = kreise._angelegter_stromkreis(api, token, board["id"], "F2")
     assert kreise._zuordnen(api, token, f1, [a, b, c, d]).status_code == 200
@@ -476,9 +474,9 @@ def test_gemeinsam_genutzter_steigweganteil_einmal(
         kabel._raum(api, token, og["id"], kabel._rechteck(4_000, 4_000), name="Bad")["id"],
     )
     eg_nord, og_nord = hwr["walls"][2]["id"], bad["walls"][2]["id"]
-    hwr = _geraete_setzen(
-        api, token, eg["id"], hwr, [_wandgeraet(eg_nord, 2_000, 1_400, typ="distribution_board")]
-    )
+    board = kreise._angelegte_verteilung(api, token, haus)
+    board = kreise._platziert(api, token, board, hwr, eg_nord, 2_000, 1_400)
+    uv = board["placement_device_id"]
     bad = _geraete_setzen(
         api,
         token,
@@ -486,9 +484,7 @@ def test_gemeinsam_genutzter_steigweganteil_einmal(
         bad,
         [_wandgeraet(og_nord, 2_350, 300), _wandgeraet(og_nord, 2_350, 1_100)],
     )
-    uv = hwr["devices"][0]["id"]
     ziele = [d["id"] for d in sorted(bad["devices"], key=lambda d: d["center_height_mm"])]
-    board = kreise._angelegte_verteilung(api, token, haus, placement_device_id=uv)
     f1 = kreise._angelegter_stromkreis(api, token, board["id"])
     assert kreise._zuordnen(api, token, f1, ziele).status_code == 200
     riser = api.post(

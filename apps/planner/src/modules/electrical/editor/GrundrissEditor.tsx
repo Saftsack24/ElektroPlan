@@ -24,6 +24,7 @@ import {
   stromkreiseAbfrage,
   stromkreiseSchluessel,
   verteilungenAbfrage,
+  verteilungenSchluessel,
   zuordnungNachGeraet,
 } from "../stromkreise/daten";
 import { STANDARD_RASTER_MM } from "./fang";
@@ -72,6 +73,8 @@ import { GrundrissLeitungshilfe, GrundrissLeitungsleiste, Steigwegwahl } from ".
 import { Leitungsbereich } from "../leitung/Leitungsbereich";
 import { Zeichenleiste } from "../leitung/Zeichenleiste";
 import { ZUORDNUNG_MELDUNG } from "../stromkreise/texte";
+import type { Platzierungsfehler, Verteilungsplatzierung } from "../stromkreise/platzierung";
+import { platzierungSpeichern, platzierungsfehler } from "../stromkreise/platzierung";
 import { useZuordnungsentwurf } from "../stromkreise/zuordnung";
 
 
@@ -102,6 +105,9 @@ export interface Deckenziel {
   readonly geraetId?: string;
   readonly herkunft?: "2d" | "3d";
 }
+
+/** Woher eine Wand- oder Deckenansicht geöffnet wurde - dorthin führt das Schließen zurück. */
+type Herkunft = "2d" | "3d" | "stromkreise";
 
 const RAUM_MELDUNG =
   "Der aktive Raum hat ungespeicherte Änderungen. Wenn Sie fortfahren, gehen sie verloren.";
@@ -193,6 +199,9 @@ function GrundrissEditorInhalt({
   onZurueckZuMengen,
   arbeitsflaeche,
   planung,
+  verteilung = null,
+  onVerteilungEnde,
+  onZurueckStromkreise,
 }: {
   floorId: string;
   /** Gebäude des Geschosses (Phase 6b.1) - für die Rückfrage zu zugeordneten Geräten. */
@@ -229,6 +238,15 @@ function GrundrissEditorInhalt({
    * Geschoss- und Ansichtswechsel übersteht. Ohne Angabe hält der Editor ihn selbst.
    */
   arbeitsflaeche?: Arbeitsflaechenzustand | undefined;
+  /**
+   * Phase 6c (VP): Verteilung direkt platzieren - Wand des gewählten Raums anklicken, in der
+   * Wandansicht setzen und speichern. Ein eigener kleiner Entwurf, nie mit dem Raumentwurf.
+   */
+  verteilung?: Verteilungsplatzierung | null;
+  /** Platzierung beendet: Meldung nach dem Speichern, `null` nach „Abbrechen“. */
+  onVerteilungEnde?: ((meldung: string | null) => void) | undefined;
+  /** Wandansicht aus der Ansicht „Stromkreise“ geöffnet („Im Plan zeigen“) und geschlossen. */
+  onZurueckStromkreise?: (() => void) | undefined;
 }) {
   const { api } = useAuth();
   const queryClient = useQueryClient();
@@ -260,7 +278,7 @@ function GrundrissEditorInhalt({
   // Wand- und Deckenansicht (Phase 4f): reine Sichten auf denselben Entwurf.
   const [wandansicht, setWandansicht] = useState<Wandziel | null>(null);
   // Woher die Wandansicht kam - bleibt über Seiten- und Wandwechsel erhalten.
-  const herkunft = useRef<"2d" | "3d">("2d");
+  const herkunft = useRef<Herkunft>("2d");
   const [deckenansicht, setDeckenansicht] = useState<Deckenziel | null>(null);
   const eingepasst = useRef(false);
   const nachLadenAktivieren = useRef<string | null>(null);
@@ -515,6 +533,11 @@ function GrundrissEditorInhalt({
     dispatch({ typ: "raum-aktivieren", raum, auswahl });
     return true;
   };
+
+  const raumAktivierenRef = useRef(raumAktivieren);
+  useEffect(() => {
+    raumAktivierenRef.current = raumAktivieren;
+  });
 
   const waehlen = (auswahl: Auswahl) => {
     if (auswahl === null) {
@@ -890,6 +913,9 @@ function GrundrissEditorInhalt({
     if (herkunft.current === "3d") {
       herkunft.current = "2d";
       onZurueck3d?.();
+    } else if (herkunft.current === "stromkreise") {
+      herkunft.current = "2d";
+      onZurueckStromkreise?.();
     }
     if (offen) {
       setHinweis(`Die Änderungen sind im Entwurf von „${zustand.basis?.raum.name ?? ""}“ erhalten – noch nicht gespeichert.`);
@@ -959,7 +985,77 @@ function GrundrissEditorInhalt({
       void wandansichtOeffnen({ raumId: ziel.raumId, wandId: ziel.wandId, ...(ziel.seite !== undefined ? { seite: ziel.seite } : {}), herkunft: von });
     } else {
       setWandansicht(null);
-      void deckenansichtOeffnen({ raumId: ziel.raumId, herkunft: von });
+      void deckenansichtOeffnen({ raumId: ziel.raumId, herkunft: von === "stromkreise" ? "2d" : von });
+    }
+  };
+
+  // ------------------------------------------------- Verteilung platzieren (6c, VP)
+
+  // Arbeitskopie: Nach „Neu laden“ zählt die aktuelle Version der Verteilung.
+  const [platzierung, setPlatzierung] = useState(verteilung);
+  const platzierungGestartet = useRef(false);
+  useEffect(() => {
+    if (platzierung === null || platzierungGestartet.current || !plan.isSuccess) return;
+    platzierungGestartet.current = true;
+    // Raum hervorheben und die Wandwahl aktivieren - gesetzt wird in der Wandansicht.
+    void raumAktivierenRef.current(platzierung.raumId, { art: "raum", raumId: platzierung.raumId });
+    setWandwahl("geraet");
+    dispatch({ typ: "werkzeug", werkzeug: "oeffnung" });
+  }, [platzierung, plan.isSuccess]);
+
+  /** Klick auf eine Wand während der Platzierung: nur Wände des gewählten Raums, Innenseite. */
+  const platzierungswand = async (raumId: string, wandId: string) => {
+    if (platzierung === null) return;
+    if (raumId !== platzierung.raumId) {
+      setHinweis(`Bitte eine Wand von „${raumName(platzierung.raumId)}“ anklicken – dort wird ${platzierung.code} platziert.`);
+      return;
+    }
+    if (offen) {
+      // Höchstens ein Entwurf (6c §6.3): Die Platzierung speichert nie etwas anderes mit.
+      setHinweis(`Im Raum „${zustand.basis?.raum.name ?? ""}“ gibt es ungespeicherte Änderungen – bitte zuerst speichern oder verwerfen. Die Platzierung speichert nur die Verteilung.`);
+      return;
+    }
+    await wandansichtOeffnen({ raumId, wandId, seite: "innen" });
+  };
+
+  const platzierungBeenden = (meldung: string | null) => {
+    setWandansicht(null);
+    dispatch({ typ: "werkzeug", werkzeug: "auswahl" });
+    onVerteilungEnde?.(meldung);
+  };
+
+  const platzierungNeuLaden = async () => {
+    if (platzierung === null || buildingId === undefined) return;
+    await queryClient.invalidateQueries({ queryKey: planSchluessel(floorId) });
+    const frisch = (await queryClient.fetchQuery(verteilungenAbfrage(api, buildingId))).boards.find((b) => b.id === platzierung.boardId);
+    if (frisch === undefined) {
+      platzierungBeenden("Die Verteilung gibt es nicht mehr – es wurde nichts gespeichert.");
+      return;
+    }
+    setPlatzierung({ ...platzierung, version: frisch.version, geraetId: frisch.placement_device_id });
+  };
+
+  const platzierungSpeichernAktion = async (raumId: string, wandId: string, lage: { mitteMm: number; hoeheMm: number }): Promise<Platzierungsfehler | null> => {
+    const raum = raeume.find((r) => r.id === raumId);
+    if (platzierung === null || raum === undefined) return { text: "Der Raum ist nicht mehr vorhanden. Bitte neu laden.", konflikt: true };
+    try {
+      const antwort = await platzierungSpeichern(api, platzierung, { raumId, raumVersion: raum.version, wandId, mitteMm: lage.mitteMm, hoeheMm: lage.hoeheMm });
+      // Plan aller betroffenen Geschosse, Verteilungen und Leitungen (Längen ab dem Lagegerät) nachziehen.
+      await Promise.all([
+        ...[...new Set(antwort.rooms.map((x) => x.floor_id))].map((id) => queryClient.invalidateQueries({ queryKey: planSchluessel(id) })),
+        ...(buildingId === undefined
+          ? []
+          : [
+              queryClient.invalidateQueries({ queryKey: verteilungenSchluessel(buildingId) }),
+              queryClient.invalidateQueries({ queryKey: leitungenSchluessel(buildingId) }),
+            ]),
+      ]);
+      await onGeschrieben?.();
+      const nummer = (raum.walls.findIndex((w) => w.id === wandId) + 1) || "";
+      platzierungBeenden(`${platzierung.code} platziert: ${raum.name} (${geschossLabel}), Wand ${nummer}.`);
+      return null;
+    } catch (error: unknown) {
+      return platzierungsfehler(error);
     }
   };
 
@@ -1413,6 +1509,17 @@ function GrundrissEditorInhalt({
                 )}
               </div>
             )}
+            {platzierung !== null && (
+              <div className={`${meldungsflaeche("erfolg")} flex flex-wrap items-center justify-between gap-2`} role="status" data-testid="verteilung-wandwahl">
+                <span>
+                  <strong>{platzierung.code} platzieren</strong> – eine Wand von „{raumName(platzierung.raumId)}“ anklicken; gesetzt wird in der
+                  Wandansicht.
+                </span>
+                <button type="button" className={knopf("neutral", { klein: true })} onClick={() => platzierungBeenden(null)}>
+                  Abbrechen
+                </button>
+              </div>
+            )}
             {buildingId !== undefined && leitungswerkzeuge}
           </div>
         }
@@ -1487,7 +1594,9 @@ function GrundrissEditorInhalt({
           onWaehlen={waehlen}
           onPolygonFertig={polygonFertig}
           onRechteckFertig={rechteckFertig}
-          onWandFuerOeffnung={(raumId, wandId) => void wandansichtOeffnen({ raumId, wandId, werkzeug: wandwahl })}
+          onWandFuerOeffnung={(raumId, wandId) =>
+            void (platzierung !== null ? platzierungswand(raumId, wandId) : wandansichtOeffnen({ raumId, wandId, werkzeug: wandwahl }))
+          }
           onOeffnungBearbeiten={(raumId, wandId, oeffnungId) => void wandansichtOeffnen({ raumId, wandId, oeffnungId })}
           onHinweis={setHinweis}
           oeffnungsart={wandwahl}
@@ -1549,10 +1658,22 @@ function GrundrissEditorInhalt({
           typen={typen}
           geraeteVon={geraeteVon}
           geraetebefunde={geraeteBefunde}
-          leitungen={buildingId !== undefined ? leitungskontext : undefined}
+          leitungen={buildingId !== undefined && platzierung === null ? leitungskontext : undefined}
           arbeitsflaeche={af}
           ansichten={flaechenansichten}
           geschossLabel={geschossLabel}
+          platzierung={
+            platzierung === null
+              ? undefined
+              : {
+                  code: platzierung.code,
+                  geraetId: platzierung.geraetId,
+                  speichern: (lage) => platzierungSpeichernAktion(wandansicht.raumId, wandansicht.wandId, lage),
+                  neuLaden: platzierungNeuLaden,
+                  andereWand: () => setWandansicht(null),
+                  abbrechen: () => platzierungBeenden(null),
+                }
+          }
         />
       )}
       {deckenansicht !== null && (

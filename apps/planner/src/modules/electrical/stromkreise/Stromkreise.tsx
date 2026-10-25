@@ -39,12 +39,16 @@ import { LEERER_STROMKREIS, StromkreisDialog } from "./StromkreisDialog";
 import "./stromkreise.css";
 import { feldfehler, fehlermeldung, ZUORDNUNG_MELDUNG } from "./texte";
 import type { Verteilungsergebnis, Verteilungswerte } from "./VerteilungDialog";
+import type { Platzierungsgeschoss } from "./PlatzierenDialog";
+import { PlatzierenDialog } from "./PlatzierenDialog";
+import type { Verteilungsplatzierung } from "./platzierung";
 import { VerteilungDialog } from "./VerteilungDialog";
 import { ZuordnungsFlaeche } from "./ZuordnungsFlaeche";
 import { geraetezustand, useZuordnungsentwurf } from "./zuordnung";
 
 type Dialogzustand =
   | { art: "verteilung"; verteilung: Verteilung | null }
+  | { art: "platzieren"; verteilung: Verteilung }
   | { art: "stromkreis"; verteilung: Verteilung; kreis: Stromkreis | null };
 
 function vorschlagText(kreis: Stromkreis): string {
@@ -89,6 +93,9 @@ function alsWerte(kreis: Stromkreis): Stromkreiswerte {
  *   offener Raumentwurf ist hier nicht sichtbar.
  * * Schreibaktionen nur mit `electrical.circuit.write` und außerhalb
  *   abgeschlossener/archivierter Projekte – der Server prüft dennoch selbst.
+ * * „Im Plan platzieren“ / „Position ändern“ (Phase 6c, VP) führt über Geschoss
+ *   und Raum zur Wandwahl im Grundriss; gesetzt und gespeichert wird in der
+ *   Wandansicht. Diese Ansicht speichert dabei nichts.
  */
 export function Stromkreise({
   buildingId,
@@ -98,6 +105,10 @@ export function Stromkreise({
   darfSchreiben,
   onUngespeichert,
   onGeschrieben,
+  darfPlatzieren = false,
+  onPlatzieren,
+  onImPlanZeigen,
+  meldung = null,
 }: {
   buildingId: string;
   buildingName: string;
@@ -110,6 +121,14 @@ export function Stromkreise({
    * und Zeitpunkt am Projekt - die Seite lädt dafür gezielt die Projektabfrage nach.
    */
   onGeschrieben?: (() => Promise<void>) | undefined;
+  /** Phase 6c (VP): `electrical.circuit.write` und `electrical.plan.write`, Projekt beschreibbar. */
+  darfPlatzieren?: boolean;
+  /** Startet die Platzierung: Grundriss mit Wandwahl, dann die Wandansicht. */
+  onPlatzieren?: ((p: Verteilungsplatzierung) => void) | undefined;
+  /** Öffnet die Wandansicht mit gewähltem Lagegerät. */
+  onImPlanZeigen?: ((ziel: { floorId: string; raumId: string; wandId: string; geraetId: string }) => void) | undefined;
+  /** Rückmeldung nach einer gespeicherten Platzierung. */
+  meldung?: string | null;
 }) {
   const { api } = useAuth();
   const queryClient = useQueryClient();
@@ -333,6 +352,33 @@ export function Stromkreise({
 
   const ortVon = (geraet: Planergeraet | undefined) =>
     geraet === undefined ? "Lagegerät nicht gefunden" : `${geraet.geschoss} · ${geraet.raum}`;
+  /** Wand und Raum eines gespeicherten Wandgeräts - für „Im Plan zeigen“. */
+  const wandVon = (geraetId: string) => {
+    for (const [floorId, plan] of planNachGeschoss) {
+      for (const raum of plan.rooms) {
+        const g = raum.devices.find((d) => d.id === geraetId);
+        if (g !== undefined) return g.wall_id === null ? null : { floorId, raumId: raum.id, wandId: g.wall_id, geraetId };
+      }
+    }
+    return null;
+  };
+  const platzierungsgeschosse: Platzierungsgeschoss[] = (geschosse.data ?? [])
+    .slice()
+    .sort((a, b) => b.level - a.level)
+    .map((g) => ({
+      id: g.id,
+      name: g.name,
+      raeume: [...(planNachGeschoss.get(g.id)?.rooms ?? [])]
+        .sort((a, b) => a.name.localeCompare(b.name, "de"))
+        .map((r) => ({ id: r.id, name: r.name, moeglich: r.walls.length > 0 && r.contour_status === "valid" })),
+    }));
+  /** Bisherige Lage vorbelegen („Position ändern“), sonst das gewählte Geschoss. */
+  const platzierungsstart = (v: Verteilung) => {
+    const bisher = v.placement_device_id === null ? null : wandVon(v.placement_device_id);
+    return bisher === null ? { floorId: aktivesGeschossId, raumId: "" } : { floorId: bisher.floorId, raumId: bisher.raumId };
+  };
+  // Altbestand (6c §6.2): Geräte „Verteilung“, die keine Verteilung platzieren.
+  const ohneVerteilung = freieLagegeraete(geraete, liste, null);
   const zuordenbar = geraete.filter((g) => g.zuordenbar);
   const nichtZugeordnet = zuordenbar.filter((g) => !zuordnung.has(g.id)).length;
   const aktivesGeschoss = (geschosse.data ?? []).find((g) => g.id === aktivesGeschossId);
@@ -357,6 +403,11 @@ export function Stromkreise({
           {fehler}
         </p>
       )}
+      {meldung !== null && (
+        <p className={meldungsflaeche("erfolg")} role="status" data-testid="platzierung-meldung">
+          {meldung}
+        </p>
+      )}
 
       {liste.length === 0 && (
         <p className="text-muted">
@@ -367,6 +418,7 @@ export function Stromkreise({
 
       {liste.map((verteilung) => {
         const lage = verteilung.placement_device_id === null ? undefined : geraete.find((g) => g.id === verteilung.placement_device_id);
+        const lageZiel = verteilung.placement_device_id === null ? null : wandVon(verteilung.placement_device_id);
         const eigene = kreise.filter((k) => k.board_id === verteilung.id);
         return (
           <section key={verteilung.id} className={karte("kompakt")} aria-label={`Verteilung ${verteilung.code}`}>
@@ -388,13 +440,47 @@ export function Stromkreise({
                 </div>
               )}
             </div>
-            <p className="m-0 mt-1 text-label">
+            <p className="m-0 mt-1 flex flex-wrap items-center gap-2 text-label">
               {verteilung.placement_device_id === null ? (
-                <Marke art="warnung">Noch nicht im Plan platziert</Marke>
+                <>
+                  <Marke art="warnung">Noch nicht im Plan platziert</Marke>
+                  {darfPlatzieren && onPlatzieren !== undefined && (
+                    <button
+                      type="button"
+                      className={knopf("neutral", { klein: true })}
+                      aria-label={`Verteilung ${verteilung.code} im Plan platzieren`}
+                      onClick={() => setDialog({ art: "platzieren", verteilung })}
+                    >
+                      Im Plan platzieren
+                    </button>
+                  )}
+                </>
               ) : (
-                <>Lage: {ortVon(lage)}</>
+                <>
+                  <span>Lage: {ortVon(lage)}</span>
+                  {onImPlanZeigen !== undefined && lageZiel !== null && (
+                    <button
+                      type="button"
+                      className={knopf("neutral", { klein: true })}
+                      aria-label={`Verteilung ${verteilung.code} im Plan zeigen`}
+                      onClick={() => onImPlanZeigen(lageZiel)}
+                    >
+                      Im Plan zeigen
+                    </button>
+                  )}
+                  {darfPlatzieren && onPlatzieren !== undefined && (
+                    <button
+                      type="button"
+                      className={knopf("neutral", { klein: true })}
+                      aria-label={`Position von Verteilung ${verteilung.code} ändern`}
+                      onClick={() => setDialog({ art: "platzieren", verteilung })}
+                    >
+                      Position ändern
+                    </button>
+                  )}
+                </>
               )}
-              {verteilung.note !== null && <span className="ml-2 text-muted">{verteilung.note}</span>}
+              {verteilung.note !== null && <span className="text-muted">{verteilung.note}</span>}
             </p>
             {eigene.length === 0 ? (
               <p className="m-0 mt-2 text-muted">Noch kein Stromkreis an dieser Verteilung.</p>
@@ -463,6 +549,35 @@ export function Stromkreise({
           </section>
         );
       })}
+
+      {ohneVerteilung.length > 0 && (
+        <section className={karte("kompakt")} aria-label="Geräte „Verteilung“ ohne Verteilung">
+          <h4 className={KARTENTITEL}>Gerät „Verteilung“ ohne Verteilung</h4>
+          <p className="m-0 mt-1 text-label text-muted">
+            Diese Geräte gehören zu keiner Verteilung – etwa aus früheren Planungen oder nach dem Entfernen einer
+            Verteilung. Verknüpfen: bei der Verteilung „Bearbeiten“ und das Gerät als Lage wählen. Nicht mehr benötigt:
+            in der Wandansicht entfernen.
+          </p>
+          <ul className="m-0 mt-2 flex list-none flex-col gap-1 p-0">
+            {ohneVerteilung.map((g) => {
+              const ziel = wandVon(g.id);
+              return (
+                <li key={g.id} className="flex flex-wrap items-center gap-2">
+                  <Geraetesymbol typ={typen.get(g.typKey)} groesse={18} />
+                  <span>
+                    {g.name} · {g.geschoss} · {g.raum}
+                  </span>
+                  {ziel !== null && onImPlanZeigen !== undefined && (
+                    <button type="button" className={knopf("neutral", { klein: true })} onClick={() => onImPlanZeigen(ziel)}>
+                      Im Plan zeigen
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
 
       {entwurf !== null && aktiverKreis !== undefined && (
         <section className={karte("eingerueckt")} aria-label="Gerätezuordnung">
@@ -577,6 +692,24 @@ export function Stromkreise({
           }}
           lagegeraete={freieLagegeraete(geraete, liste, dialog.verteilung?.id ?? null)}
           onSubmit={verteilungSpeichern}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog?.art === "platzieren" && (
+        <PlatzierenDialog
+          key={dialog.verteilung.id}
+          titel={
+            dialog.verteilung.placement_device_id === null
+              ? `${dialog.verteilung.code} im Plan platzieren`
+              : `Position von ${dialog.verteilung.code} ändern`
+          }
+          geschosse={platzierungsgeschosse}
+          start={platzierungsstart(dialog.verteilung)}
+          onWeiter={(floorId, raumId) => {
+            const v = dialog.verteilung;
+            setDialog(null);
+            onPlatzieren?.({ boardId: v.id, code: v.code, name: v.name, version: v.version, geraetId: v.placement_device_id, floorId, raumId });
+          }}
           onClose={() => setDialog(null)}
         />
       )}

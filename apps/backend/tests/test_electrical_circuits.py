@@ -55,13 +55,73 @@ _speichern = geraete._speichern
 # ------------------------------------------------------------------ Helfer
 
 
+def _platziert(
+    api: TestClient,
+    token: str,
+    board: dict[str, Any],
+    raum: dict[str, Any],
+    wall_id: str,
+    mitte: int,
+    hoehe: int,
+) -> dict[str, Any]:
+    """Setzt die Lage einer Verteilung ueber den VP-Weg (Phase 6c); liefert die Verteilung."""
+    aktuell = _plan_raum(api, token, raum["floor_id"], raum["id"])
+    response = api.put(
+        f"{BASIS}/distribution-boards/{board['id']}/placement",
+        headers={**auth_headers(token), "If-Match": str(board["version"])},
+        json={
+            "room_id": raum["id"],
+            "wall_id": wall_id,
+            "center_offset_mm": mitte,
+            "center_height_mm": hoehe,
+            "expected_room_version": aktuell["version"],
+        },
+    )
+    assert response.status_code == 200, response.text
+    return dict(response.json()["board"])
+
+
+def _altes_lagegeraet(
+    api: TestClient, token: str, raum: dict[str, Any], wall_id: str, mitte: int, hoehe: int
+) -> str:
+    """Unverknuepftes Geraet „Verteilung“ (Altbestand): platzieren, dann die Verteilung entfernen.
+
+    Seit Phase 6c (VP) entsteht ein Lagegeraet nicht mehr im Raumentwurf; der Altbestand
+    entsteht hier ueber die regulaeren Wege - die Verteilung geht, das Geraet bleibt.
+    """
+    plan = api.get(f"{BASIS}/floors/{raum['floor_id']}/plan", headers=auth_headers(token)).json()
+    haeuser = api.get(
+        f"/api/v1/projects/{plan['project_id']}/buildings", headers=auth_headers(token)
+    ).json()
+    haus = next(
+        h["id"]
+        for h in haeuser
+        if any(
+            f["id"] == raum["floor_id"]
+            for f in api.get(
+                f"/api/v1/buildings/{h['id']}/floors", headers=auth_headers(token)
+            ).json()
+        )
+    )
+    hilf = _angelegte_verteilung(api, token, haus, "ALT")
+    hilf = _platziert(api, token, hilf, raum, wall_id, mitte, hoehe)
+    entfernt = api.delete(
+        f"{BASIS}/distribution-boards/{hilf['id']}",
+        headers={**auth_headers(token), "If-Match": str(hilf["version"])},
+    )
+    assert entfernt.status_code == 204, entfernt.text
+    return str(hilf["placement_device_id"])
+
+
 def _raum_mit_geraeten(api: TestClient, token: str, floor_id: str, *, x: int = 0) -> dict[str, Any]:
-    """Raum 5 x 4 m mit Verteilung, Steckdose, Datendose, Schalter und Deckenleuchte."""
+    """Raum 5 x 4 m mit Verteilung (Altgeraet), Steckdose, Datendose, Schalter und Deckenleuchte."""
     raum = _raum(api, token, floor_id, _rechteck(5_000, 4_000, x=x), name=f"Raum {x}")
     plan = _plan_raum(api, token, floor_id, raum["id"])
     wand = plan["walls"][0]["id"]
+    _altes_lagegeraet(api, token, plan, wand, 1_000, 1_400)
+    plan = _plan_raum(api, token, floor_id, raum["id"])
     neu = [
-        _wandgeraet(wand, 1_000, 1_400, typ="distribution_board"),
+        *geraete._geraete(plan),
         _wandgeraet(wand, 2_500, 300, typ="socket_single"),
         _wandgeraet(wand, 3_500, 300, typ="data_single"),
         _wandgeraet(wand, 4_500, 1_050, typ="switch_single"),

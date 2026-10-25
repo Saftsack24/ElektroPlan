@@ -78,6 +78,7 @@ export const BEFUND_TEXT: Record<string, string> = {
   "device-ceiling-contour-open": "Deckengeräte brauchen eine geschlossene Raumkontur.",
   "device-outside-room": "Das Deckengerät liegt nicht vollständig im Raum.",
   "devices-overlap": "Zwei Geräte auf derselben Fläche überdecken sich.",
+  "distribution-board-via-placement": "Eine Verteilung wird in „Stromkreise“ mit „Im Plan platzieren“ gesetzt – nicht als Gerät im Raum.",
 };
 
 export function befundText(code: string): string {

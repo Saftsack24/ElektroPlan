@@ -233,6 +233,7 @@ def test_oeffentlicher_einstiegspunkt_exportiert_nur_den_descriptor() -> None:
     assert oeffentlich - {"DESCRIPTOR", "annotations"} <= {
         "api",
         "backfill",
+        "board_placement",
         "cable_length",
         "cable_rules",
         "cable_traces",

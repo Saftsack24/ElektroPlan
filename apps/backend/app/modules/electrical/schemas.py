@@ -805,6 +805,38 @@ class DistributionBoardListOut(BaseModel):
     boards: list[DistributionBoardOut]
 
 
+class BoardPlacementUpdate(_Strict):
+    """Lage einer Verteilung im Plan setzen oder aendern (Phase 6c, VP, ADR 0028).
+
+    ``If-Match`` traegt die Version der **Verteilung**, ``expected_room_version`` die
+    des Zielraums. Das Lagegeraet sitzt immer auf der Innenseite der Wand; Bezugspunkt
+    ist seine Mitte (wie bei jedem Wandgeraet). Gleiche Wand: verschieben; andere Wand:
+    umsetzen - nur ohne Leitungen am Lagegeraet (``409 board-placement-has-cables``).
+    """
+
+    room_id: uuid.UUID
+    wall_id: uuid.UUID
+    center_offset_mm: int = Field(ge=0, le=MAX_COORDINATE_MM)
+    center_height_mm: int = Field(ge=0, le=MAX_ROOM_HEIGHT_MM)
+    expected_room_version: int = Field(ge=1)
+
+
+class PlacementRoomOut(BaseModel):
+    """Ein durch die Platzierung geaenderter Raum mit seiner neuen Version."""
+
+    id: uuid.UUID
+    floor_id: uuid.UUID
+    version: int
+
+
+class BoardPlacementOut(BaseModel):
+    """Verteilung (neue Version), Lagegeraet und betroffene Raeume (Zielraum zuerst)."""
+
+    board: DistributionBoardOut
+    device: DeviceOut
+    rooms: list[PlacementRoomOut]
+
+
 class _CircuitFields(_Strict):
     """Gemeinsame Felder eines Stromkreises.
 

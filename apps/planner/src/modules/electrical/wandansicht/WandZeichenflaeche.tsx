@@ -123,6 +123,18 @@ interface Props {
   gemerkt?: GemerkteAnsicht | null;
   /** L1: meldet Viewport und Größe, damit sie beim Verlassen erhalten bleiben. */
   onAnsicht?: (ansicht: GemerkteAnsicht) => void;
+  /**
+   * Phase 6c (VP): Lage einer Verteilung setzen - ein eigener kleiner Entwurf. Vorschau, Fang und
+   * Prüfung sind dieselben wie beim Werkzeug „Gerät“; der Raumentwurf bleibt unberührt.
+   */
+  platzierung?: Flaechenplatzierung | undefined;
+}
+
+/** Lage, die der Platzierungsentwurf hält (Mitte in Ansichtskoordinaten). */
+export interface Flaechenplatzierung {
+  readonly typ: Geraetetyp;
+  readonly lage: { readonly u: number; readonly h: number } | null;
+  readonly onLage: (u: number, h: number) => void;
 }
 
 const RUECKFALL: Groesse = { breite: 900, hoehe: 480 };
@@ -387,6 +399,15 @@ export function WandZeichenflaeche(props: Props) {
       return;
     }
     if (event.button !== 0) return;
+    // Verteilung platzieren (6c, VP): Drücken zeigt die Vorschau, Loslassen setzt - auch Ziehen korrigiert so.
+    if (props.platzierung !== undefined) {
+      const welt = bildZuWelt(viewport, bild);
+      const v = geraetVorschauFuer(props.platzierung.typ, welt.x, welt.y, event.altKey, null);
+      setGeraetVorschau(v);
+      geraetStatus(v, "setzen");
+      einfangen("geraet-platzieren");
+      return;
+    }
     // Leitungsplanung (6b.4): Übernimmt die Zusatzebene, gilt nur sie - sonst alles wie bisher.
     if (props.zusatz?.druecken({ welt: bildZuWelt(viewport, bild), ziel: event.target as Element, altKey: event.altKey, massstab: viewport.massstab }) === true) {
       einfangen("zusatz");
@@ -464,8 +485,8 @@ export function WandZeichenflaeche(props: Props) {
       dispatch({ typ: "ziehen-vorschau", entwurf: geraetAendern(l.ab, g.id, { center_offset_mm: mitteAus(v.u), center_height_mm: v.h }) });
       return;
     }
-    if (l?.art === "geraet-platzieren" || (werkzeug === "geraet" && editierbar && l === null)) {
-      const typ = props.geraetetyp ?? null;
+    if (l?.art === "geraet-platzieren" || (l === null && (props.platzierung !== undefined || (werkzeug === "geraet" && editierbar)))) {
+      const typ = props.platzierung?.typ ?? props.geraetetyp ?? null;
       if (typ === null) return;
       const v = geraetVorschauFuer(typ, welt.x, welt.y, event.altKey, null, l);
       if (l !== null) {
@@ -538,6 +559,16 @@ export function WandZeichenflaeche(props: Props) {
     if (l.art === "geraet-platzieren") {
       const v = geraetVorschau;
       setGeraetVorschau(null);
+      if (props.platzierung !== undefined && v !== null) {
+        // Nur der Platzierungsentwurf ändert sich - gespeichert wird erst mit „Platzierung speichern“.
+        if (v.ok) {
+          props.platzierung.onLage(v.u, v.h);
+          props.onStatus(`${v.typ.label} gesetzt - noch nicht gespeichert.`);
+        } else {
+          props.onStatus(`Nicht gesetzt: ${v.grund ?? ""}`);
+        }
+        return;
+      }
       if (v === null || props.entwurf === null) return;
       if (!v.ok) {
         props.onStatus(`Nicht gesetzt: ${v.grund ?? ""}`);
@@ -714,6 +745,30 @@ export function WandZeichenflaeche(props: Props) {
     );
   });
 
+  // Platzierungsentwurf einer Verteilung (6c, VP): die gesetzte, noch ungespeicherte Lage.
+  const platzLage = props.platzierung?.lage ?? null;
+  const platzRechteck =
+    props.platzierung !== undefined && platzLage !== null
+      ? {
+          links: platzLage.u - Math.floor(props.platzierung.typ.width_mm / 2),
+          rechts: platzLage.u + Math.floor(props.platzierung.typ.width_mm / 2),
+          unten: platzLage.h - Math.floor(props.platzierung.typ.height_mm / 2),
+          oben: platzLage.h + Math.floor(props.platzierung.typ.height_mm / 2),
+        }
+      : null;
+  if (props.platzierung !== undefined && platzLage !== null && platzRechteck !== null && geraetVorschau === null) {
+    const p1 = b(platzRechteck.links, platzRechteck.oben);
+    const p2 = b(platzRechteck.rechts, platzRechteck.unten);
+    const m = b(platzLage.u, platzLage.h);
+    elemente.push(
+      <g key="verteilung-lage" className="ansicht__geraet ansicht__geraet--ausgewaehlt" data-testid="verteilung-lage" aria-label={`${props.platzierung.typ.label} - noch nicht gespeichert`}>
+        <title>{`${props.platzierung.typ.label} - noch nicht gespeichert`}</title>
+        <rect x={p1.x} y={p1.y} width={Math.max(p2.x - p1.x, 1)} height={Math.max(p2.y - p1.y, 1)} className="ansicht__geraet-mass" />
+        <SymbolImPlan typ={props.platzierung.typ} x={m.x} y={m.y} groesse={26} />
+      </g>,
+    );
+  }
+
   // Vorschau eines Geräts (Setzen oder Ziehen) samt Fangzielen.
   if (geraetVorschau !== null) {
     const v = geraetVorschau;
@@ -805,7 +860,13 @@ export function WandZeichenflaeche(props: Props) {
   } else {
     // Gewähltes oder bewegtes Gerät: Achsmaße zur Mitte und freie Abstände.
     const gewaehltesGeraet = geraete.find((g) => g.id === gewaehlt);
-    const g = geraetVorschau ?? (gewaehltesGeraet !== undefined ? { rechteck: gewaehltesGeraet, u: gewaehltesGeraet.u, h: gewaehltesGeraet.h, geraetId: gewaehltesGeraet.id } : null);
+    const g =
+      geraetVorschau ??
+      (gewaehltesGeraet !== undefined
+        ? { rechteck: gewaehltesGeraet, u: gewaehltesGeraet.u, h: gewaehltesGeraet.h, geraetId: gewaehltesGeraet.id }
+        : platzLage !== null && platzRechteck !== null
+          ? { rechteck: platzRechteck, u: platzLage.u, h: platzLage.h, geraetId: null }
+          : null);
     if (g !== null) {
       const ohne = g.geraetId;
       const andere = [
@@ -817,7 +878,8 @@ export function WandZeichenflaeche(props: Props) {
     }
   }
 
-  const cursor = props.zusatz?.cursor ?? (werkzeug === "pan" ? "grab" : werkzeug === "auswahl" ? "default" : "crosshair");
+  const cursor =
+    props.zusatz?.cursor ?? (werkzeug === "pan" ? "grab" : props.platzierung !== undefined ? "crosshair" : werkzeug === "auswahl" ? "default" : "crosshair");
 
   return (
     <div ref={huelle} className="relative h-full touch-none overflow-hidden rounded-ep border border-line bg-canvas">

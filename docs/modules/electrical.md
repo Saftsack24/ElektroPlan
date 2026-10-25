@@ -238,6 +238,10 @@ weder entfernen (`409 device-is-distribution-board`) noch umtypen
 (`422 distribution-board-type-changed`); ein Raum mit Lagegerät lässt sich nicht löschen
 (`409 room-has-distribution-board`); eine Verteilung mit Stromkreisen nicht
 (`409 board-has-circuits`); ein Gebäude mit Verteilung nicht (Fremdschlüssel, `409`).
+Seit Phase 6c (VP) entsteht ein Lagegerät nur zusammen mit seiner Verteilung über
+`PUT /distribution-boards/{id}/placement`; der Raumentwurf legt keins neu an und typisiert kein Gerät
+dazu um (`422 distribution-board-via-placement`). Vorhandene Lagegeräte, auch unverknüpfter
+Altbestand, bleiben im Raumentwurf unverändert speicherbar und verschiebbar.
 
 ### `electrical_circuits` — umgesetzt (Phase 6b.0)
 Stromkreis an einer Verteilung: `designation` (je Verteilung eindeutig, z. B. `F3`), `name`,
@@ -538,6 +542,8 @@ GET    /buildings/{building_id}/distribution-boards
 POST   /buildings/{building_id}/distribution-boards   {code, name, note?, placement_device_id?}
 PATCH  /distribution-boards/{board_id}                If-Match
 DELETE /distribution-boards/{board_id}                If-Match
+PUT    /distribution-boards/{board_id}/placement      If-Match; {room_id, wall_id, center_offset_mm,
+                                                      center_height_mm, expected_room_version} (6c VP)
 GET    /buildings/{building_id}/circuits              inkl. device_ids
 POST   /distribution-boards/{board_id}/circuits       {designation, name, proposed_*, …}
 PATCH  /circuits/{circuit_id}                         If-Match

@@ -95,7 +95,8 @@ Dokumentation und Oberfläche auf Deutsch, Code und API auf Englisch.
 | Abschlussdialog | – (Oberfläche) | Dialog nach dem Zeichnen einer Leitung mit vorbelegten Angaben, Herkunft und Ergebnis; derselbe Dialog dient zum Bearbeiten bestehender Leitungen – **6c L3 umgesetzt** |
 | Zeichenablauf | `ablauf` (Frontend) | Ablauf von „Leitung hinzufügen“: 1 Startgerät wählen, 2 Verlauf zeichnen, 3 Zielgerät anklicken oder offen abschließen; der Entwurf bleibt über Flächen- und Geschosswechsel erhalten – **6c L2 umgesetzt** |
 | Kontextleiste | – (Oberfläche) | kompakte Leiste an der Zeichenfläche mit Schritt, Status, Meldung und Primäraktion der laufenden Bearbeitung – **Entwurf 6c** |
-| Lagegerät | `placement_device_id` | Gerät `distribution_board`, das die räumliche Lage einer Verteilung angibt; entsteht nur über die Platzierung – **Entwurf 6c** (ADR 0028) |
+| Lagegerät | `placement_device_id` | Gerät `distribution_board`, das die räumliche Lage einer Verteilung angibt; entsteht nur über „Im Plan platzieren“ (atomar mit der Verknüpfung; der Raumentwurf legt keins an, auch serverseitig) – **6c VP umgesetzt** (ADR 0028) |
+| Platzierungsentwurf | – | ungespeicherte Lage einer Verteilung in der Wandansicht; nur „Platzierung speichern“ schreibt sie, nie zusammen mit dem Raumentwurf – **6c VP** |
 | Verteilungsaufbau | `board_rows`, `board_components` | Reihen und eingebaute Komponenten einer Verteilung; Planungsangabe, keine Auslegung – **Entwurf 6c** |
 | Teilungseinheit (TE) | `*_te` | Rastermaß der Einbauplätze einer Reihe; Kapazität, Platz und Breite in ganzen TE – **Entwurf 6c** |
 | Komponente (Verteilung) | `board_component` (`main_switch`, `rcd`, `mcb`, `rcbo`, `surge_protection`, `terminal`, `other`) | Hauptschalter, FI, LS, FI/LS, Überspannungsschutz, Klemme, Sonstiges – Angaben als Freitext, nicht ausgewertet – **Entwurf 6c** |
@@ -137,6 +138,9 @@ Ergänzt in Phase 5 (Electrical Devices, ADR 0023):
 |---|---|---|
 | Gerät | `device` (`electrical_devices`) | geplantes Elektrogerät eines Raums; kein Herstellerartikel, keine Materialposition |
 | Gerätetyp | `device type` (`electrical_device_types`) | Eintrag des globalen Systemkatalogs, per Seed gepflegt |
+| Eigener Gerätetyp *(Entwurf)* | `organization device type` (`origin = organization`) | betriebseigener Planungstyp im selben Katalog; Rolle nur über die Kategorie, nie „Verteilung“ – Entwurf Gerätekatalog, ADR 0030 proposed |
+| Planungsmaß | `width_mm`, `height_mm` | Breite × Höhe eines Gerätetyps für Prüfung und Darstellung; kein Herstellermaß |
+| Gerätekatalog *(Entwurf)* | `device catalog` | Dialog zur Auswahl und Platzierung von Gerätetypen (Suche, Kategorien, Kacheln) – Entwurf K1 |
 | Montagefläche | `mounting_surface`: `wall_interior` / `wall_exterior` / `ceiling` | Wand innen, Fassade außen, Decke – dauerhaft gespeichert |
 | Gerätemitte | `center_offset_mm`, `center_height_mm` bzw. `x_mm`/`y_mm` | Bezugspunkt jeder Gerätelage |
 | Planungsmaß | `width_mm` × `height_mm` des Typs | vereinfachtes Rahmen-/Auslassmaß zur Prüfung, keine Herstellerangabe |

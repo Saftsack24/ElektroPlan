@@ -5,6 +5,15 @@ Einträge entstehen nach relevanten Änderungen, nicht nach jedem Commit.
 
 ---
 
+## 2026-10-25 — Phase 6c VP: Verteilung direkt im Plan platzieren (nicht committet)
+
+In der Ansicht „Stromkreise“ lässt sich eine Verteilung mit „Im Plan platzieren“ setzen: Geschoss und Raum
+wählen, Wand im Grundriss anklicken, in der Wandansicht setzen und „Platzierung speichern“. Lage und
+Verknüpfung werden gemeinsam gespeichert – andere offene Raumänderungen nie. Platzierte Verteilungen haben
+„Im Plan zeigen“ und „Position ändern“; an eine andere Wand nur, solange keine Leitungen am Lagegerät hängen
+(die Meldung nennt sie). „Verteilung“ ist in der Gerätepalette nicht mehr frei wählbar. API:
+`PUT /api/v1/modules/electrical/distribution-boards/{board_id}/placement`.
+
 ## 2026-10-24 — Phase 6c: Höhe der Planungsarbeitsfläche
 
 Nur Oberfläche. Maximiert ist die Zeichenfläche nie kleiner als in der normalen Ansicht; nach dem Zurückschalten

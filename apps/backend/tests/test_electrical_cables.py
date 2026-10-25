@@ -105,7 +105,6 @@ def _szenario(
         floor,
         diele,
         [
-            _wandgeraet(d[0], 500, 1_400, typ="distribution_board"),
             _wandgeraet(d[0], 3_500, 300),
             _wandgeraet(d[0], 3_800, 300, label="Boden"),
             _wandgeraet(d[3], 1_500, 1_400, typ="light_outdoor", flaeche="wall_exterior"),
@@ -139,6 +138,10 @@ def _szenario(
     )
     assert link.status_code == 201, link.text
     haus = geschoss["building"]["id"]
+    # Die Verteilung entsteht mit ihrem Lagegeraet ueber den VP-Weg (Phase 6c).
+    uv1 = kreise._angelegte_verteilung(api, token, haus)
+    uv1 = kreise._platziert(api, token, uv1, diele, d[0], 500, 1_400)
+    diele = _plan_raum(api, token, floor, diele["id"])
     ids = {
         "uv1": geraet(diele, d[0], 500),
         "sd_sued": geraet(diele, d[0], 3_500),
@@ -148,7 +151,6 @@ def _szenario(
         "sd_k": geraet(kueche, k[0], 500),
         "sd_fremd": geraet(kueche, k[2], 1_000),
     }
-    uv1 = kreise._angelegte_verteilung(api, token, haus, placement_device_id=ids["uv1"])
     f1 = kreise._angelegter_stromkreis(
         api,
         token,
@@ -1012,13 +1014,11 @@ def test_steigweg_halt_verschieben_entfernen_und_hoehenlage(
         api, token, og["id"], _raum(api, token, og["id"], _rechteck(4_000, 4_000), name="Bad")["id"]
     )
     eg_nord, og_nord = hwr["walls"][2]["id"], bad["walls"][2]["id"]
-    hwr = _geraete_setzen(
-        api, token, eg["id"], hwr, [_wandgeraet(eg_nord, 2_000, 1_400, typ="distribution_board")]
-    )
+    board = kreise._angelegte_verteilung(api, token, haus)
+    board = kreise._platziert(api, token, board, hwr, eg_nord, 2_000, 1_400)
+    uv = board["placement_device_id"]
     bad = _geraete_setzen(api, token, og["id"], bad, [_wandgeraet(og_nord, 2_350, 300)])
-    uv = hwr["devices"][0]["id"]
     sd_og = bad["devices"][0]["id"]
-    board = kreise._angelegte_verteilung(api, token, haus, placement_device_id=uv)
     f1 = kreise._angelegter_stromkreis(api, token, board["id"])
     assert kreise._zuordnen(api, token, f1, [sd_og]).status_code == 200
     steigweg = api.post(

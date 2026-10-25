@@ -53,9 +53,15 @@ export function erlaubt(typ: Geraetetyp, flaeche: Montageflaeche): boolean {
   return flaeche === "ceiling" ? typ.allows_ceiling : flaeche === "wall_exterior" ? typ.allows_wall_exterior : typ.allows_wall_interior;
 }
 
-/** Wählbare Typen für eine Fläche - nur aktive, in Katalogreihenfolge. */
+/**
+ * Frei wählbare Typen für eine Fläche - nur aktive, in Katalogreihenfolge. Die Verteilung
+ * fehlt bewusst: Ihr Lagegerät entsteht nur über „Im Plan platzieren“ (6c, VP), damit nie
+ * ein Lagegerät ohne Verteilung entsteht.
+ */
 export function typenFuer(typen: Geraetetypen, flaeche: Montageflaeche): Geraetetyp[] {
-  return [...typen.values()].filter((t) => t.is_active && erlaubt(t, flaeche)).sort((a, b) => a.sort_order - b.sort_order);
+  return [...typen.values()]
+    .filter((t) => t.is_active && t.category !== "distribution" && erlaubt(t, flaeche))
+    .sort((a, b) => a.sort_order - b.sort_order);
 }
 
 /** Bezeichnung eines Geräts: eigene Beschriftung, sonst der Typ. */

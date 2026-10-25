@@ -6526,6 +6526,106 @@
         }
       }
     },
+    "/api/v1/modules/electrical/distribution-boards/{board_id}/placement": {
+      "put": {
+        "tags": [
+          "electrical"
+        ],
+        "summary": "Verteilung im Plan platzieren oder umsetzen",
+        "description": "Legt das Lagegeraet an bzw. verschiebt oder setzt es um - mit der Verknuepfung **atomar**.\n\nVerlangt ``electrical.circuit.write`` **und** ``electrical.plan.write`` (Entwurf 6c\n§10.4). Geschrieben wird nur das Lagegeraet - ein offener Raumentwurf wird nie\nmitgespeichert. Je betroffenem Raum ein ``electrical.plan.updated``\n(``devices_changed``) nach dem Commit.",
+        "operationId": "placeElectricalDistributionBoard",
+        "parameters": [
+          {
+            "name": "board_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Board Id"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BoardPlacementUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BoardPlacementOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Projekt schreibgeschuetzt, Verteilung oder Raum inzwischen geaendert, oder Umsetzen an eine andere Wand mit Leitungen am Lagegeraet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Geometrie oder Eingabe unzulaessig",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "If-Match fehlt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/modules/electrical/buildings/{building_id}/circuits": {
       "get": {
         "tags": [
@@ -8475,6 +8575,73 @@
           "created_at"
         ],
         "title": "AuditEntryOut"
+      },
+      "BoardPlacementOut": {
+        "properties": {
+          "board": {
+            "$ref": "#/components/schemas/DistributionBoardOut"
+          },
+          "device": {
+            "$ref": "#/components/schemas/DeviceOut"
+          },
+          "rooms": {
+            "items": {
+              "$ref": "#/components/schemas/PlacementRoomOut"
+            },
+            "type": "array",
+            "title": "Rooms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "board",
+          "device",
+          "rooms"
+        ],
+        "title": "BoardPlacementOut",
+        "description": "Verteilung (neue Version), Lagegeraet und betroffene Raeume (Zielraum zuerst)."
+      },
+      "BoardPlacementUpdate": {
+        "properties": {
+          "room_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Room Id"
+          },
+          "wall_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Wall Id"
+          },
+          "center_offset_mm": {
+            "type": "integer",
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Center Offset Mm"
+          },
+          "center_height_mm": {
+            "type": "integer",
+            "maximum": 6000.0,
+            "minimum": 0.0,
+            "title": "Center Height Mm"
+          },
+          "expected_room_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Room Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "room_id",
+          "wall_id",
+          "center_offset_mm",
+          "center_height_mm",
+          "expected_room_version"
+        ],
+        "title": "BoardPlacementUpdate",
+        "description": "Lage einer Verteilung im Plan setzen oder aendern (Phase 6c, VP, ADR 0028).\n\n``If-Match`` traegt die Version der **Verteilung**, ``expected_room_version`` die\ndes Zielraums. Das Lagegeraet sitzt immer auf der Innenseite der Wand; Bezugspunkt\nist seine Mitte (wie bei jedem Wandgeraet). Gleiche Wand: verschieben; andere Wand:\numsetzen - nur ohne Leitungen am Lagegeraet (``409 board-placement-has-cables``)."
       },
       "BuildingCreate": {
         "properties": {
@@ -14388,6 +14555,32 @@
           "area"
         ],
         "title": "PermissionInfo"
+      },
+      "PlacementRoomOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "floor_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Floor Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "floor_id",
+          "version"
+        ],
+        "title": "PlacementRoomOut",
+        "description": "Ein durch die Platzierung geaenderter Raum mit seiner neuen Version."
       },
       "PlanningDefaultsIn": {
         "properties": {

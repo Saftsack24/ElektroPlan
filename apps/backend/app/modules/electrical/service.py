@@ -1006,6 +1006,9 @@ class ElectricalRoomService:
 
         * Ein Geraet, das eine Verteilung platziert, wird nicht entfernt
           (``409 device-is-distribution-board``) und wechselt nicht den Typ.
+        * Ein Lagegeraet (``distribution_board``) entsteht nicht im Raumentwurf - weder neu
+          noch durch Umtypisieren (``422 distribution-board-via-placement``, Phase 6c VP).
+          Vorhandene Lagegeraete, auch unverknuepfte, bleiben unveraendert speicherbar.
         * Ein zugeordnetes Geraet wechselt nicht in eine nicht zuordenbare
           Kategorie (etwa Datendose) - die Zuordnung wuerde still ungueltig.
         """
@@ -1029,6 +1032,22 @@ class ElectricalRoomService:
         problems: list[GeometryProblem] = []
         for device_id, device_in in zip(device_ids, devices_in, strict=True):
             existing = current_devices.get(device_id)
+            # Phase 6c (VP): Ein Lagegeraet entsteht nur mit seiner Verteilung
+            # (``PUT /distribution-boards/{id}/placement``) - nie neu oder durch Umtypisieren
+            # im Raumentwurf. Vorhandene Lagegeraete (auch unverknuepfte) bleiben erlaubt.
+            if device_in.device_type_key == DISTRIBUTION_BOARD_TYPE and (
+                existing is None or existing.device_type_key != DISTRIBUTION_BOARD_TYPE
+            ):
+                problems.append(
+                    GeometryProblem(
+                        code="distribution-board-via-placement",
+                        message=(
+                            "Eine Verteilung wird ueber „Im Plan platzieren“ gesetzt - nicht als "
+                            "Geraet im Raumentwurf."
+                        ),
+                        keys=(str(device_id),),
+                    )
+                )
             if existing is None or existing.device_type_key == device_in.device_type_key:
                 continue
             if device_id in placements and device_in.device_type_key != DISTRIBUTION_BOARD_TYPE:

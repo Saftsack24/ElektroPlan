@@ -37,6 +37,7 @@ from app.errors import (
     ValidationFailedError,
     VersionConflictError,
 )
+from app.modules.electrical.board_placement import BoardPlacementService
 from app.modules.electrical.cables import CableService
 from app.modules.electrical.distribution import DistributionService
 from app.modules.electrical.models import (
@@ -46,6 +47,7 @@ from app.modules.electrical.models import (
 )
 from app.modules.electrical.schemas import (
     ApplyProposalIn,
+    BoardPlacementUpdate,
     CableIn,
     CircuitCreate,
     CircuitDevicesUpdate,
@@ -119,18 +121,14 @@ def _aufbau(factory: sessionmaker[Session], welt: Welt) -> Leitungswelt:  # noqa
     """Geraete, Nachbarraum mit Kopplung und Durchfuehrung, Verteilung, Stromkreis, Leitung."""
     session = factory()
     try:
-        board_device, socket, socket_2 = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+        socket, socket_2 = uuid.uuid4(), uuid.uuid4()
         rooms = ElectricalRoomService(session, welt.organization_id)
         version = rooms.get_room(welt.room_id).room.version
         rooms.replace_contour(
             welt.room_id,
             RoomContourUpdate(
                 walls=[_wand(welt)],
-                devices=[
-                    _geraet(welt, board_device, 1_000, 1_400, "distribution_board"),
-                    _geraet(welt, socket, 3_000, 300),
-                    _geraet(welt, socket_2, 4_000, 300),
-                ],
+                devices=[_geraet(welt, socket, 3_000, 300), _geraet(welt, socket_2, 4_000, 300)],
             ),
             expected_version=version,
         )
@@ -158,8 +156,23 @@ def _aufbau(factory: sessionmaker[Session], welt: Welt) -> Leitungswelt:  # noqa
         session.add(penetration)
         distribution = DistributionService(session, welt.organization_id)
         board, _ = distribution.create_board(
-            welt.building_id,
-            DistributionBoardCreate(code="UV1", name="UV1", placement_device_id=board_device),
+            welt.building_id, DistributionBoardCreate(code="UV1", name="UV1")
+        )
+        # Das Lagegeraet entsteht mit der Verteilung ueber den VP-Weg (Phase 6c).
+        board_device = (
+            BoardPlacementService(session, welt.organization_id)
+            .place(
+                board.id,
+                BoardPlacementUpdate(
+                    room_id=welt.room_id,
+                    wall_id=welt.wall_id,
+                    center_offset_mm=1_000,
+                    center_height_mm=1_400,
+                    expected_room_version=rooms.get_room(welt.room_id).room.version,
+                ),
+                expected_version=board.version,
+            )
+            .device.id
         )
         circuit, _ = distribution.create_circuit(
             board.id,

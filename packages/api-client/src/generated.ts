@@ -1561,6 +1561,31 @@ export interface paths {
         patch: operations["updateElectricalDistributionBoard"];
         trace?: never;
     };
+    "/api/v1/modules/electrical/distribution-boards/{board_id}/placement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Verteilung im Plan platzieren oder umsetzen
+         * @description Legt das Lagegeraet an bzw. verschiebt oder setzt es um - mit der Verknuepfung **atomar**.
+         *
+         *     Verlangt ``electrical.circuit.write`` **und** ``electrical.plan.write`` (Entwurf 6c
+         *     §10.4). Geschrieben wird nur das Lagegeraet - ein offener Raumentwurf wird nie
+         *     mitgespeichert. Je betroffenem Raum ein ``electrical.plan.updated``
+         *     (``devices_changed``) nach dem Commit.
+         */
+        put: operations["placeElectricalDistributionBoard"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/modules/electrical/buildings/{building_id}/circuits": {
         parameters: {
             query?: never;
@@ -2088,6 +2113,43 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /**
+         * BoardPlacementOut
+         * @description Verteilung (neue Version), Lagegeraet und betroffene Raeume (Zielraum zuerst).
+         */
+        BoardPlacementOut: {
+            board: components["schemas"]["DistributionBoardOut"];
+            device: components["schemas"]["DeviceOut"];
+            /** Rooms */
+            rooms: components["schemas"]["PlacementRoomOut"][];
+        };
+        /**
+         * BoardPlacementUpdate
+         * @description Lage einer Verteilung im Plan setzen oder aendern (Phase 6c, VP, ADR 0028).
+         *
+         *     ``If-Match`` traegt die Version der **Verteilung**, ``expected_room_version`` die
+         *     des Zielraums. Das Lagegeraet sitzt immer auf der Innenseite der Wand; Bezugspunkt
+         *     ist seine Mitte (wie bei jedem Wandgeraet). Gleiche Wand: verschieben; andere Wand:
+         *     umsetzen - nur ohne Leitungen am Lagegeraet (``409 board-placement-has-cables``).
+         */
+        BoardPlacementUpdate: {
+            /**
+             * Room Id
+             * Format: uuid
+             */
+            room_id: string;
+            /**
+             * Wall Id
+             * Format: uuid
+             */
+            wall_id: string;
+            /** Center Offset Mm */
+            center_offset_mm: number;
+            /** Center Height Mm */
+            center_height_mm: number;
+            /** Expected Room Version */
+            expected_room_version: number;
         };
         /** BuildingCreate */
         BuildingCreate: {
@@ -4346,6 +4408,24 @@ export interface components {
             description: string;
             /** Area */
             area: string;
+        };
+        /**
+         * PlacementRoomOut
+         * @description Ein durch die Platzierung geaenderter Raum mit seiner neuen Version.
+         */
+        PlacementRoomOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Floor Id
+             * Format: uuid
+             */
+            floor_id: string;
+            /** Version */
+            version: number;
         };
         /**
          * PlanningDefaultsIn
@@ -10032,6 +10112,70 @@ export interface operations {
                 };
             };
             /** @description Versionskonflikt, archiviertes oder abgeschlossenes Projekt oder Wand mit Oeffnungen */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Geometrie oder Eingabe unzulaessig */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description If-Match fehlt */
+            428: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+        };
+    };
+    placeElectricalDistributionBoard: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                board_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BoardPlacementUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardPlacementOut"];
+                };
+            };
+            /** @description Nicht gefunden */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemDetail"];
+                };
+            };
+            /** @description Projekt schreibgeschuetzt, Verteilung oder Raum inzwischen geaendert, oder Umsetzen an eine andere Wand mit Leitungen am Lagegeraet */
             409: {
                 headers: {
                     [name: string]: unknown;

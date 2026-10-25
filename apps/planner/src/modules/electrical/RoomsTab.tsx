@@ -30,6 +30,7 @@ import {
 } from "./stromkreise/daten";
 import { geraetName, katalogAbfrage, typenNachSchluessel } from "./geraete/katalog";
 import { ZUORDNUNG_MELDUNG } from "./stromkreise/texte";
+import type { Verteilungsplatzierung } from "./stromkreise/platzierung";
 import { BestaetigungAbgelehnt, bestaetigungsfeld, useLeitungsbestaetigung } from "./leitung/bestaetigung";
 import { leitungenSchluessel } from "./leitung/daten";
 import { LEITUNG_MELDUNG, LeitungsplanungProvider } from "./leitung/LeitungsplanungProvider";
@@ -160,6 +161,9 @@ export default function RoomsTab() {
   // Phase 6c (L3): Planungsvorgaben des Projekts im Dialog.
   const [projektvorgaben, setProjektvorgaben] = useState(false);
   const [leitungAusMengen, setLeitungAusMengen] = useState(false);
+  // Phase 6c (VP): laufende Platzierung einer Verteilung und Rückmeldung danach in „Stromkreise“.
+  const [verteilungPlatzierung, setVerteilungPlatzierung] = useState<Verteilungsplatzierung | null>(null);
+  const [platzierungsmeldung, setPlatzierungsmeldung] = useState<string | null>(null);
   // Woher die Steigwegverwaltung geöffnet wurde - für „Zurück zu …".
   const [vorherigeAnsicht, setVorherigeAnsicht] = useState<Ansicht | null>(null);
   // Ungespeicherte Änderungen im Editor - für Geschoss- und Ansichtswechsel.
@@ -286,16 +290,20 @@ export default function RoomsTab() {
     return true;
   };
 
-  const ansichtWechseln = async (neu: Ansicht, optionen: { rueckkehr?: boolean } = {}) => {
-    if (neu === ansicht) return;
+  /** `true`, wenn die Ansicht gewechselt wurde (sonst blieb sie nach einer Rückfrage). */
+  const ansichtWechseln = async (neu: Ansicht, optionen: { rueckkehr?: boolean } = {}): Promise<boolean> => {
+    if (neu === ansicht) return true;
     const ziel = ANSICHTEN.find((a) => a.wert === neu)?.label ?? neu;
     if (hatEntwurf(ansicht) && !(await editorVerlassen("Ansicht wechseln?", `Sie wollen zur Ansicht „${ziel}“ wechseln.`))) {
-      return;
+      return false;
     }
     // Höchstens ein aktiver Entwurf: Steigwege und Stromkreise führen ihren eigenen.
     if ((neu === "steigwege" || neu === "stromkreise") && !(await leitungVerlassen("Ansicht wechseln?", `Sie wollen zur Ansicht „${ziel}“ wechseln.`))) {
-      return;
+      return false;
     }
+    // Eine Platzierung der Verteilung (6c, VP) gilt nur im Editor; sonst ist sie beendet, nichts gespeichert.
+    if (neu !== "editor") setVerteilungPlatzierung(null);
+    if (neu !== "stromkreise") setPlatzierungsmeldung(null);
     if (neu === "steigwege") setVorherigeAnsicht(ansicht);
     // Ein gewöhnlicher Ansichtswechsel vergisst den gemerkten 3D-Stand; nur der
     // Weg Wandansicht hin und zurück stellt ihn wieder her.
@@ -306,6 +314,22 @@ export default function RoomsTab() {
     }
     ansichtMerken(neu);
     setAnsicht(neu);
+    return true;
+  };
+
+  /** „Im Plan platzieren“ / „Position ändern“ (6c, VP): Grundriss des Geschosses mit Wandwahl. */
+  const verteilungPlatzieren = async (p: Verteilungsplatzierung) => {
+    setPlatzierungsmeldung(null);
+    if (!(await ansichtWechseln("editor"))) return;
+    setGeschossId(p.floorId);
+    setVerteilungPlatzierung(p);
+  };
+
+  /** „Im Plan zeigen“: Wandansicht mit gewähltem Lagegerät; Schließen führt zurück zu „Stromkreise“. */
+  const imPlanZeigen = async (ziel: { floorId: string; raumId: string; wandId: string; geraetId: string }) => {
+    if (!(await ansichtWechseln("editor"))) return;
+    setGeschossId(ziel.floorId);
+    setStartWandansicht({ raumId: ziel.raumId, wandId: ziel.wandId, geraetId: ziel.geraetId, seite: "innen", herkunft: "stromkreise" });
   };
 
   /**
@@ -705,7 +729,7 @@ export default function RoomsTab() {
         // Die ganze Seite steht im Arbeitsbereich (6c, L1); die Arbeitsfläche hat keine eigene Karte.
         <section aria-label="Grafische Planung">
           <GrundrissEditor
-            key={aktivesGeschoss.id}
+            key={`${aktivesGeschoss.id}|${verteilungPlatzierung?.boardId ?? ""}`}
             arbeitsflaeche={grundrissArbeitsflaeche}
             floorId={aktivesGeschoss.id}
             buildingId={aktivesGeschoss.building_id}
@@ -730,6 +754,14 @@ export default function RoomsTab() {
               const zielEintrag = auswahl.find((eintrag) => eintrag.id === id);
               void geschossWechseln(id, zielEintrag?.building_id === aktivesGeschoss.building_id, zielEintrag?.label ?? "");
             }}
+            verteilung={verteilungPlatzierung?.floorId === aktivesGeschoss.id ? verteilungPlatzierung : null}
+            onVerteilungEnde={(meldung) => {
+              setVerteilungPlatzierung(null);
+              void ansichtWechseln("stromkreise").then((gewechselt) => {
+                if (gewechselt) setPlatzierungsmeldung(meldung);
+              });
+            }}
+            onZurueckStromkreise={() => void ansichtWechseln("stromkreise")}
           />
         </section>
       )}
@@ -798,6 +830,10 @@ export default function RoomsTab() {
             darfSchreiben={darfStromkreiseGrundsaetzlich && !archiviert}
             onUngespeichert={ungespeichertMelden}
             onGeschrieben={projektAktualisieren}
+            darfPlatzieren={darfStromkreiseGrundsaetzlich && darfSchreibenGrundsaetzlich && !archiviert}
+            onPlatzieren={(p) => void verteilungPlatzieren(p)}
+            onImPlanZeigen={(ziel) => void imPlanZeigen(ziel)}
+            meldung={platzierungsmeldung}
           />
         </section>
       )}

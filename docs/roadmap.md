@@ -1,6 +1,6 @@
 # Roadmap
 
-Stand: 2026-10-24 (nach Task 0062 — L1/L2/L3 samt Nachkorrekturen technisch geprüft und als Checkpoint committet; persönliche Abnahme von Layout und Leitungsbedienung offen; Phase 7 zurückgestellt)
+Stand: 2026-10-25 (nach Task 0063 — Planungslayout L1–L3 vom Auftraggeber für gut befunden, keine vollständige Funktionsabnahme; Entwurf Gerätekatalog K1/K2; Phase 7 zurückgestellt)
 Status-Werte: `NOT STARTED` · `IN PROGRESS` · `BLOCKED` · `DONE`
 
 ---
@@ -491,12 +491,16 @@ bearbeitet ist; die manuelle Gesamtprüfung von Phase 6 bleibt davon unberührt 
 | L3 | Abschlussdialog an Vorgaben, Verwaltungsdialoge (Entwurf §18.5) | **technisch umgesetzt, automatisiert und im laufenden Stack geprüft** (2026-10-24, Entwurf §21; Nacharbeiten §21.6/§21.7), **als Checkpoint committet** (Task 0062); persönliche Abnahme offen |
 | 6c.1 | 3D „Leitungen anzeigen“, modulbezogene Anzeigeschalter (ADR 0029) | zurückgestellt |
 | 6c.2 | bestehende Formulare auf Dialoge (Gebäude/Geschoss, Steigweg, Stammdaten) | Entwurf |
-| 6c.3 | Verteilung im Plan platzieren/zeigen/umsetzen (ADR 0028) | Entwurf |
+| 6c.3 / **VP** | Verteilung direkt im Plan platzieren/zeigen/umsetzen (ADR 0028) | **technisch umgesetzt und geprüft** (2026-10-25, Entwurf §23; serverseitige Sperre im Raumentwurf), **als Checkpoint committet** (Task 0065); persönliche Abnahme offen |
 | 6c.4 | Planungsvorgaben, Kabelvorlagen, Prozentreserve – Backend (ADR 0027) | Backendteil als **V1** umgesetzt (s. o.) |
 | 6c.5 | neuer Leitungsablauf mit Abschlussdialog, Vorgabenverwaltung | Entwurf |
 | 6c.6 | zentrale Anwendung der Vorgaben mit Vorschau | Entwurf |
 | 6c.7 | Verteilungsaufbau mit Vorlagen (ADR 0028) | Entwurf |
 | 6c.8 | gemeinsame Prüfung und Nachkorrekturen | Entwurf |
+| K1/K2 | Gerätekatalog: Katalogdialog (K1, nur Frontend), betriebseigene Gerätetypen (K2, ADR 0030) – [`geraetekatalog-design.md`](geraetekatalog-design.md); nach VP (R1–R3 entschieden) | Entwurf (2026-10-25), nicht freigegeben |
+
+**Layout:** Planungslayout L1–L3 vom Auftraggeber persönlich angesehen und für gut befunden (2026-10-25) – keine
+vollständige Funktionsabnahme.
 
 **Exit:** Abnahmekriterien des Entwurfs §13 erfüllt; Bestandsleitungen unverändert lang; Prüfung durch den
 Auftraggeber.
